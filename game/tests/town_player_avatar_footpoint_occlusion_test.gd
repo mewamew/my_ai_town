@@ -53,6 +53,24 @@ func _run() -> void:
 		not player.is_in_group(OCCLUSION_SUBJECT_GROUP),
 		"whole player body is not an occlusion subject"
 	)
+	var shadow := player.get_node_or_null("Shadow") as Polygon2D
+	_expect(shadow != null, "formal player has a ground shadow")
+	if shadow != null:
+		_expect(not shadow.z_as_relative, "player ground shadow does not inherit actor depth")
+		_expect_equal(
+			shadow.z_index,
+			TOWN_BASE.OUTDOOR_GROUND_SHADOW_Z_INDEX,
+			"outdoor player shadow stays below map foreground occluders",
+		)
+		town.set("_active_interior_id", "cafe")
+		town.call("_update_player_ground_shadow_depth")
+		_expect_equal(
+			shadow.z_index,
+			TOWN_BASE.INTERIOR_GROUND_SHADOW_Z_INDEX,
+			"indoor player shadow stays below furniture",
+		)
+		town.set("_active_interior_id", "")
+		town.call("_update_player_ground_shadow_depth")
 	await _test_player_collision_contact_filter(town)
 	await _test_home_a_bedroom_corner_release(town)
 	_test_bulletin_board_occluders_use_footpoint_activation(town)

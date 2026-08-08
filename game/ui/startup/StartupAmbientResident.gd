@@ -6,6 +6,9 @@ const PAPER_DOLL_64_SPRITE_SCRIPT := preload(
 )
 const DOOR_FADE_SECONDS := 0.22
 const FEET_COLLISION_RADIUS := 18.0
+# 与正式小镇一致：启动页地图前景遮挡的后置层最低为 z=99，行人脚底
+# 阴影固定在其下方，避免以后启用环境行人时阴影盖到建筑和围栏上。
+const GROUND_SHADOW_Z_INDEX := 98
 
 var reference_position := Vector2.ZERO
 
@@ -242,6 +245,8 @@ func _build_shadow() -> void:
 		Vector2(-20.0, 7.0),
 	])
 	shadow.color = Color(0.03, 0.04, 0.05, 0.30)
+	shadow.z_as_relative = false
+	shadow.z_index = GROUND_SHADOW_Z_INDEX
 	add_child(shadow)
 
 

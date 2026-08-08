@@ -60,6 +60,8 @@ const LOCAL_AVOIDANCE_ANGLES := [
 const BLOCKED_DIAGNOSTIC_SECONDS := 1.0
 const DIAGNOSTIC_LIMIT := 64
 const SUBJECT_GROUP := "map_occlusion_subject"
+const OUTDOOR_GROUND_SHADOW_Z_INDEX := 98
+const INTERIOR_GROUND_SHADOW_Z_INDEX := -9
 const SLEEP_HEAD_CENTER_OFFSET := Vector2(0.0, -180.0)
 # 点击区恢复为覆盖整个人的大框（5733d6da 版）。f9 曾缩水到 96×160
 # 来规避"隐藏模型误点"，但正确做法是激活空间门控——非激活空间的
@@ -199,6 +201,7 @@ func configure(identity: Dictionary, initial_state: Dictionary) -> Dictionary:
 	_applied_appearance = String(appearance_value)
 	_apply_lifecycle_appearance(initial_state, true)
 	_space_id = String(initial_state.get("spaceId", ""))
+	_update_ground_shadow_depth()
 	_movement_revision = int(movement_revision_value)
 	_authority_action_token = ""
 	position = initial_position_value as Vector2
@@ -1234,6 +1237,8 @@ func _ensure_built() -> void:
 		Vector2(-20.0, 7.0),
 	])
 	_shadow.color = Color(0.02, 0.03, 0.04, 0.32)
+	_shadow.z_as_relative = false
+	_shadow.z_index = INTERIOR_GROUND_SHADOW_Z_INDEX
 	add_child(_shadow)
 	_selection_marker = Line2D.new()
 	_selection_marker.name = "SelectionMarker"
@@ -1280,6 +1285,7 @@ func _relocate(
 	distance: float,
 ) -> Dictionary:
 	_space_id = space_id
+	_update_ground_shadow_depth()
 	position = target_position
 	_target_position = target_position
 	_navigation_path.clear()
@@ -1308,6 +1314,17 @@ func _relocate(
 		target_position,
 		distance,
 		{},
+	)
+
+
+func _update_ground_shadow_depth() -> void:
+	if not is_instance_valid(_shadow):
+		return
+	_shadow.z_as_relative = false
+	_shadow.z_index = (
+		OUTDOOR_GROUND_SHADOW_Z_INDEX
+		if _space_id == "town_outdoor"
+		else INTERIOR_GROUND_SHADOW_Z_INDEX
 	)
 
 

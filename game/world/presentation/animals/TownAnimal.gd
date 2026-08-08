@@ -51,6 +51,8 @@ const BIRD_LANDING_DISTANCE := 52.0
 const BIRD_GROUND_Z_INDEX := 100
 const BIRD_ROOF_Z_INDEX := 280
 const BIRD_FLIGHT_Z_INDEX := 420
+# 动物会改变自身高度（尤其是飞鸟），但地面投影始终留在地图前景遮挡之下。
+const GROUND_SHADOW_Z_INDEX := 98
 
 var animal_id := ""
 var display_name := ""
@@ -682,6 +684,8 @@ func _ensure_built(tint: Color, color_seed: int) -> void:
 		18,
 	)
 	_shadow.color = Color(0.02, 0.03, 0.04, 0.28)
+	_shadow.z_as_relative = false
+	_shadow.z_index = GROUND_SHADOW_Z_INDEX
 	add_child(_shadow)
 	_visual = ANIMAL_SPRITE.new() as TownAnimalSprite
 	_visual.name = "AnimalSprite"

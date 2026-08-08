@@ -29,6 +29,11 @@ const PLAYER_SPEED := (
 )
 const PLAYER_CONTACT_PROBE_DISTANCE := 1.0
 const CAFE_PLAYER_DEPTH := 1000
+# 室外完整地图在 z=0，运行时重绘的前景遮挡最低会落到 z=99；脚底阴影
+# 必须夹在两者之间。室内地板壳在 z=-10，家具从 z=0 开始，因此室内
+# 阴影单独落在 -9，避免跟随人物层级盖黑台阶、家具和屋顶。
+const OUTDOOR_GROUND_SHADOW_Z_INDEX := 98
+const INTERIOR_GROUND_SHADOW_Z_INDEX := -9
 const DOOR_THRESHOLD_TRIGGER_SIZE := (
 	PORTAL_CATALOG.DOOR_THRESHOLD_TRIGGER_SIZE
 )
@@ -1157,6 +1162,8 @@ func _build_player() -> void:
 		Vector2(30.0, 0.0), Vector2(20.0, 7.0), Vector2(-20.0, 7.0),
 	])
 	_player_shadow.color = Color(0.02, 0.03, 0.04, 0.32)
+	_player_shadow.z_as_relative = false
+	_player_shadow.z_index = OUTDOOR_GROUND_SHADOW_Z_INDEX
 	_player.add_child(_player_shadow)
 
 	_player_visual_root = Node2D.new()
@@ -2009,6 +2016,7 @@ func _update_cafe_furniture_placement_preview() -> void:
 
 
 func _update_cafe_depth_order() -> void:
+	_update_player_ground_shadow_depth()
 	if not _inside_furniture_room or not is_instance_valid(_interior_root):
 		_player.z_index = 100
 		return
@@ -2017,6 +2025,17 @@ func _update_cafe_depth_order() -> void:
 	_player.z_index = CAFE_PLAYER_DEPTH
 	if is_instance_valid(_active_furniture_layout):
 		_active_furniture_layout.call("update_depth_for_subject", _player)
+
+
+func _update_player_ground_shadow_depth() -> void:
+	if not is_instance_valid(_player_shadow):
+		return
+	_player_shadow.z_as_relative = false
+	_player_shadow.z_index = (
+		INTERIOR_GROUND_SHADOW_Z_INDEX
+		if _is_inside_interior()
+		else OUTDOOR_GROUND_SHADOW_Z_INDEX
+	)
 
 
 func _rebuild_cafe_runtime_artifacts() -> bool:

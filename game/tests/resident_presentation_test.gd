@@ -1065,6 +1065,13 @@ func _test_body_contract_and_authority() -> void:
 		false,
 		"the old-space resident hides only after the portal transition completes",
 	)
+	var indoor_shadow := portal_body.get_node("Shadow") as Polygon2D
+	_expect(not indoor_shadow.z_as_relative, "resident ground shadow uses absolute depth")
+	_expect_equal(
+		indoor_shadow.z_index,
+		RESIDENT_BODY.INTERIOR_GROUND_SHADOW_Z_INDEX,
+		"resident entering an interior moves its shadow below furniture",
+	)
 	portal_body.queue_free()
 	_completed_sections["body_contract_and_authority"] = true
 
@@ -1152,6 +1159,12 @@ func _test_apply_gate_signatures() -> void:
 	await process_frame
 	var feet := body.get_node("FeetCollision") as CollisionShape2D
 	var shadow := body.get_node("Shadow") as Polygon2D
+	_expect(not shadow.z_as_relative, "outdoor resident shadow does not inherit actor depth")
+	_expect_equal(
+		shadow.z_index,
+		RESIDENT_BODY.OUTDOOR_GROUND_SHADOW_Z_INDEX,
+		"outdoor resident shadow stays below map foreground occluders",
+	)
 	_expect_equal(
 		(body.get_apply_gate_counts() as Dictionary).get("sleepRefresh"),
 		sleep_refresh_before + 1,
@@ -3793,6 +3806,13 @@ func _scenario_animal_presentation() -> void:
 		"TownAnimal_bird_lanling"
 	) as TownAnimal
 	var bird_visual := bird_body.get_node("AnimalSprite") as TownAnimalSprite
+	var bird_shadow := bird_body.get_node("Shadow") as Polygon2D
+	_expect(not bird_shadow.z_as_relative, "bird shadow does not inherit flight depth")
+	_expect_equal(
+		bird_shadow.z_index,
+		TownAnimal.GROUND_SHADOW_Z_INDEX,
+		"bird shadow stays below map foreground occluders",
+	)
 	var roof_takeoff := bird_body.send_bird_to_landing(0)
 	_expect_equal(roof_takeoff.get("ok"), true, "bird can select an authored rooftop landing")
 	bird_body.call("_physics_process", TownAnimal.BIRD_TAKEOFF_SECONDS * 0.5)
@@ -3834,6 +3854,11 @@ func _scenario_animal_presentation() -> void:
 	_expect_equal(roof_snapshot.get("birdState"), "landed", "bird completes its rooftop landing")
 	_expect_equal(roof_snapshot.get("landingSurface"), "roof", "bird remembers that it is perched on a roof")
 	_expect_equal(bird_body.z_index, TownAnimal.BIRD_ROOF_Z_INDEX, "roof bird renders above the building")
+	_expect_equal(
+		bird_shadow.z_index,
+		TownAnimal.GROUND_SHADOW_Z_INDEX,
+		"rooftop bird never lifts its ground shadow onto the roof",
+	)
 	_expect(
 		not bird_body.get_node("OcclusionFootPoint").is_in_group("map_occlusion_subject"),
 		"roof bird does not make the roof fade as if it stood behind it",
