@@ -15,7 +15,7 @@ const RESIDENT_BODY := preload(
 )
 const PORTRAIT_PATH := (
 	"res://assets/characters/resident_2d_rig_v1/wardrobe_v1/"
-	+ "classic_sets/previews/lin_lan_front.png"
+	+ "classic_sets/runtime_portraits/lin_lan_front.png"
 )
 
 var _failures: Array[String] = []

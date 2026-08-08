@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c0ue3et5rtcd8"
-path="res://.godot/imported/hanako_front.png-ba02f9f0336d7a1f5ea2539d80e423c1.ctex"
+uid="uid://d3l54d8a2komd"
+path="res://.godot/imported/tang_xiaoman_front.png-5a3f41f2615b69f95e1c97e0ff402b30.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/hanako_front.png"
-dest_files=["res://.godot/imported/hanako_front.png-ba02f9f0336d7a1f5ea2539d80e423c1.ctex"]
+source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/tang_xiaoman_front.png"
+dest_files=["res://.godot/imported/tang_xiaoman_front.png-5a3f41f2615b69f95e1c97e0ff402b30.ctex"]
 
 [params]
 

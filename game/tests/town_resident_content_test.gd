@@ -1134,7 +1134,7 @@ func _formal_custom_catalog_entry(resident_id: String) -> Dictionary:
 	)
 	var portrait_ref := (
 		"res://assets/characters/resident_2d_rig_v1/wardrobe_v1/"
-		+ "classic_sets/previews/lin_lan_front.png"
+		+ "classic_sets/runtime_portraits/lin_lan_front.png"
 	)
 	return {
 		"residentId": resident_id,
@@ -1442,7 +1442,7 @@ func _scenario_resident_profile_complete_set() -> void:
 	)
 	_expect(
 		String(appearance.get("portraitPath", "")).ends_with(
-			"classic_sets/previews/shen_qiao_front.png"
+			"classic_sets/runtime_portraits/shen_qiao_front.png"
 		),
 		"complete set keeps its matching portrait",
 	)

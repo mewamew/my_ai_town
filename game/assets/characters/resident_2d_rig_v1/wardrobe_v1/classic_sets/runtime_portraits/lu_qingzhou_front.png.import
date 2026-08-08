@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://v7pl1fp8ramt"
-path="res://.godot/imported/lu_qingzhou_front.png-c11481802159950924d4abf817aab5ec.ctex"
+path="res://.godot/imported/lu_qingzhou_front.png-3d9fb322362d3717a826ece36aa56eac.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/lu_qingzhou_front.png"
-dest_files=["res://.godot/imported/lu_qingzhou_front.png-c11481802159950924d4abf817aab5ec.ctex"]
+source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/lu_qingzhou_front.png"
+dest_files=["res://.godot/imported/lu_qingzhou_front.png-3d9fb322362d3717a826ece36aa56eac.ctex"]
 
 [params]
 

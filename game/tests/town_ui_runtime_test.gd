@@ -1338,6 +1338,7 @@ const FORBIDDEN_DIRECTORY_NAMES := {
 	"font_specimen": true,
 	"validation": true,
 	"preview": true,
+	"previews": true,
 	"mock": true,
 	"evidence": true,
 	"preflight": true,
@@ -1350,41 +1351,9 @@ const FORBIDDEN_DIRECTORY_NAMES := {
 	"tools": true,
 }
 const FORMAL_EXPORT_INCLUDE_FILTERS: Array[String] = [
-	"*.json",
+	"*",
 ]
-const FORMAL_EXPORT_EXCLUDE_FILTERS: Array[String] = [
-	"**/mock/**",
-	"**/ui/chat/**",
-	"**/ui/conversation_spectator/**",
-	"**/preview/**",
-	"**/candidate/**",
-	"**/candidates/**",
-	"**/font_candidates/**",
-	"**/font_specimen/**",
-	"**/validation/**",
-	"**/evidence/**",
-	"**/preflight/**",
-	"**/tests/**",
-	"**/test/**",
-	"**/test_area/**",
-	"**/runtime_preview/**",
-	"**/runtime_acceptance/**",
-	"**/gallery/**",
-	"**/tools/**",
-	"**/agent/debug/**",
-	"**/world/prototypes/**",
-	"**/town_log/runtime/family/v4_reference_match/**",
-	"**/PrimaryButtonImageCandidate.gd",
-	"**/PrimaryButtonImageCandidate.gdshader",
-	"**/PrimaryButtonImageCandidate.tscn",
-	"**/PrimaryButtonTypographyCandidate.tres",
-	"**/ZhengGeTypographyCandidate.tres",
-	"**/TypographyStatusBarCandidate.tscn",
-	"**/TypographyBubbleCandidate.tscn",
-	"**/TypographyNotificationCardCandidate.tscn",
-	"**/primary_image_candidate/**",
-	"**/system_feedback_common_rebuild_candidate_v1.json",
-]
+const FORMAL_EXPORT_EXCLUDE_FILTERS: Array[String] = []
 const FORMAL_RUNTIME_ASSET_PATHS: Array[String] = [
 	"res://assets/fonts/zheng_ge_dian_hei_16/ZhengGeDianHei-16.ttf",
 	"res://assets/ui/startup/final/load_game/load_game_open_paper_1672x941.png",
@@ -1646,6 +1615,61 @@ func _scenario_ui_runtime_host_navigation() -> void:
 		bool(active_snapshot.get("movementHintDismissed", false)),
 		"active avatar mode treats the movement hint as already dismissed",
 	)
+	var original_avatar_hud_size := _avatar_hud.size
+	_avatar_hud.size = Vector2(1920.0, 1200.0)
+	_avatar_hud.call("_layout_runtime")
+	var avatar_16_10_rects := _avatar_hud.call("get_component_rects") as Array
+	var avatar_time_status_rect := _component_rect(
+		avatar_16_10_rects,
+		"time_status",
+	)
+	var avatar_time_controls_rect := _component_rect(
+		avatar_16_10_rects,
+		"time_controls",
+	)
+	var avatar_exit_rect := _component_rect(avatar_16_10_rects, "exit")
+	var avatar_skillbar_rect := _component_rect(
+		avatar_16_10_rects,
+		"skillbar",
+	)
+	for component_record: Dictionary in avatar_16_10_rects:
+		var component_id := String(component_record.get("id", "unknown"))
+		var component_rect := _component_rect(
+			avatar_16_10_rects,
+			component_id,
+		)
+		_expect(
+			component_rect.position.x >= -0.01
+			and component_rect.position.y >= -0.01
+			and component_rect.end.x <= 1920.01
+			and component_rect.end.y <= 1200.01,
+			"16:10 avatar HUD component stays inside viewport: %s"
+				% component_id,
+		)
+	_expect(
+		avatar_time_status_rect.has_area()
+		and avatar_time_status_rect.position.y <= 24.0,
+		"16:10 avatar time frame follows the full-height HUD origin",
+	)
+	_expect(
+		avatar_time_controls_rect.has_area()
+		and avatar_time_controls_rect.end.x >= 1918.0
+		and avatar_time_controls_rect.position.y <= 392.0,
+		"16:10 avatar time controls stay aligned to the right HUD edge",
+	)
+	_expect(
+		avatar_exit_rect.has_area()
+		and avatar_exit_rect.end.x >= 1904.0
+		and avatar_exit_rect.position.y <= 16.0,
+		"16:10 return-to-observer frame stays at the display top-right",
+	)
+	_expect(
+		avatar_skillbar_rect.has_area()
+		and avatar_skillbar_rect.end.y >= 1188.0,
+		"16:10 avatar skillbar stays at the display bottom",
+	)
+	_avatar_hud.size = original_avatar_hud_size
+	_avatar_hud.call("_layout_runtime")
 
 	var avatar_active_rects := _avatar_hud.call("get_component_rects") as Array
 	_expect(
@@ -3274,6 +3298,25 @@ func _has_component_rect(component_rects: Array, id: String) -> bool:
 	return false
 
 
+func _component_rect(component_rects: Array, id: String) -> Rect2:
+	for entry_value: Variant in component_rects:
+		if not entry_value is Dictionary:
+			continue
+		var entry := entry_value as Dictionary
+		if String(entry.get("id", "")) != id:
+			continue
+		var values := entry.get("rect", []) as Array
+		if values.size() != 4:
+			return Rect2()
+		return Rect2(
+			float(values[0]),
+			float(values[1]),
+			float(values[2]),
+			float(values[3]),
+		)
+	return Rect2()
+
+
 func _expect_single_active_page(message: String, expected: int = 1) -> void:
 	_expect_equal(_active_route_page_count(), expected, "%s has one active page owner" % message)
 
@@ -3389,6 +3432,7 @@ func _scenario_formal_ui_runtime_contract() -> void:
 	_test_formal_runtime_asset_paths()
 	_test_formal_dependency_closure()
 	_test_formal_route_registry_contract()
+	_test_hud_16_10_layout_contract()
 	for path in FORMAL_SOURCE_MARKERS:
 		var source := FileAccess.get_file_as_string(path)
 		for marker: String in FORMAL_SOURCE_MARKERS[path]:
@@ -3410,6 +3454,43 @@ func _scenario_formal_ui_runtime_contract() -> void:
 	_test_visible_error_label_contract()
 	_test_world_intro_empty_view_model_contract()
 	return
+
+
+func _test_hud_16_10_layout_contract() -> void:
+	var layout := TownHudTypographyContract.layout_for(Vector2(1920.0, 1200.0))
+	var avatar_rect := Rect2()
+	for target_value: Variant in layout.get("targets", []) as Array:
+		var target := target_value as Dictionary
+		if String(target.get("id", "")) == "avatar_toggle":
+			avatar_rect = target.get("rect", Rect2()) as Rect2
+			break
+	_expect(
+		avatar_rect.has_area() and avatar_rect.end.y >= 1180.0,
+		"16:10 HUD keeps the avatar control anchored to the display bottom",
+	)
+
+	var host := Control.new()
+	host.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	host.size = Vector2(1920.0, 1200.0)
+	root.add_child(host)
+	var overlay := TOWN_HUD_SCENE.instantiate() as Control
+	host.add_child(overlay)
+	overlay.call("_apply_layout")
+	var outer := overlay.find_child(
+		"ConfirmedObserverV5StaticShell",
+		true,
+		false,
+	) as NinePatchRect
+	_expect(outer != null, "16:10 HUD mounts its formal shell")
+	if outer != null:
+		var rendered_size := outer.size * outer.scale
+		_expect(
+			rendered_size.distance_to(Vector2(1920.0, 1200.0)) <= 1.1,
+			"16:10 HUD fills the entire display instead of centering a 16:9 shell",
+		)
+	host.queue_free()
+
+
 func _test_provider_composite_source_provenance_contract() -> void:
 	var contract_path := (
 		"res://assets/ui/provider_settings/composite_reference/"
@@ -4040,9 +4121,11 @@ func _test_startup_continue_failure_contract() -> void:
 	if startup == null:
 		return
 	root.add_child(startup)
+	var startup_intents: Array[String] = []
 	startup.connect(
 		"intent_requested",
-		func(_intent: String, _payload: Dictionary) -> void: pass,
+		func(intent: String, _payload: Dictionary) -> void:
+			startup_intents.append(intent),
 	)
 	var normal_applied := bool(startup.call(
 		"apply_view_models",
@@ -4159,6 +4242,30 @@ func _test_startup_continue_failure_contract() -> void:
 	_expect(
 		String(recovered_snapshot.get("continueErrorText", "")).is_empty(),
 		"Continue 恢复正常后必须清除失败文案",
+	)
+	startup_intents.clear()
+	_expect(
+		bool(startup.call("request_new_game_to_host")),
+		"开始新游戏请求可提交给 Host",
+	)
+	var repeated_escape := InputEventKey.new()
+	repeated_escape.keycode = KEY_ESCAPE
+	repeated_escape.pressed = true
+	for _index in 3:
+		startup.call("_unhandled_input", repeated_escape)
+	_expect_equal(
+		startup_intents,
+		["session.new_game"],
+		"开始新游戏等待 Host 时连续 Esc 不得再发退出请求",
+	)
+	_expect(
+		not bool(startup.call("request_return_to_host")),
+		"开始新游戏等待 Host 时直接返回请求也会被拦住",
+	)
+	_expect_equal(
+		startup_intents,
+		["session.new_game"],
+		"等待 Host 时重复返回不会产生第二个导航意图",
 	)
 	root.remove_child(startup)
 	startup.free()
@@ -4341,6 +4448,49 @@ func _test_formal_runtime_asset_paths() -> void:
 			ResourceLoader.exists(path) or FileAccess.file_exists(path),
 			"正式运行素材缺失：%s" % path,
 		)
+	var resident_catalog := _read_json(
+		"res://world/data/town/resident_catalog.json"
+	)
+	var residents_value: Variant = resident_catalog.get("residents", [])
+	_expect(residents_value is Array, "正式居民目录必须包含 residents 数组")
+	if not residents_value is Array:
+		return
+	for resident_value: Variant in residents_value:
+		_expect(resident_value is Dictionary, "正式居民条目必须是对象")
+		if not resident_value is Dictionary:
+			continue
+		var resident: Dictionary = resident_value
+		var resident_id := String(resident.get("residentId", "unknown"))
+		var presentation_value: Variant = resident.get("presentation", {})
+		_expect(
+			presentation_value is Dictionary,
+			"正式居民展示信息必须是对象：%s" % resident_id,
+		)
+		if not presentation_value is Dictionary:
+			continue
+		var presentation: Dictionary = presentation_value
+		for field: String in ["spritePath", "portraitPath"]:
+			var path := String(presentation.get(field, ""))
+			_expect(
+				not path.is_empty(),
+				"正式居民素材路径为空：%s.%s" % [resident_id, field],
+			)
+			_expect(
+				not _path_has_forbidden_directory(path),
+				"正式居民素材仍使用开发目录：%s.%s -> %s" % [
+					resident_id,
+					field,
+					path,
+				],
+			)
+			_expect(
+				ResourceLoader.exists(path) or FileAccess.file_exists(path),
+				"正式居民素材缺失：%s.%s -> %s" % [
+					resident_id,
+					field,
+					path,
+				],
+			)
 
 
 
@@ -5842,6 +5992,138 @@ func _scenario_session_production_composition() -> void:
 		world_runtime.call("get_time") != editor_pause_time,
 		"formal World time advances after leaving resident editor",
 	)
+	var speed_three := adapter.call(
+		"dispatch",
+		"town_hud.set_time_speed",
+		{"multiplier": 3},
+	) as Dictionary
+	_expect_ok_session_production_composition(
+		speed_three,
+		"formal time controls select 3x speed",
+	)
+	var manual_pause := adapter.call(
+		"dispatch",
+		"lifecycle.pause",
+		{"reason": "manual"},
+	) as Dictionary
+	_expect_ok_session_production_composition(
+		manual_pause,
+		"formal time controls pause manually",
+	)
+	var manual_pause_time := world_runtime.call("get_time") as Dictionary
+	world_runtime.call("advance", 2.0)
+	_expect_equal(
+		world_runtime.call("get_time"),
+		manual_pause_time,
+		"manual pause keeps formal World time stopped",
+	)
+	var normal_speed := adapter.call(
+		"dispatch",
+		"town_hud.set_time_speed",
+		{"multiplier": 1},
+	) as Dictionary
+	_expect_ok_session_production_composition(
+		normal_speed,
+		"selecting 1x clears manual pause",
+	)
+	_expect_equal(
+		world_runtime.call("get_simulation_speed"),
+		1,
+		"selecting 1x restores normal simulation speed",
+	)
+	_expect(
+		not bool(
+			(world_runtime.call("get_lifecycle_state") as Dictionary).get(
+				"paused",
+				true,
+			)
+		),
+		"selecting 1x leaves the formal World running",
+	)
+	world_runtime.call("advance", 1.0)
+	_expect(
+		world_runtime.call("get_time") != manual_pause_time,
+		"formal World time advances after selecting 1x",
+	)
+	_expect_equal(
+		(runtime.call("set_manual_paused", true) as Dictionary).get("ok"),
+		true,
+		"manual pause can coexist with the pause menu",
+	)
+	_expect_equal(
+		(runtime.call("set_main_menu_open", true) as Dictionary).get("ok"),
+		true,
+		"pause menu adds only its own pause reason",
+	)
+	_expect_equal(
+		(runtime.call("set_main_menu_open", false) as Dictionary).get("ok"),
+		true,
+		"closing pause menu clears only the menu pause reason",
+	)
+	var pause_after_menu_close := runtime.call("get_lifecycle_state") as Dictionary
+	_expect(
+		bool(pause_after_menu_close.get("paused", false))
+		and (pause_after_menu_close.get("pauseReasons", []) as Array).has("manual"),
+		"closing pause menu preserves an earlier manual pause",
+	)
+	var resume_after_menu_close := adapter.call(
+		"dispatch",
+		"town_hud.set_time_speed",
+		{"multiplier": 1},
+	) as Dictionary
+	_expect_ok_session_production_composition(
+		resume_after_menu_close,
+		"selecting a speed resumes the preserved manual pause",
+	)
+	_expect(
+		not bool(
+			(runtime.call("get_lifecycle_state") as Dictionary).get(
+				"paused",
+				true,
+			)
+		),
+		"pause-menu and manual-pause sequence returns to running",
+	)
+	_expect_equal(
+		(runtime.call("set_manual_paused", true) as Dictionary).get("ok"),
+		true,
+		"manual pause can coexist with an application background pause",
+	)
+	_expect_equal(
+		(runtime.call("set_background_paused", true) as Dictionary).get("ok"),
+		true,
+		"background pause adds only its own pause reason",
+	)
+	var speed_while_background_paused := adapter.call(
+		"dispatch",
+		"town_hud.set_time_speed",
+		{"multiplier": 2},
+	) as Dictionary
+	_expect_ok_session_production_composition(
+		speed_while_background_paused,
+		"speed selection clears manual pause while backgrounded",
+	)
+	var background_only_pause := runtime.call("get_lifecycle_state") as Dictionary
+	_expect(
+		bool(background_only_pause.get("paused", false))
+		and not (background_only_pause.get("pauseReasons", []) as Array).has("manual")
+		and (background_only_pause.get("pauseReasons", []) as Array).has("background"),
+		"speed selection never clears the application-owned background pause",
+	)
+	_expect_equal(
+		(runtime.call("set_background_paused", false) as Dictionary).get("ok"),
+		true,
+		"foregrounding clears the final background pause reason",
+	)
+	_expect(
+		not bool(
+			(runtime.call("get_lifecycle_state") as Dictionary).get(
+				"paused",
+				true,
+			)
+		),
+		"manual and background pause sequence returns to running",
+	)
 	var observer_hud := adapter.call("get_view_model", "town_hud") as Dictionary
 	await _capture_resident_directory_if_requested(runtime, adapter, observer_hud)
 	var observer_actions := observer_hud.get("actions", {}) as Dictionary
@@ -5913,8 +6195,16 @@ func _scenario_session_production_composition() -> void:
 	)
 	_expect_equal(
 		camera_after_paused_mouse.get("cameraZoomIndex"),
-		paused_zoom_index,
-		"Pause blocks observer wheel zoom even if the Host input flag has not changed yet",
+		paused_zoom_index + 1,
+		"Pause keeps observer wheel zoom available without advancing World time",
+	)
+	var paused_magnify := InputEventMagnifyGesture.new()
+	paused_magnify.factor = 1.25
+	runtime.call("_unhandled_input", paused_magnify)
+	_expect_equal(
+		(runtime.call("get_runtime_state") as Dictionary).get("cameraZoomIndex"),
+		paused_zoom_index + 2,
+		"Pause keeps trackpad pinch zoom available without advancing World time",
 	)
 	_expect_equal(
 		(runtime.call("set_main_menu_open", false) as Dictionary).get("ok"),

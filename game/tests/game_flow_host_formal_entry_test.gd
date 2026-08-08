@@ -220,23 +220,7 @@ func _run() -> void:
 	current_scene = startup
 	host.call("_bind_current_scene")
 	await _wait_frames(4)
-	var startup_session := startup.get("_session_view_model") as Dictionary
-	var startup_data := startup_session.get("data", {}) as Dictionary
-	startup.emit_signal("intent_requested", &"session.new_game", {
-		"scope": "session",
-		"actionKey": "newGame",
-		"revision": int(startup_session.get("revision", 0)),
-		"routeOrigin": "startup",
-		"source": String(startup_data.get("source", "")),
-		"capabilityMode": String(startup_data.get("capabilityMode", "")),
-		"validationMode": String(startup_data.get("validationMode", "")),
-		"formalReady": bool(startup_data.get("formalReady", false)),
-		"internalPlaytest": bool(startup_data.get("internalPlaytest", false)),
-		"internalLivePlaytest": bool(
-			startup_data.get("internalLivePlaytest", false),
-		),
-		"slotId": SLOT_ID,
-	})
+	_emit_startup_new_game(startup)
 	await _wait_frames(3)
 	var overwrite := startup.get_node_or_null("SaveHandlingRoute") as Control
 	_expect(
@@ -260,6 +244,45 @@ func _run() -> void:
 	_expect(
 		intro != null and intro.name == "WorldIntroScreen",
 		"confirmed formal New Game enters WorldIntro",
+	)
+	if intro == null or intro.name != "WorldIntroScreen":
+		_finish()
+		return
+	var generation_before_repeated_back := int(host.get("_flow_generation"))
+	for _index in 3:
+		# Esc delegates to the same back request. Invoke that request directly so
+		# this test can also repeat it after the first call detaches the old scene.
+		intro.call("_request_back")
+	await _wait_frames(5)
+	var returned_startup := current_scene
+	_expect(
+		returned_startup != null and returned_startup.name == "StartupScreen",
+		"WorldIntro repeated Esc returns to Startup exactly once",
+	)
+	_expect_equal(
+		int(host.get("_flow_generation")),
+		generation_before_repeated_back + 1,
+		"WorldIntro repeated Esc advances one navigation generation",
+	)
+	if returned_startup == null or returned_startup.name != "StartupScreen":
+		_finish()
+		return
+	_emit_startup_new_game(returned_startup)
+	await _wait_frames(3)
+	overwrite = returned_startup.get_node_or_null("SaveHandlingRoute") as Control
+	_expect(overwrite != null, "new game remains usable after repeated Esc")
+	if overwrite == null:
+		_finish()
+		return
+	_expect(
+		bool(overwrite.call("debug_request_action", "confirmOverwrite")),
+		"overwrite confirmation remains usable after repeated Esc",
+	)
+	await _wait_frames(5)
+	intro = current_scene
+	_expect(
+		intro != null and intro.name == "WorldIntroScreen",
+		"new game can re-enter WorldIntro after repeated Esc",
 	)
 	if intro == null or intro.name != "WorldIntroScreen":
 		_finish()
@@ -475,6 +498,38 @@ func _run() -> void:
 			String(baseline_manifest.get("session_id", "")) != OLD_SESSION_ID,
 			"initial formal baseline belongs to the new session",
 		)
+	var town_adapter := (
+		(host.get("_town_runtime") as Node).call("get_ui_adapter") as Node
+	)
+	var manual_save := town_adapter.call("dispatch", "save.create", {
+		"reason": "release_manual_save_regression",
+	}) as Dictionary
+	_expect_ok(
+		manual_save,
+		"formal Town can create a second save through the same action used by the pause menu",
+	)
+	var manual_listing := SAVE_STORE.new().call(
+		"list_published",
+		SLOT_ID,
+	) as Dictionary
+	var manual_manifests := manual_listing.get("manifests", []) as Array
+	_expect_equal(
+		manual_manifests.size(),
+		2,
+		"manual save publishes revision 2 after the initial baseline",
+	)
+	if manual_manifests.size() == 2:
+		var revisions: Array[int] = []
+		for manifest_value: Variant in manual_manifests:
+			revisions.append(int(
+				(manifest_value as Dictionary).get("save_revision", 0),
+			))
+		revisions.sort()
+		_expect_equal(
+			revisions,
+			[1, 2],
+			"manual save advances the published set to revision 2",
+		)
 	_expect(
 		not _backup_contains_old_pair(),
 		"successful baseline retires the old automatic recovery archive",
@@ -499,6 +554,26 @@ func _run() -> void:
 	await _wait_frames(1)
 	_cleanup_formal_slot()
 	call_deferred("_finish")
+
+
+func _emit_startup_new_game(startup: Node) -> void:
+	var startup_session := startup.get("_session_view_model") as Dictionary
+	var startup_data := startup_session.get("data", {}) as Dictionary
+	startup.emit_signal("intent_requested", &"session.new_game", {
+		"scope": "session",
+		"actionKey": "newGame",
+		"revision": int(startup_session.get("revision", 0)),
+		"routeOrigin": "startup",
+		"source": String(startup_data.get("source", "")),
+		"capabilityMode": String(startup_data.get("capabilityMode", "")),
+		"validationMode": String(startup_data.get("validationMode", "")),
+		"formalReady": bool(startup_data.get("formalReady", false)),
+		"internalPlaytest": bool(startup_data.get("internalPlaytest", false)),
+		"internalLivePlaytest": bool(
+			startup_data.get("internalLivePlaytest", false),
+		),
+		"slotId": SLOT_ID,
+	})
 
 
 func _publish_old_formal_pair() -> Dictionary:

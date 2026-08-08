@@ -2364,7 +2364,7 @@ func _relationship_portrait_path(item: Dictionary) -> String:
 		return ""
 	return (
 		"res://assets/characters/resident_2d_rig_v1/wardrobe_v1/"
-		+ "classic_sets/previews/%s_front.png" % "_".join(parts)
+		+ "classic_sets/runtime_portraits/%s_front.png" % "_".join(parts)
 	)
 
 

@@ -476,7 +476,7 @@ static func _validate_direction_resource_map(
 			or not (resource_value as String).begins_with("res://")
 		):
 			errors.append("%s.%s must be a res:// resource path" % [label, direction])
-		elif not FileAccess.file_exists(resource_value):
+		elif not _resource_exists(resource_value):
 			errors.append("%s.%s resource does not exist" % [label, direction])
 	return errors
 
@@ -592,7 +592,7 @@ static func _validate_directional_ground_contact_sprite_overlap(
 		var polygons_value: Variant = directional.get(direction)
 		if (
 			typeof(sprite_path) != TYPE_STRING
-			or not FileAccess.file_exists(sprite_path)
+			or not _resource_exists(sprite_path)
 			or not anchor_errors.is_empty()
 			or not polygons_value is Array
 		):
@@ -748,7 +748,7 @@ static func _validate_directional_occlusion_sprite_overlap(
 		)
 		if (
 			typeof(sprite_path) != TYPE_STRING
-			or not FileAccess.file_exists(sprite_path)
+			or not _resource_exists(sprite_path)
 			or not anchor_errors.is_empty()
 			or not polygon_errors.is_empty()
 		):
@@ -789,11 +789,16 @@ static func _load_png_source_image(path: String) -> Image:
 	if _source_image_cache.has(path):
 		return _source_image_cache.get(path) as Image
 	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		_source_image_cache[path] = null
-		return null
-	var image := Image.new()
-	if image.load_png_from_buffer(file.get_buffer(file.get_length())) != OK:
+	var image: Image = null
+	if file != null:
+		image = Image.new()
+		if image.load_png_from_buffer(file.get_buffer(file.get_length())) != OK:
+			image = null
+	elif ResourceLoader.exists(path, "Texture2D"):
+		var texture := ResourceLoader.load(path, "Texture2D") as Texture2D
+		if texture != null:
+			image = texture.get_image()
+	if image == null:
 		_source_image_cache[path] = null
 		return null
 	if image.is_empty():
@@ -801,6 +806,16 @@ static func _load_png_source_image(path: String) -> Image:
 		return null
 	_source_image_cache[path] = image
 	return image
+
+
+static func _resource_exists(path: Variant) -> bool:
+	if typeof(path) != TYPE_STRING:
+		return false
+	var resource_path := String(path)
+	return (
+		ResourceLoader.exists(resource_path)
+		or FileAccess.file_exists(resource_path)
+	)
 
 
 static func _validate_occupied_cells(value: Variant) -> PackedStringArray:

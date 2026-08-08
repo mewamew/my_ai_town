@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c5uaxdsb027rg"
-path="res://.godot/imported/bai_zhi_front.png-b01c0d312ba46f82679adde5ab2a7e91.ctex"
+uid="uid://d1um8g40fmqlx"
+path="res://.godot/imported/zhou_jiming_front.png-d547f025dc2efe6fc1355655a6dc8b66.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/bai_zhi_front.png"
-dest_files=["res://.godot/imported/bai_zhi_front.png-b01c0d312ba46f82679adde5ab2a7e91.ctex"]
+source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/zhou_jiming_front.png"
+dest_files=["res://.godot/imported/zhou_jiming_front.png-d547f025dc2efe6fc1355655a6dc8b66.ctex"]
 
 [params]
 

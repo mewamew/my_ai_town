@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://d3l54d8a2komd"
-path="res://.godot/imported/tang_xiaoman_front.png-4ef7081391205fba94a9c968644abe53.ctex"
+uid="uid://cmv5us44fsvqt"
+path="res://.godot/imported/mi_ya_front.png-20b44e0fd3f283fd2ab6d2f2d40d0039.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/tang_xiaoman_front.png"
-dest_files=["res://.godot/imported/tang_xiaoman_front.png-4ef7081391205fba94a9c968644abe53.ctex"]
+source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/mi_ya_front.png"
+dest_files=["res://.godot/imported/mi_ya_front.png-20b44e0fd3f283fd2ab6d2f2d40d0039.ctex"]
 
 [params]
 

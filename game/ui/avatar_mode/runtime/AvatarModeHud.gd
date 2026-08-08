@@ -117,7 +117,6 @@ const TIME_CONTROL_PANEL_TEXTURES := {
 }
 const HUD_REFERENCE_SIZE := Vector2(1672.0, 941.0)
 const HUD_REFERENCE_ASPECT := HUD_REFERENCE_SIZE.x / HUD_REFERENCE_SIZE.y
-const HUD_16_10_MIN_ASPECT := 1.5
 const TIME_STATUS_SOURCE_RECT := Rect2(575.0, 20.0, 540.0, 88.0)
 const TIME_STATUS_TEXT_RECT := Rect2(35.0, 14.0, 382.0, 60.0)
 const WEATHER_CONTROL_BUTTON_RECT := Rect2(420.0, 8.0, 94.0, 76.0)
@@ -926,8 +925,15 @@ func _load_atlas_parts(
 	rows: int
 ) -> Array[Texture2D]:
 	var parts: Array[Texture2D] = []
-	var image := Image.load_from_file(ProjectSettings.globalize_path(path))
+	var image: Image = null
+	if ResourceLoader.exists(path, "Texture2D"):
+		var texture := ResourceLoader.load(path, "Texture2D") as Texture2D
+		if texture != null:
+			image = texture.get_image()
+	elif FileAccess.file_exists(path):
+		image = Image.load_from_file(ProjectSettings.globalize_path(path))
 	if image == null or image.is_empty():
+		push_error("Avatar 模式图集无法读取：%s" % path)
 		return parts
 	for row: int in rows:
 		for column: int in columns:
@@ -1791,18 +1797,18 @@ func _hud_reference_scale(safe: Rect2) -> float:
 		safe.size.y / HUD_REFERENCE_SIZE.y,
 	)
 	var aspect := safe.size.x / maxf(1.0, safe.size.y)
-	if aspect < HUD_REFERENCE_ASPECT and aspect < HUD_16_10_MIN_ASPECT:
+	if aspect < HUD_REFERENCE_ASPECT:
 		return safe.size.x / HUD_REFERENCE_SIZE.x
 	return uniform_scale
 
 
 func _hud_reference_origin(safe: Rect2, uniform_scale: float) -> Vector2:
 	var aspect := safe.size.x / maxf(1.0, safe.size.y)
-	if aspect < HUD_REFERENCE_ASPECT and aspect >= HUD_16_10_MIN_ASPECT:
-		return safe.position + (
-			safe.size - HUD_REFERENCE_SIZE * uniform_scale
-		) * 0.5
-	return safe.position
+	if aspect < HUD_REFERENCE_ASPECT:
+		return safe.position
+	return safe.position + (
+		safe.size - HUD_REFERENCE_SIZE * uniform_scale
+	) * 0.5
 
 
 func _layout_resident_prompt(safe: Rect2) -> void:

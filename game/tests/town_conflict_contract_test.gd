@@ -75,6 +75,15 @@ func _test_runtime_metadata_and_follow_up() -> void:
 		"cast event preserves sourceKind",
 	)
 	var first_projection := runtime.get_public_projection() as Dictionary
+	_expect(
+		not (first_projection.get("events", []) as Array).is_empty(),
+		"public conflict projection keeps event history",
+	)
+	_expect_equal(
+		(runtime.get_public_projection(false) as Dictionary).get("events"),
+		[],
+		"agent conflict projection omits historical events",
+	)
 	var first_injury := _injury_of_actor(
 		first_projection.get("injuries", []) as Array,
 		"resident-b",
@@ -263,6 +272,7 @@ func _test_post_injury_reaction_gate() -> void:
 			"conflict_event_type": "injury_applied",
 			"actor_ids": ["resident-a", "resident-b"],
 			"source_actor_id": "resident-a",
+			"subject_id": "resident-b",
 			"conflict_id": "conflict-test",
 			"severity": "heavy",
 			"event_id": "injury-event-1",
@@ -277,6 +287,26 @@ func _test_post_injury_reaction_gate() -> void:
 		reaction.get("attacker_resident_id"),
 		"resident-a",
 		"explicit attacker is kept in post-injury reaction",
+	)
+	var attacker_reaction := runtime.call(
+		"_post_injury_reaction_for_events",
+		"resident-a",
+		[{
+			"type": "冲突见闻",
+			"knowledge_kind": "participant",
+			"conflict_event_type": "injury_applied",
+			"actor_ids": ["resident-a", "resident-b"],
+			"source_actor_id": "resident-a",
+			"subject_id": "resident-b",
+			"conflict_id": "conflict-test",
+			"severity": "heavy",
+			"event_id": "injury-event-1",
+		}],
+	) as Dictionary
+	_expect_equal(
+		attacker_reaction.is_empty(),
+		true,
+		"attacker is not mistaken for the injured participant",
 	)
 
 	var invalid_reply := runtime.call(

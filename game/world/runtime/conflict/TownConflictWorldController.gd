@@ -447,6 +447,22 @@ func get_public_projection() -> Dictionary:
 	).duplicate(true)
 
 
+func get_agent_projection() -> Dictionary:
+	if not _configured:
+		return {
+			"revision": 0,
+			"activeConflicts": [],
+			"injuries": [],
+			"tensions": [],
+			"events": [],
+		}
+	# Agent 决策只读取当前冲突、伤势和紧张关系。历史事件已经通过
+	# World 的事件队列单独交付，不能在每次唤醒时再完整深拷贝。
+	return (
+		_runtime.get_public_projection(false) as Dictionary
+	).duplicate(true)
+
+
 func export_state() -> Dictionary:
 	if not _configured:
 		return {}
@@ -514,7 +530,7 @@ func _emit_projection() -> void:
 
 func _active_conflict(conflict_id: String) -> Dictionary:
 	for conflict_value: Variant in (
-		get_public_projection().get("activeConflicts", []) as Array
+		get_agent_projection().get("activeConflicts", []) as Array
 	):
 		if conflict_value is not Dictionary:
 			continue

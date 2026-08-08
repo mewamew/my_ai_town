@@ -5,8 +5,6 @@ extends RefCounted
 const REVISION := "ui.town.hud.typography-layout.observer-v4-runtime-v3-16x10"
 const FORMAL_READY := true
 const REFERENCE_SIZE := Vector2(1672.0, 941.0)
-const REFERENCE_ASPECT := REFERENCE_SIZE.x / REFERENCE_SIZE.y
-const DESKTOP_16_10_MIN_ASPECT := 1.5
 const FONT_NATIVE_SIZE := 16
 const FONT_ROLE_SIZES := {
 	&"hud_title": 48,
@@ -65,40 +63,17 @@ static func layout_for(
 		)
 	)
 	var breakpoint_id := breakpoint_for(safe.size)
-	var layout_safe := _reference_content_safe_rect(safe, breakpoint_id)
 	var layout: Dictionary
 	match breakpoint_id:
 		&"desktop_wide":
-			layout = _desktop_wide_layout(layout_safe)
+			layout = _desktop_wide_layout(safe)
 		&"desktop_compact":
-			layout = _desktop_compact_layout(layout_safe)
+			layout = _desktop_compact_layout(safe)
 		&"compact_landscape":
-			layout = _compact_landscape_layout(layout_safe)
+			layout = _compact_landscape_layout(safe)
 		_:
-			layout = _compact_portrait_layout(layout_safe)
+			layout = _compact_portrait_layout(safe)
 	return _snap_layout_to_physical(layout, physical_scale)
-
-
-static func _reference_content_safe_rect(
-	safe: Rect2,
-	breakpoint_id: StringName
-) -> Rect2:
-	if breakpoint_id not in [&"desktop_wide", &"desktop_compact"]:
-		return safe
-	if not safe.has_area():
-		return safe
-	var aspect := safe.size.x / maxf(1.0, safe.size.y)
-	if aspect >= REFERENCE_ASPECT or aspect < DESKTOP_16_10_MIN_ASPECT:
-		return safe
-	var uniform_scale := safe.size.x / REFERENCE_SIZE.x
-	var content_size := REFERENCE_SIZE * uniform_scale
-	return Rect2(
-		Vector2(
-			safe.position.x,
-			safe.position.y + floorf((safe.size.y - content_size.y) * 0.5),
-		),
-		content_size,
-	)
 
 
 static func configure_label(

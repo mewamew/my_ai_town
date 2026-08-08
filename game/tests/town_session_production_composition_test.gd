@@ -447,6 +447,117 @@ func _run() -> void:
 		world_runtime.call("get_time") != editor_pause_time,
 		"formal World time advances after leaving resident editor",
 	)
+	var speed_three := adapter.call(
+		"dispatch",
+		"town_hud.set_time_speed",
+		{"multiplier": 3},
+	) as Dictionary
+	_expect_ok(speed_three, "formal time controls select 3x speed")
+	var manual_pause := adapter.call(
+		"dispatch",
+		"lifecycle.pause",
+		{"reason": "manual"},
+	) as Dictionary
+	_expect_ok(manual_pause, "formal time controls pause manually")
+	var normal_speed := adapter.call(
+		"dispatch",
+		"town_hud.set_time_speed",
+		{"multiplier": 1},
+	) as Dictionary
+	_expect_ok(normal_speed, "selecting 1x clears manual pause")
+	_expect_equal(
+		world_runtime.call("get_simulation_speed"),
+		1,
+		"selecting 1x restores normal simulation speed",
+	)
+	_expect(
+		not bool(
+			(runtime.call("get_lifecycle_state") as Dictionary).get(
+				"paused",
+				true,
+			)
+		),
+		"selecting 1x leaves the formal World running",
+	)
+	_expect_equal(
+		(runtime.call("set_manual_paused", true) as Dictionary).get("ok"),
+		true,
+		"manual pause can coexist with the pause menu",
+	)
+	_expect_equal(
+		(runtime.call("set_main_menu_open", true) as Dictionary).get("ok"),
+		true,
+		"pause menu adds only its own pause reason",
+	)
+	_expect_equal(
+		(runtime.call("set_main_menu_open", false) as Dictionary).get("ok"),
+		true,
+		"closing pause menu clears only the menu pause reason",
+	)
+	var pause_after_menu_close := runtime.call("get_lifecycle_state") as Dictionary
+	_expect(
+		bool(pause_after_menu_close.get("paused", false))
+		and (pause_after_menu_close.get("pauseReasons", []) as Array).has("manual"),
+		"closing pause menu preserves an earlier manual pause",
+	)
+	var resume_after_menu_close := adapter.call(
+		"dispatch",
+		"town_hud.set_time_speed",
+		{"multiplier": 1},
+	) as Dictionary
+	_expect_ok(
+		resume_after_menu_close,
+		"selecting a speed resumes the preserved manual pause",
+	)
+	_expect(
+		not bool(
+			(runtime.call("get_lifecycle_state") as Dictionary).get(
+				"paused",
+				true,
+			)
+		),
+		"pause-menu and manual-pause sequence returns to running",
+	)
+	_expect_equal(
+		(runtime.call("set_manual_paused", true) as Dictionary).get("ok"),
+		true,
+		"manual pause can coexist with an application background pause",
+	)
+	_expect_equal(
+		(runtime.call("set_background_paused", true) as Dictionary).get("ok"),
+		true,
+		"background pause adds only its own pause reason",
+	)
+	var speed_while_background_paused := adapter.call(
+		"dispatch",
+		"town_hud.set_time_speed",
+		{"multiplier": 2},
+	) as Dictionary
+	_expect_ok(
+		speed_while_background_paused,
+		"speed selection clears manual pause while backgrounded",
+	)
+	var background_only_pause := runtime.call("get_lifecycle_state") as Dictionary
+	_expect(
+		bool(background_only_pause.get("paused", false))
+		and not (background_only_pause.get("pauseReasons", []) as Array).has("manual")
+		and (background_only_pause.get("pauseReasons", []) as Array).has("background"),
+		"speed selection never clears the application-owned background pause",
+	)
+	_expect_equal(
+		(runtime.call("set_background_paused", false) as Dictionary).get("ok"),
+		true,
+		"foregrounding clears the final background pause reason",
+	)
+	_expect(
+		not bool(
+			(runtime.call("get_lifecycle_state") as Dictionary).get(
+				"paused",
+				true,
+			)
+		),
+		"manual and background pause sequence returns to running",
+	)
 	var observer_hud := adapter.call("get_view_model", "town_hud") as Dictionary
 	await _capture_resident_directory_if_requested(runtime, adapter, observer_hud)
 	var observer_actions := observer_hud.get("actions", {}) as Dictionary
@@ -518,8 +629,16 @@ func _run() -> void:
 	)
 	_expect_equal(
 		camera_after_paused_mouse.get("cameraZoomIndex"),
-		paused_zoom_index,
-		"Pause blocks observer wheel zoom even if the Host input flag has not changed yet",
+		paused_zoom_index + 1,
+		"Pause keeps observer wheel zoom available without advancing World time",
+	)
+	var paused_magnify := InputEventMagnifyGesture.new()
+	paused_magnify.factor = 1.25
+	runtime.call("_unhandled_input", paused_magnify)
+	_expect_equal(
+		(runtime.call("get_runtime_state") as Dictionary).get("cameraZoomIndex"),
+		paused_zoom_index + 2,
+		"Pause keeps trackpad pinch zoom available without advancing World time",
 	)
 	_expect_equal(
 		(runtime.call("set_main_menu_open", false) as Dictionary).get("ok"),
@@ -614,6 +733,26 @@ func _run() -> void:
 	_expect_equal(beam_snapshot.get("cueEmitted"), true, "300ms beam edge emits the delivered descent cue once")
 	await create_timer(0.8).timeout
 	_expect_equal(runtime.call("get_avatar_mode"), "avatar_active", "old 1100ms input edge activates avatar")
+	var avatar_zoom_before_input := int(
+		(runtime.call("get_runtime_state") as Dictionary).get(
+			"cameraZoomIndex",
+			-1,
+		)
+	)
+	runtime.call("_unhandled_input", wheel_up)
+	_expect_equal(
+		(runtime.call("get_runtime_state") as Dictionary).get("cameraZoomIndex"),
+		avatar_zoom_before_input + 1,
+		"active avatar mouse wheel zooms the gameplay camera",
+	)
+	var avatar_magnify := InputEventMagnifyGesture.new()
+	avatar_magnify.factor = 0.8
+	runtime.call("_unhandled_input", avatar_magnify)
+	_expect_equal(
+		(runtime.call("get_runtime_state") as Dictionary).get("cameraZoomIndex"),
+		avatar_zoom_before_input,
+		"active avatar trackpad pinch zooms the gameplay camera",
+	)
 	var active_player_body := runtime.get_node("Player") as CharacterBody2D
 	_expect_equal(
 		active_player_body.collision_mask,

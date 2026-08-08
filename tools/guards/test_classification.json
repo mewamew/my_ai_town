@@ -82,6 +82,18 @@
   "game/tests/town_world_agent_test.gd": "自动测试",
   "game/tests/town_world_foundation_test.gd": "自动测试",
   "game/tests/town_world_save_test.gd": "自动测试",
+  "game/ui/common/font_specimen/AiTownFontSpecimen.gd": "手工预览",
+  "game/ui/common/font_specimen/GlobalPixelFontCandidatePreview.gd": "手工预览",
+  "game/ui/common/gallery/PaperWoodPanelGodotStagePreview.gd": "手工预览",
+  "game/ui/common/gallery/PaperWoodPanelTypographyPreview.gd": "手工预览",
+  "game/ui/common/gallery/PrimaryButtonImageActualPreview.gd": "手工预览",
+  "game/ui/common/gallery/SystemFeedbackCommonApprovedV1Stage.gd": "手工预览",
+  "game/ui/common/gallery/SystemFeedbackCommonCandidateV1Preview.gd": "手工预览",
+  "game/ui/common/gallery/SystemFeedbackRuntimePanelCandidateV2Stage.gd": "手工预览",
+  "game/ui/common/gallery/TypographyLayoutValidationPreview.gd": "手工预览",
+  "game/ui/common/visual_preview/CommonUiVisualPreview.gd": "手工预览",
+  "game/ui/common/visual_preview/PrimaryButtonCandidatePreview.gd": "手工预览",
+  "game/ui/resident_action_menu/runtime_preview/ResidentActionMenuRuntimePreview.gd": "手工预览",
   "game/tests/town_world_action_type_registry_test.gd": "自动测试"
-}
+ }
 }

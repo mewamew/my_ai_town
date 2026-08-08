@@ -73,8 +73,8 @@
       },
       "presentation": {
         "locationLabel": "花房咖啡馆",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/hanako_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/hanako_front.png"
+        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/hanako_front.png",
+        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/hanako_front.png"
       }
     },
     {
@@ -101,8 +101,8 @@
       },
       "presentation": {
         "locationLabel": "社区花园",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/lin_lan_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/lin_lan_front.png"
+        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/lin_lan_front.png",
+        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/lin_lan_front.png"
       }
     },
     {
@@ -127,8 +127,8 @@
       },
       "presentation": {
         "locationLabel": "图书馆",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/xu_zhao_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/xu_zhao_front.png"
+        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/xu_zhao_front.png",
+        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/xu_zhao_front.png"
       }
     },
     {
@@ -153,8 +153,8 @@
       },
       "presentation": {
         "locationLabel": "码头仓库",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/zhou_jiming_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/zhou_jiming_front.png"
+        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/zhou_jiming_front.png",
+        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/zhou_jiming_front.png"
       }
     },
     {
@@ -179,8 +179,8 @@
       },
       "presentation": {
         "locationLabel": "独立市集",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/tang_xiaoman_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/tang_xiaoman_front.png"
+        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/tang_xiaoman_front.png",
+        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/tang_xiaoman_front.png"
       }
     },
     {
@@ -206,8 +206,8 @@
       },
       "presentation": {
         "locationLabel": "工作坊",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/luo_yuan_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/luo_yuan_front.png"
+        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/luo_yuan_front.png",
+        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/luo_yuan_front.png"
       }
     },
     {
@@ -234,8 +234,8 @@
       },
       "presentation": {
         "locationLabel": "独立市集",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/jiang_cheng_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/jiang_cheng_front.png"
+        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/jiang_cheng_front.png",
+        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/jiang_cheng_front.png"
       }
     },
     {
@@ -260,8 +260,8 @@
       },
       "presentation": {
         "locationLabel": "码头仓库",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/qiao_yiming_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/qiao_yiming_front.png"
+        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/qiao_yiming_front.png",
+        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/qiao_yiming_front.png"
       }
     },
     {
@@ -287,8 +287,8 @@
       },
       "presentation": {
         "locationLabel": "公共食堂",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/su_tang_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/su_tang_front.png"
+        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/su_tang_front.png",
+        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/su_tang_front.png"
       }
     },
     {
@@ -314,8 +314,8 @@
       },
       "presentation": {
         "locationLabel": "渔港",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/lu_qingzhou_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/lu_qingzhou_front.png"
+        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/lu_qingzhou_front.png",
+        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/lu_qingzhou_front.png"
       }
     },
     {
@@ -342,8 +342,8 @@
       },
       "presentation": {
         "locationLabel": "中心广场",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/xie_mian_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/xie_mian_front.png"
+        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/xie_mian_front.png",
+        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/xie_mian_front.png"
       }
     },
     {
@@ -369,8 +369,8 @@
       },
       "presentation": {
         "locationLabel": "诊所",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/bai_zhi_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/bai_zhi_front.png"
+        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/bai_zhi_front.png",
+        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/bai_zhi_front.png"
       }
     },
     {
@@ -396,8 +396,8 @@
       },
       "presentation": {
         "locationLabel": "镇公所",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/wen_xu_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/wen_xu_front.png"
+        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/wen_xu_front.png",
+        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/wen_xu_front.png"
       }
     },
     {
@@ -423,8 +423,8 @@
       },
       "presentation": {
         "locationLabel": "社区花园",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/mi_ya_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/mi_ya_front.png"
+        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/mi_ya_front.png",
+        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/mi_ya_front.png"
       }
     },
     {
@@ -450,8 +450,8 @@
       },
       "presentation": {
         "locationLabel": "图书馆",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/cheng_yan_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/cheng_yan_front.png"
+        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/cheng_yan_front.png",
+        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/cheng_yan_front.png"
       }
     },
     {
@@ -478,8 +478,8 @@
       },
       "presentation": {
         "locationLabel": "小镇道路",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/shen_qiao_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/shen_qiao_front.png"
+        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/shen_qiao_front.png",
+        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/shen_qiao_front.png"
       }
     }
   ]

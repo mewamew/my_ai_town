@@ -16,6 +16,9 @@ const FAR_RESIDENT_ACTIVITY_SCENE := preload(
 	"res://ui/town/hud/runtime/TownFarResidentActivityLayer.tscn"
 )
 const RUNTIME_VISUAL_STATUS := &"observer_v5_static_shell_runtime_ready"
+const ORIGINAL_SOURCE_PROVENANCE_PATH := (
+	"res://assets/ui/town/hud/runtime/source/provenance.json"
+)
 const ASSET_REGISTRY_PATH := (
 	"res://assets/ui/town/hud/runtime/hud_runtime_asset_registry.json"
 )
@@ -52,8 +55,6 @@ const TIME_SPEED_CONTROLS := {
 	"time_speed_3": {"actionKey": "timeSpeed3", "multiplier": 3},
 }
 const HUD_REFERENCE_SIZE := Vector2(1672.0, 941.0)
-const HUD_REFERENCE_ASPECT := HUD_REFERENCE_SIZE.x / HUD_REFERENCE_SIZE.y
-const HUD_16_10_MIN_ASPECT := 1.5
 const TIME_CONTROL_BACKGROUND_MASK_SHADER := """
 shader_type canvas_item;
 
@@ -265,6 +266,7 @@ func audit_snapshot() -> Dictionary:
 		"assetRegistryPath": ASSET_REGISTRY_PATH,
 		"assetRegistryReady": _asset_registry_ready,
 		"assetRegistryId": String(_asset_registry.get("registryId", "")),
+		"originalSourceProvenancePath": ORIGINAL_SOURCE_PROVENANCE_PATH,
 		"visualStatus": RUNTIME_VISUAL_STATUS,
 		"invalidSubstituteRemoved": true,
 		"breakpoint": _layout.get("breakpoint", &""),
@@ -740,6 +742,8 @@ func _apply_place_directory_layout() -> void:
 func _apply_runtime_skin_layout() -> void:
 	if not is_instance_valid(_skin_root):
 		return
+	if size.x <= 0.0 or size.y <= 0.0:
+		return
 	var outer := _skin_nodes.get("outer_shell") as NinePatchRect
 	if outer == null:
 		return
@@ -747,17 +751,7 @@ func _apply_runtime_skin_layout() -> void:
 		size.x / HUD_REFERENCE_SIZE.x,
 		size.y / HUD_REFERENCE_SIZE.y,
 	)
-	var aspect := size.x / maxf(1.0, size.y)
-	if aspect < HUD_REFERENCE_ASPECT and aspect >= HUD_16_10_MIN_ASPECT:
-		# 16:10 has enough width for the desktop shell, but not enough height
-		# to fill the viewport without vertically stretching its pixel art.
-		# Keep the approved 16:9 shell at one uniform scale and let the map
-		# breathe in the small top and bottom bands.
-		var shell_size := HUD_REFERENCE_SIZE * uniform_scale
-		outer.position = (size - shell_size) * 0.5
-		outer.size = HUD_REFERENCE_SIZE
-	elif aspect < HUD_REFERENCE_ASPECT:
-		# Narrow and portrait layouts keep their existing full-width reflow.
+	if size.x / size.y < HUD_REFERENCE_SIZE.x / HUD_REFERENCE_SIZE.y:
 		uniform_scale = size.x / HUD_REFERENCE_SIZE.x
 		outer.position = Vector2.ZERO
 		outer.size = Vector2(
@@ -907,19 +901,13 @@ func _confirmed_time_speed_button_id() -> String:
 
 
 func _time_control_panel_visual_rect() -> Rect2:
+	if size.x <= 0.0 or size.y <= 0.0:
+		return Rect2()
 	var uniform_scale := minf(
 		size.x / HUD_REFERENCE_SIZE.x,
 		size.y / HUD_REFERENCE_SIZE.y,
 	)
-	var aspect := size.x / maxf(1.0, size.y)
-	if aspect < HUD_REFERENCE_ASPECT and aspect >= HUD_16_10_MIN_ASPECT:
-		var shell_size := HUD_REFERENCE_SIZE * uniform_scale
-		var shell_origin := (size - shell_size) * 0.5
-		return Rect2(
-			shell_origin + TIME_CONTROL_PANEL_SOURCE_RECT.position * uniform_scale,
-			TIME_CONTROL_PANEL_SOURCE_RECT.size * uniform_scale,
-		)
-	if aspect < HUD_REFERENCE_ASPECT:
+	if size.x / size.y < HUD_REFERENCE_SIZE.x / HUD_REFERENCE_SIZE.y:
 		return Rect2(
 			TIME_CONTROL_PANEL_SOURCE_RECT.position * uniform_scale,
 			TIME_CONTROL_PANEL_SOURCE_RECT.size * uniform_scale,

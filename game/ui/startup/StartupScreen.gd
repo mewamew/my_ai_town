@@ -281,6 +281,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			_request_action("newGame")
 		KEY_ESCAPE:
 			get_viewport().set_input_as_handled()
+			if _host_request_pending_intent != &"":
+				_show_notice("正在处理，请稍候。")
+				return
 			request_return_to_host()
 
 
@@ -1295,6 +1298,9 @@ func request_load_game_to_host() -> bool:
 
 
 func request_return_to_host() -> bool:
+	if _host_request_pending_intent != &"":
+		_show_notice("正在处理，请稍候。")
+		return false
 	var data := _session_view_model.get("data", {}) as Dictionary
 	intent_requested.emit(RETURN_INTENT, {
 		"scope": "startup",

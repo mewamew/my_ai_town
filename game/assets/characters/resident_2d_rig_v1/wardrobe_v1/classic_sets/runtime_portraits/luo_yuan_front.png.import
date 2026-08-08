@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cctr6x7f2uapv"
-path="res://.godot/imported/qiao_yiming_front.png-0d4e894c559e0a80cd1f58b295ec6288.ctex"
+uid="uid://bfn5v0tg4i48d"
+path="res://.godot/imported/luo_yuan_front.png-01cd9560d020b1feed6e9d96e7fbeb80.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/qiao_yiming_front.png"
-dest_files=["res://.godot/imported/qiao_yiming_front.png-0d4e894c559e0a80cd1f58b295ec6288.ctex"]
+source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/luo_yuan_front.png"
+dest_files=["res://.godot/imported/luo_yuan_front.png-01cd9560d020b1feed6e9d96e7fbeb80.ctex"]
 
 [params]
 

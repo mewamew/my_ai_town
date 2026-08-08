@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cxku8auat5hhj"
-path="res://.godot/imported/lin_lan_front.png-2c55691818493a3b7b3986f5be64ffb3.ctex"
+uid="uid://cawwnhpmfm57d"
+path="res://.godot/imported/su_tang_front.png-f3b00312396cd26a6393cee681336565.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/lin_lan_front.png"
-dest_files=["res://.godot/imported/lin_lan_front.png-2c55691818493a3b7b3986f5be64ffb3.ctex"]
+source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/su_tang_front.png"
+dest_files=["res://.godot/imported/su_tang_front.png-f3b00312396cd26a6393cee681336565.ctex"]
 
 [params]
 

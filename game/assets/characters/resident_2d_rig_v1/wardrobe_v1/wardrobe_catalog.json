@@ -142,7 +142,7 @@
       "label": "花子 · 完整套装",
       "headId": "warm_ponytail",
       "outfitId": "teal_town_jacket",
-      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/hanako_front.png",
+      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/hanako_front.png",
       "portraitSha256": "8990352c3c9ee8a35196bc5bb22f5f3ca6d9ffb788d74972264e6cbedc481d79",
       "directions": {
         "down": {
@@ -222,7 +222,7 @@
       "label": "林岚 · 完整套装",
       "headId": "side_swept_brown",
       "outfitId": "navy_field_jacket",
-      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/lin_lan_front.png",
+      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/lin_lan_front.png",
       "portraitSha256": "e25c4bfbc02213a0313b2227a31e23f88c6a2972a19f82853e399da642564d64",
       "directions": {
         "down": {
@@ -302,7 +302,7 @@
       "label": "许照 · 完整套装",
       "headId": "side_swept_brown",
       "outfitId": "rust_work_jacket",
-      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/xu_zhao_front.png",
+      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/xu_zhao_front.png",
       "portraitSha256": "2f9d7c3ae7cb0139d98411ebd5d4873776ac8850e3ce059c2e6cc79da27e631f",
       "directions": {
         "down": {
@@ -382,7 +382,7 @@
       "label": "周既明 · 完整套装",
       "headId": "tousled_brown",
       "outfitId": "moss_knit_sweater",
-      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/zhou_jiming_front.png",
+      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/zhou_jiming_front.png",
       "portraitSha256": "bbd0b305f8f8f0ba185174aabba220c7e80bf442a36c776a547f2fb7399d045f",
       "directions": {
         "down": {
@@ -462,7 +462,7 @@
       "label": "唐小满 · 完整套装",
       "headId": "tousled_brown",
       "outfitId": "teal_town_jacket",
-      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/tang_xiaoman_front.png",
+      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/tang_xiaoman_front.png",
       "portraitSha256": "c19a727aeb524d89b09718dacd8e3687f0f554ed33472efc0f8cd9fef94f8024",
       "directions": {
         "down": {
@@ -542,7 +542,7 @@
       "label": "罗远 · 完整套装",
       "headId": "dark_bob",
       "outfitId": "moss_knit_sweater",
-      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/luo_yuan_front.png",
+      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/luo_yuan_front.png",
       "portraitSha256": "ebb86681f7a70d70ebde4f1e5d435a82308bbf6c37a18e68b82595a2870ac11f",
       "directions": {
         "down": {
@@ -622,7 +622,7 @@
       "label": "姜澄 · 完整套装",
       "headId": "warm_ponytail",
       "outfitId": "moss_knit_sweater",
-      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/jiang_cheng_front.png",
+      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/jiang_cheng_front.png",
       "portraitSha256": "e30b84873668315e7271020a8ce0ab58fd5411608f56ecdd87f6dc34cb334d96",
       "directions": {
         "down": {
@@ -702,7 +702,7 @@
       "label": "乔一鸣 · 完整套装",
       "headId": "dark_bob",
       "outfitId": "teal_town_jacket",
-      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/qiao_yiming_front.png",
+      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/qiao_yiming_front.png",
       "portraitSha256": "f38f7077d1e93d24d2d401480c9957733456f6aef94e3cb0671eea5629c8a1fe",
       "directions": {
         "down": {
@@ -782,7 +782,7 @@
       "label": "苏棠 · 完整套装",
       "headId": "warm_ponytail",
       "outfitId": "rust_work_jacket",
-      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/su_tang_front.png",
+      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/su_tang_front.png",
       "portraitSha256": "799540f93c926b976916a6132795e83cf3744f8f6602baa3d3da32e3f3440c5d",
       "directions": {
         "down": {
@@ -862,7 +862,7 @@
       "label": "陆青舟 · 完整套装",
       "headId": "dark_bob",
       "outfitId": "rust_work_jacket",
-      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/lu_qingzhou_front.png",
+      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/lu_qingzhou_front.png",
       "portraitSha256": "eca82647fe9a3a392b4081bd66dae5e6697c62ff619a5b663e9cde33fc51a511",
       "directions": {
         "down": {
@@ -942,7 +942,7 @@
       "label": "谢眠 · 完整套装",
       "headId": "tousled_brown",
       "outfitId": "navy_field_jacket",
-      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/xie_mian_front.png",
+      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/xie_mian_front.png",
       "portraitSha256": "8a6015af9d69a3112e042ded3e4fe6579ae2a668387287f4810ea731ad27621c",
       "directions": {
         "down": {
@@ -1022,7 +1022,7 @@
       "label": "白芷 · 完整套装",
       "headId": "dark_bob",
       "outfitId": "navy_field_jacket",
-      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/bai_zhi_front.png",
+      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/bai_zhi_front.png",
       "portraitSha256": "0b92b729c61aa49e08c1d2c7fb0873f9680fad3f45c2551c74b747cedf6c2c2f",
       "directions": {
         "down": {
@@ -1102,7 +1102,7 @@
       "label": "闻叙 · 完整套装",
       "headId": "tousled_brown",
       "outfitId": "rust_work_jacket",
-      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/wen_xu_front.png",
+      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/wen_xu_front.png",
       "portraitSha256": "8e0ea53f026d3d5fba417a3965a32e6d3182ab40739c312bf462bd8c3d4d4809",
       "directions": {
         "down": {
@@ -1182,7 +1182,7 @@
       "label": "米芽 · 完整套装",
       "headId": "warm_ponytail",
       "outfitId": "navy_field_jacket",
-      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/mi_ya_front.png",
+      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/mi_ya_front.png",
       "portraitSha256": "37fbedbfa50aec5d8b77e706f0c75b988a0d5a9541a7bb2b7bf7da32be7e8a34",
       "directions": {
         "down": {
@@ -1262,7 +1262,7 @@
       "label": "程砚 · 完整套装",
       "headId": "side_swept_brown",
       "outfitId": "moss_knit_sweater",
-      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/cheng_yan_front.png",
+      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/cheng_yan_front.png",
       "portraitSha256": "041e3500b7f0bcf4e5049bb6e099588b3117300d48b70e7c0d10ffec41d0dc5c",
       "directions": {
         "down": {
@@ -1342,7 +1342,7 @@
       "label": "沈桥 · 完整套装",
       "headId": "side_swept_brown",
       "outfitId": "teal_town_jacket",
-      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/shen_qiao_front.png",
+      "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/shen_qiao_front.png",
       "portraitSha256": "3a897d9cf76e1d93b8f4abbf499baae8f4014ee2b649a046d58d57187c6188e7",
       "directions": {
         "down": {

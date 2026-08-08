@@ -97,6 +97,27 @@ static func project(
 	}
 
 
+static func is_injury_subject(
+	event: Dictionary,
+	resident_id: String,
+) -> bool:
+	if (
+		String(event.get("type", "")) != "冲突见闻"
+		or String(event.get("knowledge_kind", "")) != "participant"
+		or String(event.get("conflict_event_type", "")) != "injury_applied"
+	):
+		return false
+	var subject_id := String(event.get("subject_id", "")).strip_edges()
+	if not subject_id.is_empty():
+		return subject_id == resident_id
+	# 兼容旧存档：参与者中只有非攻击方可以被视为伤者。
+	return (
+		(event.get("actor_ids", []) as Array).has(resident_id)
+		and String(event.get("source_actor_id", "")).strip_edges()
+		!= resident_id
+	)
+
+
 static func _actor_ids(event: Dictionary) -> Array[String]:
 	var result: Array[String] = []
 	for value: Variant in event.get("actorIds", []) as Array:

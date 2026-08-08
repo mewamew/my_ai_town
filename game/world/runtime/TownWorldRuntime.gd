@@ -339,6 +339,9 @@ var _conflict_controller: TownConflictWorldController
 var _conflict_agent_world_bridge: TownConflictAgentWorldBridge = (
 	CONFLICT_AGENT_WORLD_BRIDGE.new()
 )
+# 同一次冲突命令可能连续产出“攻击、命中、受伤”等多条事件。
+# 先合并受影响居民，再在最终投影到达时每人只调度一次决定。
+var _pending_conflict_knowledge_wakes: Dictionary = {}
 var _resident_lifecycle: TownResidentLifecycleRuntime = RESIDENT_LIFECYCLE_RUNTIME.new()
 var _action_options: TownActionOptionDirectory = ACTION_OPTION_DIRECTORY.new()
 var _action_option_sources: TownActionOptionSourceAdapter = ACTION_OPTION_SOURCE_ADAPTER.new()
@@ -722,6 +725,7 @@ func _start_with_validation(
 	perception_spatial.reset()
 	_public_social_matter_activity_cache.clear()
 	_public_social_matter_activity_cache_revision = -1
+	_pending_conflict_knowledge_wakes.clear()
 	_staffing_matter_sync_signature.clear()
 	_staffing_matter_last_sync_minute = -1
 	_staffing_matter_full_sync_count = 0
@@ -1074,6 +1078,7 @@ func stop() -> Dictionary:
 	_clinic_interviews = CLINIC_INTERVIEW_POLICY.new()
 	_disconnect_conflict_controller_signals()
 	_conflict_controller = null
+	_pending_conflict_knowledge_wakes.clear()
 	var speed_was_reset := _simulation_speed != 1
 	_simulation_speed = 1
 	_running = false
@@ -9527,6 +9532,7 @@ func submit_agent_decision(resident_name: String, decision: Dictionary) -> Dicti
 			return {
 				"ok": false,
 				"stale": false,
+				"consumed": false,
 				"errorCode": "CONVERSATION_REPLY_REQUIRED",
 				"retryable": true,
 				"errors": ["搭话必须提交答话；拒绝也要明确说明理由并结束对话"],
@@ -9539,6 +9545,7 @@ func submit_agent_decision(resident_name: String, decision: Dictionary) -> Dicti
 			return {
 				"ok": false,
 				"stale": false,
+				"consumed": false,
 				"errorCode": "CONVERSATION_REFUSAL_REASON_REQUIRED",
 				"retryable": true,
 				"errors": ["拒绝搭话时答话必须说出明确理由"],
@@ -9558,6 +9565,7 @@ func submit_agent_decision(resident_name: String, decision: Dictionary) -> Dicti
 			return {
 				"ok": false,
 				"stale": false,
+				"consumed": false,
 				"errorCode": "POST_INJURY_REACTION_REQUIRED",
 				"retryable": true,
 				"errors": [post_injury_error],
@@ -13773,7 +13781,7 @@ func _advance_postal_talk_approach(
 			if duration <= 0
 			else clampf(float(elapsed) / float(duration), 0.0, 1.0)
 		)
-		var next_position := _clearance_safe_position(String(resident.get("spaceId", "")), _point_along_polyline(path, ratio))
+		var next_position := _point_along_polyline(path, ratio)
 		var previous_place := String(resident.get("currentPlace", ""))
 		var membership := PERCEPTION_RUNTIME._membership(self,
 			String(resident.get("spaceId", "")),
@@ -15386,15 +15394,12 @@ func _post_injury_reaction_for_events(
 		if value is not Dictionary:
 			continue
 		var event := value as Dictionary
-		if (
-			String(event.get("type", "")) != "冲突见闻"
-			or String(event.get("knowledge_kind", "")) != "participant"
-			or String(event.get("conflict_event_type", "")) != "injury_applied"
+		if not CONFLICT_KNOWLEDGE_PROJECTOR.is_injury_subject(
+			event,
+			resident_id,
 		):
 			continue
 		var actor_ids := event.get("actor_ids", []) as Array
-		if not actor_ids.has(resident_id):
-			continue
 		var attacker_id := String(event.get("source_actor_id", "")).strip_edges()
 		if attacker_id.is_empty() or attacker_id == resident_id:
 			for actor_value: Variant in actor_ids:
@@ -15413,8 +15418,6 @@ func _post_injury_reaction_for_events(
 			"attacker_name": _person_name_for_id(attacker_id),
 		}
 	return latest
-
-
 func _post_injury_reaction_action_error(
 	resident: Dictionary,
 	decision: Dictionary,
@@ -16897,10 +16900,9 @@ func _enqueue_world_event(
 ) -> Dictionary:
 	var resident := _residents[resident_name] as Dictionary
 	_clear_rejected_action_streak(resident)
-	if (
-		String(event.get("type", "")) == "冲突见闻"
-		and String(event.get("knowledge_kind", "")) == "participant"
-		and String(event.get("conflict_event_type", "")) == "injury_applied"
+	if CONFLICT_KNOWLEDGE_PROJECTOR.is_injury_subject(
+		event,
+		resident_name,
 	):
 		_interrupt_action(resident_name, "刚刚遭遇冲突，当前行动中止")
 		var active_conversation := CONVERSATION_RUNTIME._active_conversation_for_person(
@@ -19227,6 +19229,8 @@ func _disconnect_conflict_controller_signals() -> void:
 
 func _on_conflict_projection_changed(projection: Dictionary) -> void:
 	conflict_projection_changed.emit(projection.duplicate(true))
+	var wake_priorities := _pending_conflict_knowledge_wakes.duplicate()
+	_pending_conflict_knowledge_wakes.clear()
 	for resident_id: String in _resident_order:
 		var resident := _residents.get(resident_id, {}) as Dictionary
 		if resident.is_empty() or not _resident_is_present(resident):
@@ -19241,11 +19245,26 @@ func _on_conflict_projection_changed(projection: Dictionary) -> void:
 			resident,
 			nearby_ids,
 		)
+		var direct_participant := false
+		for conflict_value: Variant in snapshot.get("conflicts", []) as Array:
+			if (
+				conflict_value is Dictionary
+				and String((conflict_value as Dictionary).get("role", "witness"))
+				!= "witness"
+			):
+				direct_participant = true
+				break
 		if (
-			not (snapshot.get("conflicts", []) as Array).is_empty()
+			direct_participant
 			or not (snapshot.get("conflict_tension_options", []) as Array).is_empty()
 		):
-			_schedule_decision(resident_id, true, false, true)
+			wake_priorities[resident_id] = true
+	var wake_resident_ids: Array[String] = []
+	wake_resident_ids.assign(wake_priorities.keys())
+	wake_resident_ids.sort()
+	for resident_id: String in wake_resident_ids:
+		var urgent := bool(wake_priorities.get(resident_id, false))
+		_schedule_decision(resident_id, urgent, false, urgent)
 
 
 func _on_conflict_event_created(event: Dictionary) -> void:
@@ -19289,7 +19308,11 @@ func _queue_conflict_knowledge(event: Dictionary) -> void:
 		).duplicate(true)
 		private_event["event_id"] = _next_world_event_id()
 		private_event["time"] = get_time()
-		_enqueue_world_event(resident_id, private_event)
+		_enqueue_world_event(resident_id, private_event, false)
+		_pending_conflict_knowledge_wakes[resident_id] = (
+			bool(_pending_conflict_knowledge_wakes.get(resident_id, false))
+			or knowledge_kind == "participant"
+		)
 
 
 func _conflict_event_actor_ids(event: Dictionary) -> Array[String]:

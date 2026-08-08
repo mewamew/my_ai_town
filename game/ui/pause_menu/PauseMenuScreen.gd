@@ -1424,6 +1424,13 @@ func _player_message_for_reason(reason: String) -> String:
 		"SESSION_SAVE_WORLD_PREPARE_FAILED", \
 		"WORLD_SAVE_RESTORE_VALIDATION_FAILED":
 			return "当前小镇状态暂时无法写入存档，已保留上次确认进度"
+		"SESSION_SAVE_STORE_WRITE_FAILED", \
+		"SESSION_SAVE_STORE_CLEANUP_FAILED", \
+		"SESSION_SAVE_SLOT_LEASE_RELEASE_FAILED":
+			return "本机存档目录写入失败，请检查磁盘空间或文件权限后重试"
+		"SESSION_SAVE_AGENT_COMMIT_FAILED", \
+		"SESSION_SAVE_AGENT_COMMIT_UNCERTAIN":
+			return "居民进度写入未完成，已保留上次确认进度"
 		"WORLD_DATA_INCOMPLETE":
 			return "小镇仍在准备中，完成后即可保存"
 		"SAVE_CREATE_ALREADY_PENDING":

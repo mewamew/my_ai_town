@@ -1908,7 +1908,30 @@ func _submit_continuity_fallback(
 			"line": "我先停一停，看看周围再作打算。",
 		},
 	}
-	if not reply_conversation_id.is_empty() and not conversation.is_empty():
+	var post_injury_reaction := (
+		snapshot.get("post_injury_reaction", {}) as Dictionary
+		if snapshot.get("post_injury_reaction") is Dictionary
+		else {}
+	)
+	if bool(post_injury_reaction.get("required", false)):
+		var current_place := String(
+			(snapshot.get("place", {}) as Dictionary).get("name", "")
+		).strip_edges()
+		decision["action"] = (
+			{
+				"action_id": "%s-continuity-injury-rest" % decision_id,
+				"type": "待着",
+				"line": "我先在诊所缓一缓，看看伤势。",
+			}
+			if current_place == "诊所"
+			else {
+				"action_id": "%s-continuity-injury-clinic" % decision_id,
+				"type": "去",
+				"place": "诊所",
+				"line": "我得先去诊所看看伤势。",
+			}
+		)
+	elif not reply_conversation_id.is_empty() and not conversation.is_empty():
 		decision["action"] = {
 			"action_id": "%s-continuity-reply" % decision_id,
 			"type": "答话",
@@ -2020,6 +2043,8 @@ func _finish_social_candidates_from_wake(
 func _world_consumed_agent_decision(submission: Dictionary) -> bool:
 	if bool(submission.get("stale", false)):
 		return false
+	if submission.get("consumed") is bool:
+		return bool(submission.get("consumed"))
 	return String(submission.get("errorCode", "")) not in [
 		"WORLD_NOT_RUNNING",
 		"WORLD_PAUSED",

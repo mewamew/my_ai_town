@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bfn5v0tg4i48d"
-path="res://.godot/imported/luo_yuan_front.png-c2b45e51579719ed4df0ae8197298c3f.ctex"
+uid="uid://d0611ga8nigmn"
+path="res://.godot/imported/jiang_cheng_front.png-597ff8bedfcf5c3c5deb6c9ac798a301.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/luo_yuan_front.png"
-dest_files=["res://.godot/imported/luo_yuan_front.png-c2b45e51579719ed4df0ae8197298c3f.ctex"]
+source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/jiang_cheng_front.png"
+dest_files=["res://.godot/imported/jiang_cheng_front.png-597ff8bedfcf5c3c5deb6c9ac798a301.ctex"]
 
 [params]
 

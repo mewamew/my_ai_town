@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dcaclylam8uo8"
-path="res://.godot/imported/wen_xu_front.png-bcca1805a748b83fc31737d84cc5bd27.ctex"
+uid="uid://c0ue3et5rtcd8"
+path="res://.godot/imported/hanako_front.png-50bff4cd253792b0279d4f524560c3cc.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/wen_xu_front.png"
-dest_files=["res://.godot/imported/wen_xu_front.png-bcca1805a748b83fc31737d84cc5bd27.ctex"]
+source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/hanako_front.png"
+dest_files=["res://.godot/imported/hanako_front.png-50bff4cd253792b0279d4f524560c3cc.ctex"]
 
 [params]
 

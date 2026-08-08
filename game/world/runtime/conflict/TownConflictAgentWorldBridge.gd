@@ -33,9 +33,14 @@ func snapshot_for_actor(actor_id: String, nearby_ids: Array) -> Dictionary:
 		var nearby_id := String(value_id).strip_edges()
 		if not nearby_id.is_empty() and nearby_id != actor_id:
 			nearby[nearby_id] = true
+	var projection := (
+		_controller.get_agent_projection() as Dictionary
+		if _controller.has_method("get_agent_projection")
+		else _controller.get_public_projection() as Dictionary
+	)
 	return {
-		"conflicts": _project_conflicts(actor_id, nearby),
-		"conflict_injuries": _project_injuries(actor_id),
+		"conflicts": _project_conflicts(actor_id, nearby, projection),
+		"conflict_injuries": _project_injuries(actor_id, projection),
 		"conflict_tension_options": _project_tension_options(actor_id, nearby.keys()),
 	}
 
@@ -113,9 +118,13 @@ func execute_action(actor_id: String, prepared: Dictionary) -> Dictionary:
 	return _failure("CONFLICT_ACTION_UNKNOWN")
 
 
-func _project_conflicts(actor_id: String, nearby: Dictionary) -> Array[Dictionary]:
+func _project_conflicts(
+	actor_id: String,
+	nearby: Dictionary,
+	projection: Dictionary,
+) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
-	for value_conflict: Variant in (_controller.get_public_projection() as Dictionary).get("activeConflicts", []) as Array:
+	for value_conflict: Variant in projection.get("activeConflicts", []) as Array:
 		if value_conflict is not Dictionary: continue
 		var conflict := value_conflict as Dictionary
 		var ids: Array = conflict.get("participantIds", []) as Array
@@ -157,11 +166,12 @@ func _project_tension_options(actor_id: String, nearby_ids: Array) -> Array[Dict
 	return result
 
 
-func _project_injuries(actor_id: String) -> Array[Dictionary]:
+func _project_injuries(
+	actor_id: String,
+	projection: Dictionary,
+) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
-	for value_injury: Variant in (
-		_controller.get_public_projection() as Dictionary
-	).get("injuries", []) as Array:
+	for value_injury: Variant in projection.get("injuries", []) as Array:
 		if value_injury is not Dictionary:
 			continue
 		var injury := value_injury as Dictionary

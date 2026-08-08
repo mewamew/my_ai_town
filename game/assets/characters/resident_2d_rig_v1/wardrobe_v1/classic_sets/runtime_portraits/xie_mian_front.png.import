@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cmv5us44fsvqt"
-path="res://.godot/imported/mi_ya_front.png-66db1250716b7e4a19786cd0f6693682.ctex"
+uid="uid://car37pwrlhfnl"
+path="res://.godot/imported/xie_mian_front.png-32a9c0179dbac8bf659194358d0dcc0d.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/mi_ya_front.png"
-dest_files=["res://.godot/imported/mi_ya_front.png-66db1250716b7e4a19786cd0f6693682.ctex"]
+source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/xie_mian_front.png"
+dest_files=["res://.godot/imported/xie_mian_front.png-32a9c0179dbac8bf659194358d0dcc0d.ctex"]
 
 [params]
 

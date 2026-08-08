@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://85btfjyul3rx"
-path="res://.godot/imported/xu_zhao_front.png-a45cd84146f0b7a43589d7ff1130841e.ctex"
+path="res://.godot/imported/xu_zhao_front.png-306a68c4075fd6df508b62dc68bb8c50.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/xu_zhao_front.png"
-dest_files=["res://.godot/imported/xu_zhao_front.png-a45cd84146f0b7a43589d7ff1130841e.ctex"]
+source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/xu_zhao_front.png"
+dest_files=["res://.godot/imported/xu_zhao_front.png-306a68c4075fd6df508b62dc68bb8c50.ctex"]
 
 [params]
 

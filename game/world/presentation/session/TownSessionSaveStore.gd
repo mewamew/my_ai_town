@@ -15,6 +15,7 @@ const MAX_SAFE_INTEGER_PADDED := "00009007199254740991"
 const CREATE_CLAIM_RETRY_LIMIT := 10000
 const CREATE_CLAIM_RETRY_DELAY_USEC := 1000
 const EPHEMERAL_CLAIM_LIVENESS_GRACE_MSEC := 250
+const CLAIM_PATH_TOKEN_LENGTH := 24
 const WORLD_LOG_SEGMENT_RECORD_LIMIT := 256
 const SLOT_LEASE_ROOT := "slot_leases"
 const SLOT_ARCHIVE_CLAIM := "archive.claim"
@@ -1738,7 +1739,7 @@ func _acquire_recoverable_directory_claim(
 	var owner := _new_ephemeral_claim_owner(claim_path)
 	var candidate_path := "%s.candidate-%s" % [
 		claim_path,
-		String(owner.get("owner_token", "")),
+		_claim_path_token(owner),
 	]
 	var candidate_error := DirAccess.make_dir_absolute(_absolute(candidate_path))
 	if candidate_error != OK:
@@ -1795,7 +1796,7 @@ func _acquire_recoverable_directory_claim(
 				continue
 			var recovered_path := "%s.recovered-%s" % [
 				claim_path,
-				String(current_owner_record.get("owner_token", "")),
+				_claim_path_token(current_owner_record),
 			]
 			var recover_error := DirAccess.rename_absolute(
 				_absolute(claim_path),
@@ -2146,7 +2147,7 @@ func _release_owned_directory_claim(
 		return _failure("SESSION_SAVE_STORE_WRITE_FAILED", true)
 	var released_path := "%s.released-%s" % [
 		claim_path,
-		String(expected_owner.get("owner_token", "")),
+		_claim_path_token(expected_owner),
 	]
 	var release_error := DirAccess.rename_absolute(
 		_absolute(claim_path),
@@ -2188,6 +2189,13 @@ func _compare_existing_json(path: String, expected: Dictionary) -> Dictionary:
 			"existing": true,
 		}
 	return _failure("SESSION_SAVE_STORE_IMMUTABLE_CONFLICT", false)
+
+
+func _claim_path_token(owner: Dictionary) -> String:
+	# The complete token remains in owner.json. Only the filesystem generation
+	# suffix is shortened so deep user:// save paths stay below legacy Windows
+	# path limits while retaining 96 bits of collision resistance.
+	return String(owner.get("owner_token", "")).left(CLAIM_PATH_TOKEN_LENGTH)
 
 
 func _read_json(path: String) -> Dictionary:

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://car37pwrlhfnl"
-path="res://.godot/imported/xie_mian_front.png-8cfae34b11197dc717e7ad6f81fc1370.ctex"
+uid="uid://cxku8auat5hhj"
+path="res://.godot/imported/lin_lan_front.png-fd1cd5acaef180fd7ef52b2c70081e30.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/xie_mian_front.png"
-dest_files=["res://.godot/imported/xie_mian_front.png-8cfae34b11197dc717e7ad6f81fc1370.ctex"]
+source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/lin_lan_front.png"
+dest_files=["res://.godot/imported/lin_lan_front.png-fd1cd5acaef180fd7ef52b2c70081e30.ctex"]
 
 [params]
 

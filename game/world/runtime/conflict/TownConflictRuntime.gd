@@ -1037,7 +1037,7 @@ func get_follow_up(actor_id: String) -> Dictionary:
 	}
 
 
-func get_public_projection() -> Dictionary:
+func get_public_projection(include_event_history := true) -> Dictionary:
 	var active_conflicts: Array[Dictionary] = []
 	var conflict_ids: Array[String] = []
 	for conflict_id_value: Variant in _conflicts:
@@ -1061,7 +1061,11 @@ func get_public_projection() -> Dictionary:
 		"activeConflicts": active_conflicts,
 		"injuries": injuries,
 		"tensions": _public_tensions(),
-		"events": _events.duplicate(true),
+		"events": (
+			_events.duplicate(true)
+			if include_event_history
+			else []
+		),
 	}
 
 

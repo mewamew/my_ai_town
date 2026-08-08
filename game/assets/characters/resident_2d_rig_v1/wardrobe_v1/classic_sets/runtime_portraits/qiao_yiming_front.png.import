@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dhuojeacasdeb"
-path="res://.godot/imported/cheng_yan_front.png-f44cbc8daebfb59fe7fc50dc558f7a1d.ctex"
+uid="uid://cctr6x7f2uapv"
+path="res://.godot/imported/qiao_yiming_front.png-bb6ff4bb350b18ad885401535d07a060.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/cheng_yan_front.png"
-dest_files=["res://.godot/imported/cheng_yan_front.png-f44cbc8daebfb59fe7fc50dc558f7a1d.ctex"]
+source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/qiao_yiming_front.png"
+dest_files=["res://.godot/imported/qiao_yiming_front.png-bb6ff4bb350b18ad885401535d07a060.ctex"]
 
 [params]
 

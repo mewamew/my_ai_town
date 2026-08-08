@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cawwnhpmfm57d"
-path="res://.godot/imported/su_tang_front.png-5e1e0b506c392b12bf49934e8ddafdbb.ctex"
+uid="uid://d3acjlfi0at5"
+path="res://.godot/imported/shen_qiao_front.png-85b992e6e679b72d11878fed9658514b.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/previews/su_tang_front.png"
-dest_files=["res://.godot/imported/su_tang_front.png-5e1e0b506c392b12bf49934e8ddafdbb.ctex"]
+source_file="res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/shen_qiao_front.png"
+dest_files=["res://.godot/imported/shen_qiao_front.png-85b992e6e679b72d11878fed9658514b.ctex"]
 
 [params]
 

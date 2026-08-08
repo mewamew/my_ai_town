@@ -55,6 +55,7 @@ const AVATAR_MODE_ACTIVE := "avatar_active"
 const OBSERVER_START_POSITION := Vector2(3250.0, 2050.0)
 const OBSERVER_START_ZOOM_INDEX := 1
 const OBSERVER_PAN_SCREEN_SPEED := 560.0
+const OBSERVER_MAGNIFY_STEP_THRESHOLD := 0.18
 const AVATAR_WORLD_POSITION_SYNC_INTERVAL_SECONDS := 0.1
 const MAP_COLLISION_LAYER := 1
 const RESIDENT_COLLISION_LAYER := 4
@@ -165,6 +166,8 @@ var _last_frame_profile: Dictionary = {}
 var _frame_probe: GDScript = null
 var _observer_drag_active := false
 var _observer_drag_button := MOUSE_BUTTON_NONE
+var _observer_magnify_accumulator := 0.0
+var _avatar_magnify_accumulator := 0.0
 
 
 func _ready() -> void:
@@ -478,6 +481,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 	if _avatar_mode == AVATAR_MODE_OBSERVER:
+		if _handle_observer_zoom_input(event):
+			get_viewport().set_input_as_handled()
+			return
 		if not _observer_camera_accepts_input():
 			_cancel_observer_drag()
 			return
@@ -500,26 +506,15 @@ func _unhandled_input(event: InputEvent) -> void:
 					_cancel_observer_drag()
 				get_viewport().set_input_as_handled()
 				return
-			if event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_UP:
-				_set_observer_zoom_index(_zoom_index + 1)
-				get_viewport().set_input_as_handled()
-				return
-			if event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-				_set_observer_zoom_index(_zoom_index - 1)
-				get_viewport().set_input_as_handled()
-				return
+	elif _handle_avatar_zoom_input(event):
+		get_viewport().set_input_as_handled()
+		return
 	if (
 		enable_player_avatar
 		and event.is_action_pressed("interact")
 		and _try_pet_nearest_animal()
 	):
 		get_viewport().set_input_as_handled()
-		return
-	if enable_player_avatar and event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_set_zoom_index(_zoom_index + 1)
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_set_zoom_index(_zoom_index - 1)
 		return
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
@@ -2096,6 +2091,90 @@ func _observer_camera_accepts_input() -> bool:
 		and not bool(_world.is_paused())
 		and not _is_text_input_focused()
 	)
+
+
+func _observer_camera_accepts_zoom_input() -> bool:
+	return (
+		_observer_camera_input_enabled
+		and _avatar_mode == AVATAR_MODE_OBSERVER
+		and _world != null
+		and bool(_world.is_running())
+		and not _is_text_input_focused()
+	)
+
+
+func _handle_observer_zoom_input(event: InputEvent) -> bool:
+	if not _observer_camera_accepts_zoom_input():
+		return false
+	if event is InputEventMouseButton:
+		if not event.pressed:
+			return false
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_observer_magnify_accumulator = 0.0
+			_set_observer_zoom_index(_zoom_index + 1)
+			return true
+		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_observer_magnify_accumulator = 0.0
+			_set_observer_zoom_index(_zoom_index - 1)
+			return true
+		return false
+	if event is InputEventMagnifyGesture:
+		var factor := maxf(event.factor, 0.001)
+		_observer_magnify_accumulator += log(factor)
+		var zoom_step := 0
+		if _observer_magnify_accumulator >= OBSERVER_MAGNIFY_STEP_THRESHOLD:
+			zoom_step = 1
+			_observer_magnify_accumulator -= OBSERVER_MAGNIFY_STEP_THRESHOLD
+		elif _observer_magnify_accumulator <= -OBSERVER_MAGNIFY_STEP_THRESHOLD:
+			zoom_step = -1
+			_observer_magnify_accumulator += OBSERVER_MAGNIFY_STEP_THRESHOLD
+		if zoom_step != 0:
+			_set_observer_zoom_index(_zoom_index + zoom_step)
+		return true
+	return false
+
+
+func _avatar_camera_accepts_zoom_input() -> bool:
+	return (
+		enable_player_avatar
+		and _avatar_mode == AVATAR_MODE_ACTIVE
+		and _avatar_movement_input_enabled
+		and not _avatar_conflict_input_blocked
+		and _world != null
+		and bool(_world.is_running())
+		and not _is_text_input_focused()
+	)
+
+
+func _handle_avatar_zoom_input(event: InputEvent) -> bool:
+	if not _avatar_camera_accepts_zoom_input():
+		return false
+	if event is InputEventMouseButton:
+		if not event.pressed:
+			return false
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_avatar_magnify_accumulator = 0.0
+			_set_zoom_index(_zoom_index + 1)
+			return true
+		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_avatar_magnify_accumulator = 0.0
+			_set_zoom_index(_zoom_index - 1)
+			return true
+		return false
+	if event is InputEventMagnifyGesture:
+		var factor := maxf(event.factor, 0.001)
+		_avatar_magnify_accumulator += log(factor)
+		var zoom_step := 0
+		if _avatar_magnify_accumulator >= OBSERVER_MAGNIFY_STEP_THRESHOLD:
+			zoom_step = 1
+			_avatar_magnify_accumulator -= OBSERVER_MAGNIFY_STEP_THRESHOLD
+		elif _avatar_magnify_accumulator <= -OBSERVER_MAGNIFY_STEP_THRESHOLD:
+			zoom_step = -1
+			_avatar_magnify_accumulator += OBSERVER_MAGNIFY_STEP_THRESHOLD
+		if zoom_step != 0:
+			_set_zoom_index(_zoom_index + zoom_step)
+		return true
+	return false
 
 
 func _cancel_observer_drag() -> void:

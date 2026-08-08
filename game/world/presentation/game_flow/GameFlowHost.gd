@@ -145,6 +145,7 @@ const WORLD_INTRO_PAGES := [
 var _bound_scene_id := 0
 var _world_intro: Control
 var _world_intro_vm: Dictionary = {}
+var _world_intro_navigation_pending := false
 var _new_game_route_context: Dictionary = {}
 var _resident_selection: Control
 var _resident_selection_vm: Dictionary = {}
@@ -785,6 +786,7 @@ func _bind_current_scene() -> void:
 	if current == null or current.get_instance_id() == _bound_scene_id:
 		return
 	_bound_scene_id = current.get_instance_id()
+	_world_intro_navigation_pending = false
 	_startup_settings_page = null
 	_startup_load_game_page = null
 	_startup_load_game_mode = ""
@@ -1682,6 +1684,8 @@ func _on_world_intro_intent_requested(
 ) -> void:
 	if revision != int(_world_intro_vm.get("revision", 0)):
 		return
+	if String(intent) == "world_intro.back" and _world_intro_navigation_pending:
+		return
 	if (
 		String(payload.get("scope", "")) != "world_intro"
 		or String(payload.get("introId", "")) != "town_basics"
@@ -1690,8 +1694,10 @@ func _on_world_intro_intent_requested(
 		return
 	match String(intent):
 		"world_intro.back":
+			_world_intro_navigation_pending = true
 			var startup_scene := load(STARTUP_SCENE_PATH) as PackedScene
 			if startup_scene == null:
+				_world_intro_navigation_pending = false
 				_record_route_open_failure(
 					"GAME_FLOW_STARTUP_ROUTE_FAILED",
 					"启动页面暂时打不开，请稍后再试。",
@@ -1699,6 +1705,7 @@ func _on_world_intro_intent_requested(
 				return
 			var route_error := get_tree().change_scene_to_packed(startup_scene)
 			if route_error != OK:
+				_world_intro_navigation_pending = false
 				_present_route_failure_result(
 					_failure("GAME_FLOW_STARTUP_ROUTE_FAILED", false, [{
 						"godotError": route_error,

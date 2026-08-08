@@ -69,6 +69,9 @@ const SESSION_CONTINUE_HOST_ROUTING_REQUIRED := "SESSION_CONTINUE_REQUIRES_START
 const PROVIDER_HEALTH_ERROR_CODE := "PROVIDER_HEALTH_INTERFACE_MISSING"
 const NEW_GAME_DRAFT := preload("res://world/presentation/session/TownNewGameDraft.gd")
 const RESIDENT_CATALOG := preload("res://world/presentation/session/TownResidentCatalog.gd")
+const RESIDENT_EDITOR_SERVICE := preload(
+	"res://world/presentation/session/TownResidentEditorService.gd"
+)
 const CONVERSATION_BUBBLE_PLAYBACK := preload(
 	"res://world/presentation/ui/TownConversationBubblePlayback.gd"
 )
@@ -83,6 +86,7 @@ var _audio_display_settings_service: Object
 var _provider_settings_service: Object
 var _custom_resident_creator_service: Object
 var _custom_resident_creator_wardrobe_route_available := false
+var _resident_editor_service: Object
 var _resident_model_assignment_service: Object
 var _resident_model_assignment_startup_state: Dictionary = {}
 var _page_projection_service: Object
@@ -528,6 +532,14 @@ func bind_custom_resident_creator_service(service: Object) -> Dictionary:
 	)
 
 
+func bind_resident_editor_service(service: Object) -> Dictionary:
+	return _bind_external_ui_service(
+		"resident_editor",
+		service,
+		"_resident_editor_service",
+	)
+
+
 func set_custom_resident_creator_route_capabilities(
 	capabilities: Dictionary,
 ) -> Dictionary:
@@ -666,12 +678,14 @@ func unbind_runtime() -> void:
 	_disconnect_external_ui_service(_audio_display_settings_service)
 	_disconnect_external_ui_service(_provider_settings_service)
 	_disconnect_external_ui_service(_custom_resident_creator_service)
+	_disconnect_external_ui_service(_resident_editor_service)
 	_disconnect_external_ui_service(_resident_model_assignment_service)
 	_disconnect_external_ui_service(_page_projection_service)
 	_audio_display_settings_service = null
 	_provider_settings_service = null
 	_custom_resident_creator_service = null
 	_custom_resident_creator_wardrobe_route_available = false
+	_resident_editor_service = null
 	_resident_model_assignment_service = null
 	_page_projection_service = null
 	_session_config.clear()
@@ -1309,7 +1323,7 @@ func _refresh_scope(scope: String, force_emit := false) -> void:
 			view_model = _build_save_view_model(previous_operation, previous_error)
 		"pause_menu":
 			view_model = _build_pause_menu_view_model(previous_operation, previous_error)
-		"audio_display_settings", "provider_settings", "custom_resident_creator", "resident_model_assignment":
+		"audio_display_settings", "provider_settings", "custom_resident_creator", "resident_editor", "resident_model_assignment":
 			var service := _external_ui_service(scope)
 			if service == null:
 				view_model = _external_ui_service_missing_view_model(scope)
@@ -4414,8 +4428,23 @@ func _execute_town_hud_intent(intent: String, payload: Dictionary) -> Dictionary
 				return _local_failure("WORLD_NOT_RUNNING", false)
 			if not _world.has_method("set_simulation_speed"):
 				return _local_failure("SIMULATION_SPEED_INTERFACE_MISSING", false)
+			var multiplier := int(payload.get("multiplier", 0))
+			if not multiplier in [1, 2, 3]:
+				return _normalize_command_result(
+					_world.set_simulation_speed(multiplier)
+				)
+			# The time controls form one mutually exclusive group: selecting 1x/2x/3x
+			# after pressing pause must resume manual time control as well. Other pause
+			# reasons (menus and editors) remain owned by their corresponding hosts.
+			var pause_reasons := (
+				lifecycle_state.get("pauseReasons", []) as Array
+			)
+			if pause_reasons.has("manual"):
+				var resume_result := _call_runtime_lifecycle("resume", "manual")
+				if not bool(resume_result.get("ok", false)):
+					return resume_result
 			return _normalize_command_result(
-				_world.set_simulation_speed(int(payload.get("multiplier", 0)),)
+				_world.set_simulation_speed(multiplier)
 			)
 		"town_hud.select_tool":
 			var tool_id := String(payload.get("toolId", ""))
@@ -5532,6 +5561,7 @@ func _on_external_ui_view_model_changed(
 		"audio_display_settings",
 		"provider_settings",
 		"custom_resident_creator",
+		"resident_editor",
 		"resident_model_assignment",
 		"announcements",
 		"weather_control",
@@ -5569,6 +5599,8 @@ func _external_ui_service(scope: String) -> Object:
 			return _provider_settings_service
 		"custom_resident_creator":
 			return _custom_resident_creator_service
+		"resident_editor":
+			return _resident_editor_service
 		"resident_model_assignment":
 			return _resident_model_assignment_service
 		"announcements", "weather_control", "resident_action_menu", "resident_overview", "resident_detail", "inner_observation", "place_focus", "indoor", "town_log", "wardrobe":
@@ -5579,6 +5611,13 @@ func _external_ui_service(scope: String) -> Object:
 func _external_ui_service_missing_view_model(scope: String) -> Dictionary:
 	if scope == "custom_resident_creator":
 		return _custom_resident_creator_service_missing_view_model()
+	if scope == "resident_editor":
+		var service := RESIDENT_EDITOR_SERVICE.new()
+		service.set(
+			"_configuration_error",
+			"RESIDENT_EDITOR_SERVICE_NOT_BOUND",
+		)
+		return service.get_view_model() as Dictionary
 	if scope == "resident_model_assignment":
 		return _resident_model_assignment_service_missing_view_model()
 	var error_code := "%s_SERVICE_NOT_BOUND" % scope.to_upper()
