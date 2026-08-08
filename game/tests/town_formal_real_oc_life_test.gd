@@ -4,6 +4,9 @@ extends SceneTree
 const RUN_ENV := "AI_TOWN_RUN_FORMAL_REAL_OC_LIFE"
 const RUN_MSEC_ENV := "AI_TOWN_REAL_OC_RUN_MSEC"
 const STARTUP_SCENE := preload("res://ui/startup/StartupScreen.tscn")
+const TRACE_EVIDENCE := preload(
+	"res://tests/support/TownAgentDecisionTraceEvidence.gd"
+)
 const OC_PROFILES: Array[Dictionary] = [
 	{
 		"name": "岚烬", "gender": "女", "age": 31,
@@ -52,6 +55,16 @@ const OC_PROFILES: Array[Dictionary] = [
 var _failures: Array[String] = []
 var _gateway: Node
 var _decisions: Array[Dictionary] = []
+var _decision_trace_counts := {
+	"accepted": 0,
+	"continuedCurrent": 0,
+	"internalRetry": 0,
+	"fallbackRecovered": 0,
+	"providerFailed": 0,
+	"staleDiscarded": 0,
+	"worldRejected": 0,
+	"invalidSuccess": 0,
+}
 var _conflict_peak := 0
 var _conversation_peak := 0
 var _announcement_peak := 0
@@ -230,9 +243,16 @@ func _create_custom_resident(host: Node, profile: Dictionary) -> String:
 
 
 func _on_decision(trace: Dictionary) -> void:
-	var result := trace.get("agentResult", {}) as Dictionary
-	var decision := result.get("decision", {}) as Dictionary
-	var action := decision.get("action", {}) as Dictionary
+	var evidence := TRACE_EVIDENCE.classify(trace) as Dictionary
+	var kind := String(evidence.get("kind", ""))
+	_decision_trace_counts[kind] = int(_decision_trace_counts.get(kind, 0)) + 1
+	if kind not in [TRACE_EVIDENCE.ACCEPTED, TRACE_EVIDENCE.CONTINUED_CURRENT]:
+		return
+	var decision := evidence.get("decision", {}) as Dictionary
+	var action := evidence.get("action", {}) as Dictionary
+	var action_type := String(action.get("type", "")).strip_edges()
+	if kind == TRACE_EVIDENCE.CONTINUED_CURRENT:
+		action_type = "继续当前"
 	var conflict_intent := decision.get("conflict_intent", {}) as Dictionary
 	_decisions.append({
 		"residentId": String(trace.get("residentId", "")),
@@ -240,7 +260,7 @@ func _on_decision(trace: Dictionary) -> void:
 		"ok": bool(trace.get("ok", false)),
 		"recovered": bool(trace.get("recovered", false)),
 		"stale": bool(trace.get("stale", false)),
-		"actionType": String(action.get("type", "")),
+		"actionType": action_type,
 		"line": String(action.get("line", "")).left(240),
 		"say": String(action.get("say", "")).left(240),
 		"narration": String(action.get("narration", "")).left(240),
@@ -286,11 +306,28 @@ func _print_report(host: Node, world: RefCounted, custom_ids: Array[String]) -> 
 	var request_metrics := _gateway.call("get_request_metrics") as Dictionary
 	_expect(final_errors == 0, "真实运行未处理最终错误为 0")
 	_expect(fallback_count == 0, "真实运行 continuity fallback 为 0")
+	_expect(
+		int(_decision_trace_counts.get("invalidSuccess", 0)) == 0,
+		"Agent 成功结果不存在无法解释的空决定",
+	)
+	_expect(
+		int(_decision_trace_counts.get("providerFailed", 0)) == 0,
+		"真实运行不存在未恢复的 Provider 决策失败",
+	)
+	_expect(
+		int(_decision_trace_counts.get("fallbackRecovered", 0)) == 0,
+		"真实运行不存在由 continuity fallback 接管的决定",
+	)
+	_expect(
+		int(_decision_trace_counts.get("worldRejected", 0)) == 0,
+		"真实运行不存在被世界拒绝的非过期决定",
+	)
 	_expect(_decisions.size() > 0, "真实运行至少完成一次居民决策")
 	_expect(int(request_metrics.get("providerDispatch", 0)) > 0, "真实运行至少派发一次 Provider 请求")
 	print("TOWN_FORMAL_REAL_OC_LIFE_REPORT: %s" % JSON.stringify({
 		"time": world.call("get_time"),
 		"decisionCount": _decisions.size(),
+		"decisionTraceCounts": _decision_trace_counts.duplicate(true),
 		"ocDecisionCount": oc_decisions.size(),
 		"ocActionCounts": oc_action_counts,
 		"ocDecisions": oc_decisions.slice(maxi(oc_decisions.size() - 80, 0)),

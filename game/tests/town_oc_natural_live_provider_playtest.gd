@@ -32,6 +32,9 @@ const WORLD := preload(
 const DATA_CLEANER := preload(
 	"res://tests/support/UserTestDataCleaner.gd"
 )
+const TRACE_EVIDENCE := preload(
+	"res://tests/support/TownAgentDecisionTraceEvidence.gd"
+)
 
 var _completed_traces: Array[Dictionary] = []
 var _health_result: Dictionary = {}
@@ -320,6 +323,22 @@ func _run() -> void:
 		and calls >= identities.size()
 		and (report.get("acceptedActions", []) as Array).size() > 0
 		and (report.get("naturalTaskSources", []) as Array).size() > 0
+		and int((report.get("decisionTraceCounts", {}) as Dictionary).get(
+			"invalidSuccess",
+			0,
+		)) == 0
+		and int((report.get("decisionTraceCounts", {}) as Dictionary).get(
+			"fallbackRecovered",
+			0,
+		)) == 0
+		and int((report.get("decisionTraceCounts", {}) as Dictionary).get(
+			"providerFailed",
+			0,
+		)) == 0
+		and int((report.get("decisionTraceCounts", {}) as Dictionary).get(
+			"worldRejected",
+			0,
+		)) == 0
 		and int(report.get("fallbackCount", 0)) == 0
 		and int(report.get("gatewayErrorCount", 0)) == 0
 		and (report.get("unhandledGatewayErrors", []) as Array).is_empty()
@@ -499,39 +518,39 @@ func _natural_report(
 	gateway_errors: Array,
 ) -> Dictionary:
 	var accepted_actions: Array[Dictionary] = []
+	var trace_counts := {}
 	for trace: Dictionary in _completed_traces:
-		var decision := (
-			(trace.get("agentResult", {}) as Dictionary).get(
-				"decision",
-				{},
-			) as Dictionary
-		)
-		var action := decision.get("action", {}) as Dictionary
-		if (
-			bool(trace.get("ok", false))
-			and not action.is_empty()
-		):
-			accepted_actions.append({
-				"resident": String(trace.get("residentName", "")),
-				"type": String(action.get("type", "")),
-				"target": String(
+		var evidence := TRACE_EVIDENCE.classify(trace) as Dictionary
+		var kind := String(evidence.get("kind", ""))
+		trace_counts[kind] = int(trace_counts.get(kind, 0)) + 1
+		if kind != TRACE_EVIDENCE.ACCEPTED:
+			continue
+		var decision := evidence.get("decision", {}) as Dictionary
+		var action := evidence.get("action", {}) as Dictionary
+		accepted_actions.append({
+			"resident": String(trace.get("residentName", "")),
+			"type": String(action.get("type", "")),
+			"target": String(
+				action.get(
+					"place",
 					action.get(
-						"place",
+						"activity_id",
 						action.get(
-							"activity_id",
-							action.get(
-								"recipient_resident_id",
-								action.get("target_resident_id", ""),
-							),
+							"recipient_resident_id",
+							action.get("target_resident_id", ""),
 						),
 					),
 				),
-				"conflictIntent": (
-					(decision.get("conflict_intent", {}) as Dictionary).duplicate(true)
-					if decision.get("conflict_intent") is Dictionary
-					else {}
-				),
-			})
+			),
+			"line": String(action.get("line", "")).left(240),
+			"say": String(action.get("say", "")).left(240),
+			"narration": String(action.get("narration", "")).left(240),
+			"conflictIntent": (
+				(decision.get("conflict_intent", {}) as Dictionary).duplicate(true)
+				if decision.get("conflict_intent") is Dictionary
+				else {}
+			),
+		})
 	var task_sources := {}
 	for resident_value: Variant in opening.get("residents", []) as Array:
 		var resident_id := String(
@@ -582,6 +601,7 @@ func _natural_report(
 			fallback_count += 1
 	return {
 		"modelCalls": calls,
+		"decisionTraceCounts": trace_counts,
 		"time": world.call("get_time"),
 		"acceptedActions": accepted_actions,
 		"naturalTaskSources": sorted_sources,
