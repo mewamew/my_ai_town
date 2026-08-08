@@ -159,7 +159,7 @@ var _avatar_hud: Control
 var _pause_host: Control
 var _town_ui_host: Control
 var _session_ui_service: RefCounted
-var _audio_display_settings_service: Node
+var _audio_display_settings_service: AUDIO_DISPLAY_SETTINGS_SERVICE
 var _provider_settings_ui_service: PROVIDER_SETTINGS_SERVICE
 var _ui_page_projection_service: UI_PAGE_PROJECTION_SERVICE
 var _startup_ui_adapter: Node
@@ -467,6 +467,15 @@ func _collect_visible_input_blockers(
 func _input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
+	if _is_fullscreen_toggle_shortcut(event):
+		if (
+			is_instance_valid(_audio_display_settings_service)
+			and bool(
+				_audio_display_settings_service.toggle_fullscreen_from_global_shortcut()
+			)
+		):
+			get_viewport().set_input_as_handled()
+		return
 	var current := get_tree().current_scene
 	if _town_runtime == null or current != _town_runtime or event.keycode != KEY_ESCAPE:
 		return
@@ -504,6 +513,16 @@ func _input(event: InputEvent) -> void:
 	else:
 		_open_pause_menu()
 	get_viewport().set_input_as_handled()
+
+
+func _is_fullscreen_toggle_shortcut(event: InputEventKey) -> bool:
+	return (
+		event.keycode == KEY_F11
+		or (
+			event.alt_pressed
+			and event.keycode in [KEY_ENTER, KEY_KP_ENTER]
+		)
+	)
 
 
 func get_flow_snapshot() -> Dictionary:

@@ -148,6 +148,7 @@ var _complete_set_sheet_by_appearance: Dictionary = {}
 
 var _layout_mode := LayoutMode.DESKTOP
 var _test_previous_content_scale_size := Vector2i.ZERO
+var _test_previous_window_size := Vector2i.ZERO
 var _functional_regression_active := false
 var _content_root: Control
 var _world_backdrop: TextureRect
@@ -243,29 +244,39 @@ func _enter_tree() -> void:
 		return
 	var window := get_window()
 	_test_previous_content_scale_size = window.content_scale_size
+	_test_previous_window_size = DisplayServer.window_get_size()
 	DisplayServer.window_set_size(requested_size)
 	window.size = requested_size
 	window.content_scale_size = requested_size
 
 
 func _exit_tree() -> void:
+	if _test_previous_window_size != Vector2i.ZERO:
+		DisplayServer.window_set_size(_test_previous_window_size)
+		get_window().size = _test_previous_window_size
 	if _test_previous_content_scale_size != Vector2i.ZERO:
 		get_window().content_scale_size = _test_previous_content_scale_size
 
 
 func _ready() -> void:
 	# 测试夹具环境变量启动时读一次，不进每次刷新/布局热路径。
-	_env_capture_operation_state = OS.get_environment(
-		"AI_TOWN_CAPTURE_OPERATION_STATE"
-	).strip_edges()
-	_env_capture_connection_state = OS.get_environment(
-		"AI_TOWN_CAPTURE_CONNECTION_STATE"
-	).strip_edges()
-	_env_detail_content_stress = OS.get_environment(
-		"AI_TOWN_DETAIL_CONTENT_STRESS"
+	if OS.is_debug_build():
+		_env_capture_operation_state = OS.get_environment(
+			"AI_TOWN_CAPTURE_OPERATION_STATE"
+		).strip_edges()
+		_env_capture_connection_state = OS.get_environment(
+			"AI_TOWN_CAPTURE_CONNECTION_STATE"
+		).strip_edges()
+		_env_detail_content_stress = OS.get_environment(
+			"AI_TOWN_DETAIL_CONTENT_STRESS"
+		)
+		_env_safe_insets_raw = OS.get_environment(
+			"AI_TOWN_SAFE_INSETS"
+		).strip_edges()
+	var entry_profile_enabled := (
+		OS.is_debug_build()
+		and OS.get_environment("AI_TOWN_ENTRY_PROFILE") == "1"
 	)
-	_env_safe_insets_raw = OS.get_environment("AI_TOWN_SAFE_INSETS").strip_edges()
-	var entry_profile_enabled := OS.get_environment("AI_TOWN_ENTRY_PROFILE") == "1"
 	var entry_profile_metrics: Dictionary = {}
 	var entry_profile_tick := Time.get_ticks_usec()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -312,7 +323,10 @@ func _ready() -> void:
 			entry_profile_metrics, "connectionPresentationMsec", entry_profile_tick
 		)
 		print("RESIDENT_SELECTION_ENTRY_PROFILE %s" % JSON.stringify(entry_profile_metrics))
-	if OS.get_environment("AI_TOWN_DETAIL_STATE") == "overview":
+	if (
+		OS.is_debug_build()
+		and OS.get_environment("AI_TOWN_DETAIL_STATE") == "overview"
+	):
 		_open_resident_overview()
 func _record_entry_profile_phase(
 	metrics: Dictionary,
@@ -377,6 +391,8 @@ func apply_view_model(snapshot: Dictionary) -> bool:
 
 
 func _requested_viewport_size() -> Vector2i:
+	if not OS.is_debug_build():
+		return Vector2i.ZERO
 	var raw := OS.get_environment("AI_TOWN_UI_VIEWPORT").strip_edges().to_lower()
 	var pieces := raw.split("x")
 	if pieces.size() != 2:
@@ -684,7 +700,10 @@ static var _flat_style_cache: Dictionary = {}
 
 
 func _build_page() -> void:
-	var entry_profile_enabled := OS.get_environment("AI_TOWN_ENTRY_PROFILE") == "1"
+	var entry_profile_enabled := (
+		OS.is_debug_build()
+		and OS.get_environment("AI_TOWN_ENTRY_PROFILE") == "1"
+	)
 	var entry_profile_metrics: Dictionary = {}
 	var entry_profile_tick := Time.get_ticks_usec()
 	var backdrop_color := ColorRect.new()

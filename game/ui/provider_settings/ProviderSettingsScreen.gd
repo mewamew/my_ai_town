@@ -2594,9 +2594,11 @@ func _detail_scroll_range() -> float:
 
 
 func _safe_insets(viewport_size: Vector2) -> Vector4:
-	var override := OS.get_environment(
-		"AI_TOWN_PROVIDER_SAFE_INSETS"
-	)
+	var override := ""
+	if OS.is_debug_build():
+		override = OS.get_environment(
+			"AI_TOWN_PROVIDER_SAFE_INSETS"
+		)
 	if not override.is_empty():
 		var parts := override.split(",")
 		if parts.size() == 4:

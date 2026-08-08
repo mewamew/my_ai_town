@@ -86,7 +86,10 @@ func _ready() -> void:
 			font.variation_embolden = 0.0
 			preview_font = font
 	_build_visuals()
-	if OS.get_environment("AI_TOWN_HUD_RESIDENT_DIRECTORY_GUIDES") == "1":
+	if (
+		OS.is_debug_build()
+		and OS.get_environment("AI_TOWN_HUD_RESIDENT_DIRECTORY_GUIDES") == "1"
+	):
 		_build_layout_guides()
 	resized.connect(_layout_children)
 	_layout_children()

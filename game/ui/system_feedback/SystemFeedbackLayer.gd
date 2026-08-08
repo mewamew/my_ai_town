@@ -1524,6 +1524,8 @@ func _blocking_loading_active() -> bool:
 func _read_safe_insets() -> Vector4:
 	if _explicit_safe_insets.x >= 0.0:
 		return _explicit_safe_insets
+	if not OS.is_debug_build():
+		return Vector4.ZERO
 	var raw := OS.get_environment(
 		"AI_TOWN_SYSTEM_FEEDBACK_SAFE_INSETS"
 	)

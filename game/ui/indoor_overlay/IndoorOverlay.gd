@@ -1347,6 +1347,8 @@ func _apply_safe_insets(rect: Rect2) -> Rect2:
 func _safe_insets() -> Vector4:
 	if _safe_insets_override.x >= 0:
 		return _safe_insets_override
+	if not OS.is_debug_build():
+		return Vector4.ZERO
 	var raw := OS.get_environment(SAFE_INSETS_ENV)
 	if raw.is_empty():
 		return Vector4.ZERO

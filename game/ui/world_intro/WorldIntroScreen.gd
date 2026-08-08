@@ -115,6 +115,7 @@ var _last_page_id := ""
 var _emitted_switch_keys: Dictionary = {}
 var _layout_mode := LayoutMode.DESKTOP
 var _previous_content_scale_size := Vector2i.ZERO
+var _previous_window_size := Vector2i.ZERO
 
 var _content_root: Control
 var _shell: TextureRect
@@ -149,12 +150,16 @@ func _enter_tree() -> void:
 		return
 	var window := get_window()
 	_previous_content_scale_size = window.content_scale_size
+	_previous_window_size = DisplayServer.window_get_size()
 	DisplayServer.window_set_size(requested)
 	window.size = requested
 	window.content_scale_size = requested
 
 
 func _exit_tree() -> void:
+	if _previous_window_size != Vector2i.ZERO:
+		DisplayServer.window_set_size(_previous_window_size)
+		get_window().size = _previous_window_size
 	if _previous_content_scale_size != Vector2i.ZERO:
 		get_window().content_scale_size = _previous_content_scale_size
 
@@ -174,6 +179,8 @@ func _ready() -> void:
 
 
 func _requested_viewport_size() -> Vector2i:
+	if not OS.is_debug_build():
+		return Vector2i.ZERO
 	var raw := OS.get_environment("AI_TOWN_UI_VIEWPORT").strip_edges().to_lower()
 	var parts := raw.split("x")
 	if parts.size() != 2:
@@ -756,7 +763,10 @@ func _build_page() -> void:
 	_continue_button.focus_neighbor_left = _skip_button.get_path()
 	_continue_button.focus_neighbor_right = _continue_button.get_path()
 
-	if OS.get_environment("AI_TOWN_SHOW_SAFE_AREAS") == "1":
+	if (
+		OS.is_debug_build()
+		and OS.get_environment("AI_TOWN_SHOW_SAFE_AREAS") == "1"
+	):
 		_validation_overlay = ValidationOverlay.new()
 		_validation_overlay.name = "ValidationOverlay"
 		_validation_overlay.guide_font = _body_font
@@ -1557,6 +1567,8 @@ func _available_rect() -> Rect2:
 
 
 func _safe_insets() -> Vector4:
+	if not OS.is_debug_build():
+		return Vector4.ZERO
 	var raw := OS.get_environment("AI_TOWN_SAFE_INSETS").strip_edges()
 	var parts := raw.split(",")
 	if parts.size() != 4:

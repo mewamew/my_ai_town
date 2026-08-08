@@ -14,7 +14,14 @@ const REDUCED_FLASHING_SETTING := "application/accessibility/reduced_flashing"
 const DISPLAY_CONFIRMATION_MSEC := 15_000
 const WINDOWED_GEOMETRY_RETRY_MSEC := 2_000
 const DISPLAY_SIZE_TOLERANCE_PX := 4
+const SCREEN_COVERAGE_TOLERANCE_PX := 16
+const EXTERNAL_FULLSCREEN_EXIT_GRACE_MSEC := 500
 const DEFAULT_WINDOWED_SIZE := Vector2i(1920, 1080)
+const MINIMUM_WINDOW_SIZE := Vector2i(1280, 720)
+const FULLSCREEN_WINDOW_MODES := [
+	DisplayServer.WINDOW_MODE_FULLSCREEN,
+	DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN,
+]
 const RESOLUTION_SIZES: Array[Vector2i] = [
 	Vector2i(1280, 720),
 	Vector2i(1600, 900),
@@ -63,7 +70,7 @@ var _revision := 1
 var _request_sequence := 0
 var _operation := _idle_operation()
 var _error: Variant = null
-var _store: RefCounted
+var _store: STORE
 var _initialized := false
 var _confirmed: Dictionary = {}
 var _draft: Dictionary = {}
@@ -79,16 +86,20 @@ var _effective_ui_scale_percent := 100
 var _ui_scale_consumer: Object
 var _display_backend: Object
 var _pending_windowed_geometry: Dictionary = {}
+var _last_observed_window_mode := -1
+var _external_fullscreen_exit_grace_until_msec := 0
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	set_process(true)
 	_initialize_runtime_state()
+	_enforce_minimum_window_size()
 
 
 func _process(_delta: float) -> void:
 	_process_pending_windowed_geometry()
+	_synchronize_external_fullscreen_state()
 	if not bool(_confirmation.get("active", false)):
 		return
 	var remaining_msec := int(_confirmation.get("deadlineMsec", 0)) - Time.get_ticks_msec()
@@ -113,6 +124,37 @@ func bind_ui_scale_consumer(consumer: Object) -> Dictionary:
 		"bound": false,
 		"errorCode": UI_SCALE_POLICY_REASON,
 	}
+
+
+func toggle_fullscreen_from_global_shortcut() -> bool:
+	_initialize_runtime_state()
+	if (
+		_display_server_name().to_lower() != "windows"
+		or not _display_changes_available()
+		or bool(_confirmation.get("active", false))
+	):
+		return false
+	var current_mode := _display_window_get_mode()
+	var target_display := (
+		_confirmed.get("display", {}) as Dictionary
+	).duplicate(true)
+	target_display["windowModeId"] = (
+		"windowed"
+		if current_mode in FULLSCREEN_WINDOW_MODES
+		else "borderless_fullscreen"
+	)
+	var applied := _apply_display_draft(target_display)
+	if not bool(applied.get("ok", false)):
+		return false
+	_last_observed_window_mode = _display_window_get_mode()
+	if current_mode in FULLSCREEN_WINDOW_MODES:
+		_external_fullscreen_exit_grace_until_msec = (
+			Time.get_ticks_msec() + EXTERNAL_FULLSCREEN_EXIT_GRACE_MSEC
+		)
+	else:
+		_external_fullscreen_exit_grace_until_msec = 0
+	_adopt_runtime_display(target_display, "FULLSCREEN_SHORTCUT_APPLIED")
+	return true
 
 
 func configure_display_backend_for_tests(backend: Object) -> Dictionary:
@@ -622,6 +664,136 @@ func _apply_confirmed_display() -> void:
 		return
 	var display := _confirmed.get("display", {}) as Dictionary
 	_apply_display_draft(display)
+
+
+func _synchronize_external_fullscreen_state() -> void:
+	if (
+		_display_server_name().to_lower() != "windows"
+		or not _display_changes_available()
+		or bool(_confirmation.get("active", false))
+	):
+		return
+	var mode := _display_window_get_mode()
+	var previous_mode := _last_observed_window_mode
+	_last_observed_window_mode = mode
+	if previous_mode < 0:
+		previous_mode = mode
+	if mode in FULLSCREEN_WINDOW_MODES:
+		_external_fullscreen_exit_grace_until_msec = 0
+		_normalize_active_windows_fullscreen(mode)
+		return
+	if previous_mode in FULLSCREEN_WINDOW_MODES:
+		_external_fullscreen_exit_grace_until_msec = (
+			Time.get_ticks_msec() + EXTERNAL_FULLSCREEN_EXIT_GRACE_MSEC
+		)
+		var windowed_display := (
+			_confirmed.get("display", {}) as Dictionary
+		).duplicate(true)
+		windowed_display["windowModeId"] = "windowed"
+		var restored_size := _size_from_resolution_id(
+			String(windowed_display.get("windowedResolutionId", ""))
+		)
+		if restored_size.x > 0 and restored_size.y > 0:
+			_windowed_size = restored_size
+			_set_logical_canvas_size(restored_size)
+		if String(
+			(_confirmed.get("display", {}) as Dictionary).get(
+				"windowModeId", "windowed"
+			)
+		) != "windowed":
+			_adopt_runtime_display(
+				windowed_display,
+				"EXTERNAL_FULLSCREEN_EXITED",
+			)
+		return
+	if Time.get_ticks_msec() < _external_fullscreen_exit_grace_until_msec:
+		return
+	if (
+		mode == DisplayServer.WINDOW_MODE_MAXIMIZED
+		or (
+			mode == DisplayServer.WINDOW_MODE_WINDOWED
+			and _window_covers_current_screen()
+			and not _window_matches_managed_windowed_geometry()
+		)
+	):
+		_promote_windows_window_to_fullscreen()
+
+
+func _normalize_active_windows_fullscreen(mode: int) -> void:
+	# Windows or an external fullscreen helper may change the native window mode
+	# without passing through the settings page. Keep the shipped desktop canvas
+	# and settings state in sync so every scene selects its 1920x1080 layout.
+	_set_logical_canvas_size(DEFAULT_WINDOWED_SIZE)
+	var mode_id := (
+		"exclusive_fullscreen"
+		if mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN
+		else "borderless_fullscreen"
+	)
+	var confirmed_display := _confirmed.get("display", {}) as Dictionary
+	if String(confirmed_display.get("windowModeId", "windowed")) == mode_id:
+		return
+	var adopted_display := confirmed_display.duplicate(true)
+	adopted_display["windowModeId"] = mode_id
+	_adopt_runtime_display(adopted_display, "EXTERNAL_FULLSCREEN_ADOPTED")
+
+
+func _promote_windows_window_to_fullscreen() -> void:
+	var target_display := (
+		_confirmed.get("display", {}) as Dictionary
+	).duplicate(true)
+	target_display["windowModeId"] = "borderless_fullscreen"
+	var applied := _apply_display_draft(target_display)
+	if not bool(applied.get("ok", false)):
+		return
+	_last_observed_window_mode = _display_window_get_mode()
+	_external_fullscreen_exit_grace_until_msec = 0
+	_adopt_runtime_display(target_display, "WINDOWS_SCREEN_COVERAGE_PROMOTED")
+
+
+func _window_covers_current_screen() -> bool:
+	var screen := _display_window_get_current_screen()
+	var usable := _display_screen_get_usable_rect(screen)
+	if usable.size.x <= 0 or usable.size.y <= 0:
+		return false
+	var window_position := _display_window_get_position()
+	var window_size := _display_window_get_size()
+	var window_end := window_position + window_size
+	var usable_end := usable.position + usable.size
+	return (
+		window_position.x <= usable.position.x + SCREEN_COVERAGE_TOLERANCE_PX
+		and window_position.y <= usable.position.y + SCREEN_COVERAGE_TOLERANCE_PX
+		and window_end.x >= usable_end.x - SCREEN_COVERAGE_TOLERANCE_PX
+		and window_end.y >= usable_end.y - SCREEN_COVERAGE_TOLERANCE_PX
+	)
+
+
+func _window_matches_managed_windowed_geometry() -> bool:
+	return (
+		_windowed_size.x > 0
+		and _windowed_size.y > 0
+		and _window_size_matches(_display_window_get_size(), _windowed_size)
+	)
+
+
+func _adopt_runtime_display(display: Dictionary, feedback_code: String) -> void:
+	_confirmed["display"] = display.duplicate(true)
+	_draft["display"] = display.duplicate(true)
+	var saved := _store.save_settings(_confirmed)
+	if bool(saved.get("ok", false)):
+		_storage = {"status": "ready", "errorCode": "", "message": ""}
+	else:
+		_storage = {
+			"status": "error",
+			"errorCode": String(saved.get("errorCode", "SETTINGS_SAVE_FAILED")),
+			"message": String(saved.get("message", "设置保存失败。")),
+		}
+	_feedback = {
+		"kind": "notice",
+		"code": feedback_code,
+		"message": "已同步 Windows 全屏显示状态。",
+	}
+	_revision += 1
+	_emit_view_model()
 
 
 func _apply_display_draft(display: Dictionary) -> Dictionary:
@@ -1149,6 +1321,17 @@ func _set_logical_canvas_size(size: Vector2i) -> void:
 	var window := _root_window()
 	if window != null:
 		window.content_scale_size = size
+
+
+func _enforce_minimum_window_size() -> void:
+	if (
+		_display_backend != null
+		or _display_server_name().to_lower() != "windows"
+	):
+		return
+	var window := _root_window()
+	if window != null:
+		window.min_size = MINIMUM_WINDOW_SIZE
 
 
 func _display_server_name() -> String:

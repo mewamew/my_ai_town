@@ -665,6 +665,8 @@ func _apply_layout() -> void:
 
 
 func _safe_insets() -> Vector4:
+	if not OS.is_debug_build():
+		return Vector4.ZERO
 	var encoded := OS.get_environment("AI_TOWN_SETTINGS_SAFE_INSETS")
 	if encoded.is_empty():
 		return Vector4.ZERO

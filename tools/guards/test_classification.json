@@ -79,6 +79,7 @@
   "game/tests/town_occupation_test.gd": "自动测试",
   "game/tests/town_resident_content_test.gd": "自动测试",
   "game/tests/town_ui_runtime_test.gd": "自动测试",
+  "game/tests/town_windows_fullscreen_sync_test.gd": "自动测试",
   "game/tests/town_world_agent_test.gd": "自动测试",
   "game/tests/town_world_foundation_test.gd": "自动测试",
   "game/tests/town_world_save_test.gd": "自动测试",

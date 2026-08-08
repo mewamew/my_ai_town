@@ -2244,6 +2244,8 @@ func _index_of_announcement(announcement_id: String) -> int:
 
 
 func _read_safe_insets() -> Vector4:
+	if not OS.is_debug_build():
+		return Vector4.ZERO
 	var raw := OS.get_environment("AI_TOWN_BULLETIN_SAFE_INSETS")
 	if raw.is_empty():
 		return Vector4.ZERO
