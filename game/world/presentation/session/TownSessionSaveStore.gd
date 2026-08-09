@@ -2359,6 +2359,9 @@ func _remove_tree(path: String) -> Error:
 		var child_error := _remove_tree(_join(path, directory_name))
 		if child_error != OK:
 			return child_error
+	# Windows will not remove a directory while this DirAccess still owns an
+	# open handle to it. Release the iterator before deleting the directory.
+	directory = null
 	return DirAccess.remove_absolute(absolute)
 
 
