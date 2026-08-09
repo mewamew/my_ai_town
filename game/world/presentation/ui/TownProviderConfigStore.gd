@@ -23,6 +23,7 @@ const PROVIDER_CONFIG_KEYS := [
 	"enabled",
 	"apiKeyRef",
 	"endpoint",
+	"apiModel",
 	"api_key",
 ]
 
@@ -245,6 +246,13 @@ func _validate_config(
 					not (endpoint as String).is_empty()
 					and not _endpoint_is_valid(endpoint as String)
 				)
+			):
+				return _failure("PROVIDER_CONFIG_INVALID")
+		if provider.has("apiModel"):
+			var api_model: Variant = provider.get("apiModel")
+			if (
+				typeof(api_model) != TYPE_STRING
+				or not _model_id_is_valid(api_model as String)
 			):
 				return _failure("PROVIDER_CONFIG_INVALID")
 	if not _json_safe(config):

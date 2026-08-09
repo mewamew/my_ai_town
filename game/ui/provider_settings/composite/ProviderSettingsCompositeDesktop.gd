@@ -39,6 +39,7 @@ const DETAIL_STRETCH_SAMPLE_Y := 735.0
 
 var key_edit: LineEdit
 var base_url_edit: LineEdit
+var model_name_edit: LineEdit
 var status_label: Label
 var check_button: Button
 var formal_badge: Label
@@ -51,6 +52,7 @@ var _selected_provider_id := ""
 var _draft_key := ""
 var _draft_key_dirty := false
 var _draft_base_url := ""
+var _draft_api_model := ""
 var _show_key := false
 var _contract: Dictionary
 var _slots: Dictionary
@@ -72,6 +74,7 @@ func configure(
 	draft_key: String,
 	draft_key_dirty: bool,
 	draft_base_url: String,
+	draft_api_model: String,
 	show_key: bool,
 	provider_page: int,
 	model_page: int,
@@ -83,6 +86,7 @@ func configure(
 	_draft_key = draft_key
 	_draft_key_dirty = draft_key_dirty
 	_draft_base_url = draft_base_url
+	_draft_api_model = draft_api_model
 	_show_key = show_key
 	_contract = _load_json(CONTRACT_PATH)
 	if _contract.is_empty():
@@ -702,7 +706,16 @@ func _build_base_url_section(
 		"ui.provider-settings.composite.base-url-input.v1"
 	)
 	base_url_edit.text = _draft_base_url
-	base_url_edit.placeholder_text = "留空使用官方默认地址"
+	base_url_edit.placeholder_text = (
+		"例如：https://api.siliconflow.cn/v1/chat/completions"
+		if str(provider.get("providerId", "")) == "openai-compatible"
+		else "留空使用官方默认地址"
+	)
+	base_url_edit.tooltip_text = (
+		"请填写完整的 Chat Completions API 地址，例如：https://api.siliconflow.cn/v1/chat/completions"
+		if str(provider.get("providerId", "")) == "openai-compatible"
+		else "留空时使用该服务商的官方默认地址"
+	)
 	base_url_edit.text_changed.connect(func(value: String) -> void:
 		ui_action.emit(&"ui.draft_base_url", {"value": value})
 	)
@@ -756,6 +769,8 @@ func _build_models_section(
 		"模型与能力",
 		ProviderTheme.COMPOSITE_INK
 	)
+	if str(provider.get("providerId", "")) == "openai-compatible":
+		_build_custom_model_name_input(owner, region_rect, provider)
 	var models := provider.get("models", []) as Array
 	var page_count := _page_count(models.size(), MODELS_PER_PAGE)
 	_model_page = clampi(_model_page, 0, page_count - 1)
@@ -796,6 +811,11 @@ func _build_models_section(
 		var model := models[page_start + index] as Dictionary
 		var model_id := str(model.get("modelId", ""))
 		var card_rect := _hit_rect("model_%d" % index)
+		if (
+			str(provider.get("providerId", "")) == "openai-compatible"
+			and model_id == "custom"
+		):
+			continue
 		var card := _hit_button_from_rect(
 			owner,
 			region_rect,
@@ -871,6 +891,80 @@ func _build_models_section(
 			"该服务商当前仅提供一个居民模型",
 			ProviderTheme.COMPOSITE_MUTED
 		)
+
+
+func _build_custom_model_name_input(
+	owner: Control,
+	region_rect: Rect2,
+	provider: Dictionary,
+) -> void:
+	model_name_edit = _line_edit_for_slot(
+		owner,
+		region_rect,
+		"model_0_name",
+		"ModelNameInput",
+		"model_name_input",
+		"ui.provider-settings.composite.model-name-input.v2",
+	)
+	model_name_edit.text = _draft_api_model
+	model_name_edit.placeholder_text = "输入服务商模型名称"
+	model_name_edit.max_length = 256
+	model_name_edit.text_changed.connect(func(value: String) -> void:
+		ui_action.emit(&"ui.draft_api_model", {"value": value})
+	)
+	model_name_edit.text_submitted.connect(func(value: String) -> void:
+		ui_action.emit(
+			&"provider_settings.save_api_model",
+			{
+				"providerId": str(provider.get("providerId", "")),
+				"apiModel": value,
+			},
+		)
+	)
+	var capability_slot := _slots.get("model_0_capabilities", {}) as Dictionary
+	var save_rect := _scaled_rect(
+		_rect(capability_slot.get("wellRect", capability_slot.get("rect", [])))
+	)
+	var save := _hit_button_from_rect(
+		owner,
+		region_rect,
+		save_rect,
+		"SaveModelNameButton",
+		"model_name_save",
+		"operation_control",
+		"ui.provider-settings.composite.model-name-save.v1",
+		"composite-transparent-control",
+	)
+	save.text = "保存模型名称"
+	save.add_theme_font_override("font", ProviderTheme.composite_font("body"))
+	save.add_theme_font_size_override("font_size", _scaled_font_size(20))
+	for state: String in ["font_color", "font_hover_color", "font_focus_color"]:
+		save.add_theme_color_override(state, ProviderTheme.COMPOSITE_SUCCESS)
+	save.add_theme_color_override(
+		"font_disabled_color",
+		ProviderTheme.COMPOSITE_MUTED,
+	)
+	save.disabled = (
+		not _action_enabled("saveApiModel")
+		or _operation_loading()
+		or _draft_api_model.is_empty()
+	)
+	save.pressed.connect(func() -> void:
+		ui_action.emit(
+			&"provider_settings.save_api_model",
+			{
+				"providerId": str(provider.get("providerId", "")),
+				"apiModel": model_name_edit.text,
+			},
+		)
+	)
+	model_name_edit.text_changed.connect(func(value: String) -> void:
+		save.disabled = (
+			not _action_enabled("saveApiModel")
+			or _operation_loading()
+			or value.is_empty()
+		)
+	)
 
 
 func _pagination_button(

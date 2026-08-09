@@ -20,6 +20,8 @@ const REQUIRED_PROVIDER_METHODS: Array[String] = [
 ]
 const HOST_ROUTING_REQUIRED := "PROVIDER_SETTINGS_HOST_ROUTING_REQUIRED"
 const TEST_NO_NETWORK_ENV := "AI_TOWN_PROVIDER_TEST_NO_NETWORK"
+const CUSTOM_MODEL_PROVIDER_ID := "openai-compatible"
+const CUSTOM_MODEL_CATALOG_ID := "custom"
 const PROVIDER_DISPLAY_NAMES := {
 	"deepseek": "DeepSeek",
 	"kimi": "Kimi",
@@ -300,6 +302,8 @@ func dispatch(intent: Variant, payload: Dictionary = {}) -> Dictionary:
 			result = _delete_key(payload)
 		"provider_settings.save_base_url":
 			result = _save_base_url(payload)
+		"provider_settings.save_api_model":
+			result = _save_api_model(payload)
 		"provider_settings.set_enabled":
 			result = _set_enabled(payload)
 		"provider_settings.select_model":
@@ -475,6 +479,7 @@ func _load_public_snapshot() -> Dictionary:
 				"errorCode": "" if has_saved_key else "PROVIDER_API_KEY_REQUIRED",
 			},
 			"baseUrl": String(stored_provider.get("endpoint", "")),
+			"apiModel": String(stored_provider.get("apiModel", "")),
 			"models": (
 				models_by_provider.get(provider_id, []) as Array
 			).duplicate(true),
@@ -718,6 +723,11 @@ func _save_base_url(payload: Dictionary) -> Dictionary:
 		return _failure("PROVIDER_BASE_URL_INVALID", false)
 	if not endpoint.is_empty() and not endpoint.begins_with("https://"):
 		return _failure("PROVIDER_BASE_URL_INVALID", false)
+	if (
+		provider_id == CUSTOM_MODEL_PROVIDER_ID
+		and not _chat_completions_url_is_valid(endpoint)
+	):
+		return _failure("PROVIDER_CHAT_COMPLETIONS_URL_REQUIRED", false)
 	var candidate := _stored_config.duplicate(true)
 	var providers := candidate.get("providers", {}) as Dictionary
 	var provider := (providers.get(provider_id, {}) as Dictionary).duplicate(true)
@@ -730,6 +740,40 @@ func _save_base_url(payload: Dictionary) -> Dictionary:
 	return _persist_candidate_reconfigure_and_reload(
 		candidate,
 		"Provider 地址已更新。",
+		provider_id,
+	)
+
+
+func _save_api_model(payload: Dictionary) -> Dictionary:
+	var provider_result := _required_canonical_id(payload, "providerId")
+	if not bool(provider_result.get("ok", false)):
+		return _failure("PROVIDER_SETTINGS_PROVIDER_REQUIRED", false)
+	var provider_id := String(provider_result.get("value", ""))
+	if (
+		provider_id != CUSTOM_MODEL_PROVIDER_ID
+		or _provider_from_confirmed(provider_id).is_empty()
+	):
+		return _failure("PROVIDER_SETTINGS_PROVIDER_UNKNOWN", false)
+	var api_model_value: Variant = payload.get("apiModel")
+	if typeof(api_model_value) != TYPE_STRING:
+		return _failure("PROVIDER_API_MODEL_INVALID", false)
+	var api_model := api_model_value as String
+	if not _api_model_is_valid(api_model):
+		return _failure("PROVIDER_API_MODEL_INVALID", false)
+	var candidate := _stored_config.duplicate(true)
+	var providers := candidate.get("providers", {}) as Dictionary
+	var provider := (providers.get(provider_id, {}) as Dictionary).duplicate(true)
+	provider["apiModel"] = api_model
+	provider["enabled"] = true
+	providers[provider_id] = provider
+	candidate["providers"] = providers
+	var selected_models := candidate.get("selectedModelByProvider", {}) as Dictionary
+	selected_models[provider_id] = CUSTOM_MODEL_CATALOG_ID
+	candidate["selectedModelByProvider"] = selected_models
+	candidate["selectedProviderId"] = provider_id
+	return _persist_candidate_reconfigure_and_reload(
+		candidate,
+		"自定义模型名称已更新。",
 		provider_id,
 	)
 
@@ -805,6 +849,12 @@ func _check_connection(payload: Dictionary, request_id: String) -> Dictionary:
 		return _failure("PROVIDER_MODEL_SELECTION_REQUIRED", false)
 	var stored_providers := _stored_config.get("providers", {}) as Dictionary
 	var stored_provider := stored_providers.get(provider_id, {}) as Dictionary
+	var endpoint := String(stored_provider.get("endpoint", "")).strip_edges()
+	if (
+		provider_id == CUSTOM_MODEL_PROVIDER_ID
+		and not _chat_completions_url_is_valid(endpoint)
+	):
+		return _failure("PROVIDER_CHAT_COMPLETIONS_URL_REQUIRED", false)
 	if not bool(stored_provider.get("enabled", true)):
 		return _failure("PROVIDER_DISABLED", false)
 	if not _has_saved_key(provider_id):
@@ -1041,6 +1091,9 @@ func _provider_configs_for_runtime() -> Dictionary:
 		var endpoint := String(source.get("endpoint", "")).strip_edges()
 		if not endpoint.is_empty():
 			config["endpoint"] = endpoint
+		var api_model := String(source.get("apiModel", "")).strip_edges()
+		if not api_model.is_empty():
+			config["api_model"] = api_model
 		result[provider_id] = config
 	return result
 
@@ -1122,6 +1175,24 @@ func _provider_has_model(provider: Dictionary, model_id: String) -> bool:
 		):
 			return true
 	return false
+
+
+func _api_model_is_valid(value: String) -> bool:
+	if value.is_empty() or value != value.strip_edges() or value.length() > 256:
+		return false
+	for character: String in value:
+		var codepoint := character.unicode_at(0)
+		if codepoint <= 32 or codepoint == 127:
+			return false
+	return true
+
+
+func _chat_completions_url_is_valid(value: String) -> bool:
+	var normalized := value.strip_edges().trim_suffix("/")
+	return (
+		normalized.begins_with("https://")
+		and normalized.ends_with("/chat/completions")
+	)
 
 
 func _invalidate_provider_health(provider_id: String) -> void:
@@ -1208,6 +1279,7 @@ func _actions(data: Dictionary) -> Dictionary:
 		"saveKey": _action("provider_settings.save_key", has_providers),
 		"deleteKey": _action("provider_settings.delete_key", has_providers),
 		"saveBaseUrl": _action("provider_settings.save_base_url", has_providers),
+		"saveApiModel": _action("provider_settings.save_api_model", has_providers),
 		"selectModel": _action("provider_settings.select_model", has_providers),
 		"checkConnection": _action("provider_settings.check_connection", has_providers, "PROVIDER_SETTINGS_PROVIDER_REQUIRED"),
 	}
@@ -1353,6 +1425,7 @@ func _error_payload(
 		"code": code,
 		"retryable": retryable,
 		"message": message,
+		"playerMessage": message,
 		"details": (details as Array).duplicate(true) if details is Array else [],
 	}
 
@@ -1384,6 +1457,10 @@ func _player_message_for_error_code(code: String) -> String:
 			return "当前 Provider 已停用。请先启用，再检查连接。"
 		"PROVIDER_BASE_URL_INVALID":
 			return "Base URL 必须使用 https:// 地址。请修正并重新保存。"
+		"PROVIDER_API_MODEL_INVALID":
+			return "请输入有效的模型名称。"
+		"PROVIDER_CHAT_COMPLETIONS_URL_REQUIRED":
+			return "Base URL 需要填写完整接口，例如：https://api.siliconflow.cn/v1/chat/completions"
 		"PROVIDER_AUTH_FAILED":
 			return "API Key 未通过认证。请重新输入并保存 Key，然后重试。"
 		"PROVIDER_BILLING_FAILED":

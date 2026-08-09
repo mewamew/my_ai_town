@@ -39,6 +39,7 @@ var _draft_key := ""
 var _draft_key_baseline := ""
 var _draft_key_dirty := false
 var _draft_base_url := ""
+var _draft_api_model := ""
 var _draft_provider_id := ""
 var _discard_confirmation: FormalDialog
 var _pending_provider_selection: Dictionary = {}
@@ -52,6 +53,7 @@ var _model_page := -1
 var _key_edit: LineEdit
 var _save_key_button: Button
 var _base_url_edit: LineEdit
+var _model_name_edit: LineEdit
 var _status_label: Label
 var _check_button: Button
 var _formal_badge: Label
@@ -133,7 +135,10 @@ func _has_unsaved_local_draft() -> bool:
 	var selected := _find_provider(_selected_provider_id)
 	if selected.is_empty():
 		return false
-	return _draft_base_url != String(selected.get("baseUrl", ""))
+	return (
+		_draft_base_url != String(selected.get("baseUrl", ""))
+		or _draft_api_model != String(selected.get("apiModel", ""))
+	)
 
 
 func bind_adapter(adapter: Object) -> void:
@@ -155,6 +160,7 @@ func bind_adapter(adapter: Object) -> void:
 	_draft_key_baseline = ""
 	_draft_key_dirty = false
 	_draft_base_url = ""
+	_draft_api_model = ""
 	_show_key = false
 	_provider_page = -1
 	_model_page = -1
@@ -241,11 +247,17 @@ func apply_view_model(view_model: Dictionary) -> bool:
 			_draft_key_dirty = false
 			_show_key = false
 			_draft_base_url = str(selected.get("baseUrl", ""))
+			_draft_api_model = str(selected.get("apiModel", ""))
 		elif (
 			operation_status_text == "success"
 			and operation_intent == "provider_settings.save_base_url"
 		):
 			_draft_base_url = str(selected.get("baseUrl", ""))
+		elif (
+			operation_status_text == "success"
+			and operation_intent == "provider_settings.save_api_model"
+		):
+			_draft_api_model = str(selected.get("apiModel", ""))
 	if (
 		operation_status_text == "success"
 		and operation_intent == "provider_settings.save_key"
@@ -602,6 +614,7 @@ func _rebuild_layout() -> void:
 	_key_edit = null
 	_save_key_button = null
 	_base_url_edit = null
+	_model_name_edit = null
 	_status_label = null
 	_check_button = null
 	_formal_badge = null
@@ -697,6 +710,8 @@ func _capture_input_focus_state() -> Dictionary:
 		field = "api_key"
 	elif focus_owner == _base_url_edit:
 		field = "base_url"
+	elif focus_owner == _model_name_edit:
+		field = "model_name"
 	if field.is_empty() or not focus_owner is LineEdit:
 		return {}
 	var edit := focus_owner as LineEdit
@@ -721,10 +736,9 @@ func _schedule_focus_after_rebuild(input_focus_state: Dictionary) -> void:
 func _restore_input_focus_state(input_focus_state: Dictionary) -> void:
 	if not is_inside_tree() or not is_instance_valid(_layout_root):
 		return
-	var edit := (
-		_key_edit
-		if String(input_focus_state.get("field", "")) == "api_key"
-		else _base_url_edit
+	var field := String(input_focus_state.get("field", ""))
+	var edit := _key_edit if field == "api_key" else (
+		_model_name_edit if field == "model_name" else _base_url_edit
 	)
 	if edit == null or not edit.is_visible_in_tree() or not edit.editable:
 		_focus_initial_control()
@@ -761,6 +775,7 @@ func _rebuild_composite_desktop(viewport_size: Vector2) -> void:
 		_draft_key,
 		_draft_key_dirty,
 		_draft_base_url,
+		_draft_api_model,
 		_show_key,
 		_provider_page,
 		_model_page,
@@ -791,6 +806,7 @@ func _sync_composite_controls() -> void:
 		false,
 	) as Button
 	_base_url_edit = _composite_desktop.base_url_edit
+	_model_name_edit = _composite_desktop.model_name_edit
 	_status_label = _composite_desktop.status_label
 	_check_button = _composite_desktop.check_button
 	_formal_badge = _composite_desktop.formal_badge
@@ -821,6 +837,8 @@ func _on_composite_ui_action(
 			_sync_key_save_enabled()
 		&"ui.draft_base_url":
 			_draft_base_url = str(payload.get("value", ""))
+		&"ui.draft_api_model":
+			_draft_api_model = str(payload.get("value", ""))
 		&"ui.toggle_key_visibility":
 			_toggle_key_visibility(_selected_provider_id)
 		&"ui.save_key":
@@ -1569,7 +1587,8 @@ func _build_base_url_section(provider: Dictionary) -> Control:
 	_base_url_edit = LineEdit.new()
 	_base_url_edit.name = "BaseUrlInput"
 	_base_url_edit.text = _draft_base_url
-	_base_url_edit.placeholder_text = "留空使用官方默认地址"
+	_base_url_edit.placeholder_text = _base_url_placeholder(provider)
+	_base_url_edit.tooltip_text = _base_url_help(provider)
 	_base_url_edit.custom_minimum_size = Vector2(
 		220 if _is_phone_profile() else 320,
 		_field_height()
@@ -1639,6 +1658,8 @@ func _build_models_section(provider: Dictionary) -> Control:
 		"模型与能力",
 		"启用后参与连接检查"
 	))
+	if str(provider.get("providerId", "")) == "openai-compatible":
+		column.add_child(_build_custom_model_name_row(provider))
 	var grid := GridContainer.new()
 	grid.name = "ModelGrid"
 	grid.columns = 1 if _is_phone_profile() else 2
@@ -1655,6 +1676,75 @@ func _build_models_section(provider: Dictionary) -> Control:
 				model_value as Dictionary
 			))
 	return panel
+
+
+func _build_custom_model_name_row(provider: Dictionary) -> Control:
+	var row: BoxContainer = (
+		VBoxContainer.new() if _is_phone_profile() else HBoxContainer.new()
+	)
+	row.name = "CustomModelNameRow"
+	row.add_theme_constant_override("separation", 10)
+	_model_name_edit = LineEdit.new()
+	_model_name_edit.name = "ModelNameInput"
+	_model_name_edit.text = _draft_api_model
+	_model_name_edit.placeholder_text = "请输入服务商的模型名称，例如 vendor/model-name"
+	_model_name_edit.max_length = 256
+	_model_name_edit.custom_minimum_size = Vector2(
+		220 if _is_phone_profile() else 320,
+		_field_height(),
+	)
+	_model_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_model_name_edit.focus_mode = Control.FOCUS_ALL
+	_model_name_edit.add_to_group("provider_settings_touch_target")
+	_model_name_edit.set_meta("gate_id", "model_name_input")
+	_model_name_edit.text_changed.connect(func(value: String) -> void:
+		_draft_api_model = value
+	)
+	row.add_child(_model_name_edit)
+	var save := _button(
+		"保存模型名",
+		"quiet",
+		Vector2(176 if not _is_phone_profile() else 220, _control_height()),
+	)
+	save.name = "SaveModelNameButton"
+	save.set_meta("gate_id", "model_name_save")
+	if _is_phone_profile():
+		save.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	save.disabled = (
+		not _action_enabled("saveApiModel")
+		or _operation_loading()
+		or _draft_api_model.is_empty()
+	)
+	save.pressed.connect(func() -> void:
+		_dispatch_intent(
+			&"provider_settings.save_api_model",
+			{
+				"providerId": str(provider.get("providerId", "")),
+				"apiModel": _model_name_edit.text,
+			},
+		)
+	)
+	_model_name_edit.text_changed.connect(func(value: String) -> void:
+		save.disabled = (
+			not _action_enabled("saveApiModel")
+			or _operation_loading()
+			or value.is_empty()
+		)
+	)
+	row.add_child(save)
+	return row
+
+
+func _base_url_placeholder(provider: Dictionary) -> String:
+	if str(provider.get("providerId", "")) == "openai-compatible":
+		return "例如：https://api.siliconflow.cn/v1/chat/completions"
+	return "留空使用官方默认地址"
+
+
+func _base_url_help(provider: Dictionary) -> String:
+	if str(provider.get("providerId", "")) == "openai-compatible":
+		return "请填写完整的 Chat Completions API 地址，例如：https://api.siliconflow.cn/v1/chat/completions"
+	return "留空时使用该服务商的官方默认地址"
 
 
 func _model_card(

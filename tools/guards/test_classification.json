@@ -73,6 +73,7 @@
   "game/tests/agent/support/ScriptedModelProvider.gd": "辅助",
   "game/tests/agent/support/agent_test_format_test.gd": "自动测试",
   "game/tests/game_flow_host_formal_entry_test.gd": "自动测试",
+  "game/tests/provider_settings_regression_test.gd": "自动测试",
   "game/tests/startup_performance_compatibility_test.gd": "自动测试",
   "game/tests/resident_presentation_test.gd": "自动测试",
   "game/tests/support/TownWorldTestCase.gd": "辅助",
