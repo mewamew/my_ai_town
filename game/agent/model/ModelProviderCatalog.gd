@@ -8,6 +8,8 @@ const AlibabaBailianModelProviderScript := preload("res://agent/model/AlibabaBai
 const KimiModelProviderScript := preload("res://agent/model/KimiModelProvider.gd")
 const ZhipuGLMModelProviderScript := preload("res://agent/model/ZhipuGLMModelProvider.gd")
 const XiaomiMiMoModelProviderScript := preload("res://agent/model/XiaomiMiMoModelProvider.gd")
+const OllamaModelProviderScript := preload("res://agent/model/OllamaModelProvider.gd")
+const OllamaCloudModelProviderScript := preload("res://agent/model/OllamaCloudModelProvider.gd")
 const GenericOpenAICompatibleModelProviderScript := preload(
 	"res://agent/model/GenericOpenAICompatibleModelProvider.gd"
 )
@@ -32,6 +34,8 @@ func _init(include_defaults := true) -> void:
 	_register_provider_with_models(KimiModelProviderScript, _create_kimi)
 	_register_provider_with_models(ZhipuGLMModelProviderScript, _create_zhipu_glm)
 	_register_provider_with_models(XiaomiMiMoModelProviderScript, _create_xiaomi_mimo)
+	_register_provider_with_models(OllamaModelProviderScript, _create_ollama)
+	_register_provider_with_models(OllamaCloudModelProviderScript, _create_ollama_cloud)
 	_register_provider_with_models(
 		GenericOpenAICompatibleModelProviderScript,
 		_create_openai_compatible,
@@ -292,6 +296,11 @@ func _create_zhipu_glm(request_host: Node, config: Dictionary) -> RefCounted:
 func _create_xiaomi_mimo(request_host: Node, config: Dictionary) -> RefCounted:
 	return XiaomiMiMoModelProviderScript.new(request_host, null, config)
 
+func _create_ollama(request_host: Node, config: Dictionary) -> RefCounted:
+	return OllamaModelProviderScript.new(request_host, null, config)
+	
+func _create_ollama_cloud(request_host: Node, config: Dictionary) -> RefCounted:
+	return OllamaCloudModelProviderScript.new(request_host, null, config)
 
 func _create_kimi(request_host: Node, config: Dictionary) -> RefCounted:
 	return KimiModelProviderScript.new(request_host, null, config)
