@@ -80,6 +80,9 @@ const BOOTSTRAP := preload("res://world/presentation/session/TownSessionBootstra
 const TOWN_ENTRY_LOADING_OVERLAY := preload(
 	"res://ui/startup/TownEntryLoadingOverlay.gd"
 )
+const GAME_BUILD_INFO_OVERLAY := preload(
+	"res://ui/common/GameBuildInfoOverlay.gd"
+)
 const REPLACEMENT_ARRIVAL_PANEL := preload(
 	"res://ui/resident_admission/ReplacementResidentArrivalPanel.gd"
 )
@@ -206,6 +209,7 @@ var _resident_model_assignment_service: RESIDENT_MODEL_ASSIGNMENT_SERVICE
 var _resident_model_assignment_committing := false
 var _resident_model_assignment_preserved_draft: Dictionary = {}
 var _town_entry_loading_overlay: CanvasLayer
+var _game_build_info_overlay: CanvasLayer
 var _town_entry_loading_generation := -1
 var _town_entry_loading_route_kind := ""
 var _town_entry_loading_owner := ""
@@ -271,12 +275,21 @@ func _ready() -> void:
 	_audio_display_settings_service = AUDIO_DISPLAY_SETTINGS_SERVICE.new()
 	_audio_display_settings_service.name = "TownAudioDisplaySettingsService"
 	add_child(_audio_display_settings_service)
+	_ensure_game_build_info_overlay()
 	_initialize_startup_settings_services()
 	_apply_window_mode_marker()
 	_formal_runtime_audit_requested = not OS.get_environment(
 		FORMAL_RUNTIME_AUDIT_ENV
 	).strip_edges().is_empty()
 	_bind_current_scene.call_deferred()
+
+
+func _ensure_game_build_info_overlay() -> void:
+	if is_instance_valid(_game_build_info_overlay):
+		return
+	_game_build_info_overlay = GAME_BUILD_INFO_OVERLAY.new() as CanvasLayer
+	_game_build_info_overlay.name = "GameBuildInfoOverlay"
+	add_child(_game_build_info_overlay)
 
 
 func _notification(what: int) -> void:

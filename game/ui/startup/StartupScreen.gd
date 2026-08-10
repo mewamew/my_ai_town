@@ -26,6 +26,10 @@ const STARTUP_EXACT_COMPONENT_DIR := (
 	"res://assets/ui/startup/runtime"
 )
 const STARTUP_MENU_SHELL_PATH := STARTUP_COMPONENT_DIR + "/startup_menu_shell_v1.png"
+const SOCIAL_LINK_ASSET_DIR := "res://assets/ui/startup/runtime/social_links"
+const GITHUB_URL := "https://github.com/mewamew/my_ai_town"
+const BILIBILI_URL := "https://space.bilibili.com/3546572358945017"
+const GAME_FEEDBACK_REPORT := preload("res://ui/startup/GameFeedbackReport.gd")
 const STARTUP_SUMMARY_PLAQUE_PATH := (
 	STARTUP_EXACT_COMPONENT_DIR
 	+ "/startup_save_summary_plaque_v2_exact_460x63.png"
@@ -67,6 +71,9 @@ const LOAD_GAME_RECT := Rect2(690.0, 735.6623, 540.0, 82.3529)
 const CONNECTION_RECT := Rect2(690.0, 834.0152, 258.0, 80.1892)
 const SETTINGS_RECT := Rect2(972.0, 834.0152, 258.0, 80.1892)
 const EXIT_RECT := Rect2(690.0, 930.2044, 540.0, 76.9737)
+const SOCIAL_BUTTON_SIZE := Vector2(89.5, 88.0)
+const SOCIAL_BUTTON_GAP := 8.0
+const SOCIAL_BUTTON_TOP_MARGIN := 24.0
 
 const BACKGROUND_SHADER_CODE := """
 shader_type canvas_item;
@@ -188,6 +195,9 @@ var _load_game_button: Button
 var _connection_button: Button
 var _settings_button: Button
 var _exit_button: Button
+var _github_button: TextureButton
+var _bilibili_button: TextureButton
+var _feedback_button: TextureButton
 var _notice_tween: Tween
 var _host_request_pending_intent := &""
 var _resident_message_layer: CanvasLayer
@@ -389,6 +399,24 @@ func _build_interface() -> void:
 		&"StartupQuietButton",
 		request_quit_to_host,
 	)
+	_github_button = _add_social_button(
+		"GithubButton",
+		"github",
+		"打开 GitHub 项目主页",
+		_open_external_link.bind(GITHUB_URL),
+	)
+	_bilibili_button = _add_social_button(
+		"BilibiliButton",
+		"bilibili",
+		"打开 bilibili 主页",
+		_open_external_link.bind(BILIBILI_URL),
+	)
+	_feedback_button = _add_social_button(
+		"FeedbackButton",
+		"feedback",
+		"打开反馈页面",
+		_open_feedback_link,
+	)
 	_wire_main_menu_focus_neighbors()
 	_sync_route_state()
 
@@ -438,6 +466,12 @@ func _layout_interface_controls(
 		var reference_rect := control.get_meta(
 			"startup_reference_rect",
 		) as Rect2
+		var is_global_ui: bool = bool(control.get_meta("startup_global_ui", false))
+		if is_global_ui:
+			control.position = canvas_offset + reference_rect.position * layout_scale
+			control.size = reference_rect.size
+			control.scale = Vector2.ONE * layout_scale
+			continue
 		var visual_rect := _main_menu_rect(reference_rect)
 		control.position = canvas_offset + visual_rect.position * layout_scale
 		control.size = reference_rect.size
@@ -516,6 +550,68 @@ func _add_image_button(
 	button.pressed.connect(callback)
 	add_child(button)
 	return button
+
+
+func _add_social_button(
+	node_name: String,
+	asset_name: String,
+	button_title: String,
+	callback: Callable,
+) -> TextureButton:
+	var button := TextureButton.new()
+	button.name = node_name
+	button.texture_normal = _load_texture(
+		SOCIAL_LINK_ASSET_DIR + "/" + asset_name + "_default.png"
+	)
+	button.texture_hover = _load_texture(
+		SOCIAL_LINK_ASSET_DIR + "/" + asset_name + "_hover.png"
+	)
+	button.texture_pressed = button.texture_hover
+	button.texture_focused = button.texture_hover
+	button.ignore_texture_size = true
+	button.stretch_mode = TextureButton.STRETCH_SCALE
+	button.tooltip_text = button_title
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	button.focus_mode = Control.FOCUS_NONE
+	button.z_index = 1001
+	button.set_meta("startup_global_ui", true)
+	var hover_title := Label.new()
+	hover_title.name = "HoverTitle"
+	hover_title.text = button_title
+	hover_title.position = Vector2(-45.25, SOCIAL_BUTTON_SIZE.y + 4.0)
+	hover_title.size = Vector2(180.0, 28.0)
+	hover_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hover_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hover_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hover_title.visible = false
+	hover_title.add_theme_font_size_override("font_size", 14)
+	hover_title.add_theme_color_override("font_color", Color.WHITE)
+	hover_title.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.9))
+	hover_title.add_theme_constant_override("outline_size", 4)
+	button.add_child(hover_title)
+	button.mouse_entered.connect(hover_title.show)
+	button.mouse_exited.connect(hover_title.hide)
+	var index := ["github", "bilibili", "feedback"].find(asset_name)
+	var reference_x := REFERENCE_VIEWPORT.x - SOCIAL_BUTTON_TOP_MARGIN - (
+		3.0 * SOCIAL_BUTTON_SIZE.x + 2.0 * SOCIAL_BUTTON_GAP
+	) + index * (SOCIAL_BUTTON_SIZE.x + SOCIAL_BUTTON_GAP)
+	_apply_reference_rect(
+		button,
+		Rect2(reference_x, SOCIAL_BUTTON_TOP_MARGIN, SOCIAL_BUTTON_SIZE.x, SOCIAL_BUTTON_SIZE.y),
+	)
+	button.pressed.connect(callback)
+	add_child(button)
+	return button
+
+
+func _open_external_link(url: String) -> void:
+	var error := OS.shell_open(url)
+	if error != OK:
+		push_warning("Unable to open external link: %s (%s)" % [url, error_string(error)])
+
+
+func _open_feedback_link() -> void:
+	_open_external_link(GAME_FEEDBACK_REPORT.build_url())
 
 
 func _add_interface_label(

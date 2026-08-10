@@ -3,35 +3,35 @@
   "status": "active_decision",
   "decidedAt": "2026-07-20",
   "cancelled": {
-    "surface": "standalone_save_unavailable_full_page",
-    "reason": "duplicates_pause_menu_save_unavailable_card_and_disabled_actions",
-    "runtimeConsumable": false,
-    "navigationAllowed": false
+	"surface": "standalone_save_unavailable_full_page",
+	"reason": "duplicates_pause_menu_save_unavailable_card_and_disabled_actions",
+	"runtimeConsumable": false,
+	"navigationAllowed": false
   },
   "singleOwner": {
-    "currentUnavailableCapabilityMessage": "ui.pause-menu.save-card",
-    "saveFeedbackWhenFormalReady": [
-      "autosave_loading_toast",
-      "save_success_toast",
-      "save_failure_retry_feedback",
-      "restore_blocking_feedback",
-      "version_migration_blocking_feedback",
-      "crash_recovery_blocking_feedback",
+	"currentUnavailableCapabilityMessage": "ui.pause-menu.save-card",
+	"saveFeedbackWhenFormalReady": [
+	  "autosave_loading_toast",
+	  "save_success_toast",
+	  "save_failure_retry_feedback",
+	  "restore_blocking_feedback",
+	  "version_migration_blocking_feedback",
+	  "crash_recovery_blocking_feedback",
       "save_before_return_to_menu_feedback"
-    ]
+	]
   },
   "retained": [
 		"responsive_blueprint_and_state_matrix_in_page_record",
     "candidate_artifacts_as_non_consumable_history"
   ],
   "removed": [
-    "SaveFeedbackLayer.gd",
-    "SaveFeedbackLayer.tscn",
-    "tests/runtime_gate_and_capture",
+	"SaveFeedbackLayer.gd",
+	"SaveFeedbackLayer.tscn",
+	"tests/runtime_gate_and_capture",
     "runtime_manifest_and_ownership_audit"
   ],
   "retiredEvidence": [
-    "assets/ui/save_feedback/final/*.png",
+	"assets/ui/save_feedback/final/*.png",
     "assets/ui/save_feedback/final/runtime_proof/*.png"
   ],
   "formalReady": false
