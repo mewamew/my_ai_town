@@ -1,0 +1,233 @@
+name: beta-test-build
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: beta-test-build
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: "4.7"
+
+jobs:
+  prepare:
+    name: Validate beta version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version and reject an existing tag
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t versions < <(
+            sed -n 's/^config\/version="\([^"]*\)"$/\1/p' game/project.godot
+          )
+          if [[ ${#versions[@]} -ne 1 ]]; then
+            echo "::error file=game/project.godot::Expected exactly one application config/version."
+            exit 1
+          fi
+
+          version="${versions[0]}"
+          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error file=game/project.godot::config/version must use X.Y.Z semantic version format."
+            exit 1
+          fi
+
+          tag="beta-v${version}"
+          set +e
+          git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null
+          remote_status=$?
+          set -e
+
+          if [[ $remote_status -eq 0 ]]; then
+            echo "::error title=Beta version already exists::Tag ${tag} already exists. Update config/version in game/project.godot before running this workflow again."
+            exit 1
+          fi
+          if [[ $remote_status -ne 2 ]]; then
+            echo "::error::Unable to check whether tag ${tag} exists on origin."
+            exit "$remote_status"
+          fi
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Preparing ${tag}" >> "$GITHUB_STEP_SUMMARY"
+
+  test:
+    name: Complete validation suite
+    needs: prepare
+    uses: ./.github/workflows/formal-validation.yml
+
+  build:
+    name: Build ${{ matrix.label }} beta
+    needs: [prepare, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x86_64
+            label: Windows
+            preset: Windows Desktop
+          - platform: macos-universal
+            label: macOS
+            preset: macOS
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot editor and export templates
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot-bin
+            ~/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable
+          key: godot-export-${{ env.GODOT_VERSION }}-linux-x86_64
+
+      - name: Download Godot editor and export templates
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          editor_name="Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+          release_url="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          templates_dir="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          extract_dir="$(mktemp -d)"
+
+          mkdir -p "$HOME/godot-bin" "$templates_dir"
+          curl -fsSL -o /tmp/godot.zip "${release_url}/${editor_name}.zip"
+          unzip -q /tmp/godot.zip -d "$extract_dir/editor"
+          mv "$extract_dir/editor/${editor_name}" "$HOME/godot-bin/godot"
+          chmod +x "$HOME/godot-bin/godot"
+
+          curl -fsSL -o /tmp/godot-templates.tpz \
+            "${release_url}/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q /tmp/godot-templates.tpz -d "$extract_dir/export"
+          cp -a "$extract_dir/export/templates/." "$templates_dir/"
+
+      - name: Add Godot to PATH
+        shell: bash
+        run: echo "$HOME/godot-bin" >> "$GITHUB_PATH"
+
+      - name: Apply build version metadata
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i -E \
+            -e "s|^application/file_version=.*|application/file_version=\"${VERSION}.0\"|" \
+            -e "s|^application/product_version=.*|application/product_version=\"${VERSION}.0\"|" \
+            -e "s|^application/short_version=.*|application/short_version=\"${VERSION}\"|" \
+            -e "s|^application/version=.*|application/version=\"${VERSION}\"|" \
+            game/export_presets.cfg
+
+          if [[ "${{ matrix.platform }}" == "macos-universal" ]]; then
+            sed -i -E 's|^codesign/codesign=.*|codesign/codesign=0|' game/export_presets.cfg
+          fi
+
+      - name: Import project
+        shell: bash
+        run: |
+          set -o pipefail
+          godot --headless --path game --import 2>&1 | tee /tmp/godot-import.log
+          if grep -qE '^ERROR:|SCRIPT ERROR:|Parse Error:|Failed to load script' /tmp/godot-import.log; then
+            echo "::error::Godot import produced engine or script errors."
+            grep -nE '^ERROR:|SCRIPT ERROR:|Parse Error:|Failed to load script' /tmp/godot-import.log | head -20
+            exit 1
+          fi
+
+      - name: Export beta package
+        env:
+          PRESET: ${{ matrix.preset }}
+          PLATFORM: ${{ matrix.platform }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "dist/${PLATFORM}" packages
+
+          if [[ "$PLATFORM" == "windows-x86_64" ]]; then
+            godot --headless --path game --export-debug "$PRESET" \
+              "$PWD/dist/${PLATFORM}/my-ai-town.exe"
+            (
+              cd "dist/${PLATFORM}"
+              zip -q -r "../../packages/${TAG_NAME}-${PLATFORM}.zip" .
+            )
+          else
+            godot --headless --path game --export-debug "$PRESET" \
+              "$PWD/packages/${TAG_NAME}-${PLATFORM}.zip"
+          fi
+
+          cd packages
+          sha256sum "${TAG_NAME}-${PLATFORM}.zip" \
+            > "${TAG_NAME}-${PLATFORM}.zip.sha256"
+
+      - name: Upload beta package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.prepare.outputs.tag }}-${{ matrix.platform }}
+          path: packages/*
+          if-no-files-found: error
+          retention-days: 90
+
+  publish-tag:
+    name: Publish beta tag
+    needs: [prepare, test, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Recheck and push annotated tag
+        env:
+          TAG_NAME: ${{ needs.prepare.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          set +e
+          git ls-remote --exit-code --tags origin "refs/tags/${TAG_NAME}" >/dev/null
+          remote_status=$?
+          set -e
+          if [[ $remote_status -eq 0 ]]; then
+            echo "::error title=Beta version already exists::Tag ${TAG_NAME} was created while this workflow was running. Update config/version before retrying."
+            exit 1
+          fi
+          if [[ $remote_status -ne 2 ]]; then
+            echo "::error::Unable to recheck tag ${TAG_NAME} on origin."
+            exit "$remote_status"
+          fi
+
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag --annotate "$TAG_NAME" "$GITHUB_SHA" \
+            --message "Beta test build ${TAG_NAME}
+
+          Windows and macOS packages: ${run_url}"
+          git push origin "refs/tags/${TAG_NAME}"
+
+          {
+            echo "## ${TAG_NAME} published"
+            echo
+            echo "Windows and macOS packages are attached to this workflow run as Actions artifacts."
+            echo
+            echo "No GitHub Release was created."
+          } >> "$GITHUB_STEP_SUMMARY"

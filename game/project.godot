@@ -10,6 +10,7 @@ config_version=5
 
 [application]
 
+config/version="1.0.0"
 config/name="我的ai小镇"
 run/main_scene="res://ui/startup/StartupScreen.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
