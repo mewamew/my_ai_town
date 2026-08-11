@@ -298,8 +298,118 @@ func _run() -> void:
 	if selection == null or selection.name != "ResidentSelectionScreen":
 		_finish()
 		return
+	var selection_revision := int(
+		(selection.get("_view_model") as Dictionary).get("revision", 0)
+	)
+	host.call("_on_custom_resident_requested", selection_revision)
+	await _wait_frames(3)
+	var creator := selection.get_node_or_null(
+		"CustomResidentCreatorRoute",
+	) as Control
+	_expect(creator != null, "formal flow opens the custom resident creator")
+	if creator == null:
+		_finish()
+		return
+	var creator_adapter := host.get("_startup_ui_adapter") as Node
+	var creator_vm := creator_adapter.call(
+		"get_view_model",
+		"custom_resident_creator",
+	) as Dictionary
+	var creator_data := creator_vm.get("data", {}) as Dictionary
+	_expect_ok(
+		creator_adapter.call(
+			"dispatch",
+			"custom_resident_creator.update_fields",
+			{
+				"revision": int(creator_vm.get("revision", 0)),
+				"draftId": String(creator_data.get("draftId", "")),
+				"fields": {
+					"name": "入镇实测居民",
+					"gender": "女",
+					"age": 29,
+					"desire": "验证绑定后能够进入小镇",
+					"personality": "耐心、友善，做事前会确认细节",
+					"speech": "会清楚说明自己的想法",
+				},
+			},
+		) as Dictionary,
+		"formal flow accepts the custom resident profile",
+	)
+	await _wait_frames(2)
+	creator_vm = creator_adapter.call(
+		"get_view_model",
+		"custom_resident_creator",
+	) as Dictionary
+	creator_data = creator_vm.get("data", {}) as Dictionary
+	for tween in get_processed_tweens():
+		tween.kill()
+	creator.call("_request_action", "create", {
+		"candidatePoolRevision": int(
+			creator_data.get("candidatePoolRevision", -1),
+		),
+	})
+	await _wait_frames(5)
+	_expect(
+		selection.get_node_or_null("CustomResidentCreatorRoute") == null,
+		"custom resident creation returns to formal selection",
+	)
+	var selection_data := (
+		(selection.get("_view_model") as Dictionary).get("data", {}) as Dictionary
+	)
+	var custom_resident_id := ""
+	var custom_index := -1
+	var residents := selection_data.get("residents", []) as Array
+	for index in residents.size():
+		var resident := residents[index] as Dictionary
+		if String(resident.get("source", "")) == "custom":
+			custom_resident_id = String(resident.get("resident_id", ""))
+			custom_index = index
+			break
+	_expect(
+		not custom_resident_id.is_empty() and custom_index >= 0,
+		"formal selection contains the created custom resident",
+	)
+	if custom_resident_id.is_empty() or custom_index < 0:
+		_finish()
+		return
 	selection.call("_apply_recommended_selection", false)
 	await _wait_frames(3)
+	selection_data = (
+		(selection.get("_view_model") as Dictionary).get("data", {}) as Dictionary
+	)
+	var recommended := (
+		selection_data.get("selected_resident_ids", []) as Array
+	).duplicate()
+	var replaced_id := String(recommended[0])
+	var replaced_index := -1
+	residents = selection_data.get("residents", []) as Array
+	for index in residents.size():
+		var resident := residents[index] as Dictionary
+		if String(resident.get("resident_id", "")) == replaced_id:
+			replaced_index = index
+			break
+	_expect(replaced_index >= 0, "formal selection finds the preset being replaced")
+	if replaced_index < 0:
+		_finish()
+		return
+	selection.call("_toggle_resident", replaced_index)
+	await _wait_frames(2)
+	selection.call("_toggle_resident", custom_index)
+	await _wait_frames(3)
+	selection_data = (
+		(selection.get("_view_model") as Dictionary).get("data", {}) as Dictionary
+	)
+	_expect_equal(
+		(selection_data.get("selected_resident_ids", []) as Array).size(),
+		15,
+		"formal roster still contains exactly fifteen residents",
+	)
+	_expect(
+		(selection_data.get("selected_resident_ids", []) as Array).has(
+			custom_resident_id,
+		),
+		"formal roster replaces one preset with the custom resident",
+	)
 	var confirm := selection.find_child(
 		"ConfirmRosterButton",
 		true,
@@ -327,6 +437,21 @@ func _run() -> void:
 		"resident_model_assignment",
 	) as Dictionary
 	var assignment_data := assignment_vm.get("data", {}) as Dictionary
+	var assignment_resident_ids: Array[String] = []
+	for resident_value: Variant in assignment_data.get("residents", []) as Array:
+		assignment_resident_ids.append(String(
+			(resident_value as Dictionary).get("residentId", "")
+		))
+	_expect_equal(
+		assignment_resident_ids.size(),
+		15,
+		"model assignment receives only the final fifteen residents",
+	)
+	_expect(
+		assignment_resident_ids.has(custom_resident_id)
+		and not assignment_resident_ids.has(replaced_id),
+		"model assignment receives the custom resident instead of the replaced preset",
+	)
 	var target := (
 		assignment_data.get("targetBinding", {}) as Dictionary
 	).duplicate(true)
@@ -466,10 +591,18 @@ func _run() -> void:
 		"successful formal Town retains the real Agent Gateway",
 	)
 	if gateway != null:
+		var connected_resident_ids := (
+			gateway.call("get_connected_resident_ids") as Array
+		)
 		_expect_equal(
-			(gateway.call("get_connected_resident_ids") as Array).size(),
+			connected_resident_ids.size(),
 			15,
 			"all fifteen Agent residents connect",
+		)
+		_expect(
+			connected_resident_ids.has(custom_resident_id)
+			and not connected_resident_ids.has(replaced_id),
+			"the custom resident enters Town and the replaced preset stays out",
 		)
 	var baseline_listing := SAVE_STORE.new().call(
 		"list_published",

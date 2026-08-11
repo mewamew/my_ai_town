@@ -9,7 +9,7 @@ const PROVIDER_STORE_FILES := preload(
 	"res://world/presentation/ui/TownProviderStoreFiles.gd"
 )
 const DEFAULT_PATH := "user://provider_settings.json"
-const SCHEMA_VERSION := 1
+const SCHEMA_VERSION := 2
 const PLAINTEXT_CREDENTIAL_KEYS := [
 	"apikey",
 	"apikeyvalue",
@@ -23,7 +23,11 @@ const PROVIDER_CONFIG_KEYS := [
 	"enabled",
 	"apiKeyRef",
 	"endpoint",
+	"apiModels",
 	"api_key",
+	"connectionType",
+	"displayName",
+	"authRequired",
 ]
 
 var _path := DEFAULT_PATH
@@ -67,7 +71,7 @@ func save_config(config_value: Variant) -> Dictionary:
 		var input_schema: Variant = config.get("schemaVersion")
 		if (
 			typeof(input_schema) != TYPE_INT
-			or int(input_schema) != SCHEMA_VERSION
+			or int(input_schema) not in [1, SCHEMA_VERSION]
 		):
 			return _failure("PROVIDER_CONFIG_SCHEMA_UNSUPPORTED")
 	var normalized := config.duplicate(true)
@@ -139,17 +143,61 @@ func _read_validated_config(
 	if not parsed is Dictionary:
 		return _failure("PROVIDER_CONFIG_INVALID")
 	var config := (parsed as Dictionary).duplicate(true)
-	var disk_schema: Variant = config.get("schemaVersion")
+	var disk_schema: Variant = config.get("schemaVersion", 1)
 	if (
 		typeof(disk_schema) == TYPE_FLOAT
 		and is_finite(float(disk_schema))
-		and float(disk_schema) == float(SCHEMA_VERSION)
+		and float(disk_schema) == floorf(float(disk_schema))
 	):
+		disk_schema = int(disk_schema)
+		config["schemaVersion"] = disk_schema
+	if typeof(disk_schema) == TYPE_INT and int(disk_schema) == 1:
 		config["schemaVersion"] = SCHEMA_VERSION
+	config = _migrate_legacy_custom_model(config)
 	var validation := _validate_config(config, allow_legacy_plaintext)
 	if not bool(validation.get("ok", false)):
 		return validation
 	return _success({"config": config})
+
+
+func _migrate_legacy_custom_model(config: Dictionary) -> Dictionary:
+	var migrated := config.duplicate(true)
+	var providers_value: Variant = migrated.get("providers", {})
+	if not providers_value is Dictionary:
+		return migrated
+	var providers := providers_value as Dictionary
+	var selected_models_value: Variant = migrated.get("selectedModelByProvider", {})
+	var selected_models: Dictionary = (
+		(selected_models_value as Dictionary).duplicate(true)
+		if selected_models_value is Dictionary
+		else {}
+	)
+	for provider_id_value: Variant in providers.keys():
+		var provider_value: Variant = providers.get(provider_id_value)
+		if not provider_value is Dictionary:
+			continue
+		var provider := (provider_value as Dictionary).duplicate(true)
+		var legacy_value: Variant = provider.get("apiModel")
+		if typeof(legacy_value) != TYPE_STRING:
+			continue
+		var legacy_model := (legacy_value as String).strip_edges()
+		provider.erase("apiModel")
+		if not legacy_model.is_empty():
+			var models: Array = (
+				(provider.get("apiModels", []) as Array).duplicate()
+				if provider.get("apiModels", []) is Array
+				else []
+			)
+			if legacy_model not in models:
+				models.append(legacy_model)
+			provider["apiModels"] = models
+			var provider_id := String(provider_id_value)
+			if String(selected_models.get(provider_id, "")) in ["", "custom"]:
+				selected_models[provider_id] = legacy_model
+		providers[provider_id_value] = provider
+	migrated["providers"] = providers
+	migrated["selectedModelByProvider"] = selected_models
+	return migrated
 
 
 func _validate_config(
@@ -247,6 +295,37 @@ func _validate_config(
 				)
 			):
 				return _failure("PROVIDER_CONFIG_INVALID")
+		if provider.has("apiModels"):
+			var models_value: Variant = provider.get("apiModels")
+			if not models_value is Array:
+				return _failure("PROVIDER_CONFIG_INVALID")
+			var known_models: Dictionary = {}
+			for model_value: Variant in models_value as Array:
+				if (
+					typeof(model_value) != TYPE_STRING
+					or not _model_id_is_valid(model_value as String)
+					or known_models.has(model_value)
+				):
+					return _failure("PROVIDER_CONFIG_INVALID")
+				known_models[model_value] = true
+		if provider.has("connectionType"):
+			var connection_type: Variant = provider.get("connectionType")
+			if (
+				typeof(connection_type) != TYPE_STRING
+				or connection_type != "openai-compatible-profile"
+			):
+				return _failure("PROVIDER_CONFIG_INVALID")
+		if provider.has("displayName"):
+			var display_name: Variant = provider.get("displayName")
+			if (
+				typeof(display_name) != TYPE_STRING
+				or not _display_name_is_valid(display_name as String)
+			):
+				return _failure("PROVIDER_CONFIG_INVALID")
+		if provider.has("authRequired") and typeof(
+			provider.get("authRequired")
+		) != TYPE_BOOL:
+			return _failure("PROVIDER_CONFIG_INVALID")
 	if not _json_safe(config):
 		return _failure("PROVIDER_CONFIG_INVALID")
 	return _success()
@@ -262,10 +341,29 @@ func _provider_config_shape_is_valid(provider: Dictionary) -> bool:
 	return true
 
 
+func _display_name_is_valid(display_name: String) -> bool:
+	if (
+		display_name.is_empty()
+		or display_name != display_name.strip_edges()
+		or display_name.length() > 48
+	):
+		return false
+	for character: String in display_name:
+		var codepoint := character.unicode_at(0)
+		if codepoint < 32 or codepoint == 127:
+			return false
+	return true
+
+
 func _endpoint_is_valid(endpoint: String) -> bool:
+	var scheme := ""
+	if endpoint.begins_with("https://"):
+		scheme = "https://"
+	elif endpoint.begins_with("http://"):
+		scheme = "http://"
 	if (
 		endpoint != endpoint.strip_edges()
-		or not endpoint.begins_with("https://")
+		or scheme.is_empty()
 		or endpoint.contains("?")
 		or endpoint.contains("#")
 		or endpoint.contains("@")
@@ -276,7 +374,7 @@ func _endpoint_is_valid(endpoint: String) -> bool:
 		var codepoint := character.unicode_at(0)
 		if codepoint <= 32 or codepoint == 127:
 			return false
-	var remainder := endpoint.trim_prefix("https://")
+	var remainder := endpoint.trim_prefix(scheme)
 	var slash_index := remainder.find("/")
 	var authority := remainder if slash_index < 0 else remainder.left(slash_index)
 	if authority.is_empty():
@@ -301,6 +399,8 @@ func _endpoint_is_valid(endpoint: String) -> bool:
 			host = authority.left(colon_index)
 			port = authority.substr(colon_index + 1)
 	if host.is_empty() or host.begins_with(".") or host.ends_with("."):
+		return false
+	if scheme == "http://" and not _loopback_host_is_valid(host):
 		return false
 	if host.begins_with("["):
 		var address := host.substr(1, host.length() - 2)
@@ -341,6 +441,13 @@ func _endpoint_is_valid(endpoint: String) -> bool:
 	elif authority.ends_with(":"):
 		return false
 	return true
+
+
+func _loopback_host_is_valid(host: String) -> bool:
+	var normalized := host.to_lower()
+	if normalized == "localhost" or normalized == "[::1]":
+		return true
+	return normalized.begins_with("127.") and _canonical_ipv4_is_valid(normalized)
 
 
 func _canonical_ipv4_is_valid(host: String) -> bool:

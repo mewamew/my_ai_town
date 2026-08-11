@@ -48,6 +48,12 @@ const RESIDENT_MESSAGE_CLOSE_BUTTON_PATH := (
 const STARTUP_BUTTON_THEME := preload(
 	"res://ui/startup/StartupButtonImageTheme.gd"
 )
+const STARTUP_HELP_FEEDBACK_PANEL := preload(
+	"res://ui/startup/StartupHelpFeedbackPanel.gd"
+)
+const SOCIAL_LINK_LABEL_FONT := preload(
+	"res://assets/fonts/zheng_ge_dian_hei_16/ZhengGeDianHei-16.ttf"
+)
 
 const REFERENCE_VIEWPORT := Vector2(1920.0, 1080.0)
 const MAIN_MENU_SCALE := 0.86
@@ -67,6 +73,15 @@ const LOAD_GAME_RECT := Rect2(690.0, 735.6623, 540.0, 82.3529)
 const CONNECTION_RECT := Rect2(690.0, 834.0152, 258.0, 80.1892)
 const SETTINGS_RECT := Rect2(972.0, 834.0152, 258.0, 80.1892)
 const EXIT_RECT := Rect2(690.0, 930.2044, 540.0, 76.9737)
+const GITHUB_BUTTON_RECT := Rect2(1476.0, 24.0, 96.0, 94.0)
+const BILIBILI_BUTTON_RECT := Rect2(1574.0, 24.0, 96.0, 94.0)
+const HELP_FEEDBACK_BUTTON_RECT := Rect2(1672.0, 24.0, 96.0, 94.0)
+const HELP_FEEDBACK_PANEL_RECT := Rect2(1616.0, 118.0, 208.0, 116.5)
+const SOCIAL_LINK_ASSET_DIR := (
+	"res://assets/ui/startup/runtime/social_links"
+)
+const GITHUB_URL := "https://github.com/mewamew/my_ai_town"
+const BILIBILI_URL := "https://space.bilibili.com/3546572358945017"
 
 const BACKGROUND_SHADER_CODE := """
 shader_type canvas_item;
@@ -188,6 +203,10 @@ var _load_game_button: Button
 var _connection_button: Button
 var _settings_button: Button
 var _exit_button: Button
+var _github_button: TextureButton
+var _bilibili_button: TextureButton
+var _help_feedback_button: TextureButton
+var _help_feedback_panel: Control
 var _notice_tween: Tween
 var _host_request_pending_intent := &""
 var _resident_message_layer: CanvasLayer
@@ -389,6 +408,28 @@ func _build_interface() -> void:
 		&"StartupQuietButton",
 		request_quit_to_host,
 	)
+	_github_button = _add_social_link_button(
+		"GitHubButton",
+		"打开 GitHub 项目主页",
+		"github",
+		GITHUB_BUTTON_RECT,
+		_open_external_url.bind(GITHUB_URL, "GitHub 项目主页"),
+	)
+	_bilibili_button = _add_social_link_button(
+		"BilibiliButton",
+		"打开哔哩哔哩主页",
+		"bilibili",
+		BILIBILI_BUTTON_RECT,
+		_open_external_url.bind(BILIBILI_URL, "哔哩哔哩主页"),
+	)
+	_help_feedback_button = _add_social_link_button(
+		"HelpFeedbackButton",
+		"打开帮助与反馈选项",
+		"feedback",
+		HELP_FEEDBACK_BUTTON_RECT,
+		_open_help_feedback_panel,
+		"反馈",
+	)
 	_wire_main_menu_focus_neighbors()
 	_sync_route_state()
 
@@ -438,28 +479,40 @@ func _layout_interface_controls(
 		var reference_rect := control.get_meta(
 			"startup_reference_rect",
 		) as Rect2
-		var visual_rect := _main_menu_rect(reference_rect)
+		var keep_reference_scale := bool(
+			control.get_meta("startup_keep_reference_scale", false)
+		)
+		var visual_rect := (
+			reference_rect
+			if keep_reference_scale
+			else _main_menu_rect(reference_rect)
+		)
 		control.position = canvas_offset + visual_rect.position * layout_scale
 		control.size = reference_rect.size
-		control.scale = Vector2.ONE * layout_scale * MAIN_MENU_SCALE
+		control.scale = Vector2.ONE * layout_scale * (
+			1.0 if keep_reference_scale else MAIN_MENU_SCALE
+		)
 
 
 func _wire_main_menu_focus_neighbors() -> void:
-	var ordered: Array[Button] = [
+	var ordered: Array[BaseButton] = [
 		_continue_button,
 		_new_game_button,
 		_load_game_button,
 		_connection_button,
 		_settings_button,
 		_exit_button,
+		_github_button,
+		_bilibili_button,
+		_help_feedback_button,
 	]
 	for index: int in range(ordered.size()):
-		var button := ordered[index]
+		var button := ordered[index] as BaseButton
 		var previous := ordered[(index - 1 + ordered.size()) % ordered.size()]
 		var next := ordered[(index + 1) % ordered.size()]
 		button.focus_previous = button.get_path_to(previous)
 		button.focus_next = button.get_path_to(next)
-	_continue_button.focus_neighbor_top = _continue_button.get_path_to(_exit_button)
+	_continue_button.focus_neighbor_top = _continue_button.get_path_to(_github_button)
 	_continue_button.focus_neighbor_bottom = _continue_button.get_path_to(_new_game_button)
 	_new_game_button.focus_neighbor_top = _new_game_button.get_path_to(_continue_button)
 	_new_game_button.focus_neighbor_bottom = _new_game_button.get_path_to(_load_game_button)
@@ -472,7 +525,22 @@ func _wire_main_menu_focus_neighbors() -> void:
 	_settings_button.focus_neighbor_left = _settings_button.get_path_to(_connection_button)
 	_settings_button.focus_neighbor_bottom = _settings_button.get_path_to(_exit_button)
 	_exit_button.focus_neighbor_top = _exit_button.get_path_to(_connection_button)
-	_exit_button.focus_neighbor_bottom = _exit_button.get_path_to(_continue_button)
+	_exit_button.focus_neighbor_bottom = _exit_button.get_path_to(_github_button)
+	_github_button.focus_neighbor_left = _github_button.get_path_to(_help_feedback_button)
+	_github_button.focus_neighbor_right = _github_button.get_path_to(_bilibili_button)
+	_github_button.focus_neighbor_bottom = _github_button.get_path_to(_continue_button)
+	_bilibili_button.focus_neighbor_left = _bilibili_button.get_path_to(_github_button)
+	_bilibili_button.focus_neighbor_right = _bilibili_button.get_path_to(_help_feedback_button)
+	_bilibili_button.focus_neighbor_bottom = _bilibili_button.get_path_to(_continue_button)
+	_help_feedback_button.focus_neighbor_left = (
+		_help_feedback_button.get_path_to(_bilibili_button)
+	)
+	_help_feedback_button.focus_neighbor_right = (
+		_help_feedback_button.get_path_to(_github_button)
+	)
+	_help_feedback_button.focus_neighbor_bottom = (
+		_help_feedback_button.get_path_to(_continue_button)
+	)
 
 
 func _add_texture_layer(
@@ -516,6 +584,87 @@ func _add_image_button(
 	button.pressed.connect(callback)
 	add_child(button)
 	return button
+
+
+func _add_social_link_button(
+	node_name: String,
+	accessible_label: String,
+	asset_name: String,
+	reference_rect: Rect2,
+	callback: Callable,
+	caption_text := "",
+) -> TextureButton:
+	var button := TextureButton.new()
+	button.name = node_name
+	button.tooltip_text = accessible_label
+	button.texture_normal = _load_texture(
+		"%s/%s_default.png" % [SOCIAL_LINK_ASSET_DIR, asset_name]
+	)
+	button.texture_hover = _load_texture(
+		"%s/%s_hover.png" % [SOCIAL_LINK_ASSET_DIR, asset_name]
+	)
+	button.texture_pressed = button.texture_hover
+	button.texture_focused = button.texture_hover
+	button.ignore_texture_size = true
+	button.stretch_mode = TextureButton.STRETCH_SCALE
+	button.clip_contents = true
+	button.focus_mode = Control.FOCUS_ALL
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	button.z_index = 1001
+	_apply_reference_rect(button, reference_rect)
+	button.set_meta("startup_keep_reference_scale", true)
+	button.pressed.connect(callback)
+	add_child(button)
+	if not caption_text.is_empty():
+		var caption := Label.new()
+		caption.name = "ButtonCaption"
+		caption.position = Vector2(0.0, 63.0)
+		caption.size = Vector2(96.0, 16.0)
+		caption.text = caption_text
+		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		caption.add_theme_font_override("font", SOCIAL_LINK_LABEL_FONT)
+		caption.add_theme_font_size_override("font_size", 10)
+		caption.add_theme_color_override("font_color", Color("3f2818"))
+		caption.add_theme_color_override("font_outline_color", Color("fff0cc"))
+		caption.add_theme_constant_override("outline_size", 2)
+		caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		button.add_child(caption)
+	return button
+
+
+func _open_help_feedback_panel() -> void:
+	if is_instance_valid(_help_feedback_panel):
+		_help_feedback_panel.queue_free()
+		return
+	var help_feedback_panel := (
+		STARTUP_HELP_FEEDBACK_PANEL.new() as StartupHelpFeedbackPanel
+	)
+	help_feedback_panel.external_open_failed.connect(_show_notice)
+	_help_feedback_panel = help_feedback_panel
+	_apply_reference_rect(_help_feedback_panel, HELP_FEEDBACK_PANEL_RECT)
+	_help_feedback_panel.set_meta("startup_keep_reference_scale", true)
+	_help_feedback_panel.z_index = 1010
+	_help_feedback_panel.tree_exiting.connect(_on_help_feedback_panel_closed)
+	add_child(_help_feedback_panel)
+	_sync_interface_theme()
+
+
+func _on_help_feedback_panel_closed() -> void:
+	_help_feedback_panel = null
+	if is_instance_valid(_help_feedback_button):
+		_help_feedback_button.grab_focus.call_deferred()
+
+
+func _open_external_url(url: String, destination_name: String) -> void:
+	var open_error := OS.shell_open(url)
+	if open_error == OK:
+		return
+	_show_notice("暂时无法打开%s，请稍后再试。" % destination_name)
+	push_warning(
+		"启动页无法打开外部链接：%s (%s)"
+		% [url, error_string(open_error)]
+	)
 
 
 func _add_interface_label(

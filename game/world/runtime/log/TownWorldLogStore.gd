@@ -1450,6 +1450,7 @@ func _specific_event_title(
 		"公告阅读",
 		"公告转告",
 		"钟声公告",
+		"公告到点",
 		"正式通知送达",
 		"公告撤回",
 	]:
@@ -1529,6 +1530,13 @@ func _normalize_restored_title(record: Dictionary) -> void:
 
 
 func _thread_title(thread: Dictionary, record: Dictionary) -> String:
+	if String(thread.get("threadId", "")).begins_with("announcement:"):
+		var current_title := String(thread.get("title", "")).strip_edges()
+		# 公告发布是整条事件链的根。到点提醒和居民回应只追加
+		# 节点，不应把列表标题反复改成“公告到点”或某位居民的反应。
+		if not current_title.is_empty():
+			return current_title
+		return String(record.get("title", current_title))
 	if String(thread.get("threadId", "")).begins_with("environment:weather-day-"):
 		var day := maxi(1, int((record.get("time", {}) as Dictionary).get("day", 1)))
 		return "第%d天天气变化" % day

@@ -404,6 +404,12 @@ const GATEWAY := preload(
 )
 const CONTRACT := preload("res://agent/AgentContract.gd")
 const COMPILER := preload("res://agent/prompt/AgentPromptCompiler.gd")
+const ACTION_VALIDATION := preload(
+	"res://world/runtime/action/TownActionValidation.gd"
+)
+const ANNOUNCEMENT_TIME_PARSER := preload(
+	"res://world/runtime/social/TownAnnouncementTimeParser.gd"
+)
 const AGENT_SYSTEM := preload("res://agent/AgentSystem.gd")
 const FAKE_MODEL := preload("res://agent/model/FakeModelProvider.gd")
 const GATEWAY_AGENT_LONG_RUN := preload("res://world/integration/TownWorldAgentGateway.gd")
@@ -443,6 +449,7 @@ func _run_all() -> void:
 	_scenario_agent_long_run()
 	_scenario_agent_activity_action()
 	_scenario_agent_activity_reaction_contract()
+	_scenario_announcement_time_parser()
 	_scenario_pause_agent_submission()
 	_finish_suite("TOWN_WORLD_AGENT_PASS")
 
@@ -463,6 +470,7 @@ func _scenario_agent_gateway_continuity() -> void:
 	_test_consumed_world_rejection_is_not_a_gateway_failure()
 	_test_unconsumed_fallback_keeps_social_candidate_open()
 	_test_failed_first_pair_cannot_starve_the_town()
+	_test_local_model_queue_preserves_town_and_avatar_lane()
 	_test_conversation_turn_preempts_ordinary_life_requests()
 	_test_conversation_lane_stays_available_during_ordinary_work()
 	_test_immediate_agent_rejection_cannot_loop_forever()
@@ -1202,6 +1210,95 @@ func _test_failed_first_pair_cannot_starve_the_town() -> void:
 	)
 	gateway.free()
 
+
+
+func _test_local_model_queue_preserves_town_and_avatar_lane() -> void:
+	var agent := DelayedFailingAgent.new()
+	var world := PendingWorld.new()
+	var resident_ids: Array[String] = [
+		"resident-a",
+		"resident-b",
+		"resident-c",
+		"resident-d",
+		"resident-avatar",
+	]
+	var bindings := {}
+	for resident_id in resident_ids:
+		bindings[resident_id] = {
+			"residentId": resident_id,
+			"llmBinding": {
+				"mode": "model",
+				"providerId": "ollama",
+				"modelId": "qwen3.5:9b",
+			},
+		}
+	for resident_id in resident_ids.slice(0, 4):
+		world.add_request(_request(resident_id, "decision-%s" % resident_id))
+	var gateway: Node = GATEWAY.new()
+	gateway.set("_agent_system", agent)
+	gateway.set("_provider_service", ProviderServiceStub.new())
+	gateway.set("_world", world)
+	gateway.set("_connected_resident_ids", resident_ids)
+	gateway.set("_bindings_by_id", bindings)
+	gateway.set("_session_active", true)
+
+	_expect_equal(
+		gateway.call("pump"),
+		2,
+		"local inference dispatches only two ordinary residents at once",
+	)
+	_expect_equal(
+		agent.requested_resident_ids,
+		["resident-a", "resident-b"],
+		"local queue keeps deterministic round-robin order",
+	)
+	_expect(
+		world.redispatched.has("decision-resident-c")
+		and world.redispatched.has("decision-resident-d"),
+		"queued local residents remain pending instead of receiving continuity fallback",
+	)
+	var avatar_request := _request(
+		"resident-avatar",
+		"decision-local-avatar-reply",
+	)
+	var avatar_wake := avatar_request.get("wakePacket", {}) as Dictionary
+	avatar_wake["snapshot"]["conversation"] = {
+		"conversation_id": "conversation-local-avatar",
+		"with_resident_id": "person_7f3a91c2d8e4",
+		"with": "旅行者",
+		"turns": [],
+	}
+	avatar_wake["events"] = [{
+		"event_id": "conversation-local-avatar-turn",
+		"time": {"day": 1, "clock": "08:11", "period": "上午"},
+		"type": "对方答话",
+		"conversation_id": "conversation-local-avatar",
+		"turn": {
+			"turn_id": 1,
+			"speaker_resident_id": "person_7f3a91c2d8e4",
+			"speaker": "旅行者",
+			"say": "我们聊聊。",
+			"narration": "",
+			"photos": [],
+		},
+	}]
+	world.add_request(avatar_request)
+	_expect_equal(
+		gateway.call("pump"),
+		1,
+		"local inference keeps a third reserved lane for the player's conversation",
+	)
+	_expect_equal(
+		agent.requested_resident_ids.back(),
+		"resident-avatar",
+		"the reserved local lane prioritizes the avatar reply",
+	)
+	_expect_equal(
+		gateway.call("get_debug_inflight_count"),
+		3,
+		"local provider never exceeds its two background plus one conversation limit",
+	)
+	gateway.free()
 
 
 func _test_conversation_lane_stays_available_during_ordinary_work() -> void:
@@ -2693,6 +2790,181 @@ func _scenario_agent_activity_reaction_contract() -> void:
 	)
 	_expect_equal(failed_errors, [], "failed result accepts a bound reaction")
 
+	var announcement_wake := wake.duplicate(true)
+	announcement_wake["decision_id"] = "reaction-announcement"
+	announcement_wake["events"] = [{
+		"event_id": "event-announcement-1",
+		"time": {"day": 1, "clock": "12:20", "period": "中午"},
+		"type": "公告发布",
+		"announcement_id": "announcement-1",
+		"text": "下午三点在中心广场集合。",
+	}]
+	var announcement_decision := {
+		"decision_id": "reaction-announcement",
+		"handling": "replace_current",
+		"reaction": {
+			"source_action_id": "meal-1",
+			"text": "这顿吃得挺舒坦。",
+		},
+		"announcement_reactions": [{
+			"source_event_id": "event-announcement-1",
+			"text": "三点我应该能赶过去。",
+		}],
+		"action": {
+			"action_id": "reaction-announcement-next",
+			"type": "待着",
+			"line": "先把手头的事理清楚。",
+		},
+	}
+	_expect_equal(
+		CONTRACT.validate_decision(
+			announcement_decision,
+			initialization,
+			announcement_wake,
+			{},
+		),
+		[],
+		"announcement and action-result reactions can coexist",
+	)
+	_expect_equal(
+		ACTION_VALIDATION.validate_decision_shape(
+			announcement_decision,
+			announcement_wake.get("events", []) as Array,
+			announcement_wake.get("action_results", []) as Array,
+		),
+		"",
+		"World accepts separate announcement and result reactions",
+	)
+	_expect_equal(
+		CONTRACT.canonicalize_decision(
+			announcement_decision,
+		).get("announcement_reactions"),
+		announcement_decision.get("announcement_reactions"),
+		"canonical decision preserves the announcement event source",
+	)
+	var announcement_wrong_source := announcement_decision.duplicate(true)
+	announcement_wrong_source["announcement_reactions"][0]["source_event_id"] = "event-older"
+	_expect(
+		_errors_contain(
+			CONTRACT.validate_decision(
+				announcement_wrong_source,
+				initialization,
+				announcement_wake,
+				{},
+			),
+			"不属于本轮公告",
+		),
+		"announcement reaction must bind an announcement from this wake",
+	)
+	var multi_wake := announcement_wake.duplicate(true)
+	multi_wake["decision_id"] = "reaction-announcement-multi"
+	multi_wake["events"].append({
+		"event_id": "event-announcement-2-due",
+		"time": {"day": 1, "clock": "15:00", "period": "下午"},
+		"type": "公告到点",
+		"announcement_id": "announcement-2",
+		"publisher_resident_id": "resident-tang-xiao-man",
+		"text": "下午三点在中心广场集合。",
+		"scheduled_time_label": "第1天 15:00",
+	})
+	var multi_decision := announcement_decision.duplicate(true)
+	multi_decision["decision_id"] = "reaction-announcement-multi"
+	multi_decision["action"]["action_id"] = "reaction-announcement-multi-next"
+	multi_decision["announcement_reactions"].append({
+		"source_event_id": "event-announcement-2-due",
+		"text": "时间到了，我现在再决定。",
+	})
+	_expect_equal(
+		CONTRACT.validate_decision(
+			multi_decision,
+			initialization,
+			multi_wake,
+			{},
+		),
+		[],
+		"one decision preserves separate reactions for every announcement event",
+	)
+	var due_wake := announcement_wake.duplicate(true)
+	due_wake["decision_id"] = "reaction-announcement-due-continue"
+	due_wake["action_results"] = []
+	due_wake["snapshot"]["me"]["current_action"] = {
+		"action_id": "work-in-progress",
+		"type": "做活动",
+		"activity_id": "activity-work",
+		"line": "继续把手头的活做完。",
+	}
+	due_wake["events"] = [{
+		"event_id": "event-announcement-due-continue",
+		"time": {"day": 1, "clock": "15:00", "period": "下午"},
+		"type": "公告到点",
+		"announcement_id": "announcement-due-continue",
+		"publisher_resident_id": "resident-tang-xiao-man",
+		"text": "下午三点在中心广场集合。",
+		"scheduled_time_label": "第1天 15:00",
+	}]
+	var due_continue_decision := {
+		"decision_id": "reaction-announcement-due-continue",
+		"handling": "continue_current",
+		"announcement_reactions": [{
+			"source_event_id": "event-announcement-due-continue",
+			"text": "时间到了，但我先把手头的活做完。",
+		}],
+	}
+	_expect_equal(
+		CONTRACT.validate_decision(
+			due_continue_decision,
+			initialization,
+			due_wake,
+			{},
+		),
+		[],
+		"announcement due reaction can keep a reasonable current action",
+	)
+	_expect_equal(
+		ACTION_VALIDATION.validate_decision_shape(
+			due_continue_decision,
+			due_wake.get("events", []) as Array,
+			due_wake.get("action_results", []) as Array,
+		),
+		"",
+		"World accepts a due reaction without replacing the current action",
+	)
+	var player_priority_wake := due_wake.duplicate(true)
+	player_priority_wake["decision_id"] = "reaction-player-announcement-priority"
+	player_priority_wake["events"][0]["announcement_priority"] = "player"
+	var player_priority_continue := due_continue_decision.duplicate(true)
+	player_priority_continue["decision_id"] = (
+		"reaction-player-announcement-priority"
+	)
+	player_priority_continue["announcement_reactions"][0]["source_event_id"] = (
+		"event-announcement-due-continue"
+	)
+	_expect(
+		_errors_contain(
+			CONTRACT.validate_decision(
+				player_priority_continue,
+				initialization,
+				player_priority_wake,
+				{},
+			),
+			"玩家公告必须停止普通工作",
+		),
+		"player announcement priority rejects continue_current",
+	)
+	var priority_compiler: RefCounted = COMPILER.new(initialization)
+	var player_priority_request := priority_compiler.call(
+		"compile",
+		player_priority_wake,
+		"",
+	) as Dictionary
+	_expect_equal(
+		(
+			player_priority_request.get("derived_constraints", {}) as Dictionary
+		).get("handling"),
+		["replace_current"],
+		"player announcement prompt only exposes replacement actions",
+	)
+
 	var no_result_wake := wake.duplicate(true)
 	no_result_wake["decision_id"] = "reaction-none"
 	no_result_wake["action_results"] = []
@@ -2814,6 +3086,37 @@ func _scenario_agent_activity_reaction_contract() -> void:
 		),
 		"required conversation reply suppresses the optional reaction",
 	)
+	var reply_announcement_wake := reply_wake.duplicate(true)
+	reply_announcement_wake["decision_id"] = "reaction-reply-announcement"
+	reply_announcement_wake["events"].append({
+		"event_id": "event-announcement-during-reply",
+		"time": {"day": 1, "clock": "12:20", "period": "中午"},
+		"type": "公告发布",
+		"announcement_id": "announcement-during-reply",
+		"text": "下午三点在中心广场集合。",
+	})
+	var reply_announcement_decision := reply_decision.duplicate(true)
+	reply_announcement_decision["decision_id"] = (
+		"reaction-reply-announcement"
+	)
+	reply_announcement_decision.erase("reaction")
+	reply_announcement_decision["announcement_reactions"] = [{
+		"source_event_id": "event-announcement-during-reply",
+		"text": "三点的安排我先记住。",
+	}]
+	reply_announcement_decision["action"]["action_id"] = (
+		"reply-announcement-action"
+	)
+	_expect_equal(
+		CONTRACT.validate_decision(
+			reply_announcement_decision,
+			initialization,
+			reply_announcement_wake,
+			{},
+		),
+		[],
+		"required reply can carry a non-blocking announcement reaction",
+	)
 
 	var compiler: RefCounted = COMPILER.new(initialization)
 	var request := compiler.call("compile", wake, "") as Dictionary
@@ -2839,6 +3142,30 @@ func _scenario_agent_activity_reaction_contract() -> void:
 		).contains("必填结果反应"),
 		"compiled prompt tells the model the result reaction is required",
 	)
+	var announcement_request := compiler.call(
+		"compile",
+		announcement_wake,
+		"",
+	) as Dictionary
+	var announcement_constraints := (
+		announcement_request.get("derived_constraints", {}) as Dictionary
+	)
+	_expect_equal(
+		(announcement_constraints.get("announcement_reactions", {}) as Dictionary).get(
+			"source_event_ids",
+		),
+		["event-announcement-1"],
+		"dynamic constraints expose every announcement event",
+	)
+	_expect(
+		String(
+			(
+				(announcement_request.get("messages", []) as Array)[1]
+				as Dictionary
+			).get("content", ""),
+		).contains("必填公告反应"),
+		"compiled prompt makes the announcement reaction visible and required",
+	)
 	var reply_request := compiler.call("compile", reply_wake, "") as Dictionary
 	_expect(
 		not (
@@ -2846,7 +3173,91 @@ func _scenario_agent_activity_reaction_contract() -> void:
 		).has("reaction"),
 		"reply-only constraints omit reaction entirely",
 	)
+	var reply_announcement_request := compiler.call(
+		"compile",
+		reply_announcement_wake,
+		"",
+	) as Dictionary
+	_expect_equal(
+		(
+			(
+				reply_announcement_request.get(
+					"derived_constraints",
+					{},
+				) as Dictionary
+			).get("announcement_reactions", {}) as Dictionary
+		).get("source_event_ids"),
+		["event-announcement-during-reply"],
+		"reply constraints keep the non-blocking announcement reaction",
+	)
 	return
+
+
+func _scenario_announcement_time_parser() -> void:
+	var now := 12 * 60 + 20
+	var afternoon := ANNOUNCEMENT_TIME_PARSER.parse(
+		"下午三点在中心广场集合。",
+		now,
+	) as Dictionary
+	_expect_equal(
+		afternoon.get("scheduled_absolute_minute"),
+		15 * 60,
+		"Chinese afternoon time resolves on the current world day",
+	)
+	_expect_equal(
+		afternoon.get("scheduled_time_label"),
+		"第1天 15:00",
+		"time announcement exposes a player-readable world-time label",
+	)
+	var tomorrow := ANNOUNCEMENT_TIME_PARSER.parse(
+		"明天上午九点半去镇公所。",
+		now,
+	) as Dictionary
+	_expect_equal(
+		tomorrow.get("scheduled_absolute_minute"),
+		1440 + 9 * 60 + 30,
+		"tomorrow and half-hour wording resolve deterministically",
+	)
+	var tomorrow_late_morning := ANNOUNCEMENT_TIME_PARSER.parse(
+		"明天上午十一点集合。",
+		now,
+	) as Dictionary
+	_expect_equal(
+		tomorrow_late_morning.get("scheduled_absolute_minute"),
+		1440 + 11 * 60,
+		"Chinese eleven o'clock is not reduced to one o'clock",
+	)
+	var relative := ANNOUNCEMENT_TIME_PARSER.parse(
+		"两小时后在桥边见。",
+		now,
+	) as Dictionary
+	_expect_equal(
+		relative.get("scheduled_absolute_minute"),
+		now + 120,
+		"relative-hour announcement resolves from current world time",
+	)
+	_expect(
+		ANNOUNCEMENT_TIME_PARSER.parse("上午十点集合。", now).is_empty(),
+		"past ambiguous times are not silently moved to tomorrow",
+	)
+	_expect(
+		ANNOUNCEMENT_TIME_PARSER.has_time_expression("上午十点集合。"),
+		"an invalid past time is still detected so the UI can warn the player",
+	)
+	_expect(
+		not ANNOUNCEMENT_TIME_PARSER.has_time_expression("广场有新公告。"),
+		"ordinary announcement text does not produce a false schedule warning",
+	)
+	_expect(
+		ANNOUNCEMENT_TIME_PARSER.parse("周五下午三点集合。", now).is_empty(),
+		"unsupported real-calendar weekdays are not misread as today",
+	)
+	_expect(
+		ANNOUNCEMENT_TIME_PARSER.parse("明天下午25点集合。", now).is_empty(),
+		"invalid numeric hours are not accepted through a suffix match",
+	)
+
+
 func _decision_agent_activity_reaction_contract(
 	decision_id: String,
 	action_id: String,

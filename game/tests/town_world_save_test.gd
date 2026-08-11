@@ -162,10 +162,29 @@ func _scenario_save_restore() -> void:
 		true,
 		"pre-save asynchronous Agent return is stale after load",
 	)
+	var restored_continue := world.call(
+		"submit_agent_decision",
+		"林岚",
+		{"decision_id": lin_load.get("decision_id", ""), "handling": "continue_current"},
+	) as Dictionary
 	_expect_equal(
-		world.call("submit_agent_decision", "林岚", {"decision_id": lin_load.get("decision_id", ""), "handling": "continue_current"}).get("status"),
-		"continued",
-		"restored moving action can continue through the fresh request",
+		restored_continue.get("errorCode"),
+		"PLAYER_ANNOUNCEMENT_ACTION_REQUIRED",
+		"restored player announcement still prevents continuing ordinary movement",
+	)
+	_expect_equal(
+		restored_continue.get("consumed"),
+		false,
+		"rejected restored continuation keeps the fresh request available",
+	)
+	_expect_equal(
+		world.call(
+			"submit_agent_decision",
+			"林岚",
+			_go(lin_load, "社区花园"),
+		).get("status"),
+		"accepted",
+		"restored resident can replace the old movement after the player announcement",
 	)
 	var lin_position_before_advance := (world.call("get_resident_state", "林岚") as Dictionary).get("position") as Vector2
 	world.call("advance", 1.0)

@@ -64,6 +64,9 @@ const ANNOUNCEMENT_FIELDS := [
 	"legacy_broadcast",
 	"withdrawn_at",
 	"delivery_mode",
+	"scheduled_absolute_minute",
+	"scheduled_time_label",
+	"schedule_triggered_at",
 ]
 const KNOWLEDGE_RECORD_FIELDS := [
 	"announcement_id",
@@ -101,12 +104,19 @@ func publish(
 	published_time: Dictionary = {},
 	delivery_mode: String = "board",
 	publish_event_id: String = "",
+	schedule: Dictionary = {},
 ) -> Dictionary:
 	var normalized_publisher := publisher_id.strip_edges()
 	var normalized_text := text.strip_edges()
 	var normalized_matter := matter_id.strip_edges()
 	var normalized_delivery_mode := delivery_mode.strip_edges()
 	var normalized_event_id := publish_event_id.strip_edges()
+	var scheduled_absolute_minute := int(
+		schedule.get("scheduled_absolute_minute", -1),
+	)
+	var scheduled_time_label := String(
+		schedule.get("scheduled_time_label", ""),
+	).strip_edges()
 	if (
 		normalized_publisher.is_empty()
 		or normalized_text.is_empty()
@@ -122,6 +132,14 @@ func publish(
 		or (
 			not normalized_event_id.is_empty()
 			and _world_event_id_sequence(normalized_event_id) <= 0
+		)
+		or (
+			not schedule.is_empty()
+			and (
+				scheduled_absolute_minute <= published_at
+				or scheduled_absolute_minute > MAX_SAFE_ABSOLUTE_MINUTE
+				or scheduled_time_label.is_empty()
+			)
 		)
 	):
 		return _failure(
@@ -155,6 +173,9 @@ func publish(
 		announcement["time"] = published_time.duplicate(true)
 	if not normalized_event_id.is_empty():
 		announcement["publish_event_id"] = normalized_event_id
+	if not schedule.is_empty():
+		announcement["scheduled_absolute_minute"] = scheduled_absolute_minute
+		announcement["scheduled_time_label"] = scheduled_time_label
 	if not normalized_matter.is_empty():
 		var channel_result := _social_runtime.add_channel(normalized_matter,
 			{
@@ -426,6 +447,43 @@ func get_announcements(include_withdrawn: bool = true) -> Array[Dictionary]:
 		if include_withdrawn or bool(announcement.get("active", false)):
 			result.append(announcement.duplicate(true))
 	return result
+
+
+func due_scheduled_announcements(
+	absolute_minute: int,
+) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for announcement: Dictionary in _announcements:
+		if (
+			bool(announcement.get("active", false))
+			and int(announcement.get("scheduled_absolute_minute", -1)) >= 0
+			and int(announcement.get("scheduled_absolute_minute", -1)) <= absolute_minute
+			and not announcement.has("schedule_triggered_at")
+		):
+			result.append(announcement.duplicate(true))
+	return result
+
+
+func mark_schedule_triggered(
+	announcement_id: String,
+	absolute_minute: int,
+) -> Dictionary:
+	var announcement := _announcement(announcement_id)
+	if (
+		announcement.is_empty()
+		or int(announcement.get("scheduled_absolute_minute", -1)) < 0
+		or absolute_minute < int(
+			announcement.get("scheduled_absolute_minute", -1),
+		)
+	):
+		return _failure(
+			"BULLETIN_SCHEDULE_TRIGGER_INVALID",
+			"公告或到点时间无效",
+		)
+	if announcement.has("schedule_triggered_at"):
+		return _success(announcement.duplicate(true))
+	announcement["schedule_triggered_at"] = absolute_minute
+	return _success(announcement.duplicate(true))
 
 
 func unread_count(resident_id: String) -> int:
@@ -786,6 +844,25 @@ func _validate_save_snapshot(snapshot: Dictionary) -> Dictionary:
 					"保存公告发布事件编号无效或重复",
 				)
 			seen_publish_event_ids[String(publish_event_id)] = true
+		var has_schedule := announcement.has("scheduled_absolute_minute")
+		if has_schedule:
+			if (
+				typeof(announcement.get("scheduled_absolute_minute")) != TYPE_INT
+				or int(announcement.get("scheduled_absolute_minute", -1)) <= published_at
+				or int(announcement.get("scheduled_absolute_minute", -1)) > MAX_SAFE_ABSOLUTE_MINUTE
+				or typeof(announcement.get("scheduled_time_label")) != TYPE_STRING
+				or String(announcement.get("scheduled_time_label", "")).strip_edges().is_empty()
+			):
+				return _failure("BULLETIN_SAVE_INVALID", "保存公告约定时间无效")
+			if announcement.has("schedule_triggered_at") and (
+				typeof(announcement.get("schedule_triggered_at")) != TYPE_INT
+				or int(announcement.get("schedule_triggered_at", -1))
+				< int(announcement.get("scheduled_absolute_minute", 0))
+				or int(announcement.get("schedule_triggered_at", -1)) > MAX_SAFE_ABSOLUTE_MINUTE
+			):
+				return _failure("BULLETIN_SAVE_INVALID", "保存公告到点状态无效")
+		elif announcement.has("scheduled_time_label") or announcement.has("schedule_triggered_at"):
+			return _failure("BULLETIN_SAVE_INVALID", "保存公告时间字段不完整")
 		seen_ids[announcement_id] = announcement
 		max_sequence = maxi(max_sequence, sequence)
 		announcements.append(announcement.duplicate(true))

@@ -3382,8 +3382,14 @@ func _configure_resident_model_assignment_service(draft: Dictionary) -> Dictiona
 	var catalog_result := _formal_new_game_catalog()
 	if not bool(catalog_result.get("ok", false)):
 		return catalog_result
-	var catalog := catalog_result.get("catalog", {}) as Dictionary
 	var assignment_draft := _merge_resident_model_assignment_draft(draft)
+	var projected_catalog_result := _project_resident_model_assignment_catalog(
+		catalog_result.get("catalog", {}) as Dictionary,
+		assignment_draft,
+	)
+	if not bool(projected_catalog_result.get("ok", false)):
+		return projected_catalog_result
+	var catalog := projected_catalog_result.get("catalog", {}) as Dictionary
 	_resident_model_assignment_service = RESIDENT_MODEL_ASSIGNMENT_SERVICE.new()
 	_connect_once(
 		_resident_model_assignment_service,
@@ -3412,6 +3418,57 @@ func _configure_resident_model_assignment_service(draft: Dictionary) -> Dictiona
 		_detach_resident_model_assignment_service()
 		return bound
 	return configured
+
+
+func _project_resident_model_assignment_catalog(
+	catalog: Dictionary,
+	draft: Dictionary,
+) -> Dictionary:
+	var residents_value: Variant = catalog.get("residents", [])
+	if not residents_value is Array:
+		return _failure("RESIDENT_MODEL_CATALOG_INVALID", false)
+	var residents_by_id: Dictionary = {}
+	for resident_value: Variant in residents_value as Array:
+		if not resident_value is Dictionary:
+			return _failure("RESIDENT_MODEL_CATALOG_INVALID", false)
+		var resident := resident_value as Dictionary
+		var resident_id := String(resident.get("residentId", "")).strip_edges()
+		if resident_id.is_empty() or residents_by_id.has(resident_id):
+			return _failure("RESIDENT_MODEL_CATALOG_RESIDENT_INVALID", false)
+		residents_by_id[resident_id] = resident.duplicate(true)
+	var slots_value: Variant = draft.get("slots", [])
+	if not slots_value is Array:
+		return _failure("SESSION_DRAFT_SLOTS_INVALID", false)
+	var slots := slots_value as Array
+	if slots.size() != RESIDENT_MODEL_ASSIGNMENT_SERVICE.SLOT_COUNT:
+		return _failure("SESSION_HOME_SPACE_COUNT_MISMATCH", false)
+	var selected_residents: Array[Dictionary] = []
+	var selected_ids: Dictionary = {}
+	for slot_value: Variant in slots:
+		if not slot_value is Dictionary:
+			return _failure("SESSION_DRAFT_SLOT_INVALID", false)
+		var resident_id := String(
+			(slot_value as Dictionary).get("residentId", "")
+		).strip_edges()
+		if resident_id.is_empty():
+			return _failure("SESSION_RESIDENT_ID_REQUIRED", false)
+		if selected_ids.has(resident_id):
+			return _failure("SESSION_RESIDENT_ID_DUPLICATED", false)
+		if not residents_by_id.has(resident_id):
+			return _failure("SESSION_RESIDENT_ID_UNKNOWN", false)
+		selected_ids[resident_id] = true
+		selected_residents.append(
+			(residents_by_id[resident_id] as Dictionary).duplicate(true)
+		)
+	var projected := catalog.duplicate(true)
+	projected["residents"] = selected_residents
+	return {
+		"ok": true,
+		"errorCode": "",
+		"retryable": false,
+		"catalog": projected,
+		"residentCount": selected_residents.size(),
+	}
 
 
 func _close_resident_model_assignment(restore_focus := true) -> bool:

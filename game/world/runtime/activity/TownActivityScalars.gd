@@ -1,6 +1,10 @@
 extends RefCounted
 
 
+const SLEEP_ACTIVITY_ID := "activity_home_sleep"
+const SLEEP_ENERGY_THRESHOLD := 35
+
+
 # 活动执行/身体需求/工单匹配等纯标量函数族(O 域迁移第八件)。
 
 static func safe_activity_execution(execution: Dictionary) -> Dictionary:
@@ -68,6 +72,34 @@ static func need_value_for_body_level(level: String) -> int:
 		return 35
 	return 50
 
+static func activity_state_from_body(body: Dictionary) -> Dictionary:
+	var state := empty_activity_state()
+	state["satiety"] = need_value_for_body_level(
+		String(body.get("饿", "不饿")),
+	)
+	state["energy"] = need_value_for_body_level(
+		String(body.get("累", "不累")),
+	)
+	return state
+
+static func next_activity_state(
+	resident: Dictionary,
+	effects: Dictionary,
+	allowed_keys: Array,
+) -> Dictionary:
+	var state := (
+		resident.get("activityState", empty_activity_state()) as Dictionary
+	).duplicate(true)
+	for key_value: Variant in effects:
+		var key := String(key_value)
+		if key in allowed_keys:
+			state[key] = clampi(
+				int(state.get(key, 50)) + int(effects[key_value]),
+				0,
+				100,
+			)
+	return state
+
 static func sync_body_from_activity_needs(
 	resident: Dictionary,
 	activity_state: Dictionary,
@@ -85,6 +117,125 @@ static func sync_body_from_activity_needs(
 		if energy <= 20
 		else ("有点累" if energy <= 35 else "不累")
 	)
+
+static func resident_sleep_needed(resident: Dictionary) -> bool:
+	var activity_state := resident.get(
+		"activityState",
+		empty_activity_state(),
+	) as Dictionary
+	return int(activity_state.get("energy", 50)) <= SLEEP_ENERGY_THRESHOLD
+
+static func apply_sleep_activity_availability(
+	resident: Dictionary,
+	option: Dictionary,
+) -> void:
+	if (
+		String(option.get("activityId", "")) != SLEEP_ACTIVITY_ID
+		or resident_sleep_needed(resident)
+	):
+		return
+	option["available"] = false
+	option["disabledReason"] = "SLEEP_NOT_NEEDED"
+
+static func start_sleep_leave(
+	resident: Dictionary,
+	action: Dictionary,
+	execution: Dictionary,
+	work_expected: bool,
+	approach_duration: int,
+) -> bool:
+	if (
+		String(execution.get("activityId", "")) != SLEEP_ACTIVITY_ID
+		or not work_expected
+	):
+		return false
+	resident["attendanceState"] = {
+		"status": "on_leave",
+		"untilMinute": (
+			int(action.get("startedAbsoluteMinute", 0))
+			+ approach_duration
+			+ maxi(1, int(action.get("durationMinutes", 0)))
+		),
+	}
+	return true
+
+static func clear_sleep_leave(resident: Dictionary) -> bool:
+	var attendance := resident.get("attendanceState", {}) as Dictionary
+	if String(attendance.get("status", "available")) != "on_leave":
+		return false
+	resident["attendanceState"] = {
+		"status": "available",
+		"untilMinute": -1,
+	}
+	return true
+
+static func life_rhythm_snapshot(
+	resident: Dictionary,
+	minute_of_day: int,
+	schedule_context: Dictionary,
+) -> Dictionary:
+	var rhythm: Dictionary
+	if minute_of_day < 420:
+		rhythm = {
+			"id": "late_night",
+			"label": "深夜；通常应休息，也可以因本人情况晚睡或不睡",
+			"flexible": true,
+		}
+	elif minute_of_day < 570:
+		rhythm = {
+			"id": "morning_start",
+			"label": "起床、准备和自由活动；可以早起或赖床",
+			"flexible": true,
+		}
+	elif minute_of_day < 750:
+		rhythm = {
+			"id": "morning_work",
+			"label": "上午工作时段；可以迟到、请假、闭店或放假",
+			"flexible": true,
+		}
+	elif minute_of_day < 870:
+		rhythm = {
+			"id": "midday_free",
+			"label": "午饭、午休和自由活动",
+			"flexible": true,
+		}
+	elif minute_of_day < 1140:
+		rhythm = {
+			"id": "afternoon_work",
+			"label": "下午工作时段；可以请假、闭店或放假",
+			"flexible": true,
+		}
+	elif minute_of_day < 1380:
+		rhythm = {
+			"id": "evening_free",
+			"label": "下班、加班、自由活动或公共活动",
+			"flexible": true,
+		}
+	else:
+		rhythm = {
+			"id": "night_rest",
+			"label": "夜间休息；可以早睡、晚睡或因本人情况不睡",
+			"flexible": true,
+		}
+	var social_state := resident.get("socialState", {}) as Dictionary
+	var workplace := String(social_state.get("workplace", ""))
+	rhythm["work_expected"] = bool(
+		schedule_context.get("workExpected", false),
+	)
+	rhythm["workplace"] = workplace
+	rhythm["schedule_label"] = String(schedule_context.get("scheduleLabel", ""))
+	var sleep_needed := resident_sleep_needed(resident)
+	rhythm["sleep_needed"] = sleep_needed
+	if sleep_needed:
+		rhythm["label"] = "%s；当前精力偏低，应优先判断是否回家睡觉，上班时也可以请假" % String(
+			rhythm.get("label", ""),
+		)
+	if bool(rhythm.get("work_expected", false)) and not workplace.is_empty():
+		rhythm["label"] = "%s；本职工作地是%s" % [
+			String(rhythm.get("label", "")),
+			workplace,
+		]
+	return rhythm
 
 static func meal_period_for_minute(absolute_minute: int) -> Dictionary:
 	var minute_of_day := posmod(absolute_minute, 1440)

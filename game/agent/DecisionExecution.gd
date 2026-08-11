@@ -13,6 +13,13 @@ func _init(model_provider: Object, prompt_compiler: RefCounted) -> void:
 	_prompt_compiler = prompt_compiler
 
 
+func replace_model_provider(model_provider: Object) -> Dictionary:
+	if model_provider == null or not model_provider.has_method("request_decision"):
+		return {"ok": false, "errors": ["model_provider 必须实现 request_decision"]}
+	_model_provider = model_provider
+	return {"ok": true}
+
+
 # C4 排查计时(AI_TOWN_UI_FRAME_PROBE=1 门控):与 AgentResidentRuntime 的
 # AGENT_PROBE 行同格式,按 decision_id 汇总提示编译与请求发起两段。
 static var _probe_checked := false

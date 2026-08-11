@@ -1282,6 +1282,9 @@ const UiViewModel := preload("res://ui/common/AiTownUiViewModel.gd")
 const ProviderSettingsCompositeDesktop := preload(
 	"res://ui/provider_settings/composite/ProviderSettingsCompositeDesktop.gd"
 )
+const ProviderSettingsTheme := preload(
+	"res://ui/provider_settings/ProviderSettingsTheme.gd"
+)
 const REQUIRED_FORMAL_PATHS: Array[String] = [
 	"res://ui/startup/StartupScreen.tscn",
 	"res://ui/startup/StartupLoadGameScreen.tscn",
@@ -3796,7 +3799,9 @@ func _scenario_formal_ui_runtime_contract() -> void:
 			)
 	_test_public_error_copy_contract()
 	_test_provider_composite_source_provenance_contract()
+	_test_provider_custom_asset_contract()
 	_test_provider_settings_error_copy_contract()
+	await _test_provider_model_assignment_return_contract()
 	_test_visible_error_label_contract()
 	_test_world_intro_empty_view_model_contract()
 	return
@@ -3864,6 +3869,34 @@ func _test_provider_composite_source_provenance_contract() -> void:
 		and is_equal_approx(float(source_size[0]), 1672.0)
 		and is_equal_approx(float(source_size[1]), 941.0),
 		"模型设置合成参考保留来源尺寸",
+	)
+
+
+func _test_provider_custom_asset_contract() -> void:
+	_expect(
+		ProviderSettingsTheme.runtime_assets_ready(),
+		"模型设置正式页所需独立图像资产必须全部可加载",
+	)
+	_expect(
+		ProviderSettingsTheme.STATUS_LOADING_CUSTOM_PATH.ends_with(
+			"status_loading_custom_v5.png"
+		),
+		"检查中状态使用无时钟的三节点正式底板",
+	)
+	_expect(
+		ProviderSettingsTheme.PROVIDER_FORMAL_LOADING_PATH.ends_with(
+			"provider_checking_connection_v1.png"
+		),
+		"页头检查动画复用三节点连接图标，不显示时钟",
+	)
+	_expect_equal(
+		ProviderSettingsTheme.composite_background_path({
+			"providerId": "openai-compatible-2",
+			"customGroup": true,
+			"deletableConnection": true,
+		}),
+		ProviderSettingsTheme.CUSTOM_COMPATIBLE_BACKGROUND_PATH,
+		"新增中转连接使用同时容纳 Base URL 与 API Key 的正式底板",
 	)
 
 
@@ -3988,6 +4021,174 @@ func _test_provider_settings_error_copy_contract() -> void:
 		"模型设置桌面正式页不得泄露内部错误码、消息或详情",
 	)
 	composite.free()
+
+
+func _test_provider_model_assignment_return_contract() -> void:
+	var provider_scene := ResourceLoader.load(
+		"res://ui/provider_settings/ProviderSettingsScreen.tscn"
+	) as PackedScene
+	var provider_screen := (
+		provider_scene.instantiate() as Control
+		if provider_scene != null
+		else null
+	)
+	_expect(provider_screen != null, "模型设置页可进入居民模型重新分配流程")
+	if provider_screen == null:
+		return
+	root.add_child(provider_screen)
+	provider_screen.set("_last_model_deletion", {
+		"providerId": "ollama",
+		"apiModel": "qwen3:8b",
+	})
+	var blocked_vm := _provider_input_stability_view_model(2)
+	blocked_vm["status"] = "rejected"
+	blocked_vm["operation"] = {
+		"requestId": "delete-in-use",
+		"intent": "provider_settings.delete_api_model",
+		"status": "rejected",
+		"submittedAtMsec": 1,
+		"completedAtMsec": 2,
+	}
+	blocked_vm["error"] = {
+		"kind": "unavailable",
+		"code": "PROVIDER_API_MODEL_IN_USE",
+		"retryable": false,
+		"message": "请先重新分配居民模型。",
+		"details": ["resident-a", "resident-b"],
+	}
+	_expect(
+		bool(provider_screen.call("apply_view_model", blocked_vm)),
+		"占用中的自定义模型会显示重新分配入口",
+	)
+	var routed := {"intent": "", "payload": {}}
+	provider_screen.intent_requested.connect(func(
+		intent: StringName,
+		payload: Dictionary,
+	) -> void:
+		routed["intent"] = String(intent)
+		routed["payload"] = payload.duplicate(true)
+	)
+	provider_screen.call("_open_blocked_model_assignment")
+	_expect_equal(
+		String(routed.get("intent", "")),
+		"provider_settings.open_model_assignment",
+		"去分配模型只发出页面路由意图，不误派发给设置服务",
+	)
+	_expect_equal(
+		(routed.get("payload", {}) as Dictionary).get("modelId"),
+		"qwen3:8b",
+		"重新分配路由保留被占用模型",
+	)
+	_expect_equal(
+		((routed.get("payload", {}) as Dictionary).get(
+			"residentIds",
+			[],
+		) as Array).size(),
+		2,
+		"重新分配路由携带受影响居民",
+	)
+	root.remove_child(provider_screen)
+	provider_screen.free()
+
+	var assignment_scene := ResourceLoader.load(
+		"res://ui/resident_model_assignment/ResidentModelAssignmentScreen.tscn"
+	) as PackedScene
+	var assignment_page := (
+		assignment_scene.instantiate() as Control
+		if assignment_scene != null
+		else null
+	)
+	_expect(assignment_page != null, "居民模型分配页支持返回模型设置模式")
+	if assignment_page != null:
+		assignment_page.set("return_to_provider_settings", true)
+		root.add_child(assignment_page)
+		await process_frame
+		var modal_confirm := assignment_page.find_child(
+			"ResponsiveModalStart",
+			true,
+			false,
+		) as Button
+		var responsive_apply := assignment_page.find_child(
+			"ApplyDraftButton",
+			true,
+			false,
+		) as Button
+		_expect(
+			modal_confirm != null and modal_confirm.text == "确认并返回",
+			"返回模式完成确认不再显示开始游戏",
+		)
+		_expect(
+			responsive_apply != null
+			and responsive_apply.text == "确认并返回模型设置",
+			"返回模式底部动作明确返回模型设置",
+		)
+		assignment_page.set("_view_model", {
+			"data": {"formalReady": true},
+			"operation": {"status": "idle"},
+		})
+		var presentation := assignment_page.call(
+			"_presentation_view_model"
+		) as Dictionary
+		_expect(
+			bool((presentation.get("data", {}) as Dictionary).get(
+				"returnToProviderSettings",
+				false,
+			)),
+			"返回模式传入 1920 组合页面",
+		)
+		root.remove_child(assignment_page)
+		assignment_page.free()
+
+	var runtime_adapter := AdapterHarness.new()
+	root.add_child(runtime_adapter)
+	var runtime_host := HOST_SCRIPT.new() as Control
+	runtime_adapter.world_menu_host = runtime_host
+	var bound := runtime_host.call(
+		"bind_town_ui_adapter",
+		runtime_adapter,
+	) as Dictionary
+	root.add_child(runtime_host)
+	_expect(bool(bound.get("ok", false)), "正式运行页接入分配返回流程")
+	runtime_host.call(
+		"_on_self_dispatching_page_intent",
+		&"provider_settings.open_model_assignment",
+		{
+			"modelId": "qwen3:8b",
+			"residentIds": ["resident-a"],
+		},
+		&"provider_settings",
+	)
+	await process_frame
+	await process_frame
+	_expect_equal(
+		runtime_host.call("current_route"),
+		&"resident_model_assignment",
+		"正式运行页从模型设置打开居民模型分配页",
+	)
+	var routed_assignment := runtime_host.get("_active_page") as Control
+	_expect(
+		is_instance_valid(routed_assignment)
+		and bool(routed_assignment.get("return_to_provider_settings")),
+		"模型设置来源会启用确认返回模式",
+	)
+	runtime_host.call(
+		"_on_self_dispatching_page_intent",
+		&"resident_model_assignment.back",
+		{},
+		&"resident_model_assignment",
+	)
+	await process_frame
+	await process_frame
+	_expect_equal(
+		runtime_host.call("current_route"),
+		&"provider_settings",
+		"居民模型分配返回动作回到模型设置",
+	)
+	runtime_host.call("close_page", false)
+	root.remove_child(runtime_host)
+	runtime_host.free()
+	root.remove_child(runtime_adapter)
+	runtime_adapter.free()
 
 
 
@@ -5454,6 +5655,61 @@ func _scenario_game_flow_resident_model_assignment_route() -> void:
 			) as Array).size(),
 			17,
 			"opening/model assignment sees pool.get_merged_catalog",
+		)
+		var assignment_selection_data := projected_data.duplicate(true)
+		var assignment_selected_ids := (
+			assignment_selection_data.get(
+				"recommended_resident_ids",
+				[],
+			) as Array
+		).duplicate()
+		var replaced_assignment_resident_id := String(
+			assignment_selected_ids.pop_front()
+		)
+		assignment_selected_ids.append(custom_resident_id)
+		assignment_selection_data["selected_resident_ids"] = (
+			assignment_selected_ids
+		)
+		RESIDENT_CATALOG.update_confirmation_payload(
+			assignment_selection_data,
+			"",
+			"",
+			23,
+		)
+		var assignment_projection := host.call(
+			"_project_resident_model_assignment_catalog",
+			merged_catalog.get("catalog", {}) as Dictionary,
+			assignment_selection_data.get(
+				"confirmation_payload",
+				{},
+			) as Dictionary,
+		) as Dictionary
+		_expect_ok(
+			assignment_projection,
+			"model assignment projects the selected custom roster",
+		)
+		var assignment_catalog_residents := (
+			(assignment_projection.get("catalog", {}) as Dictionary).get(
+				"residents",
+				[],
+			) as Array
+		)
+		var assignment_catalog_ids: Array[String] = []
+		for assignment_resident_value: Variant in assignment_catalog_residents:
+			assignment_catalog_ids.append(String(
+				(assignment_resident_value as Dictionary).get("residentId", "")
+			))
+		_expect_equal(
+			assignment_catalog_residents.size(),
+			15,
+			"model assignment receives exactly the selected fifteen residents",
+		)
+		_expect(
+			assignment_catalog_ids.has(custom_resident_id)
+			and not assignment_catalog_ids.has(
+				replaced_assignment_resident_id,
+			),
+			"model assignment keeps the custom resident and excludes the replaced preset",
 		)
 		_expect(
 			selection.is_connected(

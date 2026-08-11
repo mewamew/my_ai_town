@@ -11,6 +11,12 @@ const XiaomiMiMoModelProviderScript := preload("res://agent/model/XiaomiMiMoMode
 const GenericOpenAICompatibleModelProviderScript := preload(
 	"res://agent/model/GenericOpenAICompatibleModelProvider.gd"
 )
+const ThreeZeroTwoAIModelProviderScript := preload(
+	"res://agent/model/ThreeZeroTwoAIModelProvider.gd"
+)
+const OllamaCloudModelProviderScript := preload(
+	"res://agent/model/OllamaCloudModelProvider.gd"
+)
 const FakeModelProviderScript := preload("res://agent/model/FakeModelProvider.gd")
 const SUPPORTED_INPUT_MODALITIES := ["text", "image"]
 
@@ -35,6 +41,42 @@ func _init(include_defaults := true) -> void:
 	_register_provider_with_models(
 		GenericOpenAICompatibleModelProviderScript,
 		_create_openai_compatible,
+	)
+	_register_openai_compatible_preset(
+		"302-ai",
+		"302.AI",
+		"302.AI OpenAI-compatible API",
+		"https://api.302.ai/v1",
+		true,
+		_create_302_ai,
+		{
+			"catalog_model_labels": ThreeZeroTwoAIModelProviderScript.TOWN_MODEL_LABELS,
+		},
+	)
+	_register_openai_compatible_preset(
+		"ollama",
+		"Ollama（本地）",
+		"Ollama OpenAI-compatible API",
+		"http://127.0.0.1:11434/v1",
+		false,
+		_create_ollama,
+	)
+	_register_openai_compatible_preset(
+		"ollama-cloud",
+		"Ollama Cloud",
+		"Ollama Cloud API",
+		"https://ollama.com/api",
+		true,
+		_create_ollama_cloud,
+		{"native_ollama_api": true},
+	)
+	_register_openai_compatible_preset(
+		"lm-studio",
+		"LM Studio（本地）",
+		"LM Studio OpenAI-compatible API",
+		"http://127.0.0.1:1234/v1",
+		false,
+		_create_lm_studio,
 	)
 	register_provider(FakeModelProviderScript.new().get_provider_descriptor(), _create_fake)
 	register_model({
@@ -62,6 +104,69 @@ func _register_provider_with_models(
 		if registered_model.get("id") == default_model:
 			registered_model["default_for_provider"] = true
 		register_model(registered_model)
+
+
+func _register_openai_compatible_preset(
+	provider_id: String,
+	label: String,
+	transport_label: String,
+	default_endpoint: String,
+	auth_required: bool,
+	factory: Callable,
+	extra_descriptor: Dictionary = {},
+) -> Dictionary:
+	var descriptor := {
+		"id": provider_id,
+		"label": label,
+		"transport_label": transport_label,
+		"external": true,
+		"auth_required": auth_required,
+		"default_endpoint": default_endpoint,
+		"custom_models": true,
+		"custom_group": true,
+		"model_catalog_supported": true,
+	}
+	for key: Variant in extra_descriptor:
+		descriptor[key] = extra_descriptor[key]
+	var provider_result := register_provider(descriptor, factory)
+	if provider_result.get("ok") != true:
+		return provider_result
+	var model_result := register_model({
+		"id": "custom",
+		"label": "自定义模型",
+		"provider_id": provider_id,
+		"default_for_provider": true,
+		"input_modalities": ["text"],
+		"runtime_modalities_configurable": true,
+	})
+	if model_result.get("ok") != true:
+		return model_result
+	return {"ok": true, "descriptor": provider_result.get("descriptor", {})}
+
+
+func register_openai_compatible_profile(
+	provider_id: String,
+	label: String,
+	default_endpoint := "",
+	auth_required := true,
+) -> Dictionary:
+	var normalized_id := provider_id.strip_edges()
+	var normalized_label := label.strip_edges()
+	if normalized_id.is_empty() or normalized_label.is_empty():
+		return {"ok": false, "errors": ["兼容连接名称和 ID 不能为空"]}
+	return _register_openai_compatible_preset(
+		normalized_id,
+		normalized_label,
+		"%s OpenAI-compatible API" % normalized_label,
+		default_endpoint.strip_edges(),
+		auth_required,
+		_create_dynamic_openai_compatible.bind(
+			normalized_id,
+			normalized_label,
+			default_endpoint.strip_edges(),
+			auth_required,
+		),
+	)
 
 
 func register_provider(descriptor: Dictionary, factory: Callable, make_default := false) -> Dictionary:
@@ -191,7 +296,11 @@ func create_provider(provider_id: String, request_host: Node = null, config: Dic
 	if resolved_config.has("model"):
 		var configured_model_id := String(resolved_config.get("model", ""))
 		var provider_models: Dictionary = _model_descriptors_by_provider.get(provider_id, {})
-		if not provider_models.has(configured_model_id):
+		var provider_descriptor := descriptor(provider_id)
+		if (
+			not provider_models.has(configured_model_id)
+			and not bool(provider_descriptor.get("custom_models", false))
+		):
 			return {"ok": false, "errors": ["未知模型：%s" % configured_model_id]}
 	if not resolved_config.has("model"):
 		var provider_default_model := default_model_id(provider_id)
@@ -299,6 +408,113 @@ func _create_kimi(request_host: Node, config: Dictionary) -> RefCounted:
 
 func _create_openai_compatible(request_host: Node, config: Dictionary) -> RefCounted:
 	return GenericOpenAICompatibleModelProviderScript.new(request_host, null, config)
+
+
+func _create_dynamic_openai_compatible(
+	request_host: Node,
+	config: Dictionary,
+	provider_id: String,
+	provider_label: String,
+	default_endpoint: String,
+	auth_required: bool,
+) -> RefCounted:
+	return GenericOpenAICompatibleModelProviderScript.new(
+		request_host,
+		null,
+		_compatible_preset_config(config, {
+			"provider_id": provider_id,
+			"provider_label": provider_label,
+			"transport_label": "%s OpenAI-compatible API" % provider_label,
+			"default_endpoint": default_endpoint,
+			"api_key_required": auth_required,
+			"api_key_environment": "",
+			"timeout_seconds": 60.0,
+		}),
+	)
+
+
+func _create_302_ai(request_host: Node, config: Dictionary) -> RefCounted:
+	return ThreeZeroTwoAIModelProviderScript.new(
+		request_host,
+		null,
+		_compatible_preset_config(config, {
+			"provider_id": "302-ai",
+			"provider_label": "302.AI",
+			"transport_label": "302.AI OpenAI-compatible API",
+			"default_endpoint": "https://api.302.ai/v1",
+			"api_key_required": true,
+			"api_key_environment": "AI_302_API_KEY",
+			"timeout_seconds": 60.0,
+		}),
+	)
+
+
+func _create_ollama(request_host: Node, config: Dictionary) -> RefCounted:
+	return GenericOpenAICompatibleModelProviderScript.new(
+		request_host,
+		null,
+		_compatible_preset_config(config, {
+			"provider_id": "ollama",
+			"provider_label": "Ollama（本地）",
+			"transport_label": "Ollama OpenAI-compatible API",
+			"default_endpoint": "http://127.0.0.1:11434/v1",
+			"api_key_required": false,
+			"api_key_environment": "OLLAMA_API_KEY",
+			"timeout_seconds": 300.0,
+		}),
+	)
+
+
+func _create_ollama_cloud(request_host: Node, config: Dictionary) -> RefCounted:
+	return OllamaCloudModelProviderScript.new(
+		request_host,
+		null,
+		_compatible_preset_config(config, {
+			"provider_id": "ollama-cloud",
+			"provider_label": "Ollama Cloud",
+			"transport_label": "Ollama Cloud API",
+			"default_endpoint": "https://ollama.com/api",
+			"api_key_required": true,
+			"api_key_environment": "OLLAMA_API_KEY",
+			"timeout_seconds": 120.0,
+		}),
+	)
+
+
+func _create_lm_studio(request_host: Node, config: Dictionary) -> RefCounted:
+	return GenericOpenAICompatibleModelProviderScript.new(
+		request_host,
+		null,
+		_compatible_preset_config(config, {
+			"provider_id": "lm-studio",
+			"provider_label": "LM Studio（本地）",
+			"transport_label": "LM Studio OpenAI-compatible API",
+			"default_endpoint": "http://127.0.0.1:1234/v1",
+			"api_key_required": false,
+			"api_key_environment": "LM_STUDIO_API_KEY",
+			"timeout_seconds": 300.0,
+		}),
+	)
+
+
+func _compatible_preset_config(
+	config: Dictionary,
+	preset: Dictionary,
+) -> Dictionary:
+	var result := config.duplicate(true)
+	result["preset_provider_id"] = String(preset.get("provider_id", ""))
+	result["preset_provider_label"] = String(preset.get("provider_label", ""))
+	result["preset_transport_label"] = String(preset.get("transport_label", ""))
+	result["preset_default_endpoint"] = String(preset.get("default_endpoint", ""))
+	if not result.has("endpoint"):
+		result["endpoint"] = result["preset_default_endpoint"]
+	result["preset_api_key_required"] = bool(preset.get("api_key_required", true))
+	result["preset_api_key_environment"] = String(
+		preset.get("api_key_environment", "")
+	)
+	if not result.has("timeout_seconds"):
+		result["timeout_seconds"] = float(preset.get("timeout_seconds", 30.0))
+	return result
 
 
 func _create_fake(_request_host: Node, config: Dictionary) -> RefCounted:

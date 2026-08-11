@@ -100,8 +100,12 @@ static func _validate_known_announcements(
 				"announcement_id",
 				"text",
 				"publisher_resident_id",
+				"publisher_name",
 				"acquired_via",
 				"active",
+				"scheduled_absolute_minute",
+				"scheduled_time_label",
+				"schedule_triggered",
 			],
 			path,
 			errors,
@@ -130,3 +134,11 @@ static func _validate_known_announcements(
 		)
 		if typeof(announcement.get("active")) != TYPE_BOOL:
 			errors.append("%s.active 必须是布尔值" % path)
+		if announcement.has("publisher_name") and not announcement.get("publisher_name") is String:
+			errors.append("%s.publisher_name 必须是文本" % path)
+		if announcement.has("scheduled_absolute_minute") and typeof(announcement.get("scheduled_absolute_minute")) != TYPE_INT:
+			errors.append("%s.scheduled_absolute_minute 必须是整数" % path)
+		if announcement.has("scheduled_time_label") and not announcement.get("scheduled_time_label") is String:
+			errors.append("%s.scheduled_time_label 必须是文本" % path)
+		if announcement.has("schedule_triggered") and not announcement.get("schedule_triggered") is bool:
+			errors.append("%s.schedule_triggered 必须是布尔值" % path)

@@ -493,6 +493,13 @@ func _validate_formal_indoor_action(data: Dictionary) -> void:
 	_expect_equal(start_result.get("ok"), true, "completed catalog starts through the formal World gate")
 	if start_result.get("ok") != true:
 		return
+	var formal_resident := (
+		(world.get("_residents") as Dictionary).get("resident_lin_lan_01", {})
+		as Dictionary
+	)
+	var formal_activity := formal_resident.get("activityState", {}) as Dictionary
+	formal_activity["energy"] = 35
+	world.call("_sync_body_from_activity_needs", formal_resident, formal_activity)
 	world.call("cycle_time_period_for_test")
 	world.call("cycle_time_period_for_test")
 	var requests := world.call("take_pending_decision_requests", ["林岚"]) as Array[Dictionary]
@@ -596,6 +603,13 @@ func _validate_dynamic_world_projection(data: Dictionary) -> void:
 		true,
 		"formal World starts before a dynamic furniture edit",
 	)
+	var dynamic_resident := (
+		(world.get("_residents") as Dictionary).get("resident_lin_lan_01", {})
+		as Dictionary
+	)
+	var dynamic_activity := dynamic_resident.get("activityState", {}) as Dictionary
+	dynamic_activity["energy"] = 35
+	world.call("_sync_body_from_activity_needs", dynamic_resident, dynamic_activity)
 	world.call("cycle_time_period_for_test")
 	world.call("cycle_time_period_for_test")
 	var entry_wake := _take_request(world, "林岚")
@@ -1341,6 +1355,13 @@ func _scenario_daily_life_chain() -> void:
 		"home commute completes",
 	)
 	lin_wake = _take_wake_daily_life_chain(world, "林岚")
+	var lin_resident := (
+		(world.get("_residents") as Dictionary).get("resident_lin_lan_01", {})
+		as Dictionary
+	)
+	var lin_activity := lin_resident.get("activityState", {}) as Dictionary
+	lin_activity["energy"] = 35
+	world.call("_sync_body_from_activity_needs", lin_resident, lin_activity)
 	_expect_accepted(
 		world.call(
 			"submit_agent_decision",

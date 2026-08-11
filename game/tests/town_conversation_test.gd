@@ -677,6 +677,7 @@ func _run_all() -> void:
 	_scenario_conversation()
 	_scenario_ui_adapter_player_conversation_identity()
 	_scenario_announcement_distribution_integration()
+	_scenario_player_announcement_priority()
 	_scenario_relationship_evidence_progress()
 	_scenario_announcement_long_history()
 	_scenario_announcement_pending_arrival()
@@ -696,6 +697,73 @@ func _scenario_ui_adapter_conversation_spectator() -> void:
 		"capabilityMode": "development",
 		"formalReady": false,
 	})
+	adapter.call(
+		"_on_hud_resident_reaction_created",
+		"林岚",
+		{
+			"reactionId": "announcement-reaction-1",
+			"decisionId": "decision-announcement-1",
+			"sourceActionId": "",
+			"sourceEventId": "event-announcement-1",
+			"announcementId": "announcement-1",
+			"residentId": "resident-lin",
+			"text": "这场电影我想去看看。",
+			"reactionKind": "announcement",
+			"worldRevision": 41,
+		},
+	)
+	var announcement_reactions := (
+		adapter.get("_hud_public_thoughts") as Dictionary
+	)
+	_expect_equal(
+		announcement_reactions.size(),
+		1,
+		"announcement reaction reaches the resident head-bubble queue",
+	)
+	if not announcement_reactions.is_empty():
+		var announcement_reaction := (
+			announcement_reactions.values()[0] as Dictionary
+		)
+		_expect_equal(
+			announcement_reaction.get("actionId"),
+			"event-announcement-1",
+			"head-bubble identity can use an announcement event source",
+		)
+		_expect_equal(
+			announcement_reaction.get("publicThought"),
+			"这场电影我想去看看。",
+			"head bubble preserves the resident-authored announcement thought",
+		)
+		_expect_equal(
+			announcement_reaction.get("thoughtKind"),
+			"announcement_reaction",
+			"announcement response uses its own HUD semantic",
+		)
+		var reaction_item := adapter.call(
+			"_hud_public_thought_item",
+			"announcement-reaction-1",
+			"event-announcement-1",
+			"resident-lin",
+			"林岚",
+			"这场电影我想去看看。",
+			41,
+			0,
+			10000,
+			"town_outdoor",
+			"announcement_reaction",
+			{"announcementId": "announcement-1"},
+		) as Dictionary
+		var reaction_action := reaction_item.get("action", {}) as Dictionary
+		_expect_equal(
+			reaction_action.get("intent"),
+			"town_hud.open_town_log",
+			"公告回应气泡打开右侧事件链，而不是公告编辑页",
+		)
+		_expect_equal(
+			(reaction_action.get("payload", {}) as Dictionary).get("threadId"),
+			"announcement:announcement-1",
+			"公告回应直接定位到对应事件链",
+		)
 
 	var initial := adapter.call("get_view_model", "conversation") as Dictionary
 	_expect_complete_view_model(initial)
@@ -1554,6 +1622,29 @@ func _test_accept_multi_turn_overhear_and_end() -> void:
 		)
 		_expect_equal(overheard.get("speakers"), ["林岚", "唐小满"], "overhear event keeps player-readable participant names")
 		_expect_equal((overheard.get("turn", {}) as Dictionary).get("speaker_resident_id"), "resident_lin_lan_01", "overhear turn identifies the actual speaker")
+
+	var player_notice := world.call(
+		"publish_announcement",
+		"请大家稍后到中央广场集合。",
+	) as Dictionary
+	_expect_equal(
+		player_notice.get("ok"),
+		true,
+		"player announcement can be published during a resident conversation",
+	)
+	var lin_during_conversation := (
+		world.get("_residents") as Dictionary
+	).get(POSTAL_ID, {}) as Dictionary
+	_expect_equal(
+		lin_during_conversation.get("decisionPending"),
+		false,
+		"player announcement does not interrupt an active resident conversation",
+	)
+	_expect_equal(
+		(world.call("get_active_conversations") as Array).size(),
+		1,
+		"active resident conversation remains intact after a player announcement",
+	)
 
 	var tang_invitation := _take_wake_conversation(world, "唐小满")
 	_expect(_has_event_conversation(tang_invitation, "搭话"), "target receives an urgent talk event")
@@ -2480,8 +2571,172 @@ func _scenario_announcement_distribution_integration() -> void:
 	_test_read_and_relay_do_not_duplicate(world)
 	_test_resident_notice_is_global(world)
 	_test_resident_notice_survives_restore(world, data, opening)
+	_test_timed_announcement_due(world)
 	world.call("stop")
 	return
+
+
+func _scenario_player_announcement_priority() -> void:
+	var data := BUILDER.build_from_source(SOURCE_DIR)
+	var opening_result := OPENING.load_config(OPENING_PATH, data) as Dictionary
+	_expect_equal(opening_result.get("ok"), true, "公告优先级开局可加载")
+	if opening_result.get("ok") != true:
+		return
+	var opening := (
+		opening_result.get("config", {}) as Dictionary
+	).duplicate(true)
+	var world: RefCounted = WORLD.new()
+	_expect_equal(
+		world.call("start", data, opening).get("ok"),
+		true,
+		"公告优先级 World 可启动",
+	)
+	for request: Dictionary in world.call(
+		"take_pending_decision_requests",
+	) as Array[Dictionary]:
+		var wake := request.get("wakePacket", {}) as Dictionary
+		world.call(
+			"submit_agent_decision",
+			String(request.get("residentName", "")),
+			_wait_announcement_long_history(wake),
+		)
+	var residents := world.get("_residents") as Dictionary
+	var target := residents.get(SPEAKER_ID, {}) as Dictionary
+	_expect(
+		not (target.get("currentAction", {}) as Dictionary).is_empty(),
+		"目标居民先有一项持续中的普通行动",
+	)
+	var resident_notice := world.call(
+		"publish_resident_announcement",
+		MANAGER_ID,
+		"镇公所今天整理旧档案。",
+	) as Dictionary
+	_expect_equal(resident_notice.get("ok"), true, "居民公告可以正常发布")
+	_expect_equal(
+		target.get("decisionPending"),
+		false,
+		"居民公告不会打断持续中的普通行动",
+	)
+	var player_notice := world.call(
+		"publish_announcement",
+		"请所有人现在到中央广场集合。",
+	) as Dictionary
+	_expect_equal(player_notice.get("ok"), true, "玩家公告可以正常发布")
+	_expect_equal(
+		target.get("decisionPending"),
+		true,
+		"玩家公告立即唤醒正在行动的居民",
+	)
+	_expect_equal(
+		target.get("decisionMayInterruptCurrent"),
+		true,
+		"玩家公告允许居民替换当前普通行动",
+	)
+	var requests := world.call(
+		"take_pending_decision_requests_by_ids",
+		[SPEAKER_ID],
+	) as Array
+	_expect_equal(requests.size(), 1, "玩家公告立即形成一轮居民决定")
+	if requests.size() == 1:
+		var wake := (
+			(requests[0] as Dictionary).get("wakePacket", {}) as Dictionary
+		)
+		var player_event_found := false
+		var reactions: Array[Dictionary] = []
+		for event_value: Variant in wake.get("events", []) as Array:
+			var event := event_value as Dictionary
+			if String(event.get("type", "")) not in ["公告发布", "公告到点"]:
+				continue
+			player_event_found = (
+				player_event_found
+				or String(event.get("announcement_priority", "")) == "player"
+			)
+			reactions.append({
+				"source_event_id": String(event.get("event_id", "")),
+				"text": "我会明确处理这条公告。",
+			})
+		_expect(player_event_found, "玩家公告以最高优先级进入唤醒包")
+		var continue_result := world.call(
+			"submit_agent_decision",
+			SPEAKER_ID,
+			{
+				"decision_id": String(wake.get("decision_id", "")),
+				"handling": "continue_current",
+				"announcement_reactions": reactions,
+			},
+		) as Dictionary
+		_expect_equal(
+			continue_result.get("errorCode"),
+			"PLAYER_ANNOUNCEMENT_ACTION_REQUIRED",
+			"World 本身拒绝只表态后继续普通工作",
+		)
+		_expect_equal(
+			continue_result.get("consumed"),
+			false,
+			"被拒绝的继续工作不会消耗本轮决定",
+		)
+		var replacement_id := "%s-player-priority" % String(
+			wake.get("decision_id", ""),
+		)
+		var replacement := world.call(
+			"submit_agent_decision",
+			SPEAKER_ID,
+			{
+				"decision_id": String(wake.get("decision_id", "")),
+				"handling": "replace_current",
+				"announcement_reactions": reactions,
+				"action": {
+					"action_id": replacement_id,
+					"type": "待着",
+					"line": "停下手头工作，重新安排眼前行动。",
+				},
+			},
+		) as Dictionary
+		_expect_equal(replacement.get("ok"), true, "居民可提交新行动处理玩家公告")
+		_expect_equal(
+			String((target.get("currentAction", {}) as Dictionary).get("action_id", "")),
+			replacement_id,
+			"玩家公告最终替换了持续中的普通行动",
+		)
+	var timed := world.call(
+		"publish_announcement",
+		"两小时后请到中央广场集合。",
+	) as Dictionary
+	var due_minute := int(
+		(timed.get("announcement", {}) as Dictionary).get(
+			"scheduled_absolute_minute",
+			-1,
+		),
+	)
+	_expect(due_minute >= 0, "玩家时间公告识别出到点时刻")
+	world.call("_advance_announcement_schedules", due_minute)
+	_expect_equal(
+		target.get("decisionPending"),
+		true,
+		"玩家公告到点会再次立即唤醒居民",
+	)
+	_expect_equal(
+		target.get("decisionMayInterruptCurrent"),
+		true,
+		"玩家公告到点仍可替换普通行动",
+	)
+	var due_requests := world.call(
+		"take_pending_decision_requests_by_ids",
+		[SPEAKER_ID],
+	) as Array
+	var player_due_found := false
+	if due_requests.size() == 1:
+		for value: Variant in (
+			(due_requests[0] as Dictionary).get("wakePacket", {}) as Dictionary
+		).get("events", []) as Array:
+			var event := value as Dictionary
+			if (
+				String(event.get("type", "")) == "公告到点"
+				and String(event.get("announcement_priority", "")) == "player"
+			):
+				player_due_found = true
+	_expect(player_due_found, "玩家公告到点保留最高优先级标记")
+	world.call("stop")
 func _prepare_residents(opening: Dictionary) -> void:
 	var positions := {
 		POSTAL_ID: [4631, 2790],
@@ -2650,6 +2905,28 @@ func _test_resident_notice_is_global(world: RefCounted) -> void:
 			_has_agent_matter(world, resident_id, matter_id),
 			"关联事项立即进入 %s 的已知事项" % resident_id,
 		)
+	var manager_state := (
+		(world.get("_residents") as Dictionary).get(MANAGER_ID, {}) as Dictionary
+	)
+	var manager_announcement_events: Array = []
+	manager_announcement_events.append_array(
+		manager_state.get("eventQueue", []) as Array,
+	)
+	manager_announcement_events.append_array(
+		manager_state.get("inflightEvents", []) as Array,
+	)
+	var publisher_received_own_event := false
+	for event_value: Variant in manager_announcement_events:
+		if (
+			event_value is Dictionary
+			and String((event_value as Dictionary).get("announcement_id", ""))
+			== announcement_id
+		):
+			publisher_received_own_event = true
+	_expect(
+		not publisher_received_own_event,
+		"居民发布者知道自己的公告，但不会收到一条自我回应事件",
+	)
 	_expect_equal(
 		(world.call(
 			"get_private_messages_for_resident",
@@ -2726,6 +3003,104 @@ func _test_resident_notice_survives_restore(
 			"announcement_broadcast",
 		),
 		"恢复后仍保留其他居民的全局知情来源",
+	)
+
+
+func _test_timed_announcement_due(world: RefCounted) -> void:
+	var timed: Dictionary = {}
+	for value: Variant in world.call("get_announcements") as Array:
+		var announcement := value as Dictionary
+		if String(announcement.get("announcement_id", "")) == "announcement-1":
+			timed = announcement
+			break
+	var due_minute := int(timed.get("scheduled_absolute_minute", -1))
+	_expect(
+		due_minute > _absolute_minute(world.call("get_time")),
+		"今晚公告识别出未来约定时间",
+	)
+	_expect_equal(
+		String(timed.get("scheduled_time_label", "")),
+		"第1天 20:00",
+		"今晚使用稳定的世界时间标签",
+	)
+	var guard := 0
+	while _absolute_minute(world.call("get_time")) < due_minute and guard < 12:
+		world.call("cycle_time_period_for_test")
+		guard += 1
+	_expect(
+		_absolute_minute(world.call("get_time")) >= due_minute,
+		"测试时钟能够推进到公告约定时间",
+	)
+	var due_event_id := ""
+	for value: Variant in world.call("get_public_event_log") as Array:
+		var record := value as Dictionary
+		var payload := record.get("payload", {}) as Dictionary
+		if (
+			String(payload.get("type", "")) == "公告到点"
+			and String(payload.get("announcement_id", "")) == "announcement-1"
+		):
+			due_event_id = String(record.get("eventId", ""))
+			break
+	_expect(not due_event_id.is_empty(), "约定时间到达后形成一次公告到点事件")
+	world.call(
+		"_emit_resident_reaction",
+		BYSTANDER_ID,
+		"timed-announcement-response",
+		{},
+		[{
+			"source_event_id": due_event_id,
+			"text": "时间到了，我现在过去看看。",
+		}],
+		[{
+			"event_id": due_event_id,
+			"type": "公告到点",
+			"announcement_id": "announcement-1",
+			"text": "今晚广场有露天电影。",
+		}],
+	)
+	var detail := world.call(
+		"get_world_log_thread_detail",
+		"announcement:announcement-1",
+		{},
+	) as Dictionary
+	_expect_equal(detail.get("ok"), true, "时间公告可从右侧事件链读取")
+	_expect(
+		String((detail.get("thread", {}) as Dictionary).get("title", "")).contains(
+			"今晚广场有露天电影",
+		),
+		"居民回应追加后仍保留公告作为事件链标题",
+	)
+	_expect(
+		String((detail.get("thread", {}) as Dictionary).get("title", "")).begins_with(
+			"公告发布",
+		),
+		"到点提醒和居民回应不会改掉公告事件链的根标题",
+	)
+	var record_types: Array[String] = []
+	for value: Variant in detail.get("records", []) as Array:
+		record_types.append(String(
+			((value as Dictionary).get("payload", {}) as Dictionary).get("type", ""),
+		))
+	_expect(
+		record_types.has("公告发布")
+		and record_types.has("公告到点")
+		and record_types.has("居民公开反应"),
+		"公告发布、到点提醒与居民回应保留在同一条右侧事件链",
+	)
+	var past_time := world.call(
+		"publish_announcement",
+		"今天上午十点在广场集合。",
+	) as Dictionary
+	_expect_equal(past_time.get("ok"), true, "未识别时间不影响公告本身发布")
+	_expect_equal(
+		past_time.get("scheduleWarning"),
+		true,
+		"过去的模糊时刻会明确告诉界面需要提醒玩家",
+	)
+	_expect_equal(
+		past_time.get("scheduleRecognized"),
+		false,
+		"时间解析失败不会伪装成已设置到点提醒",
 	)
 
 

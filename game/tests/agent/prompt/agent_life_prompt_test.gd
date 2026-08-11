@@ -60,6 +60,24 @@ func _test_life_and_social_context(compiler_script: Script) -> void:
 		["resident-tang-xiao-man"],
 		"private-message recipients come from the current World snapshot",
 	)
+	wake["events"] = [{
+		"event_id": "event-announcement-life-1",
+		"time": {"day": 1, "clock": "12:00", "period": "中午"},
+		"type": "公告发布",
+		"announcement_id": "announcement-1",
+		"text": "今晚广场有露天电影。",
+	}]
+	var announcement_request := compiler.call("compile", wake, "") as Dictionary
+	var announcement_constraints := (
+		announcement_request.get("derived_constraints", {}) as Dictionary
+	)
+	_expect_equal(
+		(announcement_constraints.get("announcement_reactions", {}) as Dictionary).get(
+			"source_event_ids",
+		),
+		["event-announcement-life-1"],
+		"newly delivered announcement exposes a required reaction source",
+	)
 
 
 func _test_retry_feedback_is_scoped_to_the_correction(

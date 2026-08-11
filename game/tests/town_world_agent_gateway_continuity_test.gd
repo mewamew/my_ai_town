@@ -85,11 +85,36 @@ class ImmediateDecisionAgent:
 class ProviderServiceStub:
 	extends RefCounted
 
+	func validate_resident_bindings(_bindings: Variant) -> Dictionary:
+		return {"ok": true, "errorCode": "", "retryable": false}
+
 	func create_provider_for_resident(_binding: Dictionary) -> Dictionary:
 		return {"ok": true, "provider": null}
 
 	func get_latest_diagnostic(_resident_id: String) -> Dictionary:
 		return {}
+
+
+class RebindProvider:
+	extends RefCounted
+
+	func request_decision(_request: Dictionary, _on_complete: Callable) -> void:
+		pass
+
+
+class RebindAgentSystem:
+	extends RefCounted
+
+	var providers_by_resident_id: Dictionary = {}
+
+	func replace_resident_model_provider(
+		resident_id: String,
+		model_provider: Object,
+	) -> Dictionary:
+		if model_provider == null or not model_provider.has_method("request_decision"):
+			return {"ok": false, "errors": ["model provider missing"]}
+		providers_by_resident_id[resident_id] = model_provider
+		return {"ok": true}
 
 
 class ProviderBillingFailureStub:
@@ -337,6 +362,7 @@ class FailingMemoryAgent:
 func _initialize() -> void:
 	_test_null_conversation_snapshot_is_not_an_avatar_turn()
 	_test_duplicate_display_names_route_by_id()
+	_test_runtime_resident_bindings_can_be_replaced_atomically()
 	_test_inner_observation_accepts_newer_read_only_world_revision()
 	_test_memory_read_failures_are_structured()
 	_test_memory_intervention_uses_world_time_and_agent_contract()
@@ -346,6 +372,7 @@ func _initialize() -> void:
 	_test_consumed_world_rejection_is_not_a_gateway_failure()
 	_test_unconsumed_fallback_keeps_social_candidate_open()
 	_test_failed_first_pair_cannot_starve_the_town()
+	_test_local_model_queue_preserves_town_and_avatar_lane()
 	_test_conversation_turn_preempts_ordinary_life_requests()
 	_test_conversation_lane_stays_available_during_ordinary_work()
 	_test_immediate_agent_rejection_cannot_loop_forever()
@@ -873,6 +900,72 @@ func _test_duplicate_display_names_route_by_id() -> void:
 	gateway.free()
 
 
+func _test_runtime_resident_bindings_can_be_replaced_atomically() -> void:
+	var gateway: Node = GATEWAY.new()
+	gateway.set("_session_active", true)
+	gateway.set("_provider_service", ProviderServiceStub.new())
+	gateway.set("_agent_system", RebindAgentSystem.new())
+	gateway.set("_resident_identities", [
+		{"residentId": "resident-a", "residentName": "小林"},
+		{"residentId": "resident-b", "residentName": "小苏"},
+	] as Array[Dictionary])
+	var bindings := [
+		{
+			"residentId": "resident-a",
+			"llmBinding": {
+				"mode": "model",
+				"providerId": "ollama",
+				"modelId": "qwen3:8b",
+			},
+		},
+		{
+			"residentId": "resident-b",
+			"llmBinding": {
+				"mode": "model",
+				"providerId": "deepseek",
+				"modelId": "deepseek-chat",
+			},
+		},
+	]
+	var updated := gateway.call(
+		"update_resident_bindings",
+		bindings,
+	) as Dictionary
+	_expect(bool(updated.get("ok", false)), "运行中的居民模型绑定可整体更新")
+	_expect_equal(
+		((gateway.get("_bindings_by_id") as Dictionary).get(
+			"resident-a",
+			{},
+		) as Dictionary).get("llmBinding"),
+		bindings[0].get("llmBinding"),
+		"Gateway 立即使用更新后的居民模型",
+	)
+	_expect_equal(
+		(
+			gateway.get("_agent_system") as RebindAgentSystem
+		).providers_by_resident_id.size(),
+		2,
+		"绑定更新同步替换真实 Agent 层的居民模型提供方",
+	)
+	var before_invalid := (
+		gateway.get("_bindings_by_id") as Dictionary
+	).duplicate(true)
+	var rejected := gateway.call(
+		"update_resident_bindings",
+		[bindings[0]],
+	) as Dictionary
+	_expect(
+		not bool(rejected.get("ok", false)),
+		"缺少居民的绑定更新会被拒绝",
+	)
+	_expect_equal(
+		gateway.get("_bindings_by_id"),
+		before_invalid,
+		"失败的绑定更新不会留下半套状态",
+	)
+	gateway.free()
+
+
 func _test_immediate_agent_rejection_cannot_loop_forever() -> void:
 	var world := PendingWorld.new()
 	world.add_request(_request("resident-a", "decision-rejected"))
@@ -1147,6 +1240,95 @@ func _test_failed_first_pair_cannot_starve_the_town() -> void:
 	_expect(
 		world.submissions.size() > 0,
 		"residents whose correction was exhausted receive safe continuity",
+	)
+	gateway.free()
+
+
+func _test_local_model_queue_preserves_town_and_avatar_lane() -> void:
+	var agent := DelayedFailingAgent.new()
+	var world := PendingWorld.new()
+	var resident_ids: Array[String] = [
+		"resident-a",
+		"resident-b",
+		"resident-c",
+		"resident-d",
+		"resident-avatar",
+	]
+	var bindings := {}
+	for resident_id in resident_ids:
+		bindings[resident_id] = {
+			"residentId": resident_id,
+			"llmBinding": {
+				"mode": "model",
+				"providerId": "ollama",
+				"modelId": "qwen3.5:9b",
+			},
+		}
+	for resident_id in resident_ids.slice(0, 4):
+		world.add_request(_request(resident_id, "decision-%s" % resident_id))
+	var gateway: Node = GATEWAY.new()
+	gateway.set("_agent_system", agent)
+	gateway.set("_provider_service", ProviderServiceStub.new())
+	gateway.set("_world", world)
+	gateway.set("_connected_resident_ids", resident_ids)
+	gateway.set("_bindings_by_id", bindings)
+	gateway.set("_session_active", true)
+
+	_expect_equal(
+		gateway.call("pump"),
+		2,
+		"local inference dispatches only two ordinary residents at once",
+	)
+	_expect_equal(
+		agent.requested_resident_ids,
+		["resident-a", "resident-b"],
+		"local queue keeps deterministic round-robin order",
+	)
+	_expect(
+		world.redispatched.has("decision-resident-c")
+		and world.redispatched.has("decision-resident-d"),
+		"queued local residents remain pending instead of receiving continuity fallback",
+	)
+	var avatar_request := _request(
+		"resident-avatar",
+		"decision-local-avatar-reply",
+	)
+	var avatar_wake := avatar_request.get("wakePacket", {}) as Dictionary
+	avatar_wake["snapshot"]["conversation"] = {
+		"conversation_id": "conversation-local-avatar",
+		"with_resident_id": "person_7f3a91c2d8e4",
+		"with": "旅行者",
+		"turns": [],
+	}
+	avatar_wake["events"] = [{
+		"event_id": "conversation-local-avatar-turn",
+		"time": {"day": 1, "clock": "08:11", "period": "上午"},
+		"type": "对方答话",
+		"conversation_id": "conversation-local-avatar",
+		"turn": {
+			"turn_id": 1,
+			"speaker_resident_id": "person_7f3a91c2d8e4",
+			"speaker": "旅行者",
+			"say": "我们聊聊。",
+			"narration": "",
+			"photos": [],
+		},
+	}]
+	world.add_request(avatar_request)
+	_expect_equal(
+		gateway.call("pump"),
+		1,
+		"local inference keeps a third reserved lane for the player's conversation",
+	)
+	_expect_equal(
+		agent.requested_resident_ids.back(),
+		"resident-avatar",
+		"the reserved local lane prioritizes the avatar reply",
+	)
+	_expect_equal(
+		gateway.call("get_debug_inflight_count"),
+		3,
+		"local provider never exceeds its two background plus one conversation limit",
 	)
 	gateway.free()
 

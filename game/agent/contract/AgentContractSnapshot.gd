@@ -24,13 +24,11 @@ static func _validate_reaction(
 		errors,
 	)
 	var expected_action_id := AgentContract.reaction_source_action_id(wake_packet)
-	if expected_action_id.is_empty():
+	if not expected_action_id.is_empty():
+		if source_action_id != expected_action_id:
+			errors.append("reaction.source_action_id 必须指向本次最新的可回应动作结果")
+	else:
 		errors.append("本次唤醒没有可回应的动作结果，不允许 reaction")
-	elif (
-		not source_action_id.is_empty()
-		and source_action_id != expected_action_id
-	):
-		errors.append("reaction.source_action_id 必须指向本次最新的可回应动作结果")
 	if text.contains("\n") or text.contains("\r") or text.contains("\t"):
 		errors.append("reaction.text 必须是单行文字")
 	if text.length() > AgentContract.REACTION_TEXT_MAX_LENGTH:
@@ -38,6 +36,60 @@ static func _validate_reaction(
 			"reaction.text 最多 %d 个字符"
 			% AgentContract.REACTION_TEXT_MAX_LENGTH
 		)
+
+
+static func _validate_announcement_reactions(
+	value: Variant,
+	wake_packet: Dictionary,
+	errors: Array[String],
+) -> void:
+	if value is not Array:
+		errors.append("announcement_reactions 必须是数组")
+		return
+	var expected_ids := AgentContract.announcement_reaction_source_event_ids(
+		wake_packet,
+	)
+	var seen: Dictionary = {}
+	for index: int in (value as Array).size():
+		var reaction_value: Variant = (value as Array)[index]
+		if reaction_value is not Dictionary:
+			errors.append("announcement_reactions[%d] 必须是对象" % index)
+			continue
+		var reaction := reaction_value as Dictionary
+		AgentContractIdentity._validate_allowed_fields(
+			reaction,
+			AgentContract.ANNOUNCEMENT_REACTION_FIELDS,
+			"announcement_reactions[%d]" % index,
+			errors,
+		)
+		var source_event_id := AgentContract._require_non_empty_string(
+			reaction,
+			"source_event_id",
+			"announcement_reactions[%d].source_event_id" % index,
+			errors,
+		)
+		var text := AgentContract._require_non_empty_string(
+			reaction,
+			"text",
+			"announcement_reactions[%d].text" % index,
+			errors,
+		)
+		if not source_event_id.is_empty():
+			if not expected_ids.has(source_event_id):
+				errors.append(
+					"announcement_reactions[%d].source_event_id 不属于本轮公告"
+					% index
+				)
+			elif seen.has(source_event_id):
+				errors.append("同一公告不能重复提交回应：%s" % source_event_id)
+			seen[source_event_id] = true
+		if text.contains("\n") or text.contains("\r") or text.contains("\t"):
+			errors.append("announcement_reactions[%d].text 必须是单行文字" % index)
+		if text.length() > AgentContract.REACTION_TEXT_MAX_LENGTH:
+			errors.append(
+				"announcement_reactions[%d].text 最多 %d 个字符"
+				% [index, AgentContract.REACTION_TEXT_MAX_LENGTH]
+			)
 
 
 static func _validate_snapshot(snapshot: Dictionary, errors: Array[String]) -> void:

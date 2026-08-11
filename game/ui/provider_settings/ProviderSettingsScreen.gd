@@ -24,10 +24,15 @@ const CompositeDesktop = preload(
 const FormalDialog = preload(
 	"res://ui/common/formal_dialog/FormalConfirmationDialog.gd"
 )
+const CONNECTION_NAME_INPUT_TEXTURE := preload(
+	"res://assets/ui/common/formal_dialog_v1/runtime/"
+	+ "formal_dialog_connection_name_input_v2_1024x192.png"
+)
 
 const SCOPE := &"provider_settings"
 const MAP_TEXTURE_PATH := "res://world/maps/town/assets/town.png"
 const MINIMUM_TOUCH_SIZE := Vector2(48, 48)
+const CUSTOM_MODEL_GROUP_NAME := "自定义模型"
 
 var _adapter: Object
 var _view_model: Dictionary = {}
@@ -39,19 +44,35 @@ var _draft_key := ""
 var _draft_key_baseline := ""
 var _draft_key_dirty := false
 var _draft_base_url := ""
+var _draft_api_model := ""
 var _draft_provider_id := ""
 var _discard_confirmation: FormalDialog
+var _delete_model_confirmation: FormalDialog
+var _delete_connection_confirmation: FormalDialog
+var _connection_name_dialog: FormalDialog
+var _connection_name_edit: LineEdit
+var _connection_name_mode := ""
+var _connection_name_provider_id := ""
+var _delete_model_blocked_dialog: FormalDialog
+var _delete_model_blocked_revision := -1
+var _pending_model_deletion: Dictionary = {}
+var _last_model_deletion: Dictionary = {}
+var _pending_connection_deletion: Dictionary = {}
+var _last_connection_deletion: Dictionary = {}
+var _blocked_model_assignment_context: Dictionary = {}
 var _pending_provider_selection: Dictionary = {}
 var _discard_confirmation_action := ""
 var _layout_profile := ""
 var _layout_root: Control
 var _rebuild_queued := false
 var _show_key := false
+var _last_auto_discovery_request_id := ""
 var _provider_page := -1
 var _model_page := -1
 var _key_edit: LineEdit
 var _save_key_button: Button
 var _base_url_edit: LineEdit
+var _api_model_edit: LineEdit
 var _status_label: Label
 var _check_button: Button
 var _formal_badge: Label
@@ -67,6 +88,10 @@ func _ready() -> void:
 	theme = ProviderTheme.create()
 	_build_background()
 	_build_discard_confirmation()
+	_build_delete_model_confirmation()
+	_build_delete_connection_confirmation()
+	_build_connection_name_dialog()
+	_build_delete_model_blocked_dialog()
 	if _view_model.is_empty():
 		_view_model = _empty_view_model()
 		_render_data = (
@@ -102,6 +127,207 @@ func _build_discard_confirmation() -> void:
 	add_child(_discard_confirmation)
 
 
+func _build_delete_model_confirmation() -> void:
+	if is_instance_valid(_delete_model_confirmation):
+		return
+	_delete_model_confirmation = FormalDialog.new()
+	_delete_model_confirmation.name = "DeleteCustomModelConfirmation"
+	_delete_model_confirmation.title = "删除这个自定义模型？"
+	_delete_model_confirmation.ok_button_text = "删除模型"
+	_delete_model_confirmation.cancel_button_text = "取消"
+	_delete_model_confirmation.semantic_icon = (
+		ProviderTheme.custom_model_delete_texture()
+	)
+	_delete_model_confirmation.confirmed.connect(_confirm_delete_custom_model)
+	_delete_model_confirmation.canceled.connect(func() -> void:
+		_pending_model_deletion.clear()
+	)
+	add_child(_delete_model_confirmation)
+
+
+func _build_delete_model_blocked_dialog() -> void:
+	if is_instance_valid(_delete_model_blocked_dialog):
+		return
+	_delete_model_blocked_dialog = FormalDialog.new()
+	_delete_model_blocked_dialog.name = "DeleteCustomModelBlocked"
+	_delete_model_blocked_dialog.title = "暂时无法删除"
+	_delete_model_blocked_dialog.dialog_text = (
+		"仍有居民正在使用这个模型。请先在居民模型分配页面为他们更换模型，再回来删除。"
+	)
+	_delete_model_blocked_dialog.ok_button_text = "去分配模型"
+	_delete_model_blocked_dialog.cancel_button_text = "知道了"
+	_delete_model_blocked_dialog.semantic_kind = "warning"
+	_delete_model_blocked_dialog.semantic_icon = (
+		ProviderTheme.custom_model_delete_blocked_texture()
+	)
+	_delete_model_blocked_dialog.confirmed.connect(
+		_open_blocked_model_assignment
+	)
+	add_child(_delete_model_blocked_dialog)
+
+
+func _build_delete_connection_confirmation() -> void:
+	if is_instance_valid(_delete_connection_confirmation):
+		return
+	_delete_connection_confirmation = FormalDialog.new()
+	_delete_connection_confirmation.name = "DeleteCompatibleConnectionConfirmation"
+	_delete_connection_confirmation.title = "删除这个兼容连接？"
+	_delete_connection_confirmation.ok_button_text = "删除连接"
+	_delete_connection_confirmation.cancel_button_text = "取消"
+	_delete_connection_confirmation.semantic_kind = "warning"
+	_delete_connection_confirmation.semantic_icon = (
+		ProviderTheme.custom_model_delete_blocked_texture()
+	)
+	_delete_connection_confirmation.confirmed.connect(
+		_confirm_delete_compatible_connection
+	)
+	_delete_connection_confirmation.canceled.connect(func() -> void:
+		_pending_connection_deletion.clear()
+	)
+	add_child(_delete_connection_confirmation)
+
+
+func _build_connection_name_dialog() -> void:
+	if is_instance_valid(_connection_name_dialog):
+		return
+	_connection_name_dialog = FormalDialog.new()
+	_connection_name_dialog.name = "CompatibleConnectionNameDialog"
+	_connection_name_dialog.semantic_kind = "info"
+	_connection_name_dialog.custom_content_frame_texture = (
+		CONNECTION_NAME_INPUT_TEXTURE
+	)
+	_connection_name_dialog.cancel_button_text = "取消"
+	_connection_name_dialog.confirmed.connect(_confirm_connection_name)
+	_connection_name_dialog.canceled.connect(_clear_connection_name_dialog)
+	_connection_name_edit = LineEdit.new()
+	_connection_name_edit.name = "CompatibleConnectionNameInput"
+	_connection_name_edit.max_length = 48
+	_connection_name_edit.placeholder_text = "例如 公司中转站"
+	_connection_name_edit.text_submitted.connect(func(_value: String) -> void:
+		_confirm_connection_name()
+	)
+	_connection_name_dialog.set_custom_content(_connection_name_edit)
+	add_child(_connection_name_dialog)
+
+
+func _request_create_compatible_connection() -> void:
+	_connection_name_mode = "create"
+	_connection_name_provider_id = ""
+	_connection_name_edit.text = ""
+	_connection_name_dialog.title = "新建兼容连接"
+	_connection_name_dialog.dialog_text = (
+		"填写一个容易识别的名称。也可以暂时留空，保存地址后会自动使用服务域名。"
+	)
+	_connection_name_dialog.ok_button_text = "创建连接"
+	_connection_name_dialog.popup_centered()
+	_connection_name_edit.grab_focus.call_deferred()
+
+
+func _request_rename_compatible_connection(
+	provider_id: String,
+	display_name: String,
+) -> void:
+	if provider_id.is_empty():
+		return
+	_connection_name_mode = "rename"
+	_connection_name_provider_id = provider_id
+	_connection_name_edit.text = display_name
+	_connection_name_edit.select_all()
+	_connection_name_dialog.title = "重命名兼容连接"
+	_connection_name_dialog.dialog_text = (
+		"名称只用于区分连接，不会改变服务地址、模型或居民分配。"
+	)
+	_connection_name_dialog.ok_button_text = "保存名称"
+	_connection_name_dialog.popup_centered()
+	_connection_name_edit.grab_focus.call_deferred()
+
+
+func _confirm_connection_name() -> void:
+	var display_name := _connection_name_edit.text.strip_edges()
+	if _connection_name_mode == "create":
+		_dispatch_intent(
+			&"provider_settings.create_compatible_connection",
+			{"displayName": display_name},
+		)
+	elif _connection_name_mode == "rename":
+		_dispatch_intent(
+			&"provider_settings.rename_compatible_connection",
+			{
+				"providerId": _connection_name_provider_id,
+				"displayName": display_name,
+			},
+		)
+	_connection_name_dialog.visible = false
+	_clear_connection_name_dialog()
+
+
+func _clear_connection_name_dialog() -> void:
+	_connection_name_mode = ""
+	_connection_name_provider_id = ""
+	if is_instance_valid(_connection_name_edit):
+		_connection_name_edit.text = ""
+
+
+func _request_delete_custom_model(provider_id: String, api_model: String) -> void:
+	if provider_id.is_empty() or api_model.is_empty():
+		return
+	_pending_model_deletion = {
+		"providerId": provider_id,
+		"apiModel": api_model,
+	}
+	_delete_model_confirmation.dialog_text = (
+		"将删除“%s”。删除后无法恢复。"
+		% api_model
+	)
+	_delete_model_confirmation.popup_centered()
+
+
+func _confirm_delete_custom_model() -> void:
+	if _pending_model_deletion.is_empty():
+		return
+	var payload := _pending_model_deletion.duplicate(true)
+	_last_model_deletion = payload.duplicate(true)
+	_pending_model_deletion.clear()
+	_dispatch_intent(&"provider_settings.delete_api_model", payload)
+
+
+func _request_delete_compatible_connection(
+	provider_id: String,
+	display_name: String,
+) -> void:
+	if provider_id.is_empty():
+		return
+	_pending_connection_deletion = {
+		"providerId": provider_id,
+		"displayName": display_name,
+	}
+	_delete_connection_confirmation.dialog_text = (
+		"将删除“%s”及其模型配置。删除后无法恢复。" % display_name
+	)
+	_delete_connection_confirmation.popup_centered()
+
+
+func _confirm_delete_compatible_connection() -> void:
+	if _pending_connection_deletion.is_empty():
+		return
+	var payload := _pending_connection_deletion.duplicate(true)
+	_last_connection_deletion = payload.duplicate(true)
+	_pending_connection_deletion.clear()
+	_dispatch_intent(
+		&"provider_settings.delete_compatible_connection",
+		{"providerId": String(payload.get("providerId", ""))},
+	)
+
+
+func _open_blocked_model_assignment() -> void:
+	if _blocked_model_assignment_context.is_empty():
+		return
+	_dispatch_intent(
+		&"provider_settings.open_model_assignment",
+		_blocked_model_assignment_context.duplicate(true),
+	)
+
+
 func _show_discard_confirmation(
 	action: String,
 	provider: Dictionary,
@@ -133,7 +359,10 @@ func _has_unsaved_local_draft() -> bool:
 	var selected := _find_provider(_selected_provider_id)
 	if selected.is_empty():
 		return false
-	return _draft_base_url != String(selected.get("baseUrl", ""))
+	return (
+		_draft_base_url != String(selected.get("baseUrl", ""))
+		or not _draft_api_model.is_empty()
+	)
 
 
 func bind_adapter(adapter: Object) -> void:
@@ -155,7 +384,9 @@ func bind_adapter(adapter: Object) -> void:
 	_draft_key_baseline = ""
 	_draft_key_dirty = false
 	_draft_base_url = ""
+	_draft_api_model = ""
 	_show_key = false
+	_last_auto_discovery_request_id = ""
 	_provider_page = -1
 	_model_page = -1
 	_pending_provider_selection.clear()
@@ -219,6 +450,7 @@ func apply_view_model(view_model: Dictionary) -> bool:
 		_render_data = _last_confirmed_data.duplicate(true)
 	_view_model = view_model.duplicate(true)
 	_current_revision = incoming_revision
+	_present_delete_model_blocked_error(view_model, incoming_revision)
 	var operation := view_model.get("operation", {}) as Dictionary
 	var operation_intent := String(operation.get("intent", ""))
 	var operation_status_text := String(operation.get("status", ""))
@@ -241,11 +473,33 @@ func apply_view_model(view_model: Dictionary) -> bool:
 			_draft_key_dirty = false
 			_show_key = false
 			_draft_base_url = str(selected.get("baseUrl", ""))
+			_draft_api_model = ""
 		elif (
 			operation_status_text == "success"
 			and operation_intent == "provider_settings.save_base_url"
 		):
 			_draft_base_url = str(selected.get("baseUrl", ""))
+		elif (
+			operation_status_text == "success"
+			and operation_intent == "provider_settings.save_connection"
+		):
+			_draft_base_url = str(selected.get("baseUrl", ""))
+			_draft_key = ""
+			_draft_key_baseline = ""
+			_draft_key_dirty = false
+			_show_key = false
+			var request_id := String(operation.get("requestId", ""))
+			if request_id != _last_auto_discovery_request_id:
+				_last_auto_discovery_request_id = request_id
+				call_deferred(
+					"_auto_discover_saved_connection",
+					_selected_provider_id,
+				)
+		elif (
+			operation_status_text == "success"
+			and operation_intent == "provider_settings.save_api_model"
+		):
+			_draft_api_model = ""
 	if (
 		operation_status_text == "success"
 		and operation_intent == "provider_settings.save_key"
@@ -264,6 +518,73 @@ func apply_view_model(view_model: Dictionary) -> bool:
 		_show_key = false
 	_queue_layout_rebuild()
 	return true
+
+
+func _auto_discover_saved_connection(provider_id: String) -> void:
+	if provider_id.is_empty() or not is_inside_tree():
+		return
+	var provider := _find_provider(provider_id)
+	if provider.is_empty() or not bool(provider.get("customGroup", false)):
+		return
+	_dispatch_intent(
+		&"provider_settings.discover_models",
+		{"providerId": provider_id},
+	)
+
+
+func _present_delete_model_blocked_error(
+	view_model: Dictionary,
+	revision: int,
+) -> void:
+	if revision == _delete_model_blocked_revision:
+		return
+	var error_value: Variant = view_model.get("error", null)
+	if not error_value is Dictionary:
+		return
+	var error_data := error_value as Dictionary
+	var error_code := String(error_data.get("code", ""))
+	if error_code not in ["PROVIDER_API_MODEL_IN_USE", "PROVIDER_CONNECTION_IN_USE"]:
+		return
+	var operation := view_model.get("operation", {}) as Dictionary
+	var operation_intent := String(operation.get("intent", ""))
+	if operation_intent not in [
+		"provider_settings.delete_api_model",
+		"provider_settings.delete_compatible_connection",
+	]:
+		return
+	_delete_model_blocked_revision = revision
+	if is_instance_valid(_delete_model_blocked_dialog):
+		var resident_ids := (
+			error_data.get("details", []) as Array
+		).duplicate(true)
+		var connection_delete := error_code == "PROVIDER_CONNECTION_IN_USE"
+		var model_id := (
+			""
+			if connection_delete
+			else String(_last_model_deletion.get("apiModel", ""))
+		)
+		var provider_id := String(
+			_last_connection_deletion.get("providerId", "")
+			if connection_delete
+			else _last_model_deletion.get("providerId", "")
+		)
+		_blocked_model_assignment_context = {
+			"providerId": provider_id,
+			"modelId": model_id,
+			"residentIds": resident_ids,
+		}
+		_delete_model_blocked_dialog.dialog_text = (
+			(
+				"这个连接仍分配给 %d 位居民。\n请先为这些居民更换模型，再回来删除。"
+				% resident_ids.size()
+			)
+			if connection_delete
+			else (
+				"“%s”仍分配给 %d 位居民。\n请先为这些居民更换模型，再回来删除。"
+				% [model_id, resident_ids.size()]
+			)
+		)
+		_delete_model_blocked_dialog.popup_centered()
 
 
 func current_revision() -> int:
@@ -697,6 +1018,8 @@ func _capture_input_focus_state() -> Dictionary:
 		field = "api_key"
 	elif focus_owner == _base_url_edit:
 		field = "base_url"
+	elif focus_owner == _api_model_edit:
+		field = "api_model"
 	if field.is_empty() or not focus_owner is LineEdit:
 		return {}
 	var edit := focus_owner as LineEdit
@@ -721,10 +1044,9 @@ func _schedule_focus_after_rebuild(input_focus_state: Dictionary) -> void:
 func _restore_input_focus_state(input_focus_state: Dictionary) -> void:
 	if not is_inside_tree() or not is_instance_valid(_layout_root):
 		return
-	var edit := (
-		_key_edit
-		if String(input_focus_state.get("field", "")) == "api_key"
-		else _base_url_edit
+	var field := String(input_focus_state.get("field", ""))
+	var edit := _key_edit if field == "api_key" else (
+		_api_model_edit if field == "api_model" else _base_url_edit
 	)
 	if edit == null or not edit.is_visible_in_tree() or not edit.editable:
 		_focus_initial_control()
@@ -751,13 +1073,32 @@ func _rebuild_composite_desktop(viewport_size: Vector2) -> void:
 	_composite_desktop.name = "CompositeDesktopRoot"
 	_layout_root = _composite_desktop
 	add_child(_layout_root)
+	var composite_data := _render_data.duplicate(true)
+	var visible_providers := _visible_providers()
+	composite_data["providers"] = visible_providers
+	var visible_available := 0
+	var visible_enabled_models := 0
+	for provider: Dictionary in visible_providers:
+		if bool(provider.get("available", false)):
+			visible_available += 1
+		for model_value: Variant in provider.get("models", []) as Array:
+			if (
+				model_value is Dictionary
+				and bool((model_value as Dictionary).get("enabled", false))
+			):
+				visible_enabled_models += 1
+	composite_data["summary"] = {
+		"availableProviderCount": visible_available,
+		"enabledModelCount": visible_enabled_models,
+	}
 	var configured := _composite_desktop.configure(
 		_view_model,
-		_render_data,
+		composite_data,
 		_selected_provider_id,
 		_draft_key,
 		_draft_key_dirty,
 		_draft_base_url,
+		_draft_api_model,
 		_show_key,
 		_provider_page,
 		_model_page,
@@ -788,6 +1129,7 @@ func _sync_composite_controls() -> void:
 		false,
 	) as Button
 	_base_url_edit = _composite_desktop.base_url_edit
+	_api_model_edit = _composite_desktop.api_model_edit
 	_status_label = _composite_desktop.status_label
 	_check_button = _composite_desktop.check_button
 	_formal_badge = _composite_desktop.formal_badge
@@ -818,6 +1160,25 @@ func _on_composite_ui_action(
 			_sync_key_save_enabled()
 		&"ui.draft_base_url":
 			_draft_base_url = str(payload.get("value", ""))
+		&"ui.draft_api_model":
+			_draft_api_model = str(payload.get("value", ""))
+		&"ui.request_delete_api_model":
+			_request_delete_custom_model(
+				str(payload.get("providerId", "")),
+				str(payload.get("apiModel", "")),
+			)
+		&"ui.request_delete_compatible_connection":
+			_request_delete_compatible_connection(
+				str(payload.get("providerId", "")),
+				str(payload.get("displayName", "兼容接口")),
+			)
+		&"ui.request_create_compatible_connection":
+			_request_create_compatible_connection()
+		&"ui.request_rename_compatible_connection":
+			_request_rename_compatible_connection(
+				str(payload.get("providerId", "")),
+				str(payload.get("displayName", "兼容接口")),
+			)
 		&"ui.toggle_key_visibility":
 			_toggle_key_visibility(_selected_provider_id)
 		&"ui.save_key":
@@ -968,7 +1329,7 @@ func _build_provider_rail(compact: bool) -> Control:
 	list.add_theme_constant_override("separation", 10)
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(list)
-	var providers := _render_data.get("providers", []) as Array
+	var providers := _visible_providers()
 	if providers.is_empty():
 		list.add_child(_empty_state(
 			"等待表现层提供 Provider 列表。"
@@ -1016,7 +1377,7 @@ func _build_compact_provider_tabs() -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	panel.add_child(row)
-	var providers := _render_data.get("providers", []) as Array
+	var providers := _visible_providers()
 	if providers.is_empty():
 		row.add_child(_empty_state("等待 Provider 列表"))
 		return panel
@@ -1126,7 +1487,7 @@ func _build_provider_picker() -> Control:
 		[16, 12, 16, 12]
 	)
 	_mark_content_surface(picker)
-	var providers := _render_data.get("providers", []) as Array
+	var providers := _visible_providers()
 	var selected_index := 0
 	for index: int in range(providers.size()):
 		var provider := providers[index] as Dictionary
@@ -1326,6 +1687,9 @@ func _build_detail() -> Control:
 		7
 	)
 	detail.add_child(_build_detail_header(selected))
+	if bool(selected.get("customModels", false)):
+		detail.add_child(_detail_divider())
+		detail.add_child(_build_custom_connection_picker(selected))
 	detail.add_child(_detail_divider())
 	detail.add_child(_build_key_section(selected))
 	detail.add_child(_detail_divider())
@@ -1357,7 +1721,11 @@ func _build_detail_header(provider: Dictionary) -> Control:
 	row.add_theme_constant_override("separation", 12)
 	panel.add_child(row)
 	var title := _label(
-		str(provider.get("displayName", "Provider")),
+		(
+			CUSTOM_MODEL_GROUP_NAME
+			if bool(provider.get("customModels", false))
+			else str(provider.get("displayName", "Provider"))
+		),
 		_section_font_size(),
 		ProviderTheme.INK,
 		"selected_provider_name"
@@ -1365,6 +1733,16 @@ func _build_detail_header(provider: Dictionary) -> Control:
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.custom_minimum_size.y = _section_line_height()
 	row.add_child(title)
+	if bool(provider.get("customModels", false)):
+		var source := _label(
+			str(provider.get("displayName", "兼容接口")),
+			_caption_font_size(),
+			ProviderTheme.INK_MUTED,
+			"selected_custom_connection",
+		)
+		source.custom_minimum_size = Vector2(180, _control_height())
+		source.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		row.add_child(source)
 	var toggle := _button(
 		"",
 		"success"
@@ -1411,6 +1789,55 @@ func _build_detail_header(provider: Dictionary) -> Control:
 	return panel
 
 
+func _build_custom_connection_picker(selected: Dictionary) -> Control:
+	var panel := PanelContainer.new()
+	panel.name = "CustomConnectionPanel"
+	panel.add_theme_stylebox_override("panel", ProviderTheme.empty_style())
+	_register_paper_surface(panel, [0, 0, 0, 0])
+	_mark_content_surface(panel)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 8)
+	panel.add_child(column)
+	column.add_child(_section_heading(
+		"连接来源",
+		"Ollama、LM Studio、302.AI 和其他兼容接口统一归在这里",
+	))
+	var picker := OptionButton.new()
+	picker.name = "CustomConnectionPicker"
+	picker.custom_minimum_size = Vector2(
+		220 if _is_phone_profile() else 320,
+		_control_height(),
+	)
+	picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	picker.focus_mode = Control.FOCUS_ALL
+	picker.add_theme_font_size_override("font_size", _body_font_size())
+	picker.add_to_group("provider_settings_touch_target")
+	picker.set_meta("gate_id", "custom_connection_picker")
+	ProviderButtonMotion.attach(picker)
+	var selected_index := 0
+	var providers := _custom_providers()
+	for index: int in range(providers.size()):
+		var provider := providers[index]
+		var label := str(provider.get("displayName", "兼容接口"))
+		var connection := provider.get("connection", {}) as Dictionary
+		picker.add_item("%s · %s" % [
+			label,
+			str(connection.get("label", "待配置")),
+		])
+		picker.set_item_metadata(index, str(provider.get("providerId", "")))
+		if str(provider.get("providerId", "")) == str(selected.get("providerId", "")):
+			selected_index = index
+	if picker.item_count > 0:
+		picker.select(selected_index)
+	picker.item_selected.connect(func(index: int) -> void:
+		var provider := _find_provider(str(picker.get_item_metadata(index)))
+		if not provider.is_empty():
+			_select_provider(provider)
+	)
+	column.add_child(picker)
+	return panel
+
+
 func _build_key_section(provider: Dictionary) -> Control:
 	var panel := PanelContainer.new()
 	panel.name = "ApiKeyPanel"
@@ -1423,7 +1850,10 @@ func _build_key_section(provider: Dictionary) -> Control:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 8)
 	panel.add_child(column)
-	column.add_child(_section_heading("API Key", "仅保存在本机"))
+	column.add_child(_section_heading(
+		"API Key",
+		"仅保存在本机" if bool(provider.get("authRequired", true)) else "可选，仅保存在本机",
+	))
 
 	var form: Container
 	if _layout_profile == "desktop_wide":
@@ -1441,7 +1871,11 @@ func _build_key_section(provider: Dictionary) -> Control:
 	_key_edit.placeholder_text = (
 		"已安全保存，输入新 Key 可替换"
 		if bool(key_data.get("saved", false))
-		else "请输入 API Key"
+		else (
+			"请输入 API Key"
+			if bool(provider.get("authRequired", true))
+			else "本地服务通常无需填写"
+		)
 	)
 	_key_edit.text = _draft_key
 	_key_edit.custom_minimum_size = Vector2(
@@ -1555,7 +1989,11 @@ func _build_base_url_section(provider: Dictionary) -> Control:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 8)
 	panel.add_child(column)
-	column.add_child(_section_heading("Base URL", "留空使用官方地址"))
+	var default_base_url := String(provider.get("defaultBaseUrl", ""))
+	column.add_child(_section_heading(
+		"Base URL",
+		"留空使用 %s" % default_base_url if not default_base_url.is_empty() else "请填写服务地址",
+	))
 	var row: Container
 	if _is_phone_profile():
 		row = VBoxContainer.new()
@@ -1566,7 +2004,9 @@ func _build_base_url_section(provider: Dictionary) -> Control:
 	_base_url_edit = LineEdit.new()
 	_base_url_edit.name = "BaseUrlInput"
 	_base_url_edit.text = _draft_base_url
-	_base_url_edit.placeholder_text = "留空使用官方默认地址"
+	_base_url_edit.placeholder_text = (
+		default_base_url if not default_base_url.is_empty() else "例如 https://host/v1"
+	)
 	_base_url_edit.custom_minimum_size = Vector2(
 		220 if _is_phone_profile() else 320,
 		_field_height()
@@ -1636,6 +2076,11 @@ func _build_models_section(provider: Dictionary) -> Control:
 		"模型与能力",
 		"启用后参与连接检查"
 	))
+	if (
+		bool(provider.get("customModels", false))
+		and str(provider.get("providerId", "")) != "volcengine-ark"
+	):
+		column.add_child(_build_api_model_editor(provider))
 	var grid := GridContainer.new()
 	grid.name = "ModelGrid"
 	grid.columns = 1 if _is_phone_profile() else 2
@@ -1644,7 +2089,18 @@ func _build_models_section(provider: Dictionary) -> Control:
 	column.add_child(grid)
 	var models := provider.get("models", []) as Array
 	if models.is_empty():
-		grid.add_child(_empty_state("当前 Provider 没有可展示模型。"))
+		grid.add_child(_empty_state(
+			(
+				"正在读取可用模型……"
+				if (
+					str(provider.get("providerId", "")) == "volcengine-ark"
+					and _operation_loading()
+				)
+				else "保存 API Key 后将自动读取可用模型。"
+				if str(provider.get("providerId", "")) == "volcengine-ark"
+				else "当前 Provider 没有可展示模型。"
+			)
+		))
 	else:
 		for model_value: Variant in models:
 			grid.add_child(_model_card(
@@ -1652,6 +2108,104 @@ func _build_models_section(provider: Dictionary) -> Control:
 				model_value as Dictionary
 			))
 	return panel
+
+
+func _build_api_model_editor(provider: Dictionary) -> Control:
+	var row: Container = (
+		VBoxContainer.new() if _is_phone_profile() else HBoxContainer.new()
+	)
+	row.add_theme_constant_override("separation", 10)
+	_api_model_edit = LineEdit.new()
+	_api_model_edit.name = "ApiModelInput"
+	_api_model_edit.text = _draft_api_model
+	_api_model_edit.placeholder_text = "实际模型 ID，例如 gpt-4.1-mini 或 qwen3:8b"
+	_api_model_edit.custom_minimum_size = Vector2(
+		220 if _is_phone_profile() else 320,
+		_field_height(),
+	)
+	_api_model_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_api_model_edit.add_to_group("provider_settings_touch_target")
+	_api_model_edit.set_meta("gate_id", "api_model_input")
+	_api_model_edit.text_changed.connect(func(value: String) -> void:
+		_draft_api_model = value
+	)
+	row.add_child(_api_model_edit)
+	var save := _button(
+		"添加并选用",
+		"quiet",
+		Vector2(176 if not _is_phone_profile() else 220, _control_height()),
+	)
+	save.name = "SaveApiModelButton"
+	save.disabled = not _action_enabled("saveApiModel") or _operation_loading()
+	save.pressed.connect(func() -> void:
+		_dispatch_intent(
+			&"provider_settings.save_api_model",
+			{
+				"providerId": str(provider.get("providerId", "")),
+				"apiModel": _api_model_edit.text,
+			},
+		)
+	)
+	row.add_child(save)
+	var discover := _button(
+		"自动获取",
+		"quiet",
+		Vector2(144 if not _is_phone_profile() else 220, _control_height()),
+	)
+	discover.name = "DiscoverModelsButton"
+	discover.disabled = (
+		not _action_enabled("discoverModels")
+		or _operation_loading()
+		or not bool(provider.get("modelCatalogSupported", false))
+		or (
+			bool(provider.get("authRequired", true))
+			and not bool((provider.get("key", {}) as Dictionary).get("saved", false))
+		)
+	)
+	discover.tooltip_text = (
+		"当前服务需要手动填写推理接入点 ID"
+		if not bool(provider.get("modelCatalogSupported", false))
+		else "从服务读取模型列表，失败时仍可手动填写"
+	)
+	discover.pressed.connect(func() -> void:
+		_dispatch_intent(
+			&"provider_settings.discover_models",
+			{"providerId": str(provider.get("providerId", ""))},
+		)
+	)
+	row.add_child(discover)
+	var selected_model := str(provider.get("apiModel", ""))
+	var selected_model_is_custom := false
+	for model_value: Variant in provider.get("models", []) as Array:
+		if (
+			model_value is Dictionary
+			and str((model_value as Dictionary).get("modelId", "")) == selected_model
+		):
+			selected_model_is_custom = bool(
+				(model_value as Dictionary).get("custom", false)
+			)
+			break
+	var delete := _button(
+		"删除当前",
+		"danger",
+		Vector2(144 if not _is_phone_profile() else 220, _control_height()),
+	)
+	delete.name = "DeleteApiModelButton"
+	delete.disabled = (
+		not _action_enabled("deleteApiModel")
+		or _operation_loading()
+		or selected_model.is_empty()
+		or not selected_model_is_custom
+	)
+	delete.tooltip_text = "删除当前选中的自定义模型"
+	delete.pressed.connect(func() -> void:
+		_request_delete_custom_model(
+			str(provider.get("providerId", "")),
+			selected_model,
+		)
+	)
+	row.add_child(delete)
+	return row
 
 
 func _model_card(
@@ -1822,8 +2376,12 @@ func _build_status_section(provider: Dictionary) -> Control:
 		84 if _layout_profile == "desktop_wide" else 56,
 		84 if _layout_profile == "desktop_wide" else 56
 	)
-	status_icon.texture = ProviderTheme.medallion_texture(
-		str(connection.get("status", "not_configured"))
+	status_icon.texture = (
+		ProviderTheme.provider_checking_connection_texture()
+		if _operation_loading()
+		else ProviderTheme.medallion_texture(
+			str(connection.get("status", "not_configured"))
+		)
 	)
 	status_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	status_icon.stretch_mode = (
@@ -1834,6 +2392,8 @@ func _build_status_section(provider: Dictionary) -> Control:
 	status_icon.add_to_group("provider_settings_icon_owner")
 	status_icon.set_meta("gate_id", "connection_status_icon")
 	row.add_child(status_icon)
+	if _operation_loading():
+		_animate_checking_status_icon(status_icon)
 	var status_column := VBoxContainer.new()
 	status_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	status_column.add_theme_constant_override("separation", 4)
@@ -1847,7 +2407,11 @@ func _build_status_section(provider: Dictionary) -> Control:
 	_status_label.custom_minimum_size.y = _line_slot_height()
 	status_column.add_child(_status_label)
 	var message := _label(
-		_operation_message(operation, connection, error_data),
+		(
+			"正在等待 %s 响应" % _checking_provider_name(provider)
+			if _operation_loading()
+			else _operation_message(operation, connection, error_data)
+		),
 		_body_font_size(),
 		ProviderTheme.INK_MUTED,
 		"connection_status_message"
@@ -1886,6 +2450,27 @@ func _build_status_section(provider: Dictionary) -> Control:
 		_operation_loading(),
 	)
 	return panel
+
+
+func _animate_checking_status_icon(icon: TextureRect) -> void:
+	if icon == null or not icon.is_inside_tree():
+		return
+	icon.pivot_offset = icon.size * 0.5
+	var tween := icon.create_tween()
+	tween.set_loops()
+	tween.set_trans(Tween.TRANS_SINE)
+	tween.set_ease(Tween.EASE_IN_OUT)
+	tween.tween_property(icon, "modulate:a", 0.66, 0.48)
+	tween.parallel().tween_property(icon, "scale", Vector2(1.04, 1.04), 0.48)
+	tween.tween_property(icon, "modulate:a", 1.0, 0.48)
+	tween.parallel().tween_property(icon, "scale", Vector2.ONE, 0.48)
+
+
+func _checking_provider_name(provider: Dictionary) -> String:
+	var display_name := String(
+		provider.get("displayName", provider.get("providerId", "模型服务"))
+	).strip_edges()
+	return display_name.replace("（本地）", "").strip_edges()
 
 
 func _detail_divider() -> HSeparator:
@@ -2067,6 +2652,9 @@ func _dispatch_intent(
 		return
 	var envelope := payload.duplicate(true)
 	envelope["revision"] = _current_revision
+	if intent == &"provider_settings.open_model_assignment":
+		intent_requested.emit(intent, envelope)
+		return
 	if _adapter != null and _adapter.has_method("dispatch"):
 		_adapter.call("dispatch", intent, envelope)
 	intent_requested.emit(intent, envelope)
@@ -2143,6 +2731,88 @@ func _find_provider(provider_id: String) -> Dictionary:
 	return {}
 
 
+func _custom_providers() -> Array[Dictionary]:
+	var discovered: Array[Dictionary] = []
+	for provider_value: Variant in _render_data.get("providers", []) as Array:
+		if not provider_value is Dictionary:
+			continue
+		var provider := provider_value as Dictionary
+		if _provider_belongs_to_custom_group(provider):
+			discovered.append(provider)
+	var result: Array[Dictionary] = []
+	for preset_id: String in [
+		"ollama",
+		"ollama-cloud",
+		"lm-studio",
+		"302-ai",
+	]:
+		for provider: Dictionary in discovered:
+			if str(provider.get("providerId", "")) == preset_id:
+				result.append(provider)
+				break
+	for provider: Dictionary in discovered:
+		if str(provider.get("providerId", "")) in [
+			"ollama",
+			"ollama-cloud",
+			"lm-studio",
+			"302-ai",
+		]:
+			continue
+		if str(provider.get("providerId", "")) == "openai-compatible":
+			continue
+		result.append(provider)
+	return result
+
+
+func _visible_providers() -> Array[Dictionary]:
+	var official_providers: Array[Dictionary] = []
+	var custom_group: Dictionary = {}
+	for provider_value: Variant in _render_data.get("providers", []) as Array:
+		if not provider_value is Dictionary:
+			continue
+		var provider := provider_value as Dictionary
+		if not _provider_belongs_to_custom_group(provider):
+			official_providers.append(provider)
+			continue
+		if str(provider.get("providerId", "")) == "openai-compatible":
+			continue
+		if (
+			custom_group.is_empty()
+			or str(provider.get("providerId", "")) == _selected_provider_id
+		):
+			custom_group = provider.duplicate(true)
+	if not custom_group.is_empty():
+		custom_group["displayName"] = CUSTOM_MODEL_GROUP_NAME
+		custom_group["customGroup"] = true
+		custom_group["customConnections"] = _custom_providers()
+	var result: Array[Dictionary] = []
+	for leading_provider_id: String in ["deepseek", "volcengine-ark"]:
+		for provider: Dictionary in official_providers:
+			if str(provider.get("providerId", "")) == leading_provider_id:
+				result.append(provider)
+				break
+	if not custom_group.is_empty():
+		result.append(custom_group)
+	for provider: Dictionary in official_providers:
+		if str(provider.get("providerId", "")) in ["deepseek", "volcengine-ark"]:
+			continue
+		result.append(provider)
+	return result
+
+
+func _provider_belongs_to_custom_group(provider: Dictionary) -> bool:
+	if provider.has("customGroup"):
+		return bool(provider.get("customGroup", false))
+	var provider_id := str(provider.get("providerId", ""))
+	return provider_id in [
+		"openai-compatible",
+		"302-ai",
+		"ollama",
+		"ollama-cloud",
+		"lm-studio",
+	] or provider_id.begins_with("openai-compatible-")
+
+
 func _action_enabled(action_key: String) -> bool:
 	var action := UiViewModel.action(_view_model, action_key)
 	return UiViewModel.action_enabled(action)
@@ -2178,6 +2848,7 @@ func _perform_provider_selection(provider: Dictionary) -> void:
 	_draft_key_dirty = false
 	_show_key = false
 	_draft_base_url = str(provider.get("baseUrl", ""))
+	_draft_api_model = ""
 	_dispatch_intent(
 		&"provider_settings.select_provider",
 		{"providerId": provider_id}

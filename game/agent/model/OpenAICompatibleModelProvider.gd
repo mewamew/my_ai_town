@@ -44,7 +44,7 @@ func get_provider_descriptor() -> Dictionary:
 
 
 func validate_configuration() -> Array[String]:
-	if _resolve_api_key().is_empty():
+	if _api_key_required() and _resolve_api_key().is_empty():
 		return [_missing_api_key_message(true)]
 	return []
 
@@ -96,8 +96,9 @@ func request_decision(model_request: Dictionary, on_complete: Callable) -> void:
 	var headers := PackedStringArray([
 		"Content-Type: application/json",
 		"Accept: application/json",
-		"Authorization: Bearer %s" % api_key,
 	])
+	if not api_key.is_empty():
+		headers.append("Authorization: Bearer %s" % api_key)
 	var started_at := Time.get_ticks_msec()
 	if _transport != null:
 		# transport 回复、请求启动失败和看门狗超时竞争同一个结算状态：
@@ -603,6 +604,10 @@ func _provider_request_options() -> Dictionary:
 
 func _api_key_environment_names() -> Array[String]:
 	return []
+
+
+func _api_key_required() -> bool:
+	return true
 
 
 func _missing_api_key_message(include_hint: bool) -> String:

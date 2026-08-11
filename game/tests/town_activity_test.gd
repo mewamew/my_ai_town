@@ -270,6 +270,7 @@ func _scenario_activity_runtime() -> void:
 	_verify_runtime_contract(data)
 	_verify_weather_activity_policy(data)
 	_verify_opening_body_and_numeric_needs_stay_aligned(data, opening)
+	_verify_sleep_energy_and_leave_policy(data, opening)
 	_verify_world_query_and_execution(data, opening)
 	_verify_passive_needs_tick_is_presentation_silent(data, opening)
 	_verify_stationary_activity_minutes_are_presentation_silent(data, opening)
@@ -277,6 +278,8 @@ func _scenario_activity_runtime() -> void:
 	_verify_save_restore(data, opening)
 	_verify_world_weather_execution(data, opening)
 	return
+
+
 func _verify_opening_body_and_numeric_needs_stay_aligned(
 	data: Dictionary,
 	opening: Dictionary,
@@ -328,6 +331,269 @@ func _verify_opening_body_and_numeric_needs_stay_aligned(
 		"elapsed-time consumption cannot make a hungry resident less hungry",
 	)
 
+
+
+func _verify_sleep_energy_and_leave_policy(
+	data: Dictionary,
+	opening: Dictionary,
+) -> void:
+	var work_opening := opening.duplicate(true)
+	(work_opening.get("environment", {}) as Dictionary)["clock"] = "10:00"
+	var world: RefCounted = WORLD.new()
+	_expect_equal(
+		(world.call("start", data, work_opening) as Dictionary).get("ok"),
+		true,
+		"sleep policy World starts during a work period",
+	)
+	var resident_id := "resident_su_he_01"
+	_expect_equal(
+		(
+			world.call(
+				"create_work_task",
+				{
+					"taskId": "sleep_policy_library_return",
+					"capability": "library.return",
+					"sourceKind": "returned_book",
+					"sourceRef": "sleep_policy_return_pile",
+					"targets": [{
+						"kind": "prop",
+						"ref": "图书馆归还书台",
+					}],
+					"requestedResultKind": "loan_record",
+					"priority": 60,
+				},
+			) as Dictionary
+		).get("ok"),
+		true,
+		"sleep policy fixture gives the resident real work",
+	)
+	var resident := (
+		(world.get("_residents") as Dictionary).get(resident_id, {})
+		as Dictionary
+	)
+	var activity_state := (
+		resident.get("activityState", {}) as Dictionary
+	).duplicate(true)
+	activity_state["energy"] = 35
+	resident["activityState"] = activity_state
+	world.call("_sync_body_from_activity_needs", resident, activity_state)
+	_expect(
+		not (world.call("get_work_tasks_for_resident", resident_id) as Array).is_empty(),
+		"low-energy resident still has work before taking leave",
+	)
+	var life_options := world.call(
+		"_agent_life_destination_options",
+		resident,
+	) as Array
+	var sleep_destination_found := false
+	for destination_value: Variant in life_options:
+		var destination := destination_value as Dictionary
+		if String(destination.get("place_id", "")) != "西街二号住宅":
+			continue
+		for option_value: Variant in destination.get("activities", []) as Array:
+			if String(
+				(option_value as Dictionary).get("activity_id", ""),
+			) == "activity_home_sleep":
+				sleep_destination_found = true
+	_expect(
+		sleep_destination_found,
+		"low energy exposes the resident's own bed even while work is waiting",
+	)
+	var rhythm := world.call("_life_rhythm_snapshot", resident) as Dictionary
+	_expect_equal(
+		rhythm.get("sleep_needed"),
+		true,
+		"work-period wake marks low energy as a sleep decision",
+	)
+	_expect(
+		String(rhythm.get("label", "")).contains("上班时也可以请假"),
+		"work-period wake explains that sleep may require leave",
+	)
+
+	var home_anchor := world.call(
+		"_resident_home_anchor",
+		data,
+		resident,
+	) as Dictionary
+	resident["currentPlace"] = String(home_anchor.get("placeName", ""))
+	resident["spaceId"] = String(home_anchor.get("spaceId", ""))
+	resident["regionId"] = String(home_anchor.get("regionId", ""))
+	resident["position"] = home_anchor.get("position", Vector2.ZERO)
+	resident["routeConnector"] = []
+	activity_state["energy"] = 50
+	resident["activityState"] = activity_state
+	world.call("_sync_body_from_activity_needs", resident, activity_state)
+	var rested_query := world.call(
+		"query_activity_options",
+		resident_id,
+	) as Dictionary
+	var rested_sleep := _activity_option(
+		rested_query.get("options", []) as Array,
+		"activity_home_sleep",
+	)
+	_expect_equal(
+		rested_sleep.get("available"),
+		false,
+		"a rested resident is not offered sleep",
+	)
+	_expect_equal(
+		rested_sleep.get("disabledReason"),
+		"SLEEP_NOT_NEEDED",
+		"sleep option records the authoritative energy rejection",
+	)
+	_expect(
+		not JSON.stringify(
+			world.call("_agent_available_props", resident),
+		).contains("睡觉"),
+		"the legacy bed verb is hidden while energy is high",
+	)
+	var sleep_step := _activity_step(
+		"sleep-policy-step",
+		"activity_home_sleep",
+		"西街二号住宅",
+	)
+	_expect_equal(
+		(
+			world.call(
+				"perform_activity_step",
+				resident_id,
+				"sleep-policy-rested",
+				1,
+				sleep_step,
+			) as Dictionary
+		).get("errorCode"),
+		"ACTIVITY_NOT_ELIGIBLE",
+		"direct activity.perform cannot bypass the high-energy rejection",
+	)
+
+	activity_state["energy"] = 35
+	resident["activityState"] = activity_state
+	world.call("_sync_body_from_activity_needs", resident, activity_state)
+	_expect_equal(
+		_activity_option(
+			(
+				world.call("query_activity_options", resident_id)
+				as Dictionary
+			).get("options", []) as Array,
+			"activity_home_sleep",
+		).get("available"),
+		true,
+		"low energy makes sleep available at the resident's own bed",
+	)
+	_expect(
+		JSON.stringify(
+			world.call("_agent_available_props", resident),
+		).contains("睡觉"),
+		"the legacy bed verb remains available when sleep is needed",
+	)
+	_expect_equal(
+		(
+			world.call(
+				"perform_activity_step",
+				resident_id,
+				"sleep-policy-tired",
+				1,
+				sleep_step,
+			) as Dictionary
+		).get("ok"),
+		true,
+		"low-energy resident can start sleeping during work hours",
+	)
+	resident = (
+		(world.get("_residents") as Dictionary).get(resident_id, {})
+		as Dictionary
+	)
+	_expect_equal(
+		String(
+			(resident.get("attendanceState", {}) as Dictionary).get(
+				"status",
+				"",
+			),
+		),
+		"on_leave",
+		"starting work-hour sleep creates real leave",
+	)
+	_expect_equal(
+		(world.call("get_work_tasks_for_resident", resident_id) as Array).size(),
+		0,
+		"work is no longer assigned while the resident is on sleep leave",
+	)
+
+	var save := world.call("create_save_snapshot") as Dictionary
+	var snapshot := (save.get("snapshot", {}) as Dictionary).duplicate(true)
+	var restored: RefCounted = WORLD.new()
+	_expect_equal(
+		(
+			restored.call(
+				"restore_from_snapshot",
+				data,
+				work_opening,
+				snapshot,
+			) as Dictionary
+		).get("ok"),
+		true,
+		"active sleep leave survives save and restore",
+	)
+	var restored_resident := (
+		(restored.get("_residents") as Dictionary).get(resident_id, {})
+		as Dictionary
+	)
+	_expect_equal(
+		String(
+			(restored_resident.get("attendanceState", {}) as Dictionary).get(
+				"status",
+				"",
+			),
+		),
+		"on_leave",
+		"restored resident remains on leave until sleep ends",
+	)
+	var restored_action := restored_resident.get("currentAction", {}) as Dictionary
+	var sleep_minutes := int(restored_action.get("durationMinutes", 0))
+	sleep_minutes += int(
+		restored.call("_prop_approach_duration_minutes", restored_action),
+	)
+	restored.call("advance", float(sleep_minutes + 1))
+	restored_resident = (
+		(restored.get("_residents") as Dictionary).get(resident_id, {})
+		as Dictionary
+	)
+	_expect_equal(
+		String(
+			(restored_resident.get("attendanceState", {}) as Dictionary).get(
+				"status",
+				"",
+			),
+		),
+		"available",
+		"sleep completion ends leave",
+	)
+	_expect(
+		int(
+			(restored_resident.get("activityState", {}) as Dictionary).get(
+				"energy",
+				0,
+			),
+		) > 35,
+		"sleep restores energy above the sleep threshold",
+	)
+	_expect_equal(
+		(
+			restored.call(
+				"perform_activity_step",
+				resident_id,
+				"sleep-policy-repeat",
+				1,
+				_activity_step(
+					"sleep-policy-repeat-step",
+					"activity_home_sleep",
+					"西街二号住宅",
+				),
+			) as Dictionary
+		).get("errorCode"),
+		"ACTIVITY_NOT_ELIGIBLE",
+		"a resident who woke with enough energy cannot immediately sleep again",
+	)
 
 
 func _verify_compiled_data_fail_closed(

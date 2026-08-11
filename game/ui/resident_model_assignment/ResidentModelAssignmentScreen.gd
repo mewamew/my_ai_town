@@ -8,6 +8,9 @@ signal action_blocked(intent: String, reason: String)
 signal back_requested(revision: int)
 
 
+var return_to_provider_settings := false
+
+
 const UI_SIGNALS := preload(
 	"res://ui/common/AiTownUiSignals.gd"
 )
@@ -164,6 +167,9 @@ func apply_route_payload(payload: Dictionary) -> void:
 	var route_mode := String(payload.get("mode", ""))
 	in_session_mode = route_mode in ["in_session", "resident_admission"]
 	single_resident_mode = route_mode == "resident_admission"
+	return_to_provider_settings = bool(
+		payload.get("returnToProviderSettings", false)
+	)
 
 
 func request_back() -> bool:
@@ -183,7 +189,11 @@ func _build_exit_confirmation() -> void:
 	_exit_confirmation.title = (
 		"返回居民资料？"
 		if single_resident_mode
-		else "返回暂停菜单？" if in_session_mode else "返回居民选择？"
+		else "返回模型设置？"
+		if return_to_provider_settings
+		else "返回暂停菜单？"
+		if in_session_mode
+		else "返回居民选择？"
 	)
 	_exit_confirmation.dialog_text = "当前模型分配还没有应用，返回后仍会保留草稿。"
 	_exit_confirmation.ok_button_text = "返回"
@@ -498,6 +508,8 @@ func _build_native_completion_modal() -> void:
 		(
 			"这位新居民的模型已经配置完成，可以确认入镇。"
 			if single_resident_mode
+			else "居民模型分配已更新，确认后返回模型设置。"
+			if return_to_provider_settings
 			else "15 位居民的模型均已配置完成，可以保存到当前小镇。"
 			if in_session_mode
 			else "15 位居民的模型均已配置完成，现在可以开始游戏。"
@@ -523,7 +535,11 @@ func _build_native_completion_modal() -> void:
 		(
 			"确认入镇"
 			if single_resident_mode
-			else "保存修改" if in_session_mode else "开始游戏"
+			else "确认并返回"
+			if return_to_provider_settings
+			else "保存修改"
+			if in_session_mode
+			else "开始游戏"
 		),
 		22,
 		"success",
@@ -660,6 +676,11 @@ func _current_focus_id_for_refresh() -> String:
 
 func _presentation_view_model() -> Dictionary:
 	var presentation := _view_model.duplicate(true)
+	var presentation_data := (
+		presentation.get("data", {}) as Dictionary
+	).duplicate(true)
+	presentation_data["returnToProviderSettings"] = return_to_provider_settings
+	presentation["data"] = presentation_data
 	if not _provider_auto_refresh_exhausted:
 		return presentation
 	var operation := (presentation.get("operation", {}) as Dictionary).duplicate(true)
@@ -697,7 +718,12 @@ func _build_header() -> void:
 	_header_top.add_theme_constant_override("separation", 14)
 	header_stack.add_child(_header_top)
 
-	_back_button = _button("← 返回居民选择", 20, "paper", "BackButton")
+	_back_button = _button(
+		"← 返回模型设置" if return_to_provider_settings else "← 返回居民选择",
+		20,
+		"paper",
+		"BackButton",
+	)
 	_back_button.custom_minimum_size = Vector2(210, 56)
 	_back_button.pressed.connect(_request_back)
 	_header_top.add_child(_back_button)
@@ -1205,7 +1231,15 @@ func _render_inspector() -> void:
 		if mode == "batch"
 		else "更新当前居民草稿"
 	)
-	_apply_button.text = "确认入镇" if single_resident_mode else "确认 15 人模型分配"
+	_apply_button.text = (
+		"确认入镇"
+		if single_resident_mode
+		else "确认并返回模型设置"
+		if return_to_provider_settings
+		else "保存模型分配"
+		if in_session_mode
+		else "确认 15 人模型分配"
+	)
 
 
 func _render_action_states() -> void:
@@ -1401,6 +1435,8 @@ func _open_completion_modal() -> void:
 		(
 			"这位新居民的模型已经配置完成\n确认后会立即进入小镇。"
 			if single_resident_mode
+			else "居民模型分配已更新\n确认后返回模型设置。"
+			if return_to_provider_settings
 			else "15 位居民的模型均已配置完成\n保存后会立即用于当前小镇。"
 			if in_session_mode
 			else "15 位居民的模型均已配置完成\n现在可以开始游戏。"
@@ -1426,8 +1462,11 @@ func _start_game_from_completion_modal() -> void:
 			blocked_reason = "RESIDENT_MODEL_ASSIGNMENT_INTERFACE_MISSING"
 		action_blocked.emit(intent, blocked_reason)
 		_set_completion_modal_message(
-			("暂时无法保存修改" if in_session_mode else "暂时无法开始游戏")
-			+ "\n%s\n当前草稿已保留。"
+			(
+				"暂时无法保存模型分配\n%s\n当前草稿已保留。"
+				if in_session_mode or return_to_provider_settings
+				else "暂时无法开始游戏\n%s\n当前草稿已保留。"
+			)
 			% UiViewModel.player_reason(blocked_reason)
 		)
 		return
@@ -1451,8 +1490,12 @@ func _start_game_from_completion_modal() -> void:
 			String(result.get("errorCode", "ACTION_REJECTED"))
 		)
 	_set_completion_modal_message(
-		("暂时无法保存修改" if in_session_mode else "暂时无法开始游戏")
-		+ "\n%s\n当前草稿已保留。" % reason
+		(
+			"暂时无法保存模型分配\n%s\n当前草稿已保留。"
+			if in_session_mode or return_to_provider_settings
+			else "暂时无法开始游戏\n%s\n当前草稿已保留。"
+		)
+		% reason
 	)
 
 

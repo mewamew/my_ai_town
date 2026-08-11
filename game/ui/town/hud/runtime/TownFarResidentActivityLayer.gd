@@ -766,7 +766,10 @@ func _render() -> void:
 		var public_item := value as Dictionary
 		if (
 			String(public_item.get("contentKind", "")) != "public_thought"
-			or String(public_item.get("thoughtKind", "")) != "activity_reaction"
+			or String(public_item.get("thoughtKind", "")) not in [
+				"activity_reaction",
+				"announcement_reaction",
+			]
 			or compact_activity_band
 		):
 			continue
@@ -874,7 +877,7 @@ func _render() -> void:
 			continue
 		var thought_kind := String(public_item.get("thoughtKind", ""))
 		if (
-			thought_kind == "activity_reaction"
+			thought_kind in ["activity_reaction", "announcement_reaction"]
 			or (
 				thought_kind == "action_intention"
 				and not String(public_item.get("baseIconKey", "")).is_empty()
@@ -1194,7 +1197,11 @@ func _configure_slot_action(index: int, item: Dictionary) -> void:
 	var expected_intent := (
 		"conversation.spectator.select"
 		if kind == "spectator_conversation"
-		else "town_hud.open_resident_action"
+		else (
+			"town_hud.open_town_log"
+			if String(item.get("thoughtKind", "")) == "announcement_reaction"
+			else "town_hud.open_resident_action"
+		)
 	)
 	var intent := String(action.get("intent", ""))
 	var enabled := (
@@ -1214,7 +1221,7 @@ func _configure_slot_action(index: int, item: Dictionary) -> void:
 			enabled = false
 		else:
 			payload["conversationId"] = conversation_id
-	else:
+	elif intent == "town_hud.open_resident_action":
 		var resident_id := String(item.get("residentId", "")).strip_edges()
 		if resident_id.is_empty():
 			enabled = false
@@ -1228,7 +1235,11 @@ func _configure_slot_action(index: int, item: Dictionary) -> void:
 		"打开对话"
 		if enabled and kind == "spectator_conversation"
 		else (
-			"查看居民"
+			(
+				"查看公告记录"
+				if intent == "town_hud.open_town_log"
+				else "查看居民"
+			)
 			if enabled
 			else UiViewModel.player_reason(
 				String(action.get("disabledReason", "入口不可用"))

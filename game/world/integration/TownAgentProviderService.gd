@@ -10,6 +10,7 @@ const CAPABILITY_MODES: Array[String] = ["development", "formal"]
 const FAKE_PROVIDER_ID := "fake"
 const MAX_SAFE_INTEGER := 9007199254740991
 const HEALTH_PROBE_MAX_TOKENS := 256
+const COMPATIBLE_PROFILE_TYPE := "openai-compatible-profile"
 const PUBLIC_USAGE_FIELDS: Array[String] = [
 	"prompt_tokens",
 	"completion_tokens",
@@ -29,6 +30,7 @@ var _configuration_generation := 0
 var _health_request_sequence := 0
 var _health_by_target: Dictionary = {}
 var _pending_health_requests: Dictionary = {}
+var _pending_model_catalog_providers: Array[RefCounted] = []
 
 
 func configure(config_value: Variant, request_host_value: Variant = null) -> Dictionary:
@@ -72,6 +74,9 @@ func configure(config_value: Variant, request_host_value: Variant = null) -> Dic
 	var source := source_value as String
 	var allow_fake := (allow_fake_value as bool) and mode == "development"
 	var provider_configs := (configs_value as Dictionary).duplicate(true)
+	var catalog_result := _rebuild_catalog_for_configs(provider_configs)
+	if not bool(catalog_result.get("ok", false)):
+		return catalog_result
 	if (
 		_configured
 		and _capability_mode == mode
@@ -89,6 +94,17 @@ func configure(config_value: Variant, request_host_value: Variant = null) -> Dic
 			"formalReady": _capability_mode == "formal",
 			"changed": false,
 		}
+	var clear_all_health := (
+		not _configured
+		or _capability_mode != mode
+		or _source != source
+		or _allow_fake != allow_fake
+		or _request_host != request_host
+	)
+	var changed_provider_ids := _changed_provider_ids(
+		_provider_configs,
+		provider_configs,
+	)
 	_cancel_pending_health_checks()
 	_capability_mode = mode
 	_source = source
@@ -97,7 +113,10 @@ func configure(config_value: Variant, request_host_value: Variant = null) -> Dic
 	_request_host = request_host
 	_providers_by_resident_id.clear()
 	_bindings_by_resident_id.clear()
-	_health_by_target.clear()
+	if clear_all_health:
+		_health_by_target.clear()
+	else:
+		_invalidate_provider_health_entries(changed_provider_ids)
 	_configuration_generation += 1
 	_configured = true
 	return {
@@ -127,6 +146,13 @@ func get_health_snapshot() -> Dictionary:
 			"errorCode": String(health.get("errorCode", "")),
 			"retryable": bool(health.get("retryable", false)),
 			"checkedAtMsec": int(health.get("checkedAtMsec", 0)),
+			"authRequired": bool(descriptor.get("auth_required", true)),
+			"defaultBaseUrl": String(descriptor.get("default_endpoint", "")),
+			"customModels": bool(descriptor.get("custom_models", false)),
+			"customGroup": bool(descriptor.get("custom_group", false)),
+			"modelCatalogSupported": bool(
+				descriptor.get("model_catalog_supported", false)
+			),
 		})
 	return {
 		"ok": true,
@@ -140,6 +166,7 @@ func get_health_snapshot() -> Dictionary:
 
 func list_available_models() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
+	var known_model_keys: Dictionary = {}
 	for model_value: Variant in _catalog.list_models() as Array:
 		if not model_value is Dictionary:
 			continue
@@ -150,36 +177,25 @@ func list_available_models() -> Array[Dictionary]:
 			continue
 		if provider_id == FAKE_PROVIDER_ID:
 			continue
-		var health := _target_health(
-			provider_id,
-			model_id,
-		)
-		var projection := {
-			"id": model_id,
-			"modelId": model_id,
-			"label": _public_string(model.get("label"), model_id),
-			"provider_id": provider_id,
-			"providerId": provider_id,
-			"input_modalities": (
-				(model.get("input_modalities", []) as Array).duplicate()
-				if model.get("input_modalities", []) is Array
-				else []
-			),
-			"inputModalities": (
-				(model.get("input_modalities", []) as Array).duplicate()
-				if model.get("input_modalities", []) is Array
-				else []
-			),
-			"available": String(health.get("status", "")) == "available",
-			"errorCode": String(health.get("errorCode", "")),
-			"retryable": bool(health.get("retryable", false)),
-			"healthStatus": String(health.get("status", "unavailable")),
-		}
-		for boolean_key in ["deprecated", "default_for_provider"]:
-			var boolean_value: Variant = model.get(boolean_key)
-			if typeof(boolean_value) == TYPE_BOOL:
-				projection[boolean_key] = boolean_value as bool
-		result.append(projection)
+		if _provider_uses_custom_models(provider_id) and model_id == "custom":
+			continue
+		var model_key := "%s/%s" % [provider_id, model_id]
+		if known_model_keys.has(model_key):
+			continue
+		known_model_keys[model_key] = true
+		result.append(_model_health_projection(model))
+	for provider_id_value: Variant in _provider_configs.keys():
+		var provider_id := String(provider_id_value)
+		if not _provider_uses_custom_models(provider_id):
+			continue
+		for model_id: String in _configured_api_models(provider_id):
+			var model_key := "%s/%s" % [provider_id, model_id]
+			if known_model_keys.has(model_key):
+				continue
+			known_model_keys[model_key] = true
+			result.append(_model_health_projection(
+				_dynamic_model_descriptor(provider_id, model_id),
+			))
 	if _allow_fake:
 		result.append({
 			"id": "fake",
@@ -193,6 +209,42 @@ func list_available_models() -> Array[Dictionary]:
 			"developmentOnly": true,
 		})
 	return result
+
+
+func _model_health_projection(model: Dictionary) -> Dictionary:
+	var provider_id := _public_string(model.get("provider_id"))
+	var model_id := _public_string(model.get("id"))
+	var health := _target_health(
+		provider_id,
+		model_id,
+	)
+	var projection := {
+		"id": model_id,
+		"modelId": model_id,
+		"label": _public_string(model.get("label"), model_id),
+		"provider_id": provider_id,
+		"providerId": provider_id,
+		"input_modalities": (
+			(model.get("input_modalities", []) as Array).duplicate()
+			if model.get("input_modalities", []) is Array
+			else []
+		),
+		"inputModalities": (
+			(model.get("input_modalities", []) as Array).duplicate()
+			if model.get("input_modalities", []) is Array
+			else []
+		),
+		"available": String(health.get("status", "")) == "available",
+		"errorCode": String(health.get("errorCode", "")),
+		"retryable": bool(health.get("retryable", false)),
+		"healthStatus": String(health.get("status", "unavailable")),
+		"custom": bool(model.get("custom", false)),
+	}
+	for boolean_key in ["deprecated", "default_for_provider"]:
+		var boolean_value: Variant = model.get(boolean_key)
+		if typeof(boolean_value) == TYPE_BOOL:
+			projection[boolean_key] = boolean_value as bool
+	return projection
 
 
 func validate_resident_bindings(bindings_value: Variant) -> Dictionary:
@@ -272,6 +324,51 @@ func check_entry_availability(
 	if on_complete.is_valid():
 		on_complete.call(result.duplicate(true))
 	return result
+
+
+func request_model_catalog(
+	provider_id_value: Variant,
+	on_complete_value: Variant = Callable(),
+) -> Dictionary:
+	if typeof(on_complete_value) != TYPE_CALLABLE:
+		return _failure("PROVIDER_CALLBACK_INVALID", false)
+	var on_complete := on_complete_value as Callable
+	if (
+		typeof(provider_id_value) != TYPE_STRING
+		or not _canonical_id_is_valid(provider_id_value as String)
+	):
+		return _failure("PROVIDER_SETTINGS_PROVIDER_REQUIRED", false)
+	if not _configured:
+		return _failure("PROVIDER_SERVICE_NOT_CONFIGURED", false)
+	var provider_id := provider_id_value as String
+	if not _provider_uses_custom_models(provider_id):
+		return _failure("PROVIDER_MODEL_CATALOG_UNSUPPORTED", false)
+	var creation := _catalog.create_provider(
+		provider_id,
+		_request_host,
+		_provider_config(provider_id, ""),
+	) as Dictionary
+	if not bool(creation.get("ok", false)):
+		return _failure("LLM_MODEL_PROVIDER_CREATION_FAILED", false)
+	var provider: Object = creation.get("provider")
+	if provider == null or not provider.has_method("request_model_catalog"):
+		return _failure("PROVIDER_MODEL_CATALOG_UNSUPPORTED", false)
+	var retained_provider := provider as RefCounted
+	_pending_model_catalog_providers.append(retained_provider)
+	var complete_and_release := func(result: Dictionary) -> void:
+		_pending_model_catalog_providers.erase(retained_provider)
+		on_complete.call(result)
+	var started_value: Variant = provider.call(
+		"request_model_catalog",
+		complete_and_release,
+	)
+	if not started_value is Dictionary:
+		_pending_model_catalog_providers.erase(retained_provider)
+		return _failure("PROVIDER_MODEL_CATALOG_REQUEST_FAILED", true)
+	var started := started_value as Dictionary
+	if not bool(started.get("accepted", false)):
+		_pending_model_catalog_providers.erase(retained_provider)
+	return started
 
 
 func request_health_check(
@@ -502,6 +599,22 @@ func create_provider_for_resident(binding_value: Variant) -> Dictionary:
 		"errorCode": "",
 		"retryable": false,
 	}
+
+
+func resident_ids_using_model(provider_id: String, model_id: String) -> Array[String]:
+	var result: Array[String] = []
+	for resident_id_value: Variant in _bindings_by_resident_id.keys():
+		var binding_value: Variant = _bindings_by_resident_id.get(resident_id_value)
+		if not binding_value is Dictionary:
+			continue
+		var binding := binding_value as Dictionary
+		if (
+			String(binding.get("providerId", "")) == provider_id
+			and String(binding.get("modelId", "")) == model_id
+		):
+			result.append(String(resident_id_value))
+	result.sort()
+	return result
 
 
 func get_latest_diagnostic(resident_id_value: Variant) -> Dictionary:
@@ -936,6 +1049,11 @@ func _catalog_model_descriptor(
 	provider_id: String,
 	model_id: String,
 ) -> Dictionary:
+	if (
+		_provider_uses_custom_models(provider_id)
+		and model_id in _configured_api_models(provider_id)
+	):
+		return _dynamic_model_descriptor(provider_id, model_id)
 	var value: Variant
 	if _method_argument_count(_catalog, "model_descriptor") >= 2:
 		value = _catalog.model_descriptor(provider_id, model_id)
@@ -950,6 +1068,30 @@ func _catalog_create_model(
 	request_host: Node,
 	config: Dictionary,
 ) -> Dictionary:
+	if (
+		_provider_uses_custom_models(provider_id)
+		and model_id in _configured_api_models(provider_id)
+	):
+		var resolved_config := config.duplicate(true)
+		resolved_config["api_model"] = model_id
+		resolved_config["model"] = model_id
+		resolved_config.erase("api_models")
+		var creation := _catalog.create_provider(
+			provider_id,
+			request_host,
+			resolved_config,
+		) as Dictionary
+		if bool(creation.get("ok", false)):
+			var provider_descriptor := (
+				creation.get("descriptor", {}) as Dictionary
+			).duplicate(true)
+			provider_descriptor["model_id"] = model_id
+			creation["provider_descriptor"] = provider_descriptor
+			creation["model_descriptor"] = _dynamic_model_descriptor(
+				provider_id,
+				model_id,
+			)
+		return creation
 	var value: Variant
 	if _method_argument_count(_catalog, "create_model") >= 4:
 		value = _catalog.create_model(provider_id,
@@ -959,6 +1101,121 @@ func _catalog_create_model(
 	else:
 		value = _catalog.create_model(model_id, request_host, config)
 	return value as Dictionary if value is Dictionary else {}
+
+
+func _provider_uses_custom_models(provider_id: String) -> bool:
+	var descriptor := _catalog.descriptor(provider_id) as Dictionary
+	return bool(descriptor.get("custom_models", false))
+
+
+func _configured_api_models(provider_id: String) -> Array[String]:
+	var result: Array[String] = []
+	var config_value: Variant = _provider_configs.get(provider_id, {})
+	if not config_value is Dictionary:
+		return result
+	var models_value: Variant = (config_value as Dictionary).get("api_models", [])
+	if not models_value is Array:
+		return result
+	for model_value: Variant in models_value as Array:
+		if typeof(model_value) != TYPE_STRING:
+			continue
+		var model_id := (model_value as String).strip_edges()
+		if not model_id.is_empty() and model_id not in result:
+			result.append(model_id)
+	return result
+
+
+func _dynamic_model_descriptor(provider_id: String, model_id: String) -> Dictionary:
+	var provider_descriptor := _catalog.descriptor(provider_id) as Dictionary
+	var model_family := _model_release_family(model_id)
+	var model_labels := (
+		provider_descriptor.get("catalog_model_labels", {}) as Dictionary
+	)
+	var multimodal_families := (
+		provider_descriptor.get("catalog_multimodal_families", []) as Array
+	)
+	return {
+		"id": model_id,
+		"label": String(model_labels.get(
+			model_family,
+			model_labels.get(model_family.to_lower(), model_id),
+		)),
+		"provider_id": provider_id,
+		"input_modalities": (
+			["text", "image"]
+			if model_family in multimodal_families
+			else ["text"]
+		),
+		"runtime_modalities_configurable": true,
+		"custom": true,
+	}
+
+
+func _model_release_family(model_id: String) -> String:
+	var separator := model_id.rfind("-")
+	if separator < 0:
+		return model_id
+	var suffix := model_id.substr(separator + 1)
+	if suffix.is_valid_int() and suffix.length() in [6, 8]:
+		return model_id.substr(0, separator)
+	return model_id
+
+
+func _rebuild_catalog_for_configs(provider_configs: Dictionary) -> Dictionary:
+	# 测试可注入自己的 catalog；只重建正式目录实例。
+	if _catalog == null or _catalog.get_script() != CATALOG:
+		return {"ok": true, "errorCode": "", "retryable": false}
+	var rebuilt := CATALOG.new()
+	for provider_id_value: Variant in provider_configs.keys():
+		var provider_id := String(provider_id_value).strip_edges()
+		var config_value: Variant = provider_configs.get(provider_id_value)
+		if not config_value is Dictionary:
+			continue
+		var config := config_value as Dictionary
+		if String(config.get("connection_type", "")) != COMPATIBLE_PROFILE_TYPE:
+			continue
+		var display_name := String(
+			config.get("display_name", "兼容接口")
+		).strip_edges()
+		var registered := rebuilt.register_openai_compatible_profile(
+			provider_id,
+			display_name,
+			String(config.get("endpoint", "")).strip_edges(),
+			bool(config.get("api_key_required", true)),
+		) as Dictionary
+		if not bool(registered.get("ok", false)):
+			return _failure(
+				"PROVIDER_DYNAMIC_CONNECTION_INVALID",
+				false,
+				registered.get("errors", []) as Array,
+			)
+	_catalog = rebuilt
+	return {"ok": true, "errorCode": "", "retryable": false}
+
+
+func _changed_provider_ids(previous: Dictionary, current: Dictionary) -> Array[String]:
+	var result: Array[String] = []
+	for provider_id_value: Variant in previous.keys():
+		var provider_id := String(provider_id_value)
+		if not current.has(provider_id) or previous.get(provider_id) != current.get(provider_id):
+			result.append(provider_id)
+	for provider_id_value: Variant in current.keys():
+		var provider_id := String(provider_id_value)
+		if not previous.has(provider_id) and provider_id not in result:
+			result.append(provider_id)
+	return result
+
+
+func _invalidate_provider_health_entries(provider_ids: Array[String]) -> void:
+	if provider_ids.is_empty():
+		return
+	for key_value: Variant in _health_by_target.keys():
+		var health_value: Variant = _health_by_target.get(key_value)
+		if (
+			health_value is Dictionary
+			and String((health_value as Dictionary).get("providerId", "")) in provider_ids
+		):
+			_health_by_target.erase(key_value)
 
 
 func _method_argument_count(target: Object, method_name: String) -> int:

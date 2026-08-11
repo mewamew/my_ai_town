@@ -277,11 +277,22 @@ func set_page_context(scope: String, context: Dictionary) -> Dictionary:
 		_announcement_panel_open = true
 	if scope == "town_log":
 		var next_open := bool(context.get("open", false))
-		if next_open and not _town_log_open:
+		var requested_thread_id := String(
+			context.get("threadId", ""),
+		).strip_edges()
+		if (
+			next_open
+			and (
+				not _town_log_open
+				or not requested_thread_id.is_empty()
+			)
+		):
 			_town_log_open = true
 			_reload_town_log_threads()
 		else:
 			_town_log_open = next_open
+		if next_open and not requested_thread_id.is_empty():
+			_load_town_log_detail(requested_thread_id, false)
 	if scope == "inner_observation" and not bool(context.get("open", false)):
 		_close_inner_observation_state()
 	refresh(scope)
@@ -500,6 +511,11 @@ func _publish_announcement_command(
 	)
 	var result := _runtime.call("publish_player_announcement", text) as Dictionary
 	if bool(result.get("ok", false)):
+		var announcement := result.get("announcement", {}) as Dictionary
+		var scheduled_label := String(
+			announcement.get("scheduled_time_label", ""),
+		).strip_edges()
+		var schedule_warning := bool(result.get("scheduleWarning", false))
 		_announcement_draft = ""
 		_announcement_composer_open = false
 		_announcement_dialog_open = false
@@ -507,9 +523,17 @@ func _publish_announcement_command(
 		_announcement_retry_payload.clear()
 		_announcement_feedback = {
 			"visible": true,
-			"kind": "success",
+			"kind": "warning" if schedule_warning else "success",
 			"title": "公告已经发布",
-			"message": "全镇会从世界事实中收到这条公告。",
+			"message": (
+				"公告已记入右侧事件链，但没有识别出可执行的时间；居民会即时回应，不会到点再提醒。请写成“明天下午三点”或“两小时后”。"
+				if schedule_warning
+				else (
+					"公告已记入右侧事件链；已识别约定时间 %s，居民会先回应，到点后再次提醒。" % scheduled_label
+					if not scheduled_label.is_empty()
+					else "公告已记入右侧事件链；居民会逐个回应。"
+				)
+			),
 			"durationMs": 2600,
 			"blocksInput": false,
 		}
@@ -1475,6 +1499,11 @@ func _dispatch_town_log(
 		"town_log.open":
 			_town_log_open = true
 			_reload_town_log_threads()
+			var requested_thread_id := String(
+				payload.get("threadId", ""),
+			).strip_edges()
+			if not requested_thread_id.is_empty():
+				_load_town_log_detail(requested_thread_id, false)
 		"town_log.close":
 			_town_log_open = false
 		"town_log.set_filter":
@@ -3723,6 +3752,17 @@ func _announcement_items() -> Array[Dictionary]:
 		var time := item.get("time", {}) as Dictionary
 		item["time"] = time.duplicate(true)
 		item["timeLabel"] = _time_label(time)
+		var scheduled_label := String(
+			item.get("scheduled_time_label", ""),
+		).strip_edges()
+		item["scheduleLabel"] = scheduled_label
+		item["scheduleStatus"] = (
+			"已到点"
+			if item.has("schedule_triggered_at")
+			else "等待到点"
+			if not scheduled_label.is_empty()
+			else ""
+		)
 		result.append(item)
 	return result
 

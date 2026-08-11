@@ -46,6 +46,10 @@
   {
     "id": "res://tests/windows_directory_cleanup_test.gd",
     "min_checks": 22
+  },
+  {
+    "id": "res://tests/startup_social_feedback_test.gd",
+    "min_checks": 56
   }
  ]
 }

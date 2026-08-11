@@ -19,6 +19,17 @@ const DINING_SERVICE := preload(
 # 结算是冷路径(每次活动完成一回),子 runtime 与目录 helper 统一经 world 动态访问,
 # 恢复/重开局替换子 runtime 后无需重新绑定。
 
+static func refresh_staffing_after_attendance_change(world) -> void:
+	var staffing: Variant = world.get("_staffing")
+	if staffing == null or world.environment() == null:
+		return
+	staffing.rebuild(
+		world.residents(),
+		int(world.environment().get_absolute_minute()),
+	)
+	world._refresh_place_service_staffing()
+	world._sync_staffing_matters()
+
 # 工单结算分派:一次解析绑定任务,按旧 16 连调的顺序做首配规则分派。
 # 规则与各 handler 自身门槛完全一致,handler 内部检查全部保留;不依赖绑定的
 # 场所服务/公告栏/取件保持原顺位无条件调用,段间重取任务与旧的逐个重查等价。

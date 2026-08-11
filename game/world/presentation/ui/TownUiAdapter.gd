@@ -1128,13 +1128,23 @@ func _on_hud_resident_reaction_created(
 	var source_action_id := String(
 		reaction.get("sourceActionId", "")
 	).strip_edges()
+	var source_event_id := String(
+		reaction.get("sourceEventId", "")
+	).strip_edges()
+	var reaction_kind := String(
+		reaction.get("reactionKind", "action_result"),
+	).strip_edges()
+	var announcement_id := String(
+		reaction.get("announcementId", ""),
+	).strip_edges()
+	var source_id := source_event_id if not source_event_id.is_empty() else source_action_id
 	var public_thought := _hud_public_thought_text(
 		String(reaction.get("text", ""))
 	)
 	if (
 		resident_id.is_empty()
 		or reaction_id.is_empty()
-		or source_action_id.is_empty()
+		or source_id.is_empty()
 		or public_thought.is_empty()
 	):
 		return
@@ -1147,11 +1157,16 @@ func _on_hud_resident_reaction_created(
 		return
 	_hud_public_thoughts[snapshot_key] = {
 		"previewId": reaction_id,
-		"actionId": source_action_id,
+		"actionId": source_id,
 		"residentId": resident_id,
 		"residentName": resident_name,
 		"publicThought": public_thought,
-		"thoughtKind": "activity_reaction",
+		"thoughtKind": (
+			"announcement_reaction"
+			if reaction_kind == "announcement"
+			else "activity_reaction"
+		),
+		"announcementId": announcement_id,
 		"confirmedRevision": confirmed_revision,
 		"startedAtMsec": now_msec,
 		"expiresAtMsec": (
@@ -2390,6 +2405,17 @@ func _build_town_hud_view_model(operation: Dictionary, error: Dictionary) -> Dic
 	var resident_directory := _hud_resident_directory(runtime_state)
 	var place_directory := _hud_place_directory(runtime_state)
 	var event_overlay := _hud_event_overlay(announcements)
+	var event_overlay_items := event_overlay.get("items", []) as Array
+	var latest_event_payload := {}
+	if not event_overlay_items.is_empty():
+		var latest_event := event_overlay_items[event_overlay_items.size() - 1] as Dictionary
+		var latest_announcement_id := String(
+			latest_event.get("eventId", ""),
+		).strip_edges()
+		if not latest_announcement_id.is_empty():
+			latest_event_payload = {
+				"threadId": "announcement:%s" % latest_announcement_id,
+			}
 	var offscreen_activity := _hud_offscreen_activity_disabled()
 	var far_resident_activity := _hud_far_resident_activity(runtime_state, started)
 	var view_mode := str(runtime_state.get("viewMode", "unavailable"))
@@ -2423,8 +2449,7 @@ func _build_town_hud_view_model(operation: Dictionary, error: Dictionary) -> Dic
 	var can_open_event := (
 		started
 		and bool(event_overlay.get("visible", false))
-		and _runtime != null
-		and _runtime.has_method("open_announcement_panel")
+		and _ui_route_host != null
 	)
 	var can_open_formal_page := started and _ui_route_host != null
 	var can_toggle_avatar := (
@@ -2659,7 +2684,12 @@ func _build_town_hud_view_model(operation: Dictionary, error: Dictionary) -> Dic
 				can_open_formal_page and not active_interior_id.is_empty(),
 				"NO_ACTIVE_INTERIOR",
 			),
-			"openEvent": _action("town_hud.open_event", can_open_event, "NO_EVENT"),
+			"openEvent": _action(
+				"town_hud.open_town_log",
+				can_open_event,
+				"NO_EVENT",
+				latest_event_payload,
+			),
 		},
 		operation,
 		error,
@@ -2901,7 +2931,7 @@ func _hud_public_thought_item(
 		"importance": "normal",
 		"displayRank": (
 			0
-			if thought_kind == "activity_reaction"
+			if thought_kind in ["activity_reaction", "announcement_reaction"]
 			else (1 if thought_kind == "action_intention" else 10)
 		),
 		"playbackIdentity": "%s|%s|%s" % [
@@ -2915,13 +2945,25 @@ func _hud_public_thought_item(
 		"spaceId": space_id,
 		"indoor": space_id != "town_outdoor",
 		"action": _action(
-			"town_hud.open_resident_action",
+			(
+				"town_hud.open_town_log"
+				if thought_kind == "announcement_reaction"
+				else "town_hud.open_resident_action"
+			),
 			_ui_route_host != null,
 			"TOWN_UI_ROUTE_HOST_NOT_CONNECTED",
-			{
-				"residentId": resident_id,
-				"residentName": resident_name,
-			},
+			(
+				{
+					"threadId": "announcement:%s" % String(
+						presentation.get("announcementId", ""),
+					),
+				}
+				if thought_kind == "announcement_reaction"
+				else {
+					"residentId": resident_id,
+					"residentName": resident_name,
+				}
+			),
 		),
 	}
 	for field: String in [
@@ -2930,6 +2972,7 @@ func _hud_public_thought_item(
 		"waitReason",
 		"sourceActivityId",
 		"visibleSpaceId",
+		"announcementId",
 	]:
 		if presentation.has(field):
 			item[field] = presentation[field]
@@ -4059,10 +4102,19 @@ func _hud_event_overlay(announcements: Dictionary) -> Dictionary:
 		if not (value is Dictionary):
 			continue
 		var announcement := value as Dictionary
+		var schedule_label := String(
+			announcement.get("scheduleLabel", ""),
+		).strip_edges()
+		var schedule_status := String(
+			announcement.get("scheduleStatus", ""),
+		).strip_edges()
+		var summary := str(announcement.get("text", ""))
+		if not schedule_label.is_empty():
+			summary += "\n%s · %s" % [schedule_label, schedule_status]
 		items.append({
 			"eventId": str(announcement.get("announcement_id", "")),
 			"title": str(announcement.get("text", "")),
-			"summary": str(announcement.get("text", "")),
+			"summary": summary,
 			"direction": "",
 			"screenAnchor": {},
 			"targetId": "",

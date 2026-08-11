@@ -224,6 +224,23 @@ static func reaction_source_action_id(results: Array) -> String:
 			return action_id
 	return ""
 
+static func reaction_source_event_id(events: Array) -> String:
+	var event_ids := announcement_reaction_source_event_ids(events)
+	return event_ids[event_ids.size() - 1] if not event_ids.is_empty() else ""
+
+static func announcement_reaction_source_event_ids(events: Array) -> Array[String]:
+	var result: Array[String] = []
+	for value: Variant in events:
+		if typeof(value) != TYPE_DICTIONARY:
+			continue
+		var event := value as Dictionary
+		if String(event.get("type", "")) not in ["公告发布", "公告到点"]:
+			continue
+		var event_id := String(event.get("event_id", "")).strip_edges()
+		if not event_id.is_empty() and not result.has(event_id):
+			result.append(event_id)
+	return result
+
 static func validate_reaction_shape(
 	value: Variant,
 	inflight_events: Array,
@@ -238,10 +255,10 @@ static func validate_reaction_shape(
 			or not ["source_action_id", "text"].has(key_value)
 		):
 			return "reaction 包含未知字段：%s" % str(key_value)
-	if (
-		not reaction.get("source_action_id") is String
-		or String(reaction.get("source_action_id")).strip_edges().is_empty()
-	):
+	var source_action_id := String(
+		reaction.get("source_action_id", "")
+	).strip_edges() if reaction.get("source_action_id", "") is String else ""
+	if source_action_id.is_empty():
 		return "reaction.source_action_id 必须是非空文本"
 	if (
 		not reaction.get("text") is String
@@ -254,12 +271,51 @@ static func validate_reaction_shape(
 	if text.length() > REACTION_TEXT_MAX_LENGTH:
 		return "reaction.text 最多 %d 个字符" % REACTION_TEXT_MAX_LENGTH
 	if inflight_requires_reply(inflight_events):
-		return "当前需要答话，不允许同时提交 reaction"
+		return "当前需要答话，不允许同时提交动作结果 reaction"
 	var expected_action_id := reaction_source_action_id(inflight_results)
 	if expected_action_id.is_empty():
 		return "本次决定没有可回应的动作结果"
-	if String(reaction.get("source_action_id")).strip_edges() != expected_action_id:
+	if source_action_id != expected_action_id:
 		return "reaction.source_action_id 必须指向本次最新的可回应动作结果"
+	return ""
+
+static func validate_announcement_reactions_shape(
+	value: Variant,
+	inflight_events: Array,
+) -> String:
+	if value is not Array:
+		return "announcement_reactions 必须是数组"
+	var expected_ids := announcement_reaction_source_event_ids(inflight_events)
+	var seen: Dictionary = {}
+	for index: int in (value as Array).size():
+		var reaction_value: Variant = (value as Array)[index]
+		if reaction_value is not Dictionary:
+			return "announcement_reactions[%d] 必须是对象" % index
+		var reaction := reaction_value as Dictionary
+		for key_value: Variant in reaction:
+			if (
+				not key_value is String
+				or not ["source_event_id", "text"].has(key_value)
+			):
+				return "announcement_reactions[%d] 包含未知字段：%s" % [index, str(key_value)]
+		var source_event_id := String(
+			reaction.get("source_event_id", "")
+		).strip_edges() if reaction.get("source_event_id", "") is String else ""
+		if source_event_id.is_empty() or not expected_ids.has(source_event_id):
+			return "announcement_reactions[%d].source_event_id 不属于本轮公告" % index
+		if seen.has(source_event_id):
+			return "同一公告不能重复提交回应：%s" % source_event_id
+		seen[source_event_id] = true
+		if (
+			not reaction.get("text") is String
+			or String(reaction.get("text")).strip_edges().is_empty()
+		):
+			return "announcement_reactions[%d].text 必须是非空文本" % index
+		var text := String(reaction.get("text")).strip_edges()
+		if text.contains("\n") or text.contains("\r") or text.contains("\t"):
+			return "announcement_reactions[%d].text 必须是单行文字" % index
+		if text.length() > REACTION_TEXT_MAX_LENGTH:
+			return "announcement_reactions[%d].text 最多 %d 个字符" % [index, REACTION_TEXT_MAX_LENGTH]
 	return ""
 
 static func validate_decision_shape(
@@ -277,6 +333,8 @@ static func validate_decision_shape(
 		allowed_fields.append("action")
 	if decision.has("reaction"):
 		allowed_fields.append("reaction")
+	if decision.has("announcement_reactions"):
+		allowed_fields.append("announcement_reactions")
 	if decision.has("social_response"):
 		allowed_fields.append("social_response")
 	if decision.has("social_attention"):
@@ -311,6 +369,13 @@ static func validate_decision_shape(
 		)
 		if not reaction_error.is_empty():
 			return reaction_error
+	if decision.has("announcement_reactions"):
+		var announcement_reaction_error := validate_announcement_reactions_shape(
+			decision.get("announcement_reactions"),
+			inflight_events,
+		)
+		if not announcement_reaction_error.is_empty():
+			return announcement_reaction_error
 	# 对话后续是可选附件。它写坏时只忽略承诺，不能把一轮合法答话
 	# 一起判失败；具体 option_id 在本轮 World 快照中另行核对。
 	return ""

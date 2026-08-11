@@ -476,6 +476,21 @@ func initialize_resident(
 	}
 
 
+func replace_resident_model_provider(
+	resident_id: String,
+	model_provider: Object,
+) -> Dictionary:
+	var normalized_id := resident_id.strip_edges()
+	if not _session_open:
+		return {"ok": false, "errors": ["Agent 会话已关闭"]}
+	if normalized_id.is_empty() or not _residents.has(normalized_id):
+		return {"ok": false, "errors": ["找不到要替换模型的居民 Agent"]}
+	if model_provider == null or not model_provider.has_method("request_decision"):
+		return {"ok": false, "errors": ["model_provider 必须实现 request_decision"]}
+	var resident := _residents[normalized_id] as AgentResidentRuntime
+	return resident.replace_model_provider(model_provider)
+
+
 func validate_resident_replacement(
 	initialization: Variant,
 	model_provider: Object,

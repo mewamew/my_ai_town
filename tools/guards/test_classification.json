@@ -78,6 +78,7 @@
   "game/tests/resident_replacement_test.gd": "自动测试",
   "game/tests/session_save_continue_roundtrip_test.gd": "自动测试",
   "game/tests/startup_performance_compatibility_test.gd": "自动测试",
+  "game/tests/startup_social_feedback_test.gd": "自动测试",
   "game/tests/resident_presentation_test.gd": "自动测试",
   "game/tests/support/TownWorldTestCase.gd": "辅助",
   "game/tests/support/TownAgentDecisionTraceEvidence.gd": "辅助",

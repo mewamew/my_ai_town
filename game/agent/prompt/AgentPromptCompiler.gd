@@ -642,13 +642,26 @@ func _render_snapshot(wake_packet: Dictionary) -> String:
 		lines.append("- 无")
 	for announcement_value: Variant in known_announcements:
 		var announcement := announcement_value as Dictionary
+		var publisher_id := String(
+			announcement.get("publisher_resident_id", ""),
+		).strip_edges()
+		var publisher_name := String(
+			announcement.get("publisher_name", ""),
+		).strip_edges()
+		var schedule_note := ""
+		if int(announcement.get("scheduled_absolute_minute", -1)) >= 0:
+			schedule_note = "，约定时间%s" % _safe(
+				announcement.get("scheduled_time_label", ""),
+			)
 		lines.append(
-			"- %s：%s（得知方式%s，%s）"
+			"- %s：%s（发布者%s，得知方式%s，%s%s）"
 			% [
 				_safe(announcement.get("announcement_id", "")),
 				_safe(announcement.get("text", "")),
+				_person(publisher_id, publisher_name),
 				_safe(announcement.get("acquired_via", "")),
 				"仍有效" if bool(announcement.get("active", false)) else "已撤下",
+				schedule_note,
 			],
 		)
 	lines.append("当前可做活动：")
@@ -838,11 +851,35 @@ func _render_events(events: Array) -> String:
 					"%s；%s。你可以继续当前约定、先等待、改做当前真实可行的其他行动，或明确退出承诺；已经关闭或失效的地点不能再作为“去”的目标，想等它恢复应选择“待着”；不要假装已经完成。"
 					% [prefix, _safe(event.get("summary", ""))]
 				)
-			"公告发布", "公告阅读":
-				lines.append("%s；公告 %s；内容：%s" % [
+			"公告发布", "公告阅读", "公告到点":
+				var publisher_id := String(
+					event.get("publisher_resident_id", ""),
+				).strip_edges()
+				var publisher_name := String(
+					event.get("publisher_name", ""),
+				).strip_edges()
+				var timing_note := ""
+				var priority_note := (
+					"；这是玩家发布的最高优先级公告，本轮必须停止普通工作并提交新的实际行动；若不能或不愿照做，也要用新行动明确处理，不能继续当前动作"
+					if String(event.get("announcement_priority", "")) == "player"
+					else ""
+				)
+				if int(event.get("scheduled_absolute_minute", -1)) >= 0:
+					timing_note = "；约定时间：%s；%s" % [
+						_safe(event.get("scheduled_time_label", "")),
+						(
+							"时间已经到了，现在再决定是否行动"
+							if String(event.get("type", "")) == "公告到点"
+							else "时间尚未到，不要提前把未来安排当成现在已经发生"
+						),
+					]
+				lines.append("%s；公告 %s；发布者：%s；内容：%s%s%s" % [
 					prefix,
 					_safe(event.get("announcement_id", "")),
+					_person(publisher_id, publisher_name),
 					_safe(event.get("text", "")),
+					timing_note,
+					priority_note,
 				])
 			"公告转告":
 				lines.append(
@@ -1017,6 +1054,23 @@ func _render_constraints(constraints: Dictionary) -> String:
 			% [
 				_join(reaction.get("fields", [])),
 				_safe(reaction.get("source_action_id", "")),
+			]
+		)
+	var announcement_reactions := constraints.get(
+		"announcement_reactions",
+		{},
+	) as Dictionary
+	if not announcement_reactions.is_empty():
+		lines.append(
+			(
+				"必填公告反应数组 announcement_reactions：每个元素字段 %s；"
+				+ "按顺序逐条回应公告事件 %s，每个事件只能回应一次。"
+				+ "用本人态度明确表达接受、拒绝、怀疑或暂不决定，不能像没听见一样省略；"
+				+ "这不会替代本轮 action，也不能把未来时间的事情假装成已经完成"
+			)
+			% [
+				_join(announcement_reactions.get("fields", [])),
+				_join(announcement_reactions.get("source_event_ids", [])),
 			]
 		)
 	var social_response := constraints.get(
@@ -1257,6 +1311,18 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 		}
 		if not medical_reply.is_empty():
 			reply_constraints["medical_response"] = medical_reply
+		var reply_announcement_event_ids := (
+			AgentContractScript.announcement_reaction_source_event_ids(
+				wake_packet,
+			)
+		)
+		if not reply_announcement_event_ids.is_empty():
+			reply_constraints["announcement_reactions"] = {
+				"fields": ["source_event_id", "text"],
+				"source_event_ids": reply_announcement_event_ids,
+				"max_characters": 32,
+				"required": true,
+			}
 		var reply_follow_up := _conversation_follow_up_constraints(snapshot)
 		if not reply_follow_up.is_empty():
 			reply_constraints["conversation_follow_up"] = reply_follow_up
@@ -1268,7 +1334,12 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 	if bool(post_injury_reaction.get("required", false)):
 		return _post_injury_reaction_constraints(wake_packet, snapshot, post_injury_reaction)
 	var handling: Array[String] = ["replace_current"]
-	if typeof(me.get("current_action")) == TYPE_DICTIONARY:
+	if (
+		typeof(me.get("current_action")) == TYPE_DICTIONARY
+		and not AgentContractScript.wake_has_player_priority_announcement(
+			wake_packet,
+		)
+	):
 		handling.push_front("continue_current")
 	var place := snapshot.get("place", {}) as Dictionary
 	var destination_names: Array = (
@@ -1381,6 +1452,9 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 	var social_assignment := _social_assignment(snapshot)
 	if not social_assignment.is_empty():
 		constraints["social_assignment"] = social_assignment
+	var announcement_reaction_event_ids := (
+		AgentContractScript.announcement_reaction_source_event_ids(wake_packet)
+	)
 	var reaction_source_action_id := String(
 		AgentContractScript.reaction_source_action_id(wake_packet)
 	)
@@ -1388,6 +1462,13 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 		constraints["reaction"] = {
 			"fields": ["source_action_id", "text"],
 			"source_action_id": reaction_source_action_id,
+			"max_characters": 32,
+			"required": true,
+		}
+	if not announcement_reaction_event_ids.is_empty():
+		constraints["announcement_reactions"] = {
+			"fields": ["source_event_id", "text"],
+			"source_event_ids": announcement_reaction_event_ids,
 			"max_characters": 32,
 			"required": true,
 		}

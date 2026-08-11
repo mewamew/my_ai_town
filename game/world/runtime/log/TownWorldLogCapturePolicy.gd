@@ -78,8 +78,10 @@ static func _social_matter(payload: Dictionary) -> bool:
 static func _world_event(payload: Dictionary, event_type: String) -> bool:
 	if event_type in ["搭话", "对方答话", "对话结束"]:
 		return not _id(payload, ["conversation_id", "conversationId"]).is_empty()
-	if event_type in ["天气变了", "公告发布", "公告阅读", "公告转告", "钟声公告", "居民死亡", "公告撤回"]:
+	if event_type in ["天气变了", "公告发布", "公告阅读", "公告转告", "钟声公告", "公告到点", "居民死亡", "公告撤回"]:
 		return true
+	if event_type == "居民公开反应":
+		return not _id(payload, ["announcement_id", "announcementId"]).is_empty()
 	if event_type == "营业状态变化":
 		return bool(payload.get("playerMeaningful", false))
 	return event_type.begins_with("condition_") and _text(payload.get("severity", "minor")) in ["noticeable", "serious"]

@@ -71,6 +71,16 @@ func attach_session_epoch(session_epoch: AgentSessionEpoch) -> void:
 	_session_epoch = session_epoch
 
 
+func replace_model_provider(model_provider: Object) -> Dictionary:
+	if model_provider == null or not model_provider.has_method("request_decision"):
+		return {"ok": false, "errors": ["model_provider 必须实现 request_decision"]}
+	var replaced := _decision_execution.replace_model_provider(model_provider)
+	if not bool(replaced.get("ok", false)):
+		return replaced
+	_model_provider = model_provider
+	return {"ok": true}
+
+
 func capture_persistent_state() -> Dictionary:
 	var resident_id := String(_initialization["me"]["resident_id"])
 	var resident_name := String(_initialization["me"]["attributes"]["name"])

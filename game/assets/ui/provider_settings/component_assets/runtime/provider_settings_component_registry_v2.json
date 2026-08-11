@@ -18,11 +18,46 @@
       "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/page_shell/provider_settings_page_dynamic_cards_v2.png"
     },
     {
+      "assetId": "ui.provider-settings.page-shell.standard.v4",
+      "componentType": "imagegen_page_shell_composite",
+      "ownerLevel": "page_shell",
+      "runtimeUsage": "standard_provider_background",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/page_shell/provider_settings_standard_v4.png"
+    },
+    {
+      "assetId": "ui.provider-settings.page-shell.custom-local.v4",
+      "componentType": "page_shell_composite_custom_model",
+      "ownerLevel": "page_shell",
+      "runtimeUsage": "custom_model_local_background",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/page_shell/provider_settings_custom_local_v4.png"
+    },
+    {
+      "assetId": "ui.provider-settings.page-shell.custom-302.v4",
+      "componentType": "page_shell_composite_custom_model",
+      "ownerLevel": "page_shell",
+      "runtimeUsage": "custom_model_302_background",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/page_shell/provider_settings_custom_302_v4.png"
+    },
+    {
+      "assetId": "ui.provider-settings.page-shell.custom-compatible.v4",
+      "componentType": "page_shell_composite_custom_model",
+      "ownerLevel": "page_shell",
+      "runtimeUsage": "custom_model_compatible_background",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/page_shell/provider_settings_custom_compatible_v4.png"
+    },
+    {
       "assetId": "ui.provider-settings.provider-card.selected.v1",
       "componentType": "provider_semantic_card",
       "ownerLevel": "content_slot",
       "runtimeUsage": "page_local_only",
       "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/provider_cards/provider_card_selected_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.provider-card.neutral.v2",
+      "componentType": "imagegen_provider_semantic_card",
+      "ownerLevel": "content_slot",
+      "runtimeUsage": "unselected_provider_card",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/provider_cards/provider_card_neutral_v2.png"
     },
     {
       "assetId": "ui.provider-settings.provider-card.auth-error.v1",
@@ -88,6 +123,13 @@
       "path": "res://assets/ui/provider_settings/component_assets/runtime/base_ninepatch/content_slot/content_slot_v1.png"
     },
     {
+      "assetId": "ui.provider-settings.custom-input-field.v1",
+      "componentType": "imagegen_base_ninepatch",
+      "ownerLevel": "content_slot",
+      "runtimeUsage": "custom_model_text_input",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/base_ninepatch/custom_input_field/custom_input_field_v1.png"
+    },
+    {
       "assetId": "ui.provider-settings.button.normal.v1",
       "componentType": "base_ninepatch_state",
       "ownerLevel": "operation_control",
@@ -114,6 +156,34 @@
       "ownerLevel": "operation_control",
       "runtimeUsage": "stylebox_texture",
       "path": "res://assets/ui/provider_settings/component_assets/runtime/base_ninepatch/buttons/button_disabled_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.button.success.normal.v1",
+      "componentType": "base_ninepatch_state",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "custom_model_connection_action",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/base_ninepatch/buttons_success/button_success_normal_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.button.success.hover.v1",
+      "componentType": "base_ninepatch_state",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "custom_model_connection_action",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/base_ninepatch/buttons_success/button_success_hover_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.button.success.pressed.v1",
+      "componentType": "base_ninepatch_state",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "custom_model_connection_action",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/base_ninepatch/buttons_success/button_success_pressed_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.button.success.disabled.v1",
+      "componentType": "base_ninepatch_state",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "custom_model_connection_action",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/base_ninepatch/buttons_success/button_success_disabled_v1.png"
     },
     {
       "assetId": "ui.provider-settings.toggle.off.v1",
@@ -151,11 +221,249 @@
       "path": "res://assets/ui/provider_settings/component_assets/runtime/icons/provider_medallions/provider_medallion_network_v1.png"
     },
     {
+      "assetId": "ui.provider-settings.medallion.custom-model.v1",
+      "componentType": "icon",
+      "ownerLevel": "content_slot",
+      "runtimeUsage": "texture_rect",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/icons/provider_medallions/provider_medallion_custom_model_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.custom-model-delete.v1",
+      "componentType": "icon_button_art",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "texture_rect",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/icons/actions/custom_model_delete_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.status.checking-connection.v1",
+      "componentType": "animated_status_icon",
+      "ownerLevel": "content_slot",
+      "runtimeUsage": "texture_rect_pulse",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/icons/status/provider_checking_connection_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.custom-model-delete-blocked.v1",
+      "componentType": "imagegen_semantic_icon",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "custom_model_delete_blocked_dialog",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/icons/status/custom_model_delete_blocked_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.status.loading-plate.v2",
+      "componentType": "imagegen_status_plate",
+      "ownerLevel": "section_frame",
+      "runtimeUsage": "loading_state_texture_rect",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/status_strips/status_loading_v2.png"
+    },
+    {
+      "assetId": "ui.provider-settings.status.success-custom.v4",
+      "componentType": "imagegen_status_strip_state",
+      "ownerLevel": "section_frame",
+      "runtimeUsage": "connection_success_state",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/status_strips/status_success_custom_v4.png"
+    },
+    {
+      "assetId": "ui.provider-settings.status.loading-custom.v5",
+      "componentType": "imagegen_status_strip_state",
+      "ownerLevel": "section_frame",
+      "runtimeUsage": "connection_loading_state",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/status_strips/status_loading_custom_v5.png"
+    },
+    {
+      "assetId": "ui.provider-settings.status.error-custom.v4",
+      "componentType": "imagegen_status_strip_state",
+      "ownerLevel": "section_frame",
+      "runtimeUsage": "connection_error_state",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/status_strips/status_error_custom_v4.png"
+    },
+    {
+      "assetId": "ui.provider-settings.custom-connection.v2",
+      "componentType": "imagegen_composite",
+      "ownerLevel": "section_frame",
+      "runtimeUsage": "custom_connection_texture_rect",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/custom_sections/custom_connection_row_v2.png"
+    },
+    {
+      "assetId": "ui.provider-settings.custom-connection-two-row.v3",
+      "componentType": "imagegen_composite",
+      "ownerLevel": "section_frame",
+      "runtimeUsage": "custom_compatible_connection_texture_rect",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/custom_sections/custom_connection_two_row_v3.png"
+    },
+    {
+      "assetId": "ui.provider-settings.custom-model-add.v2",
+      "componentType": "imagegen_composite",
+      "ownerLevel": "section_frame",
+      "runtimeUsage": "custom_model_add_texture_rect",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/custom_sections/custom_model_add_row_v2.png"
+    },
+    {
+      "assetId": "ui.provider-settings.custom-connection-dropdown-panel.v1",
+      "componentType": "imagegen_dropdown_panel",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "custom_connection_popup_panel",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/dropdowns/custom_connection_dropdown_panel_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.custom-connection-dropdown-selected.v1",
+      "componentType": "imagegen_dropdown_row_state",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "custom_connection_popup_selected_row",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/dropdowns/custom_connection_dropdown_selected_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.custom-model-discovery-panel.v1",
+      "componentType": "imagegen_dropdown_panel",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "custom_model_discovery_popup",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/dropdowns/custom_model_discovery_panel_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.custom-model-empty-panel.v1",
+      "componentType": "imagegen_empty_state_panel",
+      "ownerLevel": "content_slot",
+      "runtimeUsage": "custom_model_empty_state",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/composite/empty_states/custom_model_empty_panel_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.button.custom-success.v2",
+      "componentType": "imagegen_button_state",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "custom_primary_button",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/base_ninepatch/buttons_success/button_success_normal_v2.png"
+    },
+    {
+      "assetId": "ui.provider-settings.button.custom-secondary.v2",
+      "componentType": "imagegen_button_state",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "custom_secondary_button",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/base_ninepatch/buttons_secondary/button_secondary_normal_v2.png"
+    },
+    {
+      "assetId": "ui.provider-settings.button.loading.v2",
+      "componentType": "imagegen_button_state",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "loading_button",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/base_ninepatch/buttons_loading/button_loading_v2.png"
+    },
+    {
+      "assetId": "ui.provider-settings.button.save-connection-disabled.v3",
+      "componentType": "imagegen_exact_button_state",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "custom_connection_save_disabled",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/exact_buttons/save_connection_disabled_v3.png"
+    },
+    {
+      "assetId": "ui.provider-settings.button.save-connection-normal.v4",
+      "componentType": "imagegen_exact_button_state",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "custom_connection_save_normal",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/exact_buttons/save_connection_normal_v4.png"
+    },
+    {
+      "assetId": "ui.provider-settings.button.discover-models-disabled.v3",
+      "componentType": "imagegen_exact_button_state",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "api_model_discover_disabled",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/exact_buttons/discover_models_disabled_v3.png"
+    },
+    {
+      "assetId": "ui.provider-settings.button.discover-models-normal.v4",
+      "componentType": "imagegen_exact_button_state",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "api_model_discover_normal",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/exact_buttons/discover_models_normal_v4.png"
+    },
+    {
+      "assetId": "ui.provider-settings.button.add-model-disabled.v3",
+      "componentType": "imagegen_exact_button_state",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "api_model_add_disabled",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/exact_buttons/add_model_disabled_v3.png"
+    },
+    {
+      "assetId": "ui.provider-settings.button.add-model-normal.v4",
+      "componentType": "imagegen_exact_button_state",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "api_model_add_normal",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/exact_buttons/add_model_normal_v4.png"
+    },
+    {
+      "assetId": "ui.provider-settings.button.check-connection-loading.v4",
+      "componentType": "imagegen_exact_button_state",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "check_connection_loading",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/exact_buttons/check_connection_loading_v4.png"
+    },
+    {
+      "assetId": "ui.provider-settings.button.check-connection-normal.v4",
+      "componentType": "imagegen_exact_button_state",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "check_connection_normal",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/exact_buttons/check_connection_normal_v4.png"
+    },
+    {
+      "assetId": "ui.provider-settings.custom-key.save.v1",
+      "componentType": "imagegen_icon_button",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "custom_connection_save",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/icons/custom_key_actions/custom_connection_save_key_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.custom-key.reveal.v1",
+      "componentType": "imagegen_icon_button",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "custom_key_visibility",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/icons/custom_key_actions/custom_connection_reveal_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.custom-key.delete.v1",
+      "componentType": "imagegen_icon_button",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "custom_key_delete",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/icons/custom_key_actions/custom_connection_delete_key_v1.png"
+    },
+    {
       "assetId": "ui.provider-settings.header.clock-hands.v1",
       "componentType": "decorative_clock_hands",
       "ownerLevel": "page_shell",
       "runtimeUsage": "texture_rect",
       "path": "res://assets/ui/provider_settings/component_assets/runtime/icons/header/provider_clock_hands_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.header.back-arrow.v1",
+      "componentType": "imagegen_navigation_icon",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "provider_settings_back",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/icons/header/provider_back_arrow_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.status.formal-success.v1",
+      "componentType": "imagegen_semantic_icon",
+      "ownerLevel": "content_slot",
+      "runtimeUsage": "formal_status_success",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/icons/status/provider_formal_success_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.status.formal-error.v1",
+      "componentType": "imagegen_semantic_icon",
+      "ownerLevel": "content_slot",
+      "runtimeUsage": "formal_status_error",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/icons/status/provider_formal_error_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.status.available-indicator.v1",
+      "componentType": "imagegen_semantic_icon",
+      "ownerLevel": "content_slot",
+      "runtimeUsage": "provider_available_indicator",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/icons/status/provider_available_indicator_v1.png"
+    },
+    {
+      "assetId": "ui.provider-settings.custom-connection-chevron.v1",
+      "componentType": "imagegen_control_icon",
+      "ownerLevel": "operation_control",
+      "runtimeUsage": "custom_connection_dropdown_arrow",
+      "path": "res://assets/ui/provider_settings/component_assets/runtime/icons/actions/custom_connection_chevron_v1.png"
     }
   ]
 }

@@ -1193,18 +1193,7 @@ static func _validate_announcement_references(
 		)
 		if (
 			String(record.get("kind", "")) != "world_event"
-			or not SAVE_CODEC.has_exact_string_keys(
-				payload,
-				[
-					"type",
-					"announcement_id",
-					"publisher_resident_id",
-					"text",
-					"matter_id",
-					"time",
-					"event_id",
-				],
-			)
+			or not _announcement_publish_payload_keys_valid(payload)
 			or not String(record.get("residentId", "")).is_empty()
 			or not String(record.get("residentName", "")).is_empty()
 			or not String(record.get("placeName", "")).is_empty()
@@ -1261,6 +1250,34 @@ static func _announcement_event_matches(
 		)
 		and _announcement_event_content_matches(event, announcement)
 	)
+
+
+static func _announcement_publish_payload_keys_valid(
+	payload: Dictionary,
+) -> bool:
+	var required := [
+		"type",
+		"announcement_id",
+		"publisher_resident_id",
+		"text",
+		"matter_id",
+		"time",
+		"event_id",
+	]
+	var allowed := required.duplicate()
+	allowed.append_array([
+		"publisher_name",
+		"announcement_priority",
+		"scheduled_absolute_minute",
+		"scheduled_time_label",
+	])
+	for key: Variant in payload:
+		if not key is String or key not in allowed:
+			return false
+	for key: String in required:
+		if not payload.has(key):
+			return false
+	return true
 
 
 static func _announcement_event_content_matches(

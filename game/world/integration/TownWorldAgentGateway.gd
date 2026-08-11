@@ -31,6 +31,12 @@ const REQUIRED_PROVIDER_SERVICE_METHODS: Array[String] = [
 # burst bounded, but give a normal town enough lanes to keep living.
 const MAX_CONCURRENT_MODEL_REQUESTS := 6
 const RESERVED_AVATAR_CONVERSATION_REQUEST_SLOTS := 1
+# 本地推理通常由一张显卡或一颗 CPU 串行处理。允许两个普通居民继续推进，
+# 再给玩家对话留一个独立位置；其余请求保留在 World 待处理队列中，
+# 不会因为排队而触发可见的连续性兜底。
+const MAX_CONCURRENT_LOCAL_MODEL_REQUESTS := 3
+const MAX_CONCURRENT_LOCAL_ORDINARY_REQUESTS := 2
+const LOCAL_MODEL_PROVIDER_IDS: Array[String] = ["ollama", "lm-studio"]
 const MAX_DECISION_ATTEMPTS := 2
 const MAX_ERROR_HISTORY := 128
 const DEFAULT_AVATAR_PERSON_ID := "person_7f3a91c2d8e4"
@@ -447,6 +453,18 @@ func _select_dispatchable_requests(
 			continue
 		projected[inflight_decision_id] = true
 	var projected_ordinary_count := _ordinary_inflight_count()
+	var projected_local_count := 0
+	var projected_local_ordinary_count := 0
+	for inflight_decision_id: Variant in projected:
+		var inflight := _inflight.get(inflight_decision_id, {}) as Dictionary
+		var inflight_resident_id := String(inflight.get("residentId", ""))
+		if not _resident_uses_local_model(inflight_resident_id):
+			continue
+		projected_local_count += 1
+		if not _wake_is_avatar_conversation_turn(
+			inflight.get("wakePacket", {}) as Dictionary
+		):
+			projected_local_ordinary_count += 1
 	var request_limit := requests.size()
 	if max_requests >= 0:
 		request_limit = mini(request_limit, max_requests)
@@ -469,8 +487,24 @@ func _select_dispatchable_requests(
 			projected_ordinary_count
 			+ (1 if request_is_ordinary else 0)
 		)
+		var request_uses_local_model := _resident_uses_local_model(
+			String(request.get("residentId", ""))
+		)
+		var next_local_count := (
+			projected_local_count + (1 if request_uses_local_model else 0)
+		)
+		var next_local_ordinary_count := (
+			projected_local_ordinary_count
+			+ (1 if request_uses_local_model and request_is_ordinary else 0)
+		)
 		if (
 			next_total > MAX_CONCURRENT_MODEL_REQUESTS
+			or next_local_count > MAX_CONCURRENT_LOCAL_MODEL_REQUESTS
+			or (
+				request_uses_local_model
+				and next_local_ordinary_count
+				> MAX_CONCURRENT_LOCAL_ORDINARY_REQUESTS
+			)
 			or (
 				not has_pending_avatar_conversation
 				and next_ordinary_count
@@ -482,11 +516,19 @@ func _select_dispatchable_requests(
 			continue
 		projected[decision_id] = true
 		projected_ordinary_count = next_ordinary_count
+		projected_local_count = next_local_count
+		projected_local_ordinary_count = next_local_ordinary_count
 		selected.append(request)
 	return {
 		"selected": selected,
 		"overflow": overflow,
 	}
+
+
+func _resident_uses_local_model(resident_id: String) -> bool:
+	var binding := _bindings_by_id.get(resident_id, {}) as Dictionary
+	var llm_binding := binding.get("llmBinding", {}) as Dictionary
+	return String(llm_binding.get("providerId", "")) in LOCAL_MODEL_PROVIDER_IDS
 
 
 func _mark_superseded_inflight_for_request(
@@ -975,7 +1017,58 @@ func update_resident_bindings(bindings_value: Variant) -> Dictionary:
 	) as Dictionary
 	if not bool(validation.get("ok", false)):
 		return validation
+	if (
+		_agent_system == null
+		or not _agent_system.has_method("replace_resident_model_provider")
+	):
+		return _failure("AGENT_MODEL_PROVIDER_REBIND_UNSUPPORTED", false)
 	var previous := get_resident_bindings()
+	var changed_resident_ids: Array[String] = []
+	var prepared_providers: Dictionary = {}
+	var previous_by_id: Dictionary = {}
+	for previous_binding_value: Variant in previous:
+		if not previous_binding_value is Dictionary:
+			continue
+		var previous_binding := previous_binding_value as Dictionary
+		previous_by_id[String(previous_binding.get("residentId", ""))] = (
+			previous_binding.duplicate(true)
+		)
+	for identity in _resident_identities:
+		var resident_id := String(identity.get("residentId", ""))
+		var next_binding := (
+			normalized.get("bindingsById", {}) as Dictionary
+		).get(resident_id, {}) as Dictionary
+		var previous_binding := previous_by_id.get(resident_id, {}) as Dictionary
+		if next_binding.get("llmBinding", {}) == previous_binding.get("llmBinding", {}):
+			continue
+		var provider_result := _provider_service.create_provider_for_resident(
+			next_binding,
+		) as Dictionary
+		if not bool(provider_result.get("ok", false)):
+			_restore_resident_model_providers(
+				changed_resident_ids,
+				previous_by_id,
+			)
+			return _normalized_failure(
+				provider_result,
+				"LLM_MODEL_PROVIDER_REBIND_FAILED",
+			)
+		changed_resident_ids.append(resident_id)
+		prepared_providers[resident_id] = provider_result.get("provider")
+	for resident_id in changed_resident_ids:
+		var replacement := _agent_system.replace_resident_model_provider(
+			resident_id,
+			prepared_providers[resident_id],
+		) as Dictionary
+		if not bool(replacement.get("ok", false)):
+			_restore_resident_model_providers(
+				changed_resident_ids,
+				previous_by_id,
+			)
+			return _normalized_failure(
+				replacement,
+				"AGENT_MODEL_PROVIDER_REBIND_FAILED",
+			)
 	_bindings_by_id = (
 		normalized.get("bindingsById", {}) as Dictionary
 	).duplicate(true)
@@ -989,6 +1082,25 @@ func update_resident_bindings(bindings_value: Variant) -> Dictionary:
 		"previousBindings": previous,
 		"residentBindings": current,
 	}
+
+
+func _restore_resident_model_providers(
+	resident_ids: Array[String],
+	previous_by_id: Dictionary,
+) -> void:
+	for resident_id in resident_ids:
+		var previous_binding := previous_by_id.get(resident_id, {}) as Dictionary
+		if previous_binding.is_empty():
+			continue
+		var provider_result := _provider_service.create_provider_for_resident(
+			previous_binding,
+		) as Dictionary
+		if not bool(provider_result.get("ok", false)):
+			continue
+		_agent_system.replace_resident_model_provider(
+			resident_id,
+			provider_result.get("provider"),
+		)
 
 
 func preflight_replacement_resident(

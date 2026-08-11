@@ -49,7 +49,7 @@ static func _validate_event_fields(
 		var weather := AgentContract._require_non_empty_string(event, "weather", "%s.weather" % path, errors)
 		if not weather.is_empty() and not AgentContract.WEATHER_TYPES.has(weather):
 			errors.append("%s.weather 不是合法天气" % path)
-	elif event_type in ["公告发布", "公告阅读", "公告转告"]:
+	elif event_type in ["公告发布", "公告阅读", "公告转告", "公告到点"]:
 		AgentContract._require_non_empty_string(
 			event,
 			"announcement_id",
@@ -57,6 +57,12 @@ static func _validate_event_fields(
 			errors,
 		)
 		AgentContract._require_non_empty_string(event, "text", "%s.text" % path, errors)
+		if (
+			event.has("announcement_priority")
+			and String(event.get("announcement_priority", ""))
+			not in ["player", "ordinary"]
+		):
+			errors.append("%s.announcement_priority 不是合法公告优先级" % path)
 		if event_type == "公告阅读":
 			AgentContract._require_string(
 				event,
@@ -69,6 +75,13 @@ static func _validate_event_fields(
 				event,
 				"speaker_resident_id",
 				"%s.speaker_resident_id" % path,
+				errors,
+			)
+		elif event_type == "公告到点":
+			AgentContract._require_non_empty_string(
+				event,
+				"scheduled_time_label",
+				"%s.scheduled_time_label" % path,
 				errors,
 			)
 	elif event_type == "营业状态变化":

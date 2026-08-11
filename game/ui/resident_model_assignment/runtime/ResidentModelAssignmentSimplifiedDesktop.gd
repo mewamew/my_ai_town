@@ -640,6 +640,7 @@ func _render(view_model: Dictionary) -> void:
 	var invalid := int(_data.get("invalidCount", 0))
 	var unassigned := int(_data.get("unassignedCount", 0))
 	var batch_mode := String(_data.get("mode", "single")) == "batch"
+	_render_return_flow_copy()
 	_set_text(
 		"ProgressCopy",
 		(
@@ -849,7 +850,11 @@ func _render_action_states(batch_mode: bool) -> void:
 			(
 				"已全部分配 · 确认入镇"
 				if single_resident_mode
-				else "已全部分配 · 保存修改" if in_session_mode else "已全部分配 · 开始游戏"
+				else "确认并返回模型设置"
+				if _return_to_provider_settings()
+				else "已全部分配 · 保存修改"
+				if in_session_mode
+				else "已全部分配 · 开始游戏"
 			)
 			if ready_to_start
 			else "分配给已选 %d 人" % (_data.get("selectedBatchResidentIds", []) as Array).size()
@@ -1262,11 +1267,27 @@ func _operation_copy(view_model: Dictionary) -> String:
 			return "当前没有可用模型"
 	if _action_enabled("applyDraft"):
 		return (
-			"全部居民均已完成模型分配，可以保存修改"
+			"调整完成后，点击确认返回模型设置"
+			if _return_to_provider_settings()
+			else "全部居民均已完成模型分配，可以保存修改"
 			if in_session_mode
 			else "全部居民均已完成模型分配，可以开始游戏"
 		)
 	return "模型来自已连接服务；此处只负责分配"
+
+
+func _return_to_provider_settings() -> bool:
+	return bool(_data.get("returnToProviderSettings", false))
+
+
+func _render_return_flow_copy() -> void:
+	if not _return_to_provider_settings():
+		return
+	if _completion_message_secondary != null:
+		_completion_message_secondary.text = "确认后返回模型设置。"
+	var modal_start_label := _button_labels.get("modal_start") as Label
+	if modal_start_label != null:
+		modal_start_label.text = "确认并返回"
 
 
 func _action_enabled(action_key: String) -> bool:

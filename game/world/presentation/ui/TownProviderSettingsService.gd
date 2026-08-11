@@ -12,17 +12,28 @@ const CONFIG_STORE := preload(
 const CREDENTIAL_STORE := preload(
 	"res://world/presentation/ui/TownProviderCredentialStore.gd"
 )
+const THREE_ZERO_TWO_PROVIDER := preload(
+	"res://agent/model/ThreeZeroTwoAIModelProvider.gd"
+)
 const REQUIRED_PROVIDER_METHODS: Array[String] = [
 	"configure",
 	"get_health_snapshot",
 	"list_available_models",
 	"request_health_check",
+	"request_model_catalog",
 ]
 const HOST_ROUTING_REQUIRED := "PROVIDER_SETTINGS_HOST_ROUTING_REQUIRED"
 const TEST_NO_NETWORK_ENV := "AI_TOWN_PROVIDER_TEST_NO_NETWORK"
+const COMPATIBLE_PROFILE_TYPE := "openai-compatible-profile"
+const COMPATIBLE_PROFILE_PREFIX := "openai-compatible-"
 const PROVIDER_DISPLAY_NAMES := {
+	"302-ai": "302.AI",
 	"deepseek": "DeepSeek",
 	"kimi": "Kimi",
+	"lm-studio": "LM Studio（本地）",
+	"ollama": "Ollama（本地）",
+	"ollama-cloud": "Ollama Cloud",
+	"openai-compatible": "其他兼容接口",
 	"zhipu-glm": "智谱",
 }
 const MODEL_CAPABILITIES := {
@@ -55,11 +66,11 @@ const MODEL_CAPABILITIES := {
 
 var _provider_service: Object
 var _request_host: Node
-var _store: RefCounted = CONFIG_STORE.new()
-var _credential_store: RefCounted = CREDENTIAL_STORE.new()
+var _store: TownProviderConfigStore = CONFIG_STORE.new()
+var _credential_store: TownProviderCredentialStore = CREDENTIAL_STORE.new()
 var _credential_keys: Dictionary = {}
 var _stored_config: Dictionary = {
-	"schemaVersion": 1,
+	"schemaVersion": 2,
 	"selectedProviderId": "",
 	"selectedModelByProvider": {},
 	"providers": {},
@@ -70,17 +81,20 @@ var _selected_provider_id := ""
 var _revision := 0
 var _request_sequence := 0
 var _active_health_request_id := ""
+var _active_model_catalog_request_id := ""
+var _discovered_models_by_provider: Dictionary = {}
 var _health_configuration_generation := 0
 var _dirty_health_providers: Dictionary = {}
 
 
 func configure_store(path: String) -> Dictionary:
-	var configured := _store.call("configure", path) as Dictionary
+	_discovered_models_by_provider.clear()
+	var configured := _store.configure(path)
 	if not bool(configured.get("ok", false)):
 		return configured
 	var credential_path := "%s.credentials.enc" % path.get_basename()
 	var credential_configured := (
-		_credential_store.call("configure", credential_path) as Dictionary
+		_credential_store.configure(credential_path) as Dictionary
 	)
 	if not bool(credential_configured.get("ok", false)):
 		return credential_configured
@@ -137,6 +151,7 @@ func runtime_configuration() -> Dictionary:
 	var provider_ready := false
 	var provider_error_code := ""
 	var provider_retryable := false
+	var provider_auth_required := true
 	for value: Variant in ((_view_model.get("data", {}) as Dictionary).get("providers", []) as Array):
 		if not value is Dictionary:
 			continue
@@ -150,6 +165,7 @@ func runtime_configuration() -> Dictionary:
 		)
 		provider_error_code = String(connection.get("errorCode", ""))
 		provider_retryable = bool(connection.get("retryable", false))
+		provider_auth_required = bool(provider.get("authRequired", true))
 		break
 	var ready := provider_ready and not provider_id.is_empty() and not model_id.is_empty()
 	var has_saved_key := _has_saved_key(provider_id)
@@ -163,7 +179,7 @@ func runtime_configuration() -> Dictionary:
 			else "PROVIDER_DISABLED"
 			if not bool(provider_config.get("enabled", true))
 			else "PROVIDER_API_KEY_REQUIRED"
-			if not has_saved_key
+			if provider_auth_required and not has_saved_key
 			else provider_error_code
 			if not provider_error_code.is_empty()
 			else "PROVIDER_HEALTH_UNAVAILABLE"
@@ -176,6 +192,7 @@ func runtime_configuration() -> Dictionary:
 		"modelId": model_id,
 		"providerConfigs": _provider_configs_for_runtime(),
 		"hasSavedKey": has_saved_key,
+		"authRequired": provider_auth_required,
 	}
 
 
@@ -258,7 +275,7 @@ func reveal_saved_api_key(provider_id_value: Variant) -> Dictionary:
 	if _provider_from_confirmed(provider_id).is_empty():
 		return _failure("PROVIDER_SETTINGS_PROVIDER_UNKNOWN", false)
 	var revealed := (
-		_credential_store.call("api_key", provider_id) as Dictionary
+		_credential_store.api_key(provider_id) as Dictionary
 	)
 	if not bool(revealed.get("ok", false)):
 		return _failure(
@@ -296,10 +313,30 @@ func dispatch(intent: Variant, payload: Dictionary = {}) -> Dictionary:
 			result = _check_connection(payload, request_id)
 		"provider_settings.save_key":
 			result = _save_key(payload)
+			if (
+				bool(result.get("ok", false))
+				and String(payload.get("providerId", "")) == "volcengine-ark"
+			):
+				_publish_operation(operation, {})
+				result = _discover_models(payload, request_id)
 		"provider_settings.delete_key":
 			result = _delete_key(payload)
 		"provider_settings.save_base_url":
 			result = _save_base_url(payload)
+		"provider_settings.save_connection":
+			result = _save_connection(payload)
+		"provider_settings.create_compatible_connection":
+			result = _create_compatible_connection(payload)
+		"provider_settings.rename_compatible_connection":
+			result = _rename_compatible_connection(payload)
+		"provider_settings.delete_compatible_connection":
+			result = _delete_compatible_connection(payload)
+		"provider_settings.save_api_model":
+			result = _save_api_model(payload)
+		"provider_settings.delete_api_model":
+			result = _delete_api_model(payload)
+		"provider_settings.discover_models":
+			result = _discover_models(payload, request_id)
 		"provider_settings.set_enabled":
 			result = _set_enabled(payload)
 		"provider_settings.select_model":
@@ -412,6 +449,7 @@ func _load_public_snapshot() -> Dictionary:
 				if health_dirty
 				else String(model.get("healthStatus", "unavailable"))
 			),
+			"custom": bool(model.get("custom", false)),
 		})
 	var providers: Array[Dictionary] = []
 	var available_count := 0
@@ -434,6 +472,13 @@ func _load_public_snapshot() -> Dictionary:
 		var stored_provider := stored_providers.get(provider_id, {}) as Dictionary
 		var enabled := bool(stored_provider.get("enabled", true))
 		var has_saved_key := _has_saved_key(provider_id)
+		var auth_required := bool(source.get("authRequired", true))
+		var custom_models := bool(source.get("customModels", false))
+		var custom_group := bool(source.get("customGroup", false))
+		var model_catalog_supported := bool(
+			source.get("modelCatalogSupported", false)
+		)
+		var api_models := _stored_api_models(stored_provider)
 		var selected_models := _stored_config.get("selectedModelByProvider", {}) as Dictionary
 		var selected_model_id := String(
 			selected_models.get(provider_id, "")
@@ -443,7 +488,7 @@ func _load_public_snapshot() -> Dictionary:
 			projected_source["status"] = "disabled"
 			projected_source["errorCode"] = "PROVIDER_DISABLED"
 			projected_source["retryable"] = false
-		elif not has_saved_key:
+		elif auth_required and not has_saved_key:
 			projected_source["status"] = "not_configured"
 			projected_source["errorCode"] = "PROVIDER_API_KEY_REQUIRED"
 			projected_source["retryable"] = false
@@ -460,21 +505,43 @@ func _load_public_snapshot() -> Dictionary:
 			available_count += 1
 		providers.append({
 			"providerId": provider_id,
-			"displayName": String(PROVIDER_DISPLAY_NAMES.get(
-				provider_id,
-				source.get("label", provider_id),
+			"displayName": String(stored_provider.get(
+				"displayName",
+				PROVIDER_DISPLAY_NAMES.get(
+					provider_id,
+					source.get("label", provider_id),
+				),
 			)),
 			"enabled": enabled,
 			"external": bool(source.get("external", false)),
+			"authRequired": auth_required,
+			"customModels": custom_models,
+			"customGroup": custom_group,
+			"modelCatalogSupported": model_catalog_supported,
+			"deletableConnection": _is_dynamic_compatible_profile(
+				provider_id,
+				stored_provider,
+			),
 			"key": {
 				"saved": has_saved_key,
 				"maskedValue": _masked_key(
 					String(_credential_keys.get(provider_id, ""))
 				),
-				"status": "saved" if has_saved_key else "missing",
-				"errorCode": "" if has_saved_key else "PROVIDER_API_KEY_REQUIRED",
+				"status": (
+					"saved" if has_saved_key else (
+						"missing" if auth_required else "optional"
+					)
+				),
+				"errorCode": (
+					"PROVIDER_API_KEY_REQUIRED"
+					if auth_required and not has_saved_key
+					else ""
+				),
 			},
 			"baseUrl": String(stored_provider.get("endpoint", "")),
+			"defaultBaseUrl": String(source.get("defaultBaseUrl", "")),
+			"apiModel": selected_model_id if custom_models else "",
+			"apiModels": api_models,
 			"models": (
 				models_by_provider.get(provider_id, []) as Array
 			).duplicate(true),
@@ -626,7 +693,7 @@ func _save_key(payload: Dictionary) -> Dictionary:
 	var previous_key := String(_credential_keys.get(provider_id, ""))
 	var had_previous_key := _credential_keys.has(provider_id)
 	var credential_result := (
-		_credential_store.call("save_api_key", provider_id, api_key) as Dictionary
+		_credential_store.save_api_key(provider_id, api_key) as Dictionary
 	)
 	if not bool(credential_result.get("ok", false)):
 		return credential_result
@@ -642,8 +709,16 @@ func _save_key(payload: Dictionary) -> Dictionary:
 		)
 	)
 	provider["enabled"] = true
+	if provider_id == "volcengine-ark":
+		provider["apiModels"] = []
 	providers[provider_id] = provider
 	candidate["providers"] = providers
+	if provider_id == "volcengine-ark":
+		var selected_models := (
+			candidate.get("selectedModelByProvider", {}) as Dictionary
+		)
+		selected_models.erase(provider_id)
+		candidate["selectedModelByProvider"] = selected_models
 	candidate["selectedProviderId"] = provider_id
 	var persisted := _persist_candidate_reconfigure_and_reload(
 		candidate,
@@ -673,7 +748,7 @@ func _delete_key(payload: Dictionary) -> Dictionary:
 	var previous_key := String(_credential_keys.get(provider_id, ""))
 	var had_previous_key := _credential_keys.has(provider_id)
 	var credential_result := (
-		_credential_store.call("delete_api_key", provider_id) as Dictionary
+		_credential_store.delete_api_key(provider_id) as Dictionary
 	)
 	if not bool(credential_result.get("ok", false)):
 		return credential_result
@@ -716,7 +791,7 @@ func _save_base_url(payload: Dictionary) -> Dictionary:
 	var endpoint := endpoint_value as String
 	if endpoint != endpoint.strip_edges():
 		return _failure("PROVIDER_BASE_URL_INVALID", false)
-	if not endpoint.is_empty() and not endpoint.begins_with("https://"):
+	if not endpoint.is_empty() and not _base_url_scheme_is_allowed(endpoint):
 		return _failure("PROVIDER_BASE_URL_INVALID", false)
 	var candidate := _stored_config.duplicate(true)
 	var providers := candidate.get("providers", {}) as Dictionary
@@ -731,6 +806,538 @@ func _save_base_url(payload: Dictionary) -> Dictionary:
 		candidate,
 		"Provider 地址已更新。",
 		provider_id,
+	)
+
+
+func _create_compatible_connection(payload: Dictionary) -> Dictionary:
+	var display_name_value: Variant = payload.get("displayName", "")
+	if typeof(display_name_value) != TYPE_STRING:
+		return _failure("PROVIDER_CONNECTION_NAME_INVALID", false)
+	var requested_display_name := String(display_name_value).strip_edges()
+	if not _compatible_display_name_is_valid(requested_display_name, true):
+		return _failure("PROVIDER_CONNECTION_NAME_INVALID", false)
+	var candidate := _stored_config.duplicate(true)
+	var providers := candidate.get("providers", {}) as Dictionary
+	var index := 2
+	var provider_id := "%s%d" % [COMPATIBLE_PROFILE_PREFIX, index]
+	while providers.has(provider_id):
+		index += 1
+		provider_id = "%s%d" % [COMPATIBLE_PROFILE_PREFIX, index]
+	providers[provider_id] = {
+		"enabled": true,
+		"connectionType": COMPATIBLE_PROFILE_TYPE,
+		"displayName": (
+			requested_display_name
+			if not requested_display_name.is_empty()
+			else "兼容接口 %d" % index
+		),
+		"authRequired": true,
+		"apiModels": [],
+	}
+	candidate["providers"] = providers
+	candidate["selectedProviderId"] = provider_id
+	var persisted := _persist_candidate_reconfigure_and_reload(
+		candidate,
+		"新的兼容连接已建立，请填写地址和 API Key。",
+		provider_id,
+	)
+	if bool(persisted.get("ok", false)):
+		_selected_provider_id = provider_id
+	return persisted
+
+
+func _rename_compatible_connection(payload: Dictionary) -> Dictionary:
+	var provider_result := _required_canonical_id(payload, "providerId")
+	var display_name_value: Variant = payload.get("displayName", "")
+	if (
+		not bool(provider_result.get("ok", false))
+		or typeof(display_name_value) != TYPE_STRING
+	):
+		return _failure("PROVIDER_CONNECTION_NAME_INVALID", false)
+	var provider_id := String(provider_result.get("value", ""))
+	var requested_display_name := String(display_name_value).strip_edges()
+	if not _compatible_display_name_is_valid(requested_display_name, true):
+		return _failure("PROVIDER_CONNECTION_NAME_INVALID", false)
+	var candidate := _stored_config.duplicate(true)
+	var providers := candidate.get("providers", {}) as Dictionary
+	var provider := (providers.get(provider_id, {}) as Dictionary).duplicate(true)
+	if not _is_dynamic_compatible_profile(provider_id, provider):
+		return _failure("PROVIDER_CONNECTION_RENAME_FORBIDDEN", false)
+	if requested_display_name.is_empty():
+		var endpoint := String(provider.get("endpoint", ""))
+		requested_display_name = (
+			_compatible_display_name(endpoint)
+			if not endpoint.is_empty()
+			else "兼容接口"
+		)
+	provider["displayName"] = requested_display_name
+	providers[provider_id] = provider
+	candidate["providers"] = providers
+	return _persist_candidate_reconfigure_and_reload(
+		candidate,
+		"连接名称已更新。",
+		provider_id,
+	)
+
+
+func _delete_compatible_connection(payload: Dictionary) -> Dictionary:
+	var provider_result := _required_canonical_id(payload, "providerId")
+	if not bool(provider_result.get("ok", false)):
+		return _failure("PROVIDER_SETTINGS_PROVIDER_REQUIRED", false)
+	var provider_id := String(provider_result.get("value", ""))
+	var providers := _stored_config.get("providers", {}) as Dictionary
+	var stored_provider := providers.get(provider_id, {}) as Dictionary
+	if not _is_dynamic_compatible_profile(provider_id, stored_provider):
+		return _failure("PROVIDER_CONNECTION_DELETE_FORBIDDEN", false)
+	for api_model: String in _stored_api_models(stored_provider):
+		if not _provider_service.has_method("resident_ids_using_model"):
+			continue
+		var resident_ids_value: Variant = _provider_service.resident_ids_using_model(
+			provider_id,
+			api_model,
+		)
+		if resident_ids_value is Array and not (resident_ids_value as Array).is_empty():
+			return _failure(
+				"PROVIDER_CONNECTION_IN_USE",
+				false,
+				"这个连接仍有居民正在使用，请先重新分配居民模型。",
+				resident_ids_value,
+			)
+	var previous_key := String(_credential_keys.get(provider_id, ""))
+	var had_previous_key := _credential_keys.has(provider_id)
+	var credential_result := (
+		_credential_store.delete_api_key(provider_id) as Dictionary
+	)
+	if not bool(credential_result.get("ok", false)):
+		return credential_result
+	_credential_keys.erase(provider_id)
+	var candidate := _stored_config.duplicate(true)
+	var candidate_providers := candidate.get("providers", {}) as Dictionary
+	candidate_providers.erase(provider_id)
+	candidate["providers"] = candidate_providers
+	var selected_models := (
+		candidate.get("selectedModelByProvider", {}) as Dictionary
+	)
+	selected_models.erase(provider_id)
+	candidate["selectedModelByProvider"] = selected_models
+	if String(candidate.get("selectedProviderId", "")) == provider_id:
+		candidate["selectedProviderId"] = _remaining_custom_provider_id(
+			candidate_providers,
+			provider_id,
+		)
+	var persisted := _persist_candidate_reconfigure_and_reload(
+		candidate,
+		"兼容连接已删除。",
+		provider_id,
+	)
+	if bool(persisted.get("ok", false)):
+		_discovered_models_by_provider.erase(provider_id)
+		return persisted
+	var restored := _restore_credential(
+		provider_id,
+		had_previous_key,
+		previous_key,
+	)
+	if not bool(restored.get("ok", false)):
+		return restored
+	_apply_provider_configuration()
+	return persisted
+
+
+func _remaining_custom_provider_id(
+	providers: Dictionary,
+	deleted_provider_id: String,
+) -> String:
+	for preferred_id: String in [
+		"ollama",
+		"ollama-cloud",
+		"lm-studio",
+		"302-ai",
+	]:
+		if preferred_id != deleted_provider_id and providers.has(preferred_id):
+			return preferred_id
+	var provider_ids: Array[String] = []
+	for provider_id_value: Variant in providers.keys():
+		var provider_id := String(provider_id_value)
+		if provider_id == deleted_provider_id:
+			continue
+		var provider := providers.get(provider_id, {}) as Dictionary
+		if _is_dynamic_compatible_profile(provider_id, provider):
+			provider_ids.append(provider_id)
+	provider_ids.sort()
+	if not provider_ids.is_empty():
+		return provider_ids[0]
+	# 内置 Ollama 配置即使尚未写进存档，也始终存在于自定义模型分组。
+	return "ollama"
+
+
+func _save_connection(payload: Dictionary) -> Dictionary:
+	var provider_result := _required_canonical_id(payload, "providerId")
+	if not bool(provider_result.get("ok", false)):
+		return _failure("PROVIDER_SETTINGS_PROVIDER_REQUIRED", false)
+	var provider_id := String(provider_result.get("value", ""))
+	var confirmed_provider := _provider_from_confirmed(provider_id)
+	if confirmed_provider.is_empty():
+		return _failure("PROVIDER_SETTINGS_PROVIDER_UNKNOWN", false)
+	var endpoint_value: Variant = payload.get("baseUrl", "")
+	var api_key_value: Variant = payload.get("apiKey", "")
+	if typeof(endpoint_value) != TYPE_STRING or typeof(api_key_value) != TYPE_STRING:
+		return _failure("PROVIDER_BASE_URL_INVALID", false)
+	var endpoint := endpoint_value as String
+	var api_key := api_key_value as String
+	if endpoint != endpoint.strip_edges():
+		return _failure("PROVIDER_BASE_URL_INVALID", false)
+	if not endpoint.is_empty() and not _base_url_scheme_is_allowed(endpoint):
+		return _failure("PROVIDER_BASE_URL_INVALID", false)
+	if api_key != api_key.strip_edges():
+		return _failure("PROVIDER_API_KEY_REQUIRED", false)
+	if (
+		_provider_auth_required(confirmed_provider)
+		and api_key.is_empty()
+		and not _has_saved_key(provider_id)
+	):
+		return _failure("PROVIDER_API_KEY_REQUIRED", false)
+
+	var previous_key := String(_credential_keys.get(provider_id, ""))
+	var had_previous_key := _credential_keys.has(provider_id)
+	var api_key_ref := ""
+	if not api_key.is_empty():
+		var credential_result := (
+			_credential_store.save_api_key(provider_id, api_key) as Dictionary
+		)
+		if not bool(credential_result.get("ok", false)):
+			return credential_result
+		_credential_keys[provider_id] = api_key
+		api_key_ref = String(credential_result.get(
+			"apiKeyRef",
+			"secure_store.llm.%s.api_key" % provider_id,
+		))
+
+	var candidate := _stored_config.duplicate(true)
+	var providers := candidate.get("providers", {}) as Dictionary
+	var provider := (providers.get(provider_id, {}) as Dictionary).duplicate(true)
+	if endpoint.is_empty():
+		provider.erase("endpoint")
+	else:
+		provider["endpoint"] = endpoint
+	if (
+		_is_dynamic_compatible_profile(provider_id, provider)
+		and not endpoint.is_empty()
+		and _compatible_display_name_is_automatic(
+			String(provider.get("displayName", ""))
+		)
+	):
+		provider["displayName"] = _compatible_display_name(endpoint)
+	provider.erase("api_key")
+	if not api_key_ref.is_empty():
+		provider["apiKeyRef"] = api_key_ref
+	provider["enabled"] = true
+	providers[provider_id] = provider
+	candidate["providers"] = providers
+	candidate["selectedProviderId"] = provider_id
+	var persisted := _persist_candidate_reconfigure_and_reload(
+		candidate,
+		"连接设置已保存。",
+		provider_id,
+	)
+	if bool(persisted.get("ok", false)):
+		return persisted
+	if not api_key.is_empty():
+		var restored := _restore_credential(
+			provider_id,
+			had_previous_key,
+			previous_key,
+		)
+		if not bool(restored.get("ok", false)):
+			return restored
+	_apply_provider_configuration()
+	return persisted
+
+
+func _save_api_model(payload: Dictionary) -> Dictionary:
+	var provider_result := _required_canonical_id(payload, "providerId")
+	var api_model_value: Variant = payload.get("apiModel")
+	if (
+		not bool(provider_result.get("ok", false))
+		or typeof(api_model_value) != TYPE_STRING
+	):
+		return _failure("PROVIDER_API_MODEL_REQUIRED", false)
+	var provider_id := String(provider_result.get("value", ""))
+	var confirmed_provider := _provider_from_confirmed(provider_id)
+	if confirmed_provider.is_empty() or not bool(
+		confirmed_provider.get("customModels", false)
+	):
+		return _failure("PROVIDER_SETTINGS_PROVIDER_UNKNOWN", false)
+	var api_model := (api_model_value as String).strip_edges()
+	if api_model.is_empty() or api_model != api_model_value:
+		return _failure("PROVIDER_API_MODEL_REQUIRED", false)
+	var candidate := _stored_config.duplicate(true)
+	var providers := candidate.get("providers", {}) as Dictionary
+	var provider := (providers.get(provider_id, {}) as Dictionary).duplicate(true)
+	var api_models := _stored_api_models(provider)
+	if api_model not in api_models:
+		api_models.append(api_model)
+	provider["apiModels"] = api_models
+	provider["enabled"] = true
+	providers[provider_id] = provider
+	candidate["providers"] = providers
+	var selected_models := (
+		candidate.get("selectedModelByProvider", {}) as Dictionary
+	)
+	selected_models[provider_id] = api_model
+	candidate["selectedModelByProvider"] = selected_models
+	candidate["selectedProviderId"] = provider_id
+	var persisted := _persist_candidate_reconfigure_and_reload(
+		candidate,
+		"模型已添加并设为居民默认模型。",
+		provider_id,
+	)
+	return persisted
+
+
+func _delete_api_model(payload: Dictionary) -> Dictionary:
+	var provider_result := _required_canonical_id(payload, "providerId")
+	var api_model_value: Variant = payload.get("apiModel")
+	if (
+		not bool(provider_result.get("ok", false))
+		or typeof(api_model_value) != TYPE_STRING
+	):
+		return _failure("PROVIDER_API_MODEL_REQUIRED", false)
+	var provider_id := String(provider_result.get("value", ""))
+	var api_model := (api_model_value as String).strip_edges()
+	var confirmed_provider := _provider_from_confirmed(provider_id)
+	if (
+		api_model.is_empty()
+		or confirmed_provider.is_empty()
+		or not bool(confirmed_provider.get("customModels", false))
+	):
+		return _failure("PROVIDER_API_MODEL_UNKNOWN", false)
+	if _provider_service.has_method("resident_ids_using_model"):
+		var resident_ids_value: Variant = _provider_service.resident_ids_using_model(
+			provider_id,
+			api_model,
+		)
+		if resident_ids_value is Array and not (resident_ids_value as Array).is_empty():
+			return _failure(
+				"PROVIDER_API_MODEL_IN_USE",
+				false,
+				"请先为正在使用这个模型的居民重新分配模型。",
+				resident_ids_value,
+			)
+	var candidate := _stored_config.duplicate(true)
+	var providers := candidate.get("providers", {}) as Dictionary
+	var provider := (providers.get(provider_id, {}) as Dictionary).duplicate(true)
+	var api_models := _stored_api_models(provider)
+	if api_model not in api_models:
+		return _failure("PROVIDER_API_MODEL_UNKNOWN", false)
+	api_models.erase(api_model)
+	provider["apiModels"] = api_models
+	providers[provider_id] = provider
+	candidate["providers"] = providers
+	var selected_models := (
+		candidate.get("selectedModelByProvider", {}) as Dictionary
+	)
+	if String(selected_models.get(provider_id, "")) == api_model:
+		if api_models.is_empty():
+			selected_models.erase(provider_id)
+		else:
+			selected_models[provider_id] = api_models[0]
+	candidate["selectedModelByProvider"] = selected_models
+	return _persist_candidate_reconfigure_and_reload(
+		candidate,
+		"自定义模型已删除。",
+		provider_id,
+	)
+
+
+func _discover_models(payload: Dictionary, request_id: String) -> Dictionary:
+	var provider_result := _required_canonical_id(payload, "providerId")
+	if not bool(provider_result.get("ok", false)):
+		return _failure("PROVIDER_SETTINGS_PROVIDER_REQUIRED", false)
+	var provider_id := String(provider_result.get("value", ""))
+	var provider := _provider_from_confirmed(provider_id)
+	if provider.is_empty() or not bool(provider.get("customModels", false)):
+		return _failure("PROVIDER_MODEL_CATALOG_UNSUPPORTED", false)
+	if not bool(provider.get("modelCatalogSupported", false)):
+		return _failure(
+			"PROVIDER_MODEL_CATALOG_UNSUPPORTED",
+			false,
+			"当前服务需要手动填写模型或推理接入点 ID。",
+		)
+	if not bool(provider.get("enabled", true)):
+		return _failure("PROVIDER_DISABLED", false)
+	if _provider_auth_required(provider) and not _has_saved_key(provider_id):
+		return _failure("PROVIDER_API_KEY_REQUIRED", false)
+	_active_model_catalog_request_id = request_id
+	var started_value: Variant = _provider_service.call(
+		"request_model_catalog",
+		provider_id,
+		Callable(self, "_on_model_catalog_completed").bind(
+			request_id,
+			provider_id,
+		),
+	)
+	if not started_value is Dictionary:
+		_active_model_catalog_request_id = ""
+		return _failure("PROVIDER_MODEL_CATALOG_REQUEST_FAILED", true)
+	var started := started_value as Dictionary
+	if not bool(started.get("accepted", false)):
+		_active_model_catalog_request_id = ""
+		return _normalize_failure(
+			started,
+			"PROVIDER_MODEL_CATALOG_REQUEST_FAILED",
+		)
+	return {
+		"ok": true,
+		"accepted": true,
+		"status": "checking",
+		"errorCode": "",
+		"retryable": false,
+	}
+
+
+func _on_model_catalog_completed(
+	result_value: Variant,
+	request_id: String,
+	provider_id: String,
+) -> void:
+	if request_id != _active_model_catalog_request_id:
+		return
+	_active_model_catalog_request_id = ""
+	var result := (
+		result_value as Dictionary
+		if result_value is Dictionary
+		else _failure("PROVIDER_MODEL_CATALOG_INVALID", false)
+	)
+	var final_result: Dictionary
+	if not bool(result.get("ok", false)):
+		final_result = _normalize_failure(
+			result,
+			"PROVIDER_MODEL_CATALOG_REQUEST_FAILED",
+		)
+	else:
+		final_result = _store_discovered_models(
+			provider_id,
+			result.get("models", []),
+		)
+	var operation := _operation(
+		request_id,
+		"provider_settings.discover_models",
+		"success" if bool(final_result.get("ok", false)) else "error",
+	)
+	operation["completedAtMsec"] = Time.get_ticks_msec()
+	operation["message"] = String(final_result.get("message", ""))
+	_publish_result(
+		operation,
+		final_result,
+		"success" if bool(final_result.get("ok", false)) else "error",
+	)
+	operation_completed.emit(SCOPE, operation.duplicate(true))
+
+
+func _store_discovered_models(
+	provider_id: String,
+	models_value: Variant,
+) -> Dictionary:
+	if not models_value is Array:
+		return _failure("PROVIDER_MODEL_CATALOG_INVALID", false)
+	var discovered: Array[String] = []
+	for value: Variant in models_value as Array:
+		if typeof(value) != TYPE_STRING:
+			continue
+		var model_id := (value as String).strip_edges()
+		if (
+			not model_id.is_empty()
+			and _is_discoverable_chat_model(model_id)
+			and model_id not in discovered
+		):
+			discovered.append(model_id)
+	if discovered.is_empty():
+		return _failure("PROVIDER_MODEL_CATALOG_EMPTY", false)
+	var candidate := _stored_config.duplicate(true)
+	var providers := candidate.get("providers", {}) as Dictionary
+	var provider := (
+		providers.get(provider_id, {}) as Dictionary
+	).duplicate(true)
+	# 刷新列表时不能静默移除仍由居民使用的旧模型。
+	for stored_model: String in _stored_api_models(provider):
+		if stored_model in discovered:
+			continue
+		if _resident_ids_using_model(provider_id, stored_model).is_empty():
+			continue
+		discovered.append(stored_model)
+	var selected_models := (
+		candidate.get("selectedModelByProvider", {}) as Dictionary
+	)
+	var selected_model := String(
+		selected_models.get(provider_id, "")
+	).strip_edges()
+	if selected_model in discovered:
+		discovered.erase(selected_model)
+		discovered.push_front(selected_model)
+	else:
+		selected_models[provider_id] = discovered[0]
+	provider["apiModels"] = discovered.duplicate()
+	provider["enabled"] = true
+	providers[provider_id] = provider
+	candidate["providers"] = providers
+	candidate["selectedModelByProvider"] = selected_models
+	candidate["selectedProviderId"] = provider_id
+	var message := (
+		"已从火山方舟读取 %d 个可用模型。" % discovered.size()
+		if provider_id == "volcengine-ark"
+		else "已自动读取并加入 %d 个可用模型。" % discovered.size()
+	)
+	var persisted := _persist_candidate_reconfigure_and_reload(
+		candidate,
+		message,
+		provider_id,
+	)
+	if bool(persisted.get("ok", false)):
+		_discovered_models_by_provider.erase(provider_id)
+		persisted["models"] = discovered.duplicate()
+	return persisted
+
+
+func _is_discoverable_chat_model(model_id: String) -> bool:
+	var normalized := model_id.to_lower()
+	for marker: String in [
+		"embedding",
+		"rerank",
+		"moderation",
+		"seedream",
+		"seedance",
+		"text-to-image",
+		"image-generation",
+		"image-edit",
+		"text-to-video",
+		"video-generation",
+		"speech",
+		"transcri",
+		"whisper",
+		"-tts",
+		"tts-",
+		"music-generation",
+		"hyper3d",
+		"seed3d",
+		"hitem3d",
+	]:
+		if marker in normalized:
+			return false
+	return true
+
+
+func _resident_ids_using_model(provider_id: String, model_id: String) -> Array:
+	if not _provider_service.has_method("resident_ids_using_model"):
+		return []
+	var resident_ids_value: Variant = _provider_service.resident_ids_using_model(
+		provider_id,
+		model_id,
+	)
+	return (
+		(resident_ids_value as Array).duplicate()
+		if resident_ids_value is Array
+		else []
 	)
 
 
@@ -807,7 +1414,7 @@ func _check_connection(payload: Dictionary, request_id: String) -> Dictionary:
 	var stored_provider := stored_providers.get(provider_id, {}) as Dictionary
 	if not bool(stored_provider.get("enabled", true)):
 		return _failure("PROVIDER_DISABLED", false)
-	if not _has_saved_key(provider_id):
+	if _provider_auth_required(provider) and not _has_saved_key(provider_id):
 		return _failure("PROVIDER_API_KEY_REQUIRED", false)
 	return _start_health_request(
 		[{"providerId": provider_id, "modelId": model_id}],
@@ -835,11 +1442,15 @@ func _start_configured_health_check() -> Dictionary:
 		var provider_id := String(provider_id_value).strip_edges()
 		var model_id := String(selected_models.get(provider_id, "")).strip_edges()
 		var provider_config := providers.get(provider_id, {}) as Dictionary
+		var confirmed_provider := _provider_from_confirmed(provider_id)
 		if (
 			provider_id.is_empty()
 			or model_id.is_empty()
 			or not bool(provider_config.get("enabled", true))
-			or not _has_saved_key(provider_id)
+			or (
+				_provider_auth_required(confirmed_provider)
+				and not _has_saved_key(provider_id)
+			)
 		):
 			continue
 		targets.append({"providerId": provider_id, "modelId": model_id})
@@ -939,7 +1550,7 @@ func _on_health_request_completed(
 
 
 func _load_stored_config() -> Dictionary:
-	var loaded := _store.call("load_config") as Dictionary
+	var loaded := _store.load_config()
 	if not bool(loaded.get("ok", false)):
 		return loaded
 	_stored_config = (loaded.get("config", {}) as Dictionary).duplicate(true)
@@ -950,7 +1561,7 @@ func _load_stored_config() -> Dictionary:
 	if not _stored_config.get("providers", {}) is Dictionary:
 		_stored_config["providers"] = {}
 	var loaded_credentials := (
-		_credential_store.call("load_keys") as Dictionary
+		_credential_store.load_keys() as Dictionary
 	)
 	if not bool(loaded_credentials.get("ok", false)):
 		return loaded_credentials
@@ -960,20 +1571,49 @@ func _load_stored_config() -> Dictionary:
 	var migration_result := _migrate_plaintext_credentials()
 	if not bool(migration_result.get("ok", false)):
 		return migration_result
+	var catalog_migration := _sanitize_legacy_302_catalog()
+	if not bool(catalog_migration.get("ok", false)):
+		return catalog_migration
 	_selected_provider_id = String(_stored_config.get("selectedProviderId", ""))
 	return {"ok": true, "errorCode": "", "retryable": false}
 
 
+func _sanitize_legacy_302_catalog() -> Dictionary:
+	var providers := _stored_config.get("providers", {}) as Dictionary
+	if not providers.has("302-ai"):
+		return _success()
+	var provider := (providers.get("302-ai", {}) as Dictionary).duplicate(true)
+	var stored_models := _stored_api_models(provider)
+	# 旧版本曾把 302.AI 的全品类目录（数百项）原样写入存档。
+	# 小规模列表可能是玩家手动维护的，不在这里擅自改动。
+	if stored_models.size() <= 50:
+		return _success()
+	var filtered := THREE_ZERO_TWO_PROVIDER.filter_town_models(stored_models)
+	if filtered.is_empty():
+		return _success()
+	provider["apiModels"] = filtered.duplicate()
+	providers["302-ai"] = provider
+	_stored_config["providers"] = providers
+	var selected_models := (
+		_stored_config.get("selectedModelByProvider", {}) as Dictionary
+	)
+	var selected := String(selected_models.get("302-ai", ""))
+	if selected not in filtered:
+		selected_models["302-ai"] = filtered[0]
+	_stored_config["selectedModelByProvider"] = selected_models
+	return _store.save_config(_stored_config)
+
+
 func _persist_candidate_and_reconfigure(candidate: Dictionary) -> Dictionary:
 	var previous := _stored_config.duplicate(true)
-	var persisted := _store.call("save_config", candidate) as Dictionary
+	var persisted := _store.save_config(candidate)
 	if not bool(persisted.get("ok", false)):
 		return persisted
 	_stored_config = candidate.duplicate(true)
 	var configured := _apply_provider_configuration()
 	if bool(configured.get("ok", false)):
 		return configured
-	var rollback := _store.call("save_config", previous) as Dictionary
+	var rollback := _store.save_config(previous)
 	_stored_config = previous
 	var runtime_rollback := _apply_provider_configuration()
 	if (
@@ -993,6 +1633,7 @@ func _persist_candidate_reconfigure_and_reload(
 	if not bool(persisted.get("ok", false)):
 		return persisted
 	if not dirty_provider_id.is_empty():
+		_discovered_models_by_provider.erase(dirty_provider_id)
 		_invalidate_provider_health(dirty_provider_id)
 	var loaded := _load_public_snapshot()
 	if not bool(loaded.get("ok", false)):
@@ -1032,15 +1673,39 @@ func _provider_configs_for_runtime() -> Dictionary:
 			(_stored_config.get("providers", {}) as Dictionary).get(provider_id, {})
 			as Dictionary
 		)
-		if not bool(source.get("enabled", true)):
+		var dynamic_profile := (
+			String(source.get("connectionType", ""))
+			== COMPATIBLE_PROFILE_TYPE
+		)
+		if not bool(source.get("enabled", true)) and not dynamic_profile:
 			continue
 		var config: Dictionary = {}
+		if dynamic_profile:
+			config["connection_type"] = COMPATIBLE_PROFILE_TYPE
+			config["display_name"] = String(
+				source.get("displayName", "兼容接口")
+			)
+			config["api_key_required"] = bool(
+				source.get("authRequired", true)
+			)
+			config["disabled"] = not bool(source.get("enabled", true))
 		var api_key := String(_credential_keys.get(provider_id, "")).strip_edges()
 		if not api_key.is_empty():
 			config["api_key"] = api_key
 		var endpoint := String(source.get("endpoint", "")).strip_edges()
 		if not endpoint.is_empty():
 			config["endpoint"] = endpoint
+		var api_models := _stored_api_models(source)
+		if not api_models.is_empty():
+			config["api_models"] = api_models
+		var selected_models := (
+			_stored_config.get("selectedModelByProvider", {}) as Dictionary
+		)
+		var selected_model := String(
+			selected_models.get(provider_id, "")
+		).strip_edges()
+		if selected_model in api_models:
+			config["api_model"] = selected_model
 		result[provider_id] = config
 	return result
 
@@ -1055,8 +1720,7 @@ func _migrate_plaintext_credentials() -> Dictionary:
 		if plaintext_key.is_empty():
 			continue
 		var saved := (
-			_credential_store.call(
-				"save_api_key",
+			_credential_store.save_api_key(
 				provider_id,
 				plaintext_key,
 			) as Dictionary
@@ -1078,19 +1742,54 @@ func _migrate_plaintext_credentials() -> Dictionary:
 		_stored_config["providers"] = providers
 		if not bool(saved.get("ok", false)):
 			var scrubbed := (
-				_store.call("save_config", _stored_config) as Dictionary
+				_store.save_config(_stored_config)
 			)
 			if not bool(scrubbed.get("ok", false)):
 				return scrubbed
 			return saved
 	if changed:
 		_stored_config["providers"] = providers
-		return _store.call("save_config", _stored_config) as Dictionary
+		return _store.save_config(_stored_config)
 	return _success()
 
 
 func _has_saved_key(provider_id: String) -> bool:
 	return not String(_credential_keys.get(provider_id, "")).strip_edges().is_empty()
+
+
+func _provider_auth_required(provider: Dictionary) -> bool:
+	return bool(provider.get("authRequired", true))
+
+
+func _stored_api_models(provider: Dictionary) -> Array[String]:
+	var result: Array[String] = []
+	var models_value: Variant = provider.get("apiModels", [])
+	if not models_value is Array:
+		return result
+	for value: Variant in models_value as Array:
+		if typeof(value) != TYPE_STRING:
+			continue
+		var model_id := (value as String).strip_edges()
+		if not model_id.is_empty() and model_id not in result:
+			result.append(model_id)
+	return result
+
+
+func _base_url_scheme_is_allowed(endpoint: String) -> bool:
+	if endpoint.begins_with("https://"):
+		return true
+	if not endpoint.begins_with("http://"):
+		return false
+	var authority := endpoint.trim_prefix("http://").split("/", false)[0]
+	var host := authority
+	if authority.begins_with("["):
+		var closing := authority.find("]")
+		if closing < 0:
+			return false
+		host = authority.left(closing + 1)
+	elif authority.contains(":"):
+		host = authority.get_slice(":", 0)
+	return host.to_lower() in ["localhost", "127.0.0.1", "[::1]"]
 
 
 func _masked_key(api_key: String) -> String:
@@ -1193,9 +1892,27 @@ func _base_view_model(
 	operation: Dictionary,
 	error: Dictionary,
 ) -> Dictionary:
-	var actions_value := _actions(data)
+	var rendered_data := data.duplicate(true)
+	var providers := rendered_data.get("providers", []) as Array
+	for index: int in range(providers.size()):
+		if not providers[index] is Dictionary:
+			continue
+		var provider := (providers[index] as Dictionary).duplicate(true)
+		var provider_id := String(provider.get("providerId", ""))
+		provider["discoveredModels"] = (
+			_discovered_models_by_provider.get(provider_id, []) as Array
+		).duplicate()
+		providers[index] = provider
+	rendered_data["providers"] = providers
+	var actions_value := _actions(rendered_data)
 	return AiTownUiViewModel.envelope(
-		SCOPE, status, _revision, data, actions_value, operation, error
+		SCOPE,
+		status,
+		_revision,
+		rendered_data,
+		actions_value,
+		operation,
+		error,
 	)
 
 
@@ -1208,6 +1925,22 @@ func _actions(data: Dictionary) -> Dictionary:
 		"saveKey": _action("provider_settings.save_key", has_providers),
 		"deleteKey": _action("provider_settings.delete_key", has_providers),
 		"saveBaseUrl": _action("provider_settings.save_base_url", has_providers),
+		"saveConnection": _action("provider_settings.save_connection", has_providers),
+		"createCompatibleConnection": _action(
+			"provider_settings.create_compatible_connection",
+			has_providers,
+		),
+		"renameCompatibleConnection": _action(
+			"provider_settings.rename_compatible_connection",
+			has_providers,
+		),
+		"deleteCompatibleConnection": _action(
+			"provider_settings.delete_compatible_connection",
+			has_providers,
+		),
+		"saveApiModel": _action("provider_settings.save_api_model", has_providers),
+		"deleteApiModel": _action("provider_settings.delete_api_model", has_providers),
+		"discoverModels": _action("provider_settings.discover_models", has_providers),
 		"selectModel": _action("provider_settings.select_model", has_providers),
 		"checkConnection": _action("provider_settings.check_connection", has_providers, "PROVIDER_SETTINGS_PROVIDER_REQUIRED"),
 	}
@@ -1302,6 +2035,62 @@ func _canonical_id_is_valid(value: String) -> bool:
 	return not value.is_empty() and value == value.strip_edges()
 
 
+func _is_dynamic_compatible_profile(
+	provider_id: String,
+	provider: Dictionary,
+) -> bool:
+	return (
+		provider_id.begins_with(COMPATIBLE_PROFILE_PREFIX)
+		and String(provider.get("connectionType", ""))
+		== COMPATIBLE_PROFILE_TYPE
+	)
+
+
+func _compatible_display_name(endpoint: String) -> String:
+	var remainder := endpoint.strip_edges()
+	if remainder.begins_with("https://"):
+		remainder = remainder.trim_prefix("https://")
+	elif remainder.begins_with("http://"):
+		remainder = remainder.trim_prefix("http://")
+	var authority := remainder.split("/", false)[0]
+	var host := authority
+	if authority.begins_with("["):
+		var bracket := authority.find("]")
+		if bracket >= 0:
+			host = authority.left(bracket + 1)
+	elif authority.contains(":"):
+		host = authority.get_slice(":", 0)
+	if host.is_empty():
+		return "兼容接口"
+	var label := "兼容 · %s" % host
+	return label.left(48)
+
+
+func _compatible_display_name_is_valid(
+	display_name: String,
+	allow_empty: bool = false,
+) -> bool:
+	if display_name.is_empty():
+		return allow_empty
+	if display_name != display_name.strip_edges() or display_name.length() > 48:
+		return false
+	for character: String in display_name:
+		var codepoint := character.unicode_at(0)
+		if codepoint < 32 or codepoint == 127:
+			return false
+	return true
+
+
+func _compatible_display_name_is_automatic(display_name: String) -> bool:
+	return (
+		display_name.is_empty()
+		or display_name == "兼容接口"
+		or display_name == "新建兼容连接"
+		or display_name.begins_with("兼容接口 ")
+		or display_name.begins_with("兼容 · ")
+	)
+
+
 func _restore_credential(
 	provider_id: String,
 	had_previous_key: bool,
@@ -1310,8 +2099,7 @@ func _restore_credential(
 	var restored: Dictionary
 	if had_previous_key:
 		restored = (
-			_credential_store.call(
-				"save_api_key",
+			_credential_store.save_api_key(
 				provider_id,
 				previous_key,
 			) as Dictionary
@@ -1320,7 +2108,7 @@ func _restore_credential(
 			_credential_keys[provider_id] = previous_key
 	else:
 		restored = (
-			_credential_store.call("delete_api_key", provider_id) as Dictionary
+				_credential_store.delete_api_key(provider_id) as Dictionary
 		)
 		if bool(restored.get("ok", false)):
 			_credential_keys.erase(provider_id)
@@ -1380,10 +2168,26 @@ func _player_message_for_error_code(code: String) -> String:
 			return "请先在上方输入并保存 API Key，然后重试。"
 		"PROVIDER_MODEL_SELECTION_REQUIRED":
 			return "请先启用一个模型，然后再检查连接。"
+		"PROVIDER_API_MODEL_REQUIRED":
+			return "请先填写并保存接口实际使用的模型 ID。"
+		"PROVIDER_API_MODEL_UNKNOWN":
+			return "没有找到要删除的自定义模型。"
+		"PROVIDER_API_MODEL_IN_USE":
+			return "这个模型仍在被居民使用，请先重新分配居民模型。"
+		"PROVIDER_MODEL_CATALOG_EMPTY":
+			return "服务没有返回可用模型，请手动填写模型 ID。"
+		"PROVIDER_MODEL_CATALOG_INVALID", "PROVIDER_MODEL_CATALOG_REQUEST_FAILED":
+			return "暂时无法读取模型列表，请检查地址后重试，或手动填写模型 ID。"
+		"PROVIDER_MODEL_CATALOG_UNSUPPORTED":
+			return "当前服务需要手动填写模型或推理接入点 ID。"
+		"PROVIDER_CONNECTION_IN_USE":
+			return "这个连接仍在被居民使用，请先重新分配居民模型。"
+		"PROVIDER_CONNECTION_DELETE_FORBIDDEN":
+			return "内置连接不能删除。"
 		"PROVIDER_DISABLED":
 			return "当前 Provider 已停用。请先启用，再检查连接。"
 		"PROVIDER_BASE_URL_INVALID":
-			return "Base URL 必须使用 https:// 地址。请修正并重新保存。"
+			return "Base URL 必须使用 HTTPS；本机服务可使用 localhost 的 HTTP 地址。"
 		"PROVIDER_AUTH_FAILED":
 			return "API Key 未通过认证。请重新输入并保存 Key，然后重试。"
 		"PROVIDER_BILLING_FAILED":

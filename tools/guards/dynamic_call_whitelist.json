@@ -9,6 +9,42 @@
       "reason": "局内改绑与新居民入镇由宿主注入事务提交回调；这是 Callable 实例调用，不按字符串选择生产方法。"
     },
     {
+      "path": "game/agent/model/GenericOpenAICompatibleModelProvider.gd",
+      "func": "request_model_catalog",
+      "call": "string:.call( \"request_model_catalog\", endpoint, headers, func(response: Dictionary) -> void: on_complete.call(_model_catalog_result(response)) )",
+      "reason": "模型目录传输可由正式 HTTP 或离线测试传输实现，经过 has_method 检查后调用共同契约。"
+    },
+    {
+      "path": "game/agent/model/GenericOpenAICompatibleModelProvider.gd",
+      "func": "request_model_catalog",
+      "call": "variable:.call(_model_catalog_result(response))",
+      "reason": "调用请求方传入的 Callable 完成模型目录异步回调。"
+    },
+    {
+      "path": "game/agent/model/GenericOpenAICompatibleModelProvider.gd",
+      "func": "_on_model_catalog_request_completed",
+      "call": "variable:.call(_model_catalog_result({ \"result\": result, \"status_code\": response_code, \"headers\": response_headers, \"body\": body, }))",
+      "reason": "调用请求方传入的 Callable 完成 HTTP 模型目录异步回调。"
+    },
+    {
+      "path": "game/world/integration/TownAgentProviderService.gd",
+      "func": "request_model_catalog",
+      "call": "string:.call( \"request_model_catalog\", on_complete, )",
+      "reason": "Provider 由目录工厂创建，经过接口检查后调用兼容模型目录契约。"
+    },
+    {
+      "path": "game/world/presentation/ui/TownProviderSettingsService.gd",
+      "func": "_discover_models",
+      "call": "string:.call( \"request_model_catalog\", provider_id, Callable(self, \"_on_model_catalog_completed\").bind( request_id, provider_id, ), )",
+      "reason": "设置服务通过已校验的 Provider 服务公共契约异步读取模型列表。"
+    },
+    {
+      "path": "game/world/presentation/ui/TownProviderSettingsService.gd",
+      "func": "_discover_models",
+      "call": "string:Callable(self, \"_on_model_catalog_completed\")",
+      "reason": "模型列表请求完成后回到设置服务合并并保存模型。"
+    },
+    {
       "path": "game/agent/AgentSystem.gd",
       "func": "request_json_for_resident",
       "call": "string:.call( \"request_json\", model_request, on_complete, )",
@@ -229,6 +265,30 @@
       "func": "_project_injuries",
       "call": "variable:.call(source_actor_id)",
       "reason": "本次 PR 引入的动态派发保留，需通过门禁白名单。"
+    },
+    {
+      "path": "game/agent/model/VolcengineArkModelProvider.gd",
+      "func": "request_model_catalog",
+      "call": "string:Callable(self, \"_on_unfiltered_model_catalog\")",
+      "reason": "方舟目录先复用兼容接口异步请求，再由本 Provider 过滤为居民可用模型；Callable 只绑定固定完成方法。"
+    },
+    {
+      "path": "game/agent/model/VolcengineArkModelProvider.gd",
+      "func": "_on_unfiltered_model_catalog",
+      "call": "variable:.call(_filter_town_model_catalog(result))",
+      "reason": "调用请求方传入的 Callable 返回已过滤的方舟模型目录。"
+    },
+    {
+      "path": "game/world/integration/TownAgentProviderService.gd",
+      "func": "request_model_catalog",
+      "call": "string:.call( \"request_model_catalog\", complete_and_release, )",
+      "reason": "Provider 由目录工厂按运行时配置创建，经过接口检查后调用共同的模型目录契约，并在完成时释放引用。"
+    },
+    {
+      "path": "game/world/integration/TownAgentProviderService.gd",
+      "func": "request_model_catalog",
+      "call": "variable:.call(result)",
+      "reason": "模型目录完成后调用请求方传入的 Callable，并释放异步请求期间保留的 Provider。"
     }
   ]
 }

@@ -20,6 +20,7 @@ class ResultCollector:
 func _initialize() -> void:
 	_test_same_name_residents_use_distinct_ids()
 	_test_runtime_owns_initialization_snapshot()
+	_test_runtime_model_provider_can_be_replaced()
 	_test_invalid_world_facts_do_not_reach_model()
 	_test_talk_targets_resident_id()
 	_test_runtime_storage_seams_reject_project_paths()
@@ -142,6 +143,46 @@ func _test_runtime_owns_initialization_snapshot() -> void:
 		).get("resident"),
 		"林岚",
 		"memory system keeps the runtime-owned resident identity",
+	)
+
+
+func _test_runtime_model_provider_can_be_replaced() -> void:
+	var agent_system := _new_agent_system()
+	var first_model: RefCounted = (load(SCRIPTED_MODEL_SCRIPT_PATH) as Script).new()
+	var second_model: RefCounted = (load(SCRIPTED_MODEL_SCRIPT_PATH) as Script).new()
+	_expect_ok(
+		agent_system.call("initialize_resident", _initialization(), first_model),
+		"运行中模型替换测试初始化居民",
+	)
+	var replaced := agent_system.call(
+		"replace_resident_model_provider",
+		"resident-lin-lan",
+		second_model,
+	) as Dictionary
+	_expect_equal(replaced.get("ok"), true, "运行中居民模型提供方可以替换")
+	second_model.call(
+		"queue_decision",
+		_stay_decision("provider-replaced", "provider-replaced-action"),
+	)
+	var results := ResultCollector.new()
+	_expect_ok(
+		agent_system.call(
+			"request_decision",
+			"resident-lin-lan",
+			_wake_packet("provider-replaced"),
+			results.collect,
+		),
+		"替换后的居民可以继续请求模型",
+	)
+	_expect_equal(
+		(first_model.call("get_requests") as Array).size(),
+		0,
+		"替换后不再向旧模型提供方发起新请求",
+	)
+	_expect_equal(
+		(second_model.call("get_requests") as Array).size(),
+		1,
+		"替换后真实 Agent 入口使用新模型提供方",
 	)
 
 

@@ -95,6 +95,8 @@ var _town_log_origin_route := &"town"
 var _town_log_origin_payload: Dictionary = {}
 var _resident_death_confirmation: FormalConfirmationDialog
 var _pending_resident_death_payload: Dictionary = {}
+var _resident_assignment_returns_to_provider_settings := false
+var _resident_assignment_provider_payload: Dictionary = {}
 
 
 func _ready() -> void:
@@ -378,6 +380,11 @@ func close_page(
 		and _feedback.has_method("clear_scope")
 	):
 		_feedback.call("clear_scope", StringName(scope), true)
+	if (
+		closing_route == &"resident_model_assignment"
+		and restore_focus
+	):
+		_clear_provider_assignment_return()
 	UI_NODE_RETIREMENT.retire(_active_page)
 	_active_page = null
 	_active_route = &"town"
@@ -1121,11 +1128,9 @@ func _play_audio_cue(cue_id: String, volume_db: float = 0.0) -> void:
 func _on_hud_intent_requested(intent: StringName, payload: Dictionary) -> void:
 	match String(intent):
 		"town_hud.open_event":
-			_open_page_with_feedback(
-				&"bulletin_board",
-				_bulletin_route_payload(payload),
-				"公告栏暂时打不开，请稍后再试。",
-			)
+			# 兼容旧 HUD 意图：公告事件属于小镇日志事件链，
+			# 不再把玩家带回用来撰写公告的公告栏。
+			_open_town_log(payload)
 		"town_hud.open_bulletin":
 			_open_page_with_feedback(
 				&"bulletin_board",
@@ -1255,7 +1260,28 @@ func _on_self_dispatching_page_intent(
 	):
 		var dispatch_result := payload.get("dispatchResult", {}) as Dictionary
 		if bool(dispatch_result.get("ok", false)):
-			close_page()
+			if _resident_assignment_returns_to_provider_settings:
+				call_deferred(
+					"_return_to_provider_settings_from_assignment",
+				)
+			else:
+				close_page()
+		return
+	if (
+		route == &"provider_settings"
+		and String(intent) == "provider_settings.open_model_assignment"
+	):
+		call_deferred(
+			"_open_resident_assignment_from_provider_settings",
+			payload.duplicate(true),
+		)
+		return
+	if (
+		route == &"resident_model_assignment"
+		and String(intent) == "resident_model_assignment.back"
+		and _resident_assignment_returns_to_provider_settings
+	):
+		call_deferred("_return_to_provider_settings_from_assignment")
 		return
 	if route == &"wardrobe" and _resident_profile_wardrobe_return_pending:
 		if String(intent) == "resident_profile_editor.apply_wardrobe_result":
@@ -1322,6 +1348,72 @@ func _on_self_dispatching_page_intent(
 		return
 	if _intent_closes_route(String(intent), route):
 		close_page()
+
+
+func _open_resident_assignment_from_provider_settings(
+	payload: Dictionary,
+) -> void:
+	_resident_assignment_returns_to_provider_settings = true
+	_resident_assignment_provider_payload = payload.duplicate(true)
+	var resident_ids := payload.get("residentIds", []) as Array
+	var selected_resident_id := (
+		String(resident_ids[0]) if not resident_ids.is_empty() else ""
+	)
+	var route_payload := {
+		"mode": "in_session",
+		"returnToProviderSettings": true,
+		"selectedResidentId": selected_resident_id,
+	}
+	var result := open_page(&"resident_model_assignment", route_payload)
+	if not bool(result.get("ok", false)):
+		_clear_provider_assignment_return()
+		_present_navigation_failure(
+			"居民模型分配暂时打不开，请稍后再试。",
+			String(result.get("errorCode", "")),
+		)
+		return
+	if not selected_resident_id.is_empty():
+		call_deferred(
+			"_select_resident_for_provider_assignment",
+			selected_resident_id,
+		)
+
+
+func _select_resident_for_provider_assignment(resident_id: String) -> void:
+	if (
+		_active_route != &"resident_model_assignment"
+		or resident_id.is_empty()
+		or not is_instance_valid(_adapter)
+	):
+		return
+	var view_model := _adapter.get_view_model(
+		"resident_model_assignment",
+	) as Dictionary
+	_dispatch_adapter(
+		"resident_model_assignment.select_resident",
+		{
+			"residentId": resident_id,
+			"revision": int(view_model.get("revision", -1)),
+		},
+	)
+
+
+func _return_to_provider_settings_from_assignment() -> void:
+	if not _resident_assignment_returns_to_provider_settings:
+		return
+	var payload := _resident_assignment_provider_payload.duplicate(true)
+	_clear_provider_assignment_return()
+	var result := open_page(&"provider_settings", payload)
+	if not bool(result.get("ok", false)):
+		_present_navigation_failure(
+			"模型设置暂时打不开，请稍后再试。",
+			String(result.get("errorCode", "")),
+		)
+
+
+func _clear_provider_assignment_return() -> void:
+	_resident_assignment_returns_to_provider_settings = false
+	_resident_assignment_provider_payload.clear()
 
 
 func _open_town_log(
@@ -1969,6 +2061,7 @@ func _intent_closes_route(intent: String, route: StringName) -> bool:
 
 
 func _disconnect_adapter() -> void:
+	_clear_provider_assignment_return()
 	_clear_resident_view_return()
 	_conversation_route_revision = -1
 	_indoor_route_revision = -1

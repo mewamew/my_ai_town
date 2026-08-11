@@ -24,6 +24,13 @@ const REQUIRED_PROVIDER_METHODS: Array[String] = [
 	"list_available_models",
 	"validate_resident_bindings",
 ]
+const CUSTOM_MODEL_PROVIDER_IDS := [
+	"openai-compatible",
+	"302-ai",
+	"ollama",
+	"ollama-cloud",
+	"lm-studio",
+]
 const INTENT_TO_ACTION := {
 	"resident_model_assignment.select_resident": "selectResident",
 	"resident_model_assignment.set_filter": "setFilter",
@@ -713,6 +720,11 @@ func _provider_snapshots() -> Array[Dictionary]:
 
 
 func _compact_provider_name(provider_id: String, fallback: String) -> String:
+	if provider_id in CUSTOM_MODEL_PROVIDER_IDS:
+		var source := fallback.replace("（本地）", "")
+		if provider_id == "openai-compatible":
+			source = "兼容接口"
+		return "自定义 · %s" % source
 	match provider_id:
 		"deepseek":
 			return "DeepSeek"
@@ -899,7 +911,7 @@ func _validate_catalog(catalog: Dictionary) -> Dictionary:
 	var residents_value: Variant = catalog.get("residents", [])
 	if not residents_value is Array:
 		return _failure("RESIDENT_MODEL_CATALOG_INVALID")
-	if _single_resident_mode and (residents_value as Array).size() != _slot_count:
+	if (residents_value as Array).size() != _slot_count:
 		return _failure("RESIDENT_MODEL_CATALOG_RESIDENT_COUNT_MISMATCH")
 	var seen: Dictionary = {}
 	for value: Variant in residents_value as Array:

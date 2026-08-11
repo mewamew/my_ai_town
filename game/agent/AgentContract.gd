@@ -36,6 +36,7 @@ const EVENT_TYPES := [
 	"有人走了",
 	"天气变了",
 	"公告发布",
+	"公告到点",
 	"公告阅读",
 	"公告转告",
 	"营业状态变化",
@@ -82,6 +83,7 @@ const REACTION_RESULT_STATUSES := [
 	"completed", "interrupted", "rejected", "failed",
 ]
 const REACTION_FIELDS := ["source_action_id", "text"]
+const ANNOUNCEMENT_REACTION_FIELDS := ["source_event_id", "text"]
 const REACTION_TEXT_MAX_LENGTH := 32
 const CONVERSATION_END_REASONS := ["主动结束", "拒绝接话", "一方离开", "无法继续"]
 const ACTION_FIELDS := {
@@ -234,6 +236,8 @@ static func validate_decision(
 		decision_fields.append("action")
 	if decision.has("reaction"):
 		decision_fields.append("reaction")
+	if decision.has("announcement_reactions"):
+		decision_fields.append("announcement_reactions")
 	if decision.has("social_response"):
 		decision_fields.append("social_response")
 	if decision.has("social_attention"):
@@ -248,6 +252,12 @@ static func validate_decision(
 	if decision.has("reaction"):
 		AgentContractSnapshot._validate_reaction(
 			_require_dictionary(decision, "reaction", "reaction", errors),
+			wake_packet,
+			errors,
+		)
+	if decision.has("announcement_reactions"):
+		AgentContractSnapshot._validate_announcement_reactions(
+			decision.get("announcement_reactions"),
 			wake_packet,
 			errors,
 		)
@@ -333,6 +343,8 @@ static func validate_decision(
 	if handling == "continue_current":
 		if decision.has("action"):
 			errors.append("continue_current 不允许 action")
+		if wake_has_player_priority_announcement(wake_packet):
+			errors.append("玩家公告必须停止普通工作并提交新的实际行动")
 		var current_action: Variant = (wake_packet.get("snapshot", {}) as Dictionary) \
 			.get("me", {}).get("current_action")
 		if current_action == null:
@@ -388,6 +400,15 @@ static func canonicalize_decision(value: Dictionary) -> Dictionary:
 			"source_action_id": reaction["source_action_id"],
 			"text": reaction["text"],
 		}
+	if value.has("announcement_reactions"):
+		var canonical_announcement_reactions: Array[Dictionary] = []
+		for reaction_value: Variant in value["announcement_reactions"] as Array:
+			var announcement_reaction := reaction_value as Dictionary
+			canonical_announcement_reactions.append({
+				"source_event_id": announcement_reaction["source_event_id"],
+				"text": announcement_reaction["text"],
+			})
+		canonical["announcement_reactions"] = canonical_announcement_reactions
 	if value.has("social_response"):
 		var social_response := value["social_response"] as Dictionary
 		var canonical_social_response := {}
@@ -757,6 +778,42 @@ static func reaction_source_action_id(wake_packet: Dictionary) -> String:
 	return ""
 
 
+static func reaction_source_event_id(wake_packet: Dictionary) -> String:
+	var event_ids := announcement_reaction_source_event_ids(wake_packet)
+	return event_ids[event_ids.size() - 1] if not event_ids.is_empty() else ""
+
+
+static func announcement_reaction_source_event_ids(
+	wake_packet: Dictionary,
+) -> Array[String]:
+	var result: Array[String] = []
+	for value: Variant in wake_packet.get("events", []) as Array:
+		if typeof(value) != TYPE_DICTIONARY:
+			continue
+		var event := value as Dictionary
+		if String(event.get("type", "")) not in ["公告发布", "公告到点"]:
+			continue
+		var event_id := String(event.get("event_id", "")).strip_edges()
+		if not event_id.is_empty() and not result.has(event_id):
+			result.append(event_id)
+	return result
+
+
+static func wake_has_player_priority_announcement(
+	wake_packet: Dictionary,
+) -> bool:
+	for value: Variant in wake_packet.get("events", []) as Array:
+		if value is not Dictionary:
+			continue
+		var event := value as Dictionary
+		if (
+			String(event.get("type", "")) in ["公告发布", "公告到点"]
+			and String(event.get("announcement_priority", "")) == "player"
+		):
+			return true
+	return false
+
+
 static func current_action_id(wake_packet: Dictionary) -> String:
 	return AgentContractWake._current_action_id(wake_packet)
 
@@ -834,4 +891,3 @@ static func _require_string(
 		errors.append("%s 必须是文本" % path)
 		return ""
 	return String(data[key])
-
