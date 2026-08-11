@@ -356,6 +356,7 @@ func _display_name_is_valid(display_name: String) -> bool:
 
 
 func _endpoint_is_valid(endpoint: String) -> bool:
+	# HTTP 与 HTTPS 都是可保存的显式选择；HTTP 风险由设置页实时提示。
 	var scheme := ""
 	if endpoint.begins_with("https://"):
 		scheme = "https://"
@@ -400,8 +401,6 @@ func _endpoint_is_valid(endpoint: String) -> bool:
 			port = authority.substr(colon_index + 1)
 	if host.is_empty() or host.begins_with(".") or host.ends_with("."):
 		return false
-	if scheme == "http://" and not _loopback_host_is_valid(host):
-		return false
 	if host.begins_with("["):
 		var address := host.substr(1, host.length() - 2)
 		if not address.is_valid_ip_address():
@@ -441,13 +440,6 @@ func _endpoint_is_valid(endpoint: String) -> bool:
 	elif authority.ends_with(":"):
 		return false
 	return true
-
-
-func _loopback_host_is_valid(host: String) -> bool:
-	var normalized := host.to_lower()
-	if normalized == "localhost" or normalized == "[::1]":
-		return true
-	return normalized.begins_with("127.") and _canonical_ipv4_is_valid(normalized)
 
 
 func _canonical_ipv4_is_valid(host: String) -> bool:

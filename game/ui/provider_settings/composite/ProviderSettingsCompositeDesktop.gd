@@ -42,6 +42,7 @@ const CUSTOM_OTHER_BASE_LABEL_RECT := Rect2(690.0, 335.0, 116.0, 46.0)
 const CUSTOM_OTHER_BASE_INPUT_RECT := Rect2(814.0, 335.0, 608.0, 46.0)
 const CUSTOM_OTHER_KEY_LABEL_RECT := Rect2(690.0, 386.0, 116.0, 50.0)
 const CUSTOM_OTHER_KEY_INPUT_RECT := Rect2(814.0, 386.0, 430.0, 52.0)
+const CUSTOM_OTHER_HTTP_WARNING_RECT := Rect2(870.0, 296.0, 420.0, 35.0)
 const CUSTOM_OTHER_SAVE_RECT := Rect2(1306.0, 296.0, 116.0, 46.0)
 const CUSTOM_OTHER_REVEAL_RECT := Rect2(1258.0, 386.0, 76.0, 52.0)
 const CUSTOM_OTHER_DELETE_RECT := Rect2(1347.0, 386.0, 76.0, 52.0)
@@ -69,6 +70,7 @@ const CUSTOM_MODEL_CARD_Y := 630.0
 const CUSTOM_MODEL_CARD_HEIGHT := 106.0
 const CUSTOM_MODEL_NAME_Y := 637.0
 const CUSTOM_MODEL_ORIGIN_Y := 681.0
+const BASE_URL_HTTP_WARNING_RECT := Rect2(838.0, 428.0, 566.0, 39.0)
 const STANDARD_DYNAMIC_MODEL_INPUT_RECT := Rect2(850.0, 548.0, 300.0, 42.0)
 const STANDARD_DYNAMIC_MODEL_ADD_RECT := Rect2(1160.0, 544.0, 125.0, 50.0)
 const STANDARD_DYNAMIC_MODEL_PREVIOUS_RECT := Rect2(1290.0, 548.0, 38.0, 38.0)
@@ -1074,6 +1076,12 @@ func _build_custom_connection_section(
 			"custom_base_url_input",
 		)
 		_configure_custom_base_url_edit(provider, base_url_edit)
+		_add_insecure_http_warning(
+			owner,
+			region_rect,
+			CUSTOM_OTHER_HTTP_WARNING_RECT,
+			base_url_edit,
+		)
 		_build_custom_connection_label(
 			owner,
 			region_rect,
@@ -1500,6 +1508,41 @@ func _configure_custom_base_url_edit(
 	edit.text_changed.connect(func(value: String) -> void:
 		ui_action.emit(&"ui.draft_base_url", {"value": value})
 	)
+
+
+func _add_insecure_http_warning(
+	parent: Control,
+	parent_rect: Rect2,
+	source_rect: Rect2,
+	edit: LineEdit,
+) -> Label:
+	var warning := Label.new()
+	warning.name = "InsecureHttpWarning"
+	warning.text = "您正在使用非加密传输（HTTP），数据在传输过程中可能被窃取。"
+	_place(warning, _scaled_rect(source_rect), parent_rect)
+	warning.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	warning.add_theme_font_override(
+		"font",
+		ProviderTheme.composite_font("small"),
+	)
+	warning.add_theme_font_size_override("font_size", _scaled_font_size(15))
+	warning.add_theme_color_override(
+		"font_color",
+		ProviderTheme.COMPOSITE_WARNING,
+	)
+	warning.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	warning.add_to_group("provider_settings_text_slot")
+	warning.set_meta("gate_id", "insecure_http_warning")
+	parent.add_child(warning)
+	warning.visible = _uses_insecure_http(edit.text)
+	edit.text_changed.connect(func(value: String) -> void:
+		warning.visible = _uses_insecure_http(value)
+	)
+	return warning
+
+
+func _uses_insecure_http(value: String) -> bool:
+	return value.strip_edges().to_lower().begins_with("http://")
 
 
 func _configure_custom_key_edit(
@@ -2123,6 +2166,12 @@ func _build_base_url_section(
 	base_url_edit.placeholder_text = _base_url_placeholder(provider, custom_group)
 	base_url_edit.text_changed.connect(func(value: String) -> void:
 		ui_action.emit(&"ui.draft_base_url", {"value": value})
+	)
+	_add_insecure_http_warning(
+		owner,
+		region_rect,
+		BASE_URL_HTTP_WARNING_RECT,
+		base_url_edit,
 	)
 	base_url_edit.text_submitted.connect(func(value: String) -> void:
 		if custom_group:

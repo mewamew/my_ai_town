@@ -821,13 +821,15 @@ func _test_local_endpoint_and_model_persistence() -> void:
 		["qwen3:8b", "gemma3:4b"],
 		"local model ids survive a config reload",
 	)
-	var unsafe_config := local_config.duplicate(true)
-	unsafe_config["providers"]["ollama"]["endpoint"] = "http://example.com/v1"
-	var rejected := store.call("save_config", unsafe_config) as Dictionary
+	var remote_http_config := local_config.duplicate(true)
+	remote_http_config["providers"]["ollama"]["endpoint"] = (
+		"http://example.com:3000/v1"
+	)
+	var remote_http_saved := store.call("save_config", remote_http_config) as Dictionary
 	_expect_equal(
-		rejected.get("ok"),
-		false,
-		"unencrypted remote compatible endpoints remain forbidden",
+		remote_http_saved.get("ok"),
+		true,
+		"unencrypted remote compatible endpoints can be persisted after warning",
 	)
 	var legacy_path := "%s/legacy-settings.json" % CONFIG_TEST_ROOT
 	var legacy_file := FileAccess.open(legacy_path, FileAccess.WRITE)
@@ -933,7 +935,7 @@ func _test_settings_service_custom_model_flow() -> void:
 		"provider_settings.save_connection",
 		{
 			"providerId": "openai-compatible",
-			"baseUrl": "https://compatible.example/v1",
+			"baseUrl": "http://compatible.example:3000/v1",
 			"apiKey": "temporary-test-key",
 		},
 	) as Dictionary
@@ -948,8 +950,8 @@ func _test_settings_service_custom_model_flow() -> void:
 	)
 	_expect_equal(
 		saved_remote_provider.get("baseUrl"),
-		"https://compatible.example/v1",
-		"combined connection save projects the normalized address",
+		"http://compatible.example:3000/v1",
+		"combined connection save accepts and projects a remote HTTP address",
 	)
 	_expect_equal(
 		(saved_remote_provider.get("key", {}) as Dictionary).get("saved"),

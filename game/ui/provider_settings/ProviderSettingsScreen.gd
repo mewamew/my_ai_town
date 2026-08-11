@@ -1919,6 +1919,8 @@ func _build_key_section(provider: Dictionary) -> Control:
 		_sync_key_save_enabled()
 	)
 	form.add_child(_key_edit)
+	if local_service:
+		column.add_child(_insecure_http_warning(_key_edit))
 
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
@@ -2079,7 +2081,27 @@ func _build_base_url_section(provider: Dictionary) -> Control:
 		)
 	)
 	row.add_child(save)
+	column.add_child(_insecure_http_warning(_base_url_edit))
 	return panel
+
+
+func _insecure_http_warning(edit: LineEdit) -> Label:
+	var warning := Label.new()
+	warning.name = "InsecureHttpWarning"
+	warning.text = "您正在使用非加密传输（HTTP），数据在传输过程中可能被窃取。"
+	warning.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	warning.add_theme_font_size_override("font_size", _caption_font_size())
+	warning.add_theme_color_override("font_color", ProviderTheme.WARNING)
+	warning.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	warning.visible = _uses_insecure_http(edit.text)
+	edit.text_changed.connect(func(value: String) -> void:
+		warning.visible = _uses_insecure_http(value)
+	)
+	return warning
+
+
+func _uses_insecure_http(value: String) -> bool:
+	return value.strip_edges().to_lower().begins_with("http://")
 
 
 func _build_models_section(provider: Dictionary) -> Control:

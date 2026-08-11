@@ -3373,8 +3373,40 @@ func _scenario_ui_runtime_host_navigation() -> void:
 					rebuilt_base_url_edit,
 					"Provider refresh restores Base URL input focus",
 				)
+				var http_warning := provider_page.find_child(
+					"InsecureHttpWarning",
+					true,
+					false,
+				) as Label
+				_expect(
+					http_warning != null and not http_warning.visible,
+					"Provider route keeps the HTTP warning hidden without an HTTP URL",
+				)
+				var secure_base_url_width := rebuilt_base_url_edit.size.x
+				rebuilt_base_url_edit.text = "http://api.example.com:3000/v1"
+				rebuilt_base_url_edit.text_changed.emit(rebuilt_base_url_edit.text)
+				_expect(
+					http_warning != null
+					and http_warning.visible
+					and http_warning.text.contains("非加密传输"),
+					"Provider route warns only after entering an HTTP Base URL",
+				)
+				_expect(
+					http_warning != null
+					and is_equal_approx(
+						rebuilt_base_url_edit.size.x,
+						secure_base_url_width,
+					)
+					and http_warning.global_position.y + http_warning.size.y
+					<= rebuilt_base_url_edit.global_position.y + 1.0,
+					"Provider route places the HTTP warning above the full-width Base URL field",
+				)
 				rebuilt_base_url_edit.text = "https://api.deepseek.com"
 				rebuilt_base_url_edit.text_changed.emit(rebuilt_base_url_edit.text)
+				_expect(
+					http_warning != null and not http_warning.visible,
+					"Provider route hides the HTTP warning for an HTTPS Base URL",
+				)
 	await _verify_local_provider_url_autodiscovery(
 		provider_page as ProviderSettingsScreen,
 		"ollama",

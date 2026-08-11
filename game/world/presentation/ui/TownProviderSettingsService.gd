@@ -1777,20 +1777,8 @@ func _stored_api_models(provider: Dictionary) -> Array[String]:
 
 
 func _base_url_scheme_is_allowed(endpoint: String) -> bool:
-	if endpoint.begins_with("https://"):
-		return true
-	if not endpoint.begins_with("http://"):
-		return false
-	var authority := endpoint.trim_prefix("http://").split("/", false)[0]
-	var host := authority
-	if authority.begins_with("["):
-		var closing := authority.find("]")
-		if closing < 0:
-			return false
-		host = authority.left(closing + 1)
-	elif authority.contains(":"):
-		host = authority.get_slice(":", 0)
-	return host.to_lower() in ["localhost", "127.0.0.1", "[::1]"]
+	# 远程 HTTP 由设置页明确警告风险，但不再阻止玩家保存。
+	return endpoint.begins_with("https://") or endpoint.begins_with("http://")
 
 
 func _masked_key(api_key: String) -> String:
@@ -2188,7 +2176,7 @@ func _player_message_for_error_code(code: String) -> String:
 		"PROVIDER_DISABLED":
 			return "当前 Provider 已停用。请先启用，再检查连接。"
 		"PROVIDER_BASE_URL_INVALID":
-			return "Base URL 必须使用 HTTPS；本机服务可使用 localhost 的 HTTP 地址。"
+			return "Base URL 必须以 http:// 或 https:// 开头。"
 		"PROVIDER_AUTH_FAILED":
 			return "API Key 未通过认证。请重新输入并保存 Key，然后重试。"
 		"PROVIDER_BILLING_FAILED":
