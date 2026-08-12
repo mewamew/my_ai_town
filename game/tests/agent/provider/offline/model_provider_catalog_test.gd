@@ -50,6 +50,7 @@ func _initialize() -> void:
 	_expect_equal(
 		_model_ids(catalog, "minimax"),
 		[
+			"MiniMax-M3",
 			"MiniMax-M2.7",
 			"MiniMax-M2.7-highspeed",
 			"MiniMax-M2.5",
@@ -58,7 +59,7 @@ func _initialize() -> void:
 			"MiniMax-M2.1-highspeed",
 			"MiniMax-M2",
 		],
-		"MiniMax exposes the current OpenAI-compatible text models",
+		"MiniMax exposes M3 and the compatible M2 model families",
 	)
 	_expect_equal(
 		_model_ids(catalog, "volcengine-ark"),
@@ -133,7 +134,7 @@ func _initialize() -> void:
 		"LM Studio does not require a placeholder API key",
 	)
 	_expect_equal(catalog.call("default_model_id"), "deepseek-v4-flash", "DeepSeek remains the global default")
-	_expect_equal(catalog.call("default_model_id", "minimax"), "MiniMax-M2.7", "MiniMax defaults to M2.7")
+	_expect_equal(catalog.call("default_model_id", "minimax"), "MiniMax-M3", "MiniMax defaults to M3")
 	_expect_equal(
 		catalog.call("descriptor", "minimax").get("default_endpoint"),
 		"https://api.minimaxi.com/v1/chat/completions",
@@ -159,6 +160,11 @@ func _initialize() -> void:
 		catalog.call("model_descriptor", "deepseek", "deepseek-v4-flash").get("input_modalities"),
 		["text"],
 		"DeepSeek declares text input explicitly",
+	)
+	_expect_equal(
+		catalog.call("model_descriptor", "minimax", "MiniMax-M3").get("input_modalities"),
+		["text", "image"],
+		"MiniMax M3 declares its documented visual input capability",
 	)
 	_expect_equal(
 		catalog.call("model_descriptor", "aliyun-bailian", "qwen3.7-plus").get("input_modalities"),
@@ -202,7 +208,7 @@ func _initialize() -> void:
 	var minimax_creation := catalog.call(
 		"create_model",
 		"minimax",
-		"MiniMax-M2.7",
+		"MiniMax-M3",
 		null,
 		{"api_key": "test-key"},
 	) as Dictionary
@@ -210,8 +216,13 @@ func _initialize() -> void:
 	if minimax_creation.get("ok") == true:
 		_expect_equal(
 			minimax_creation.get("provider").call("get_provider_descriptor").get("model_id"),
-			"MiniMax-M2.7",
+			"MiniMax-M3",
 			"MiniMax model id reaches the shared adapter",
+		)
+		_expect_equal(
+			minimax_creation.get("provider").call("get_provider_descriptor").get("input_modalities"),
+			["text", "image"],
+			"MiniMax M3 visual input capability reaches the adapter",
 		)
 	if k3_creation.get("ok") == true:
 		_expect_equal(k3_creation.get("model_descriptor", {}).get("provider_id"), "kimi", "created K3 retains its route")
