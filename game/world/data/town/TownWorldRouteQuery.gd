@@ -17,6 +17,7 @@ const DIRECT_ROUTE_CACHE_MAX_ENTRIES := 512
 
 static var _outdoor_collision_records: Array[Dictionary] = []
 static var _direct_route_cache: Dictionary = {}
+static var _place_route_graph_cache: Dictionary = {}
 
 
 static func _direct_route_cache_key(
@@ -235,6 +236,102 @@ static func find_route(data: Dictionary, from_place_name: String, to_place_name:
 	}
 	result["minutePositions"] = _minute_positions(result, data, nodes_by_id)
 	return result
+
+
+static func place_route_exists(
+	data: Dictionary,
+	from_place_name: String,
+	to_place_name: String,
+) -> bool:
+	if data.is_empty() or from_place_name.is_empty() or to_place_name.is_empty():
+		return false
+	if from_place_name == to_place_name:
+		return true
+	var world_key := "%s:%s:%s" % [
+		str(data.get("worldId", "")),
+		str(data.get("schemaVersion", "")),
+		str(data.get("dataVersion", "")),
+	]
+	var graph := _place_route_graph_cache.get(world_key, {}) as Dictionary
+	if graph.is_empty():
+		graph = _build_place_route_graph(data)
+		_place_route_graph_cache[world_key] = graph
+	var start_components := graph.get("places", {}).get(from_place_name, []) as Array
+	var goal_components := graph.get("places", {}).get(to_place_name, []) as Array
+	for component_value in start_components:
+		if goal_components.has(component_value):
+			return true
+	return false
+
+
+static func _build_place_route_graph(data: Dictionary) -> Dictionary:
+	var movement := data.get("movementNetwork", {}) as Dictionary
+	var adjacency := {}
+	for node_value in movement.get("nodes", []) as Array:
+		var node := node_value as Dictionary
+		adjacency[str(node.get("id", ""))] = []
+	for edge_value in movement.get("edges", []) as Array:
+		var edge := edge_value as Dictionary
+		_append_undirected_route_link(
+			adjacency,
+			str(edge.get("fromNodeId", "")),
+			str(edge.get("toNodeId", "")),
+		)
+	for connection_value in data.get("connections", []) as Array:
+		var connection := connection_value as Dictionary
+		_append_undirected_route_link(
+			adjacency,
+			str((connection.get("from", {}) as Dictionary).get("nodeId", "")),
+			str((connection.get("to", {}) as Dictionary).get("nodeId", "")),
+		)
+	var component_by_node := {}
+	var component_index := 0
+	for node_id_value in adjacency:
+		var node_id := str(node_id_value)
+		if component_by_node.has(node_id):
+			continue
+		var pending: Array[String] = [node_id]
+		component_by_node[node_id] = component_index
+		var cursor := 0
+		while cursor < pending.size():
+			var current_id := pending[cursor]
+			cursor += 1
+			for next_value in adjacency.get(current_id, []) as Array:
+				var next_id := str(next_value)
+				if component_by_node.has(next_id):
+					continue
+				component_by_node[next_id] = component_index
+				pending.append(next_id)
+		component_index += 1
+	var places := {}
+	for arrival_value in movement.get("arrivalNodes", []) as Array:
+		var arrival := arrival_value as Dictionary
+		var place_name := str(arrival.get("placeName", ""))
+		var node_id := str(arrival.get("nodeId", ""))
+		if place_name.is_empty() or not component_by_node.has(node_id):
+			continue
+		var components := places.get(place_name, []) as Array
+		var component: Variant = component_by_node[node_id]
+		if not components.has(component):
+			components.append(component)
+		places[place_name] = components
+	return {"places": places}
+
+
+static func _append_undirected_route_link(
+	adjacency: Dictionary,
+	from_node: String,
+	to_node: String,
+) -> void:
+	if (
+		from_node.is_empty()
+		or to_node.is_empty()
+		or not adjacency.has(from_node)
+		or not adjacency.has(to_node)
+	):
+		return
+	(adjacency[from_node] as Array).append(to_node)
+	(adjacency[to_node] as Array).append(from_node)
 
 
 static func _adaptive_outdoor_segments(

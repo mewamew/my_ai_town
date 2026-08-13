@@ -147,6 +147,7 @@ var _hud_place_directory_static_loaded := false
 var _hud_place_directory_signature: Array = []
 var _hud_place_directory_cache: Dictionary = {}
 var _avatar_poll_signature: Dictionary = {}
+var _avatar_perception_revision_pending := -1
 var _resident_portrait_by_id: Dictionary = {}
 var _resident_portrait_ref_by_id: Dictionary = {}
 var _resident_portraits_loaded := false
@@ -327,6 +328,7 @@ func bind_runtime(runtime: Node, world: RefCounted, gateway: Node, session_confi
 	_hud_place_directory_signature.clear()
 	_hud_place_directory_cache.clear()
 	_avatar_poll_signature.clear()
+	_avatar_perception_revision_pending = -1
 	_refresh_resident_identities()
 	_capture_current_hud_far_conversations()
 	_gateway_error_sequence = _latest_gateway_error_sequence(_gateway_errors())
@@ -345,6 +347,10 @@ func bind_runtime(runtime: Node, world: RefCounted, gateway: Node, session_confi
 		var speed_callable := Callable(self, "_on_simulation_speed_changed")
 		if not _world.is_connected("simulation_speed_changed", speed_callable):
 			_world.connect("simulation_speed_changed", speed_callable)
+	if _world != null and _world.has_signal("player_avatar_perception_changed"):
+		var perception_callable := _on_player_avatar_perception_changed
+		if not _world.is_connected("player_avatar_perception_changed", perception_callable):
+			_world.connect("player_avatar_perception_changed", perception_callable)
 	_connect_hud_activity_signals()
 	_refresh_all(true)
 	set_process(true)
@@ -908,6 +914,10 @@ func _disconnect_world() -> void:
 		var speed_callable := Callable(self, "_on_simulation_speed_changed")
 		if _world.is_connected("simulation_speed_changed", speed_callable):
 			_world.disconnect("simulation_speed_changed", speed_callable)
+	if _world.has_signal("player_avatar_perception_changed"):
+		var perception_callable := _on_player_avatar_perception_changed
+		if _world.is_connected("player_avatar_perception_changed", perception_callable):
+			_world.disconnect("player_avatar_perception_changed", perception_callable)
 	for binding in [
 		["lifecycle_state_changed", "_on_adapter_lifecycle_state_changed"],
 		["announcement_published", "_on_adapter_announcement_published"],
@@ -1012,6 +1022,19 @@ func _on_world_revision_changed(revision: int) -> void:
 	if revision < _world_revision:
 		return
 	_world_revision = revision
+	if (
+		_avatar_perception_revision_pending >= 0
+		and revision <= _avatar_perception_revision_pending
+	):
+		# A pure avatar-position perception update already rebuilt the avatar
+		# target cards above. It must not fan out into the expensive town HUD
+		# projection; minute/world changes carry a different source and still use
+		# the normal all-scope invalidation below.
+		_avatar_perception_revision_pending = -1
+		_dirty_world_scopes.erase("avatar")
+		_pending_world_refresh_scopes.erase("avatar")
+		return
+	_avatar_perception_revision_pending = -1
 	for scope in WORLD_SCOPES:
 		_dirty_world_scopes[scope] = true
 	# A game-minute tick may update many residents at once. Keep that work out
@@ -1019,6 +1042,16 @@ func _on_world_revision_changed(revision: int) -> void:
 	# following frames.
 	_queue_world_scope_refresh("environment")
 	_queue_world_scope_refresh("town_hud")
+
+
+func _on_player_avatar_perception_changed(change: Dictionary) -> void:
+	if String(change.get("source", "")) != "avatar_position":
+		return
+	_refresh_scope("avatar", true)
+	if bool(change.get("semanticStateChanged", false)):
+		return
+	_world_revision = maxi(_world_revision, _read_world_revision())
+	_avatar_perception_revision_pending = _world_revision
 
 
 func _on_conversation_changed(

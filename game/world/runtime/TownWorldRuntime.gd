@@ -47,6 +47,7 @@ const RESIDENT_ARRIVAL_RUNTIME := preload("res://world/runtime/TownResidentArriv
 const AGENT_WAKE_STATE_RUNTIME := preload(
 	"res://world/runtime/TownAgentWakeStateRuntime.gd"
 )
+const AGENT_WAKE_PREPARATION_RUNTIME := preload("res://world/runtime/TownAgentWakePreparationRuntime.gd")
 const WORLD_PERFORMANCE_PROBE := preload(
 	"res://world/runtime/TownWorldPerformanceProbe.gd"
 )
@@ -404,6 +405,7 @@ var _advance_profile_scratch: Dictionary = {}
 var _frame_probe: GDScript = null
 var _frame_probe_checked := false
 var _agent_request_metrics: Dictionary = {}
+var _agent_wake_preparation_runtime := AGENT_WAKE_PREPARATION_RUNTIME.new()
 func _reset_agent_request_metrics() -> void:
 	_agent_request_metrics = {"decisionCreated": 0, "behaviorStarted": 0, "wakeRefresh": 0, "decisionInvalidated": 0, "prefetch": 0, "pendingQueuePeak": 0, "decisionPendingWithoutAction": 0}
 func _count_agent_request_metric(key: String, amount := 1) -> void:
@@ -414,6 +416,7 @@ func _mark_pending_wake_dirty(resident_id: String) -> void:
 	if not _residents.has(resident_id): return
 	var resident := _residents[resident_id] as Dictionary
 	if bool(resident.get("decisionPending", false)): resident["pendingWakeDirty"] = true
+
 func start(
 	world_data: Dictionary,
 	opening_config: Dictionary,
@@ -758,6 +761,7 @@ func _start_with_validation(
 	MOVEMENT_CLEARANCE_RUNTIME.clear_cache()
 	RESIDENT_ARRIVAL_RUNTIME.clear_cache()
 	_reset_agent_request_metrics()
+	_agent_wake_preparation_runtime.clear()
 	_tick_weather_override = ""
 	_event_sequence = 0
 	_announcement_sequence = 0
@@ -1088,6 +1092,7 @@ func stop() -> Dictionary:
 	_world_log_capture_enabled = false
 	_pause_reasons.clear()
 	_reset_deferred_frame_work()
+	_agent_wake_preparation_runtime.clear()
 	_observed_action_preview_resident_id = ""
 	_tick_weather_override = ""
 	_dynamic_props.clear()
@@ -1764,8 +1769,6 @@ func _advance_profile_count(key: String, amount: int) -> void:
 		_advance_profile_scratch[key] = (
 			int(_advance_profile_scratch.get(key, 0)) + amount
 		)
-
-
 func _reset_deferred_frame_work() -> void:
 	FRAME_BUDGET_RUNTIME.reset(self)
 	ACTIVITY_REACHABILITY_CACHE.clear(self)
@@ -2356,6 +2359,7 @@ func _apply_prepared_restore_candidate(
 	PERCEPTION_RUNTIME._rebuild_membership_grid_lookup(self)
 	_indoor_layout_overrides.clear()
 	_dynamic_props.clear()
+	_agent_wake_preparation_runtime.clear()
 	_animal_facts = (
 		prepared.get("animalFactsPrepared", {}) as Dictionary
 	).duplicate(true)
@@ -5170,6 +5174,7 @@ func confirm_resident_death(
 	resident["resultQueue"] = []
 	resident["inflightEvents"] = []
 	resident["inflightResults"] = []
+	_agent_wake_preparation_runtime.clear_resident(resident_id)
 	resident["decisionPending"] = false
 	resident["validDecisionId"] = ""
 	resident["decisionMayInterruptCurrent"] = false
@@ -9337,6 +9342,10 @@ func refresh_pending_decision_request_by_id(
 		"decisionId": decision_id,
 		"wakePacket": (resident.get("pendingWake", {}) as Dictionary).duplicate(true),
 	}
+
+
+func advance_pending_decision_preparation_by_id(resident_ref: String, decision_id: String) -> Dictionary:
+	return _agent_wake_preparation_runtime.advance(self, resident_ref, decision_id)
 func redispatch_decision_request_by_id(resident_id: String, decision_id: String) -> bool:
 	return redispatch_decision_request(resident_id, decision_id)
 func redispatch_decision_request(resident_ref: String, decision_id: String) -> bool:
@@ -11679,6 +11688,7 @@ func _schedule_decision(
 		and CONVERSATION_RUNTIME._active_conversation_for_person(self, resident_name).is_empty()
 	):
 		if bool(resident.get("decisionPending", false)):
+			_agent_wake_preparation_runtime.clear_resident(String(resident.get("residentId", resident_name)), String(resident.get("validDecisionId", "")))
 			_restore_inflight_facts(resident)
 			resident["decisionPending"] = false
 			resident["validDecisionId"] = ""
@@ -11728,6 +11738,7 @@ func _schedule_decision(
 		return
 	if invalidate and bool(resident.get("decisionPending", false)):
 		_count_agent_request_metric("decisionInvalidated")
+		_agent_wake_preparation_runtime.clear_resident(String(resident.get("residentId", resident_name)), String(resident.get("validDecisionId", "")))
 		_restore_inflight_facts(resident)
 		resident["decisionPending"] = false
 		resident["validDecisionId"] = ""
@@ -11812,6 +11823,7 @@ func _invalidate_all_pending_decisions() -> void:
 		if not bool(resident.get("decisionPending", false)):
 			continue
 		_count_agent_request_metric("decisionInvalidated")
+		_agent_wake_preparation_runtime.clear_resident(String(resident.get("residentId", resident_name)), String(resident.get("validDecisionId", "")))
 		_restore_inflight_facts(resident)
 		resident["decisionPending"] = false
 		resident["validDecisionId"] = ""
@@ -15199,6 +15211,7 @@ func _conversation_follow_up_options(
 	resident: Dictionary,
 	events: Array,
 	frame_budgeted := false,
+	place_data: Dictionary = {},
 ) -> Array[Dictionary]:
 	var conversation := CONVERSATION_RUNTIME._active_conversation_for_person(self, resident_id)
 	if (
@@ -15222,7 +15235,10 @@ func _conversation_follow_up_options(
 		conversation,
 		resident_id,
 	)
-	for place_id: String in _agent_travel_destinations(resident):
+	var destinations: Array = _agent_travel_destinations(resident)
+	if place_data.has("travelDestinations"):
+		destinations = place_data.get("travelDestinations", []) as Array
+	for place_id: String in destinations:
 		if (
 			not requested_place_ids.is_empty()
 			and not requested_place_ids.has(place_id)
@@ -15250,10 +15266,10 @@ func _conversation_follow_up_options(
 				"success_result_id": "conversation-escort-arrived",
 				"place_id": place_id,
 			})
-	for activity_value: Variant in _agent_available_activities(
-		resident,
-		frame_budgeted,
-	):
+	var activities: Array = _agent_available_activities(resident, frame_budgeted)
+	if place_data.has("activities"):
+		activities = place_data.get("activities", []) as Array
+	for activity_value: Variant in activities:
 		if (
 			not requested_place_ids.is_empty()
 			and not requested_place_ids.has(
@@ -15293,7 +15309,7 @@ func _conversation_follow_up_options(
 			"success_result_id": "conversation-follow-up-contacted",
 			"place_id": String(resident.get("currentPlace", "")),
 		})
-	if not partner_id.is_empty():
+	if not bool(place_data.get("skipServiceOfferings", false)) and not partner_id.is_empty():
 		for offering: Dictionary in _conversation_service_fetch_offerings(resident):
 			var service_place := String(offering.get("place_id", ""))
 			if (
@@ -15320,6 +15336,7 @@ func _conversation_follow_up_options(
 				"success_result_id": "conversation-service-delivered",
 				"place_id": service_place,
 			})
+	if bool(place_data.get("skipNormalize", false)): return options
 	return _unified_conversation_follow_up_options(
 		resident_id,
 		conversation,
@@ -15607,26 +15624,11 @@ func _resident_profile_conflict_motive(
 	)
 
 
-func _agent_travel_destinations(
-	resident: Dictionary,
-) -> Array[String]:
-	var current_place := String(resident.get("currentPlace", ""))
-	var result: Array[String] = []
-	for place_name: String in get_place_names():
-		if (
-			place_name.is_empty()
-			or place_name == current_place
-			or _closed_service_place_for_visitor(
-				resident,
-				place_name,
-			)
-			or not DINING_SERVICE.travel_destination_available(self, resident, place_name, int(_environment.get_absolute_minute()))
-		):
-			continue
-		result.append(place_name)
-	return result
+func _agent_travel_destinations(resident: Dictionary) -> Array[String]:
+	return _agent_wake_preparation_runtime.travel_destinations(self, resident)
 func _agent_life_destination_options(
 	resident: Dictionary,
+	travel_destinations: Variant = null,
 ) -> Array[Dictionary]:
 	var resident_id := String(resident.get("residentId", ""))
 	if resident_id.is_empty():
@@ -15647,7 +15649,12 @@ func _agent_life_destination_options(
 	var minute_of_day := posmod(absolute_minute, 1440)
 	var day_index := absolute_minute / 1440
 	var result: Array[Dictionary] = []
-	for place_id: String in _agent_travel_destinations(resident):
+	var destinations: Array = (
+		travel_destinations
+		if travel_destinations is Array
+		else _agent_travel_destinations(resident)
+	)
+	for place_id: String in destinations:
 		var query := _activity_runtime.query_options(
 			resident_id,
 			social_state,
@@ -15743,18 +15750,7 @@ func _agent_known_announcements(
 
 
 func _agent_visible_props(resident: Dictionary) -> Array[String]:
-	var result: Array[String] = []
-	for prop_value: Variant in PROP_QUERY.agent_props_at_place(
-		_prop_query_data(),
-		String(resident.get("currentPlace", "")),
-	):
-		var prop_name := String(
-			(prop_value as Dictionary).get("name", ""),
-		).strip_edges()
-		if not prop_name.is_empty() and not result.has(prop_name):
-			result.append(prop_name)
-	result.sort()
-	return result
+	return _agent_wake_preparation_runtime.visible_props(self, resident)
 
 
 func _agent_available_props(resident: Dictionary) -> Array:
@@ -16954,7 +16950,7 @@ func _apply_player_avatar_state(
 	var previous_space_id := String(_player_avatar.get("spaceId", ""))
 	var previous_region_id := String(_player_avatar.get("regionId", ""))
 	var previous_place := String(_player_avatar.get("currentPlace", ""))
-	var previous_doing := String(_player_avatar.get("doing", ""))
+	var previous_position := _player_avatar.get("position", Vector2.ZERO) as Vector2
 	_player_avatar["position"] = position
 	_player_avatar["spaceId"] = space_id
 	_player_avatar["regionId"] = String(membership.get("regionId", ""))
@@ -16966,13 +16962,15 @@ func _apply_player_avatar_state(
 		String(_player_avatar.get("spaceId", "")) != previous_space_id
 		or String(_player_avatar.get("regionId", "")) != previous_region_id
 		or current_place != previous_place
-		or String(_player_avatar.get("doing", "")) != previous_doing
 	)
+	var avatar_position_changed := previous_position != position
 	if semantic_state_changed:
 		_bump_world_revision(false)
-	var perception_changed := PERCEPTION_RUNTIME._refresh_player_avatar_perception(self, 
+	var perception_changed := PERCEPTION_RUNTIME._refresh_player_avatar_perception(self,
 		true,
 		not semantic_state_changed,
+		semantic_state_changed,
+		avatar_position_changed,
 	)
 	var state := get_player_avatar_state()
 	player_avatar_state_changed.emit(state)
@@ -20075,6 +20073,7 @@ func _begin_customer_service_wait(
 	# 此时上一条动作结果可能已经放进正在等待派发的唤醒；
 	# 切换到“现场等待”前必须先把这些事实放回队列。
 	if bool(resident.get("decisionPending", false)):
+		_agent_wake_preparation_runtime.clear_resident(String(resident.get("residentId", resident_id)), String(resident.get("validDecisionId", "")))
 		_restore_inflight_facts(resident)
 		resident["decisionPending"] = false
 		resident["validDecisionId"] = ""

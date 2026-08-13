@@ -2105,6 +2105,13 @@ func _request_agent_decision(request: Dictionary) -> void:
 		_queue_agent_preparation(request)
 		return
 	var refreshed_request := _refresh_agent_decision_request(request)
+	var preparation_attempts := 0
+	while bool(refreshed_request.get("preparationPending", false)):
+		preparation_attempts += 1
+		if preparation_attempts > 32:
+			refreshed_request = {}
+			break
+		refreshed_request = _refresh_agent_decision_request(request)
 	if refreshed_request.is_empty():
 		_redispatch(resident_id, decision_id)
 		return
@@ -2165,6 +2172,18 @@ func _advance_agent_preparation() -> bool:
 				"agentPrepareRefreshUsec",
 				Time.get_ticks_usec() - probe_started_usec,
 			)
+		if bool(refreshed.get("preparationPending", false)):
+			if _frame_probe != null:
+				var stage_key := String(refreshed.get("stage", "unknown"))
+				_frame_probe.record(
+					Engine.get_process_frames(),
+					"agentPrepareStage_%sUsec" % stage_key,
+					Time.get_ticks_usec() - probe_started_usec,
+				)
+			pending["readyAfterProcessFrame"] = Engine.get_process_frames() + 1
+			_inflight[decision_id] = pending
+			_agent_preparation_queue.append(decision_id)
+			return true
 		if refreshed.is_empty():
 			_inflight.erase(decision_id)
 			_redispatch(String(pending.get("residentId", "")), decision_id)
@@ -2192,7 +2211,23 @@ func _refresh_agent_decision_request(request: Dictionary) -> Dictionary:
 	var resident_id := String(request.get("residentId", ""))
 	var wake := request.get("wakePacket", {}) as Dictionary
 	var decision_id := String(wake.get("decision_id", ""))
-	if _world != null and _world.has_method("refresh_pending_decision_request_by_id"):
+	if (
+		_world != null
+		and _world.has_method("advance_pending_decision_preparation_by_id")
+	):
+		var preparation_result := _world.advance_pending_decision_preparation_by_id(
+			resident_id,
+			decision_id,
+		) as Dictionary
+		if bool(preparation_result.get("preparationPending", false)):
+			return {
+				"preparationPending": true,
+				"stage": String(preparation_result.get("stage", "unknown")),
+			}
+		if not bool(preparation_result.get("ok", false)):
+			return {}
+		wake = (preparation_result.get("wakePacket", {}) as Dictionary).duplicate(true)
+	elif _world != null and _world.has_method("refresh_pending_decision_request_by_id"):
 		var latest_request := _world.refresh_pending_decision_request_by_id(
 			resident_id,
 			decision_id,

@@ -194,6 +194,38 @@ class PendingWorld:
 			"errorCode": "",
 			"worldRevision": submissions.size(),
 		}
+
+
+class StagedPendingWorld:
+	extends PendingWorld
+
+	var preparation_steps := 0
+
+	func advance_pending_decision_preparation_by_id(
+		resident_id: String,
+		decision_id: String,
+	) -> Dictionary:
+		preparation_steps += 1
+		if preparation_steps < 3:
+			return {
+				"ok": true,
+				"stale": false,
+				"preparationPending": true,
+				"stage": "test_stage_%d" % preparation_steps,
+			}
+		return {
+			"ok": true,
+			"stale": false,
+			"residentId": resident_id,
+			"decisionId": decision_id,
+			"wakePacket": {
+				"decision_id": decision_id,
+				"snapshot": {"me": {}, "nearby": [], "place": {}},
+				"events": [],
+				"action_results": [],
+				"social_response_results": [],
+			},
+		}
 class PausedSubmissionWorld:
 	extends RefCounted
 
@@ -445,6 +477,7 @@ const CYCLES := 12
 const ACTION_PRESENTATION := preload(
 	"res://world/runtime/presentation/TownActionPresentationSemantics.gd"
 )
+const ROUTE_QUERY := preload("res://world/data/town/TownWorldRouteQuery.gd")
 const RESIDENT_NAME := "叶澄"
 const ACTIVITY_ID := "activity_fisher_organize_gear"
 const SCENARIOS := preload("res://agent/debug/AgentDebugScenarios.gd")
@@ -484,6 +517,8 @@ func _scenario_agent_gateway_continuity() -> void:
 	_test_memory_intervention_uses_world_time_and_agent_contract()
 	_test_gateway_process_pipeline_splits_refresh_and_dispatch()
 	_test_world_heavy_frame_defers_agent_budget()
+	_test_gateway_staged_preparation_eventually_dispatches()
+	_test_service_option_route_preflight_uses_place_connectivity()
 	_test_replacement_request_retires_old_gateway_slot()
 	_test_full_queue_only_dispatches_request_that_frees_slot()
 	_test_unconsumed_submission_rolls_back_without_social_side_effect()
@@ -690,6 +725,77 @@ func _test_world_heavy_frame_defers_agent_budget() -> void:
 		"the Agent queue resumes with one unit on the following light frame",
 	)
 	gateway.free()
+
+
+func _test_gateway_staged_preparation_eventually_dispatches() -> void:
+	var agent := DelayedFailingAgent.new()
+	var world := StagedPendingWorld.new()
+	var gateway: Node = GATEWAY.new()
+	gateway.set("_agent_system", agent)
+	gateway.set("_provider_service", ProviderServiceStub.new())
+	gateway.set("_world", world)
+	var connected_resident_ids: Array[String] = ["resident-a"]
+	gateway.set("_connected_resident_ids", connected_resident_ids)
+	gateway.set("_session_active", true)
+	world.add_request({
+		"residentId": "resident-a",
+		"residentName": "居民甲",
+		"wakePacket": {"decision_id": "decision-staged"},
+	})
+	get_root().add_child(gateway)
+	_expect_equal(gateway.call("pump", 1), 1, "分段准备仍只接纳一个请求")
+	for step in 2:
+		_make_agent_preparation_ready(gateway, "decision-staged")
+		_expect_equal(
+			gateway.call("_advance_agent_preparation"),
+			true,
+			"分段准备第 %d 步会继续排队" % (step + 1),
+		)
+		_expect_equal(
+			agent.requested_resident_ids.size(),
+			0,
+			"资料未准备完之前不会提前调用 Agent",
+		)
+	_make_agent_preparation_ready(gateway, "decision-staged")
+	_expect_equal(
+		gateway.call("_advance_agent_preparation"),
+		true,
+		"分段准备完成后会进入派发阶段",
+	)
+	_make_agent_preparation_ready(gateway, "decision-staged")
+	_expect_equal(
+		gateway.call("_advance_agent_preparation"),
+		true,
+		"派发阶段最终会继续推进",
+	)
+	_expect_equal(
+		agent.requested_resident_ids,
+		["resident-a"],
+		"分段唤醒资料最终只派发一次",
+	)
+	_expect_equal(
+		(gateway.get("_agent_preparation_queue") as Array).size(),
+		0,
+		"分段准备完成后队列不会卡住",
+	)
+	gateway.free()
+
+
+func _test_service_option_route_preflight_uses_place_connectivity() -> void:
+	var data := _read_json(WORLD_DATA_PATH)
+	_expect(
+		ROUTE_QUERY.place_route_exists(data, "南入口", "公共食堂"),
+		"服务选项预检能识别南入口到公共食堂的地点级连通性",
+	)
+	_expect(
+		ROUTE_QUERY.place_route_exists(data, "南入口", "花房咖啡馆"),
+		"服务选项预检能识别南入口到花房咖啡馆的地点级连通性",
+	)
+	_expect_equal(
+		ROUTE_QUERY.place_route_exists(data, "不存在的地点", "公共食堂"),
+		false,
+		"不存在的地点不会被服务选项预检误判为可达",
+	)
 
 
 func _make_agent_preparation_ready(gateway: Node, decision_id: String) -> void:

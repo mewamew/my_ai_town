@@ -206,6 +206,7 @@ static func _refresh_perception(world, emit_events: bool) -> void:
 		for resident_id in next_by_player:
 			nearby_names.append(world.resident_display_name(resident_id))
 		world.player_avatar_perception_changed.emit({
+			"source": "world_perception_refresh",
 			"added": player_added,
 			"removed": player_removed,
 			"nearbyResidentIds": next_by_player.duplicate(),
@@ -221,6 +222,8 @@ static func _refresh_player_avatar_perception(
 	world,
 	emit_events: bool,
 	bump_revision_on_change: bool,
+	semantic_state_changed := false,
+	avatar_position_changed := false,
 ) -> bool:
 	var player_id : Variant = world.player_avatar_id()
 	var previous_player := (
@@ -297,7 +300,7 @@ static func _refresh_player_avatar_perception(
 					"who_resident_id": world.person_id_for_name(String(other_name)),
 					"who": world.person_name_for_id(world.person_id_for_name(String(other_name))),
 				})
-		if player_nearby_changed:
+		if player_nearby_changed or avatar_position_changed or semantic_state_changed:
 			var player_added: Array[String] = []
 			var player_removed: Array[String] = []
 			for resident_name in next_by_player:
@@ -311,6 +314,9 @@ static func _refresh_player_avatar_perception(
 			for resident_id in next_by_player:
 				nearby_names.append(world.resident_display_name(resident_id))
 			world.player_avatar_perception_changed.emit({
+				"source": "avatar_position",
+				"semanticStateChanged": semantic_state_changed,
+				"positionChanged": avatar_position_changed,
 				"added": player_added,
 				"removed": player_removed,
 				"nearbyResidentIds": next_by_player.duplicate(),

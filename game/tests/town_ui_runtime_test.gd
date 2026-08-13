@@ -1,4 +1,23 @@
 extends "res://tests/support/TownWorldTestCase.gd"
+
+class AvatarPerceptionWorld:
+	extends RefCounted
+
+	var revision := 2
+
+	func get_world_revision() -> int:
+		return revision
+
+	func get_player_avatar_state() -> Dictionary:
+		return {
+			"residentId": "avatar",
+			"name": "旅行者",
+			"currentPlace": "中心广场",
+			"spaceId": "town_outdoor",
+			"regionId": "town_center",
+			"position": Vector2.ZERO,
+			"nearby": [],
+		}
 ## UI 适配与导航 合并套件。
 ##
 ## 由以下测试合并而来，断言逐条保留：
@@ -1543,7 +1562,37 @@ func _run_all() -> void:
 	_scenario_game_flow_resident_model_assignment_route()
 	_scenario_session_production_composition()
 	_scenario_hud_pause_clock()
+	_scenario_avatar_perception_only_refreshes_avatar_scope()
 	_finish_suite("TOWN_UI_RUNTIME_PASS")
+
+
+func _scenario_avatar_perception_only_refreshes_avatar_scope() -> void:
+	var adapter := ADAPTER.new()
+	var world := AvatarPerceptionWorld.new()
+	adapter.set("_world", world)
+	adapter.set("_session_config", {
+		"source": "test",
+		"capabilityMode": "formal",
+		"formalReady": true,
+	})
+	adapter.call("_on_player_avatar_perception_changed", {
+		"source": "avatar_position",
+		"semanticStateChanged": false,
+	})
+	_expect(
+		(adapter.get("_pending_world_refresh_scopes") as Array).is_empty(),
+		"化身纯位置感知变化不会排队整套小镇 UI",
+	)
+	_expect(
+		not ((adapter.get("_view_models") as Dictionary).get("avatar", {}) as Dictionary).is_empty(),
+		"化身纯位置感知变化仍立即生成化身目标界面",
+	)
+	adapter.call("_on_world_revision_changed", 2)
+	_expect(
+		(adapter.get("_pending_world_refresh_scopes") as Array).is_empty(),
+		"化身纯位置修订不会在世界修订信号中重新排队 town_hud",
+	)
+	adapter.free()
 
 
 func _scenario_mobile_platform_foundation() -> void:
