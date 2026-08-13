@@ -1513,6 +1513,13 @@ const TOWN_HUD_SCENE := preload("res://ui/town/hud/runtime/TownHudOverlay.tscn")
 const AGENT_CONTRACT := preload("res://agent/AgentContract.gd")
 const TEST_KEYBOARD_DEVICE_ID := 16
 const ADAPTER := preload("res://world/presentation/ui/TownUiAdapter.gd")
+const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
+const MOBILE_TOUCH_SCROLL_ROUTER := preload(
+	"res://ui/mobile/MobileTouchScrollRouter.gd"
+)
+const MOBILE_TEXT_INPUT_POLICY := preload(
+	"res://ui/mobile/MobileTextInputPolicy.gd"
+)
 
 var _adapter: AdapterHarness
 var _host: Control
@@ -1526,12 +1533,157 @@ func _initialize() -> void:
 
 func _run_all() -> void:
 	await _scenario_dynamic_feedback_text_is_complete()
+	await _scenario_mobile_platform_foundation()
 	await _scenario_ui_runtime_host_navigation()
 	await _scenario_formal_ui_runtime_contract()
 	_scenario_game_flow_resident_model_assignment_route()
 	_scenario_session_production_composition()
 	_scenario_hud_pause_clock()
 	_finish_suite("TOWN_UI_RUNTIME_PASS")
+
+
+func _scenario_mobile_platform_foundation() -> void:
+	_expect_equal(
+		MOBILE_UI_PROFILE.input_mode(Vector2(960.0, 540.0)),
+		"keyboard_mouse",
+		"桌面小窗口不能按比例误切到触控模式",
+	)
+	_expect_equal(
+		MOBILE_UI_PROFILE.layout_profile(Vector2(960.0, 540.0)),
+		MOBILE_UI_PROFILE.DESKTOP_COMPACT,
+		"桌面小窗口必须保持桌面布局分类",
+	)
+	_expect(
+		MOBILE_UI_PROFILE.is_phone_landscape(Vector2(960.0, 540.0)),
+		"手机横屏尺寸识别应可独立用于布局测试",
+	)
+	var expected_bands := {
+		Vector2(2048.0, 1536.0): "tablet_4_3",
+		Vector2(2160.0, 1440.0): "foldable_or_tablet",
+		Vector2(2400.0, 1350.0): "standard_landscape",
+		Vector2(2520.0, 1080.0): "ultrawide_phone",
+	}
+	for viewport: Vector2 in expected_bands:
+		_expect_equal(
+			MOBILE_UI_PROFILE.adaptive_landscape_band(viewport),
+			expected_bands[viewport],
+			"手机、平板与折叠屏横屏比例分类正确",
+		)
+	var safe := MOBILE_UI_PROFILE.safe_rect(
+		Vector2(2400.0, 1080.0),
+		Vector4(80.0, 20.0, 60.0, 40.0),
+	)
+	_expect_equal(safe.position, Vector2(80.0, 20.0), "安全区起点扣除左上留白")
+	_expect_equal(safe.size, Vector2(2260.0, 1020.0), "安全区尺寸扣除四边留白")
+	var design := MOBILE_UI_PROFILE.centered_design_rect(
+		Vector2(2520.0, 1080.0),
+		Vector2(1920.0, 1080.0),
+	)
+	_expect_equal(design.position, Vector2(300.0, 0.0), "16:9 前景在 21:9 内居中")
+	_expect_equal(design.size, Vector2(1920.0, 1080.0), "居中前景不得横向拉伸")
+	_expect_equal(
+		MOBILE_UI_PROFILE.uniform_cover_scale(
+			Vector2(2520.0, 1080.0),
+			Vector2(1920.0, 1080.0),
+		),
+		1.3125,
+		"铺满背景统一等比缩放",
+	)
+	await _verify_mobile_touch_scroll_router()
+	await _verify_mobile_text_input_policy()
+	var project_text := FileAccess.get_file_as_string("res://project.godot")
+	_expect(project_text.contains("window/size/resizable.mobile=true"), "Android 窗口允许重新布局")
+	_expect(project_text.contains("window/size/viewport_width.mobile=1280"), "Android 使用独立参考宽度")
+	_expect(project_text.contains("window/size/viewport_height.mobile=720"), "Android 使用独立参考高度")
+	_expect(project_text.contains("window/handheld/orientation=4"), "Android 锁定自动翻转横屏")
+	var export_text := FileAccess.get_file_as_string("res://export_presets.cfg")
+	_expect(export_text.contains("permissions/internet=true"), "Android 包允许连接模型服务")
+	_expect(
+		export_text.contains("command_line/extra_args=\"--rendering-method gl_compatibility\""),
+		"Android 包明确使用兼容渲染",
+	)
+	var game_flow_host := root.get_node_or_null("GameFlowHost")
+	_expect(game_flow_host != null, "正式入口由自动加载创建")
+	if game_flow_host != null:
+		_expect(
+			game_flow_host.get_node_or_null("MobileTouchScrollRouter") == null,
+			"桌面运行时不能挂载手机触控滚动服务",
+		)
+		_expect(
+			game_flow_host.get_node_or_null("MobileTextInputPolicy") == null,
+			"桌面运行时不能接管文本输入",
+		)
+
+
+func _verify_mobile_touch_scroll_router() -> void:
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(120.0, 100.0)
+	scroll.size = Vector2(320.0, 240.0)
+	root.add_child(scroll)
+	var content := Control.new()
+	content.custom_minimum_size = Vector2(300.0, 1200.0)
+	scroll.add_child(content)
+	var router := MOBILE_TOUCH_SCROLL_ROUTER.new() as Node
+	root.add_child(router)
+	router.configure(true)
+	await process_frame
+	var point := Vector2(200.0, 200.0)
+	_expect(not router.consume(_mobile_touch(0, true, point)), "滚动起点不吞普通点击")
+	var drag := InputEventScreenDrag.new()
+	drag.index = 0
+	drag.position = point - Vector2(0.0, 100.0)
+	_expect(router.consume(drag), "手指拖动由滚动路由接管")
+	_expect(scroll.scroll_vertical > 0, "手指上拖后竖向滑条同步前进")
+	_expect(router.consume(_mobile_touch(0, false, drag.position)), "拖动抬手不误触列表项")
+	router.queue_free()
+	scroll.queue_free()
+	await process_frame
+
+
+func _verify_mobile_text_input_policy() -> void:
+	var policy := MOBILE_TEXT_INPUT_POLICY.new() as Node
+	root.add_child(policy)
+	policy.configure(true)
+	var line := LineEdit.new()
+	line.position = Vector2(500.0, 100.0)
+	line.size = Vector2(360.0, 80.0)
+	root.add_child(line)
+	await process_frame
+	_expect(not line.virtual_keyboard_enabled, "进入输入页面不能自动唤起键盘")
+	_expect(not line.context_menu_enabled, "Android 输入框交给系统文本操作栏")
+	var point := Vector2(540.0, 130.0)
+	policy.call("_handle_screen_touch", _mobile_touch(1, true, point))
+	_expect_equal(
+		(policy.get("_touch_candidates") as Dictionary).size(),
+		1,
+		"按下输入框后等待区分短按与长按",
+	)
+	var drag := InputEventScreenDrag.new()
+	drag.index = 1
+	drag.position = point + Vector2(40.0, 0.0)
+	policy.call("_handle_screen_drag", drag)
+	var candidates := policy.get("_touch_candidates") as Dictionary
+	_expect(
+		bool((candidates.get(1, {}) as Dictionary).get("moved", false)),
+		"拖动不能误判为点击",
+	)
+	policy.call("_handle_screen_touch", _mobile_touch(1, false, drag.position))
+	_expect_equal(
+		(policy.get("_touch_candidates") as Dictionary).size(),
+		0,
+		"触控结束后清理输入候选状态",
+	)
+	policy.queue_free()
+	line.queue_free()
+	await process_frame
+
+
+func _mobile_touch(index: int, pressed: bool, position: Vector2) -> InputEventScreenTouch:
+	var event := InputEventScreenTouch.new()
+	event.index = index
+	event.pressed = pressed
+	event.position = position
+	return event
 
 
 func _scenario_dynamic_feedback_text_is_complete() -> void:

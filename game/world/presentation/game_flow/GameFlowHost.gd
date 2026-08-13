@@ -83,6 +83,13 @@ const TOWN_ENTRY_LOADING_OVERLAY := preload(
 const GAME_BUILD_INFO_OVERLAY := preload(
 	"res://ui/common/GameBuildInfoOverlay.gd"
 )
+const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
+const MOBILE_TOUCH_SCROLL_ROUTER := preload(
+	"res://ui/mobile/MobileTouchScrollRouter.gd"
+)
+const MOBILE_TEXT_INPUT_POLICY := preload(
+	"res://ui/mobile/MobileTextInputPolicy.gd"
+)
 const REPLACEMENT_ARRIVAL_PANEL := preload(
 	"res://ui/resident_admission/ReplacementResidentArrivalPanel.gd"
 )
@@ -214,6 +221,8 @@ var _resident_model_assignment_committing := false
 var _resident_model_assignment_preserved_draft: Dictionary = {}
 var _town_entry_loading_overlay: CanvasLayer
 var _game_build_info_overlay: GameBuildInfoOverlay
+var _mobile_touch_scroll_router: Node
+var _mobile_text_input_policy: Node
 var _town_entry_loading_generation := -1
 var _town_entry_loading_route_kind := ""
 var _town_entry_loading_owner := ""
@@ -285,12 +294,25 @@ func _ready() -> void:
 	_audio_display_settings_service.name = "TownAudioDisplaySettingsService"
 	add_child(_audio_display_settings_service)
 	_ensure_game_build_info_overlay()
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		_mount_mobile_input_services()
 	_initialize_startup_settings_services()
 	_apply_window_mode_marker()
 	_formal_runtime_audit_requested = not OS.get_environment(
 		FORMAL_RUNTIME_AUDIT_ENV
 	).strip_edges().is_empty()
 	_bind_current_scene.call_deferred()
+
+
+func _mount_mobile_input_services() -> void:
+	if not is_instance_valid(_mobile_touch_scroll_router):
+		_mobile_touch_scroll_router = MOBILE_TOUCH_SCROLL_ROUTER.new()
+		_mobile_touch_scroll_router.name = "MobileTouchScrollRouter"
+		add_child(_mobile_touch_scroll_router)
+	if not is_instance_valid(_mobile_text_input_policy):
+		_mobile_text_input_policy = MOBILE_TEXT_INPUT_POLICY.new()
+		_mobile_text_input_policy.name = "MobileTextInputPolicy"
+		add_child(_mobile_text_input_policy)
 
 
 func _ensure_game_build_info_overlay() -> void:

@@ -20,6 +20,7 @@ release/
 !/tools/release/**
 attack-perf-fixes-*.md
 
-# 本地设计与整理文档，仅保存在当前电脑，不进入版本库
-/docs/design/
+# 本地设计与整理文档默认不进入版本库；手机适配方案作为跨平台约定保留。
+/docs/design/*
+!/docs/design/手机端适配设计.md
 /docs/屎山消灭计划.md

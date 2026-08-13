@@ -24,8 +24,12 @@ GameFlowHost="*res://world/presentation/game_flow/GameFlowHost.gd"
 
 window/dpi/allow_hidpi=true
 window/size/resizable=false
+window/size/resizable.mobile=true
 window/size/viewport_width=1920
+window/size/viewport_width.mobile=1280
 window/size/viewport_height=1080
+window/size/viewport_height.mobile=720
+window/handheld/orientation=4
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
