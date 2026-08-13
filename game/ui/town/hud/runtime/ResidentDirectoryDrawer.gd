@@ -31,6 +31,7 @@ const FONT_PATH := (
 	+ "NotoSansCJKsc-Medium.otf"
 )
 const VISIBLE_ROWS := 6
+const TOUCH_SWIPE_THRESHOLD := 30.0
 const SOURCE_SIZE := Vector2(1024.0, 1536.0)
 const HEADER_RECT := Rect2(190, 122, 548, 118)
 const CLOSE_RECT := Rect2(760, 130, 102, 104)
@@ -71,6 +72,11 @@ var _row_initials: Array[Label] = []
 var _row_names: Array[Label] = []
 var _row_statuses: Array[Label] = []
 var _row_dots: Array[Label] = []
+var _touch_scroll_tracking := false
+var _touch_scroll_start := Vector2.ZERO
+var _touch_scroll_last_y := 0.0
+var _touch_scroll_pointer := -1
+var _touch_scroll_dragged := false
 
 
 func _ready() -> void:
@@ -143,7 +149,7 @@ func _build_visuals() -> void:
 	_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_background)
 
-	_header = _make_label(24, INK, HORIZONTAL_ALIGNMENT_LEFT)
+	_header = _make_label(27, INK, HORIZONTAL_ALIGNMENT_LEFT)
 	add_child(_header)
 
 	var close_atlas := AtlasTexture.new()
@@ -195,9 +201,9 @@ func _build_visuals() -> void:
 
 		var content := MarginContainer.new()
 		content.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		content.add_theme_constant_override("margin_left", 8)
+		content.add_theme_constant_override("margin_left", 16)
 		content.add_theme_constant_override("margin_top", 6)
-		content.add_theme_constant_override("margin_right", 8)
+		content.add_theme_constant_override("margin_right", 16)
 		content.add_theme_constant_override("margin_bottom", 6)
 		add_child(content)
 		var row := HBoxContainer.new()
@@ -221,11 +227,11 @@ func _build_visuals() -> void:
 		copy.add_theme_constant_override("separation", 0)
 		copy.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(copy)
-		var name_label := _make_label(20, INK, HORIZONTAL_ALIGNMENT_LEFT)
+		var name_label := _make_label(23, INK, HORIZONTAL_ALIGNMENT_LEFT)
 		name_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		copy.add_child(name_label)
 		_row_names.append(name_label)
-		var status_label := _make_label(16, MUTED_INK, HORIZONTAL_ALIGNMENT_LEFT)
+		var status_label := _make_label(19, MUTED_INK, HORIZONTAL_ALIGNMENT_LEFT)
 		status_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		copy.add_child(status_label)
 		_row_statuses.append(status_label)
@@ -387,6 +393,8 @@ func _layout_thumb() -> void:
 
 
 func _on_row_pressed(row_index: int) -> void:
+	if _touch_scroll_dragged:
+		return
 	var item_index := _first_visible_index + row_index
 	if item_index < 0 or item_index >= _items.size():
 		return
@@ -396,6 +404,8 @@ func _on_row_pressed(row_index: int) -> void:
 
 
 func _on_row_gui_input(event: InputEvent) -> void:
+	if _handle_touch_scroll(event):
+		return
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_scroll_by(1)
@@ -406,6 +416,8 @@ func _on_row_gui_input(event: InputEvent) -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
+	if _handle_touch_scroll(event):
+		return
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_scroll_by(1)
@@ -413,6 +425,45 @@ func _gui_input(event: InputEvent) -> void:
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_scroll_by(-1)
 			accept_event()
+
+
+func _handle_touch_scroll(event: InputEvent) -> bool:
+	if event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		if touch.pressed and _touch_scroll_pointer < 0:
+			_touch_scroll_tracking = true
+			_touch_scroll_start = touch.position
+			_touch_scroll_last_y = touch.position.y
+			_touch_scroll_pointer = touch.index
+			_touch_scroll_dragged = false
+			return false
+		if touch.pressed or touch.index != _touch_scroll_pointer:
+			return false
+		_touch_scroll_tracking = false
+		_touch_scroll_pointer = -1
+		if _touch_scroll_dragged:
+			accept_event()
+			_reset_touch_scroll_dragged.call_deferred()
+			return true
+		return false
+	if event is InputEventScreenDrag and _touch_scroll_tracking:
+		var drag := event as InputEventScreenDrag
+		if drag.index != _touch_scroll_pointer:
+			return false
+		var delta_y := drag.position.y - _touch_scroll_last_y
+		if absf(delta_y) < TOUCH_SWIPE_THRESHOLD:
+			return _touch_scroll_dragged
+		var steps := maxi(1, int(absf(delta_y) / TOUCH_SWIPE_THRESHOLD))
+		_scroll_by(-steps if delta_y > 0.0 else steps)
+		_touch_scroll_last_y = drag.position.y
+		_touch_scroll_dragged = true
+		accept_event()
+		return true
+	return false
+
+
+func _reset_touch_scroll_dragged() -> void:
+	_touch_scroll_dragged = false
 
 
 func _scroll_by(delta: int) -> void:

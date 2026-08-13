@@ -9,6 +9,7 @@ const UiNodeRetirement := preload("res://ui/common/AiTownUiNodeRetirement.gd")
 const RESPONSIVE_VIEWPORT := preload(
 	"res://ui/common/ResponsiveViewportPolicy.gd"
 )
+const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
 
 
 signal intent_requested(intent: StringName, payload: Dictionary)
@@ -41,6 +42,10 @@ const BACKGROUND_TEXTURE := preload(
 	"res://assets/ui/resident_detail/runtime/"
 	+ "resident_detail_background.png"
 )
+const MOBILE_BACKGROUND_TEXTURE := preload(
+	"res://assets/ui/resident_detail/runtime/"
+	+ "resident_detail_background_transparent_v1.png"
+)
 const STATUS_DETAIL_PANEL_TEXTURE := preload(
 	"res://assets/ui/common/runtime/paper_wood_panel/"
 	+ "paper_wood_panel_master_v1_512.png"
@@ -49,13 +54,25 @@ const RELATIONSHIP_BACKGROUND_TEXTURE := preload(
 	"res://assets/ui/resident_detail/runtime/"
 	+ "relationship_page_clean_v4.png"
 )
+const MOBILE_RELATIONSHIP_BACKGROUND_TEXTURE := preload(
+	"res://assets/ui/resident_detail/runtime/"
+	+ "relationship_page_transparent_v1.png"
+)
 const MEMORY_BACKGROUND_TEXTURE := preload(
 	"res://assets/ui/resident_detail/runtime/"
 	+ "memory_page_clean_v4.png"
 )
+const MOBILE_MEMORY_BACKGROUND_TEXTURE := preload(
+	"res://assets/ui/resident_detail/runtime/"
+	+ "memory_page_transparent_v1.png"
+)
 const MEMORY_OPERATION_BACKGROUND_TEXTURE := preload(
 	"res://assets/ui/resident_detail/runtime/"
 	+ "memory_operation_page_clean_v5.png"
+)
+const MOBILE_MEMORY_OPERATION_BACKGROUND_TEXTURE := preload(
+	"res://assets/ui/resident_detail/runtime/"
+	+ "memory_operation_page_transparent_v1.png"
 )
 const RELATIONSHIP_ROW_TEXTURE := preload(
 	"res://assets/ui/resident_detail/runtime/"
@@ -676,7 +693,11 @@ func runtime_gate_snapshot() -> Dictionary:
 func _build_interface() -> void:
 	_background = TextureRect.new()
 	_background.name = "FormalResidentDetailShell"
-	_background.texture = BACKGROUND_TEXTURE
+	_background.texture = (
+		MOBILE_BACKGROUND_TEXTURE
+		if MOBILE_UI_PROFILE.is_mobile_runtime()
+		else BACKGROUND_TEXTURE
+	)
 	_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_background.stretch_mode = TextureRect.STRETCH_SCALE
 	_background.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -1314,16 +1335,33 @@ func _configure_section_chrome(selected_tab: String) -> void:
 
 
 func _apply_page_background(selected_tab: String) -> void:
+	var mobile := MOBILE_UI_PROFILE.is_mobile_runtime()
 	if _memory_operation_visible:
-		_background.texture = MEMORY_OPERATION_BACKGROUND_TEXTURE
+		_background.texture = (
+			MOBILE_MEMORY_OPERATION_BACKGROUND_TEXTURE
+			if mobile
+			else MEMORY_OPERATION_BACKGROUND_TEXTURE
+		)
 		return
 	match selected_tab:
 		"relationships":
-			_background.texture = RELATIONSHIP_BACKGROUND_TEXTURE
+			_background.texture = (
+				MOBILE_RELATIONSHIP_BACKGROUND_TEXTURE
+				if mobile
+				else RELATIONSHIP_BACKGROUND_TEXTURE
+			)
 		"memories":
-			_background.texture = MEMORY_BACKGROUND_TEXTURE
+			_background.texture = (
+				MOBILE_MEMORY_BACKGROUND_TEXTURE
+				if mobile
+				else MEMORY_BACKGROUND_TEXTURE
+			)
 		_:
-			_background.texture = BACKGROUND_TEXTURE
+			_background.texture = (
+				MOBILE_BACKGROUND_TEXTURE
+				if mobile
+				else BACKGROUND_TEXTURE
+			)
 
 
 func _open_memory_change_dialog(operation := "edit") -> void:
@@ -1800,26 +1838,15 @@ func _render_relationships(content: Dictionary) -> void:
 			2,
 		)
 		var familiarity := item.get("familiarity", {}) as Dictionary
-		var affinity := item.get("affinity", {}) as Dictionary
 		var tension := item.get("tension", {}) as Dictionary
-		var relation_copy := (
-			"关系称呼：%s\n好感度：%s/100（%s）\n熟悉程度：%s" % [
-				str(item.get("relationshipLabel", "关系")),
-				str(affinity.get("value", 50)),
-				str(affinity.get("label", "普通")),
-				str(familiarity.get("label", "尚不了解")),
-			]
-			if bool(item.get("travelerRelation", false))
-			else "关系称呼：%s\n亲近：%s\n相处：%s" % [
-				str(item.get("relationshipLabel", "关系")),
-				str(familiarity.get("label", "尚不了解")),
-				str(tension.get("label", "没有明显矛盾")),
-			]
-		)
 		_add_local_row_label(
 			row_root,
 			"RelationMeters",
-			relation_copy,
+			"关系称呼：%s\n亲近：%s\n相处：%s" % [
+				str(item.get("relationshipLabel", "关系")),
+				str(familiarity.get("label", "尚不了解")),
+				str(tension.get("label", "没有明显矛盾")),
+			],
 			Rect2(340, 5, 225, 98),
 			17,
 			Color("3f2818"),
@@ -2690,11 +2717,21 @@ func _apply_responsive_layout() -> void:
 		if _layout_profile_override_size.x > 0.0
 		else viewport_size
 	)
-	_layout_profile = _select_layout_profile(profile_size)
+	# These pages are one painted composition. Mobile keeps that composition and
+	# scales it once; individual panel reflow would detach text from the artwork.
+	_layout_profile = (
+		LayoutProfile.WIDE
+		if MOBILE_UI_PROFILE.is_mobile_runtime()
+		else _select_layout_profile(profile_size)
+	)
 	_safe_rect = _compute_safe_rect(viewport_size)
-	_background.position = Vector2.ZERO
-	_background.size = viewport_size
-	_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	var design_frame := RESPONSIVE_VIEWPORT.centered_design_rect(
+		viewport_size,
+		DESIGN_SIZE,
+	)
+	_background.position = design_frame.position
+	_background.size = design_frame.size
+	_background.stretch_mode = TextureRect.STRETCH_SCALE
 	if _layout_profile == LayoutProfile.WIDE:
 		_apply_wide_geometry(viewport_size)
 	else:

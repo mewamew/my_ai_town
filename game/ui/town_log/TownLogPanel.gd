@@ -1,6 +1,9 @@
 class_name TownLogPanel
 extends Control
 
+const POINTER_INPUT := preload("res://ui/mobile/PointerInput.gd")
+const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
+
 
 signal intent_requested(intent: StringName, payload: Dictionary)
 signal action_blocked(intent: StringName, reason: String)
@@ -645,6 +648,7 @@ func _render() -> void:
 	_render_rows(selection_changed)
 	_render_detail(selection_changed)
 	_render_feedback()
+	MOBILE_UI_PROFILE.apply_mobile_typography(self, 23, 4, 34)
 	_apply_layout()
 	_update_attention_token()
 	_last_rendered_selected_id = selected_id
@@ -731,7 +735,10 @@ func _make_table_row(
 	animate_selected := false,
 ) -> Control:
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(0, 60)
+	panel.custom_minimum_size = Vector2(
+		0,
+		72 if MOBILE_UI_PROFILE.is_mobile_runtime() else 60,
+	)
 	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	panel.focus_mode = Control.FOCUS_ALL
 	panel.add_theme_stylebox_override("panel", PageTheme.transparent_style())
@@ -816,11 +823,7 @@ func _make_table_row(
 		_animate_control_tint(panel, Color.WHITE, ROW_MOTION_SECONDS)
 	)
 	panel.gui_input.connect(func(event: InputEvent) -> void:
-		if (
-			event is InputEventMouseButton
-			and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT
-			and (event as InputEventMouseButton).pressed
-		):
+		if POINTER_INPUT.is_primary_press(event):
 			panel.modulate = ROW_PRESS_TINT
 			_request_action("selectThread", {"threadId": thread_id})
 			accept_event()
@@ -1076,6 +1079,11 @@ func _apply_layout() -> void:
 		minf(1680.0, maxf(520.0, safe.size.x - margin * 2.0)),
 		minf(810.0, maxf(600.0, safe.size.y - margin * 2.0)),
 	)
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		# World log owns the whole mobile page; a small safe-area inset is the only
+		# gap, avoiding the desktop floating-window look and exposed map corners.
+		margin = 0.0
+		size = safe.size
 	_shell.position = safe.position + (safe.size - size) * 0.5
 	_shell.size = size
 	_layout_profile = "wide" if size.x >= WIDE_BREAKPOINT else "narrow"

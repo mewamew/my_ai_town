@@ -51,6 +51,7 @@ const STATE_RECTS := [
 ]
 const INK := Color("3f2818")
 const MUTED_INK := Color("76583d")
+const TOUCH_SWIPE_THRESHOLD := 30.0
 
 signal place_requested(place_name: String)
 signal close_requested
@@ -68,6 +69,11 @@ var _row_icons: Array[TextureRect] = []
 var _row_names: Array[Label] = []
 var _row_states: Array[Label] = []
 var _row_buttons: Array[Button] = []
+var _touch_scroll_tracking := false
+var _touch_scroll_start := Vector2.ZERO
+var _touch_scroll_last_y := 0.0
+var _touch_scroll_pointer := -1
+var _touch_scroll_dragged := false
 
 
 func _ready() -> void:
@@ -125,7 +131,7 @@ func _build_visuals() -> void:
 	_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_background)
 
-	_header = _make_label(24, INK)
+	_header = _make_label(27, INK)
 	add_child(_header)
 	_close_button = _make_button("关闭地点目录")
 	_close_button.accessibility_name = "关闭地点目录"
@@ -141,10 +147,10 @@ func _build_visuals() -> void:
 		add_child(icon)
 		_row_icons.append(icon)
 
-		var name_label := _make_label(20, INK)
+		var name_label := _make_label(23, INK)
 		add_child(name_label)
 		_row_names.append(name_label)
-		var state_label := _make_label(16, MUTED_INK)
+		var state_label := _make_label(19, MUTED_INK)
 		add_child(state_label)
 		_row_states.append(state_label)
 
@@ -243,6 +249,8 @@ func _icon_texture_for(item: Dictionary, fallback_index: int) -> Texture2D:
 
 
 func _on_row_pressed(row_index: int) -> void:
+	if _touch_scroll_dragged:
+		return
 	var item_index := _first_visible_index + row_index
 	if item_index < 0 or item_index >= _items.size():
 		return
@@ -252,6 +260,8 @@ func _on_row_pressed(row_index: int) -> void:
 
 
 func _on_row_gui_input(event: InputEvent) -> void:
+	if _handle_touch_scroll(event):
+		return
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_scroll_by(1)
@@ -262,6 +272,8 @@ func _on_row_gui_input(event: InputEvent) -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
+	if _handle_touch_scroll(event):
+		return
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_scroll_by(1)
@@ -269,6 +281,45 @@ func _gui_input(event: InputEvent) -> void:
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_scroll_by(-1)
 			accept_event()
+
+
+func _handle_touch_scroll(event: InputEvent) -> bool:
+	if event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		if touch.pressed and _touch_scroll_pointer < 0:
+			_touch_scroll_tracking = true
+			_touch_scroll_start = touch.position
+			_touch_scroll_last_y = touch.position.y
+			_touch_scroll_pointer = touch.index
+			_touch_scroll_dragged = false
+			return false
+		if touch.pressed or touch.index != _touch_scroll_pointer:
+			return false
+		_touch_scroll_tracking = false
+		_touch_scroll_pointer = -1
+		if _touch_scroll_dragged:
+			accept_event()
+			_reset_touch_scroll_dragged.call_deferred()
+			return true
+		return false
+	if event is InputEventScreenDrag and _touch_scroll_tracking:
+		var drag := event as InputEventScreenDrag
+		if drag.index != _touch_scroll_pointer:
+			return false
+		var delta_y := drag.position.y - _touch_scroll_last_y
+		if absf(delta_y) < TOUCH_SWIPE_THRESHOLD:
+			return _touch_scroll_dragged
+		var steps := maxi(1, int(absf(delta_y) / TOUCH_SWIPE_THRESHOLD))
+		_scroll_by(-steps if delta_y > 0.0 else steps)
+		_touch_scroll_last_y = drag.position.y
+		_touch_scroll_dragged = true
+		accept_event()
+		return true
+	return false
+
+
+func _reset_touch_scroll_dragged() -> void:
+	_touch_scroll_dragged = false
 
 
 func _scroll_by(delta: int) -> void:

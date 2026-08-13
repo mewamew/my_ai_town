@@ -16,6 +16,7 @@ const LOAD_GAME_INTENT := &"startup.open_load_game"
 const QUIT_GAME_INTENT := &"startup.quit_game"
 const RESIDENT_MESSAGES_SHOWN_INTENT := &"startup.resident_messages_shown"
 const UiNodeRetirement := preload("res://ui/common/AiTownUiNodeRetirement.gd")
+const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
 
 const STARTUP_BACKGROUND_TEXTURE_PATH := (
 	"res://assets/ui/startup/final/startup_town_background.png"
@@ -472,6 +473,9 @@ func _layout_interface_controls(
 	var canvas_offset := (
 		viewport_size - REFERENCE_VIEWPORT * layout_scale
 	) * 0.5
+	var display_insets := Vector4.ZERO
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		display_insets = MOBILE_UI_PROFILE.insets_vector(viewport_size, get_window())
 	for child: Node in get_children():
 		if not child is Control or not child.has_meta("startup_reference_rect"):
 			continue
@@ -487,7 +491,37 @@ func _layout_interface_controls(
 			if keep_reference_scale
 			else _main_menu_rect(reference_rect)
 		)
-		control.position = canvas_offset + visual_rect.position * layout_scale
+		if control in [_github_button, _bilibili_button, _help_feedback_button]:
+			var right_margin := maxf(6.0 * layout_scale, display_insets.z)
+			var top_margin := maxf(6.0 * layout_scale, display_insets.y)
+			var social_group_width := (
+				HELP_FEEDBACK_BUTTON_RECT.end.x - GITHUB_BUTTON_RECT.position.x
+			) * layout_scale
+			var social_group_left := viewport_size.x - right_margin - social_group_width
+			if is_instance_valid(_help_feedback_panel):
+				var feedback_panel_left := (
+					viewport_size.x
+					- right_margin
+					- HELP_FEEDBACK_PANEL_RECT.size.x * layout_scale
+				)
+				social_group_left = feedback_panel_left + (
+					GITHUB_BUTTON_RECT.position.x
+					- HELP_FEEDBACK_PANEL_RECT.position.x
+				) * layout_scale
+			control.position = Vector2(
+				social_group_left
+				+ (reference_rect.position.x - GITHUB_BUTTON_RECT.position.x) * layout_scale,
+				top_margin,
+			)
+		elif control == _help_feedback_panel and is_instance_valid(_help_feedback_button):
+			control.position = _help_feedback_button.position + Vector2(
+				HELP_FEEDBACK_PANEL_RECT.position.x
+				- HELP_FEEDBACK_BUTTON_RECT.position.x,
+				HELP_FEEDBACK_PANEL_RECT.position.y
+				- HELP_FEEDBACK_BUTTON_RECT.position.y,
+			) * layout_scale
+		else:
+			control.position = canvas_offset + visual_rect.position * layout_scale
 		control.size = reference_rect.size
 		control.scale = Vector2.ONE * layout_scale * (
 			1.0 if keep_reference_scale else MAIN_MENU_SCALE

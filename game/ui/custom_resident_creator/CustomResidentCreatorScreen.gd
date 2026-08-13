@@ -20,6 +20,8 @@ const PaperDollScript := preload(
 const FormalDialog := preload(
 	"res://ui/common/formal_dialog/FormalConfirmationDialog.gd"
 )
+const POINTER_INPUT := preload("res://ui/mobile/PointerInput.gd")
+const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
 const SCOPE := "custom_resident_creator"
 const REFERENCE_SIZE := Vector2(1920, 1080)
 const SOURCE_SIZE := Vector2(1672, 941)
@@ -109,6 +111,7 @@ var _rendering := false
 var _exit_confirmation: FormalDialog
 
 var _viewport_scroll: ScrollContainer
+var _mobile_backdrop: TextureRect
 var _canvas_host: Control
 var _canvas: Control
 var _structural_shell: TextureRect
@@ -310,6 +313,7 @@ func _ensure_interface() -> void:
 		visible = true
 		return
 	_build_interface()
+	MOBILE_UI_PROFILE.apply_mobile_typography(self, 21, 3, 34)
 	_apply_responsive_layout()
 	visible = true
 
@@ -491,6 +495,16 @@ func _validate_contract(view_model: Dictionary) -> PackedStringArray:
 
 
 func _build_interface() -> void:
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		_mobile_backdrop = TextureRect.new()
+		_mobile_backdrop.name = "CustomResidentCreatorMobileBackdrop"
+		_mobile_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_mobile_backdrop.texture = load(STRUCTURAL_SHELL_PATH) as Texture2D
+		_mobile_backdrop.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_mobile_backdrop.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		_mobile_backdrop.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		_mobile_backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(_mobile_backdrop)
 	_viewport_scroll = ScrollContainer.new()
 	_viewport_scroll.name = "ViewportScroll"
 	_viewport_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1930,7 +1944,7 @@ func _focus_selected_dropdown_item() -> void:
 
 
 func _on_dropdown_backdrop_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+	if POINTER_INPUT.is_primary_press(event):
 		_close_dropdown_popup(true)
 		get_viewport().set_input_as_handled()
 
@@ -1989,6 +2003,20 @@ func _on_dropdown_scroll_input(event: InputEvent, dragging_thumb: bool) -> void:
 			get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion and _dropdown_dragging:
 		_set_dropdown_scroll_from_global_y((event as InputEventMouseMotion).global_position.y)
+		get_viewport().set_input_as_handled()
+	elif event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		_dropdown_dragging = touch.pressed
+		if touch.pressed:
+			_dropdown_drag_offset = (
+				touch.position.y - _dropdown_thumb.get_global_rect().position.y
+				if dragging_thumb
+				else _dropdown_thumb.size.y * 0.5
+			)
+			_set_dropdown_scroll_from_global_y(touch.position.y)
+		get_viewport().set_input_as_handled()
+	elif event is InputEventScreenDrag and _dropdown_dragging:
+		_set_dropdown_scroll_from_global_y((event as InputEventScreenDrag).position.y)
 		get_viewport().set_input_as_handled()
 
 
@@ -2070,6 +2098,21 @@ func _disconnect_adapter() -> void:
 
 func _apply_responsive_layout() -> void:
 	if _canvas_host == null or _canvas == null:
+		return
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		var viewport_size := size
+		if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
+			viewport_size = get_viewport_rect().size
+		var scale_factor := minf(
+			viewport_size.x / REFERENCE_SIZE.x,
+			viewport_size.y / REFERENCE_SIZE.y,
+		)
+		_canvas_host.custom_minimum_size = viewport_size
+		_canvas.position = (viewport_size - REFERENCE_SIZE * scale_factor) * 0.5
+		_canvas.size = REFERENCE_SIZE
+		_canvas.scale = Vector2.ONE * scale_factor
+		_viewport_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		_viewport_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		return
 	_canvas_host.custom_minimum_size = REFERENCE_SIZE
 	_canvas.position = Vector2.ZERO

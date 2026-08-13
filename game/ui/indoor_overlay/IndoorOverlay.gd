@@ -10,6 +10,7 @@ const UI_SIGNALS := preload(
 	"res://ui/common/AiTownUiSignals.gd"
 )
 const UiViewModel = preload("res://ui/common/AiTownUiViewModel.gd")
+const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
 
 const SCOPE := &"indoor"
 const MAIN_MENU_FONT_PATH := (
@@ -32,6 +33,7 @@ const PANEL_TOGGLE_LOCAL_Y := 416.0
 const PANEL_TOGGLE_EDGE_OVERLAP := 8.0
 const RESIDENT_VIEWPORT_CAPACITY := 3
 const ACTION_DEBOUNCE_MSEC := 250
+const RESIDENT_SWIPE_THRESHOLD := 40.0
 
 const INK := Color("4a2e20")
 const INK_MUTED := Color("6d5138")
@@ -45,9 +47,9 @@ const RETURN_RECT := Rect2(76, 880, 512, 62)
 const RETURN_TEXT_RECT := Rect2(100, 891, 440, 38)
 const RESIDENT_VIEWPORT_RECT := Rect2(47, 157, 542, 280)
 const RESIDENT_PORTRAIT_RECTS: Array[Rect2] = [
-	Rect2(65, 165, 64, 80),
-	Rect2(65, 257, 64, 80),
-	Rect2(65, 349, 64, 80),
+	Rect2(55, 159, 84, 86),
+	Rect2(55, 251, 84, 86),
+	Rect2(55, 343, 84, 86),
 ]
 const RESIDENT_NAME_RECTS: Array[Rect2] = [
 	Rect2(151, 174, 249, 23),
@@ -111,9 +113,12 @@ var _route_context: Dictionary = {}
 var _residents: Array[Dictionary] = []
 var _locally_pending_actions: Dictionary = {}
 var _last_intent_dispatch_msec: Dictionary = {}
+var _resident_swipe_tracking := false
+var _resident_swipe_start := Vector2.ZERO
 var _reflow_queued := false
 
 var _panel_root: Control
+var _mobile_page_backdrop: TextureRect
 var _panel_shell: TextureRect
 var _location_image: TextureRect
 var _title_label: Label
@@ -558,6 +563,17 @@ func runtime_gate_snapshot() -> Dictionary:
 
 
 func _build_interface() -> void:
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		_mobile_page_backdrop = TextureRect.new()
+		_mobile_page_backdrop.name = "IndoorObservationMobileBackdrop"
+		_mobile_page_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_mobile_page_backdrop.texture = load(PANEL_ASSET_PATH) as Texture2D
+		_mobile_page_backdrop.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_mobile_page_backdrop.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		_mobile_page_backdrop.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		_mobile_page_backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_mobile_page_backdrop.modulate = Color(0.68, 0.68, 0.68)
+		add_child(_mobile_page_backdrop)
 	_panel_root = Control.new()
 	_panel_root.name = "ObservationPanel"
 	_panel_root.size = PANEL_SIZE
@@ -813,6 +829,7 @@ func _render() -> void:
 	_render_residents()
 	_render_events()
 	_render_return_action()
+	MOBILE_UI_PROFILE.apply_mobile_typography(self, 21, 3, 32)
 	_apply_panel_presentation_state()
 	_apply_responsive_layout()
 	_update_focus_chain()
@@ -1125,6 +1142,20 @@ func _on_event_pressed(event_index: int) -> void:
 
 
 func _on_resident_scroll_input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		if touch.pressed:
+			_resident_swipe_tracking = true
+			_resident_swipe_start = touch.position
+			return
+		if not _resident_swipe_tracking:
+			return
+		_resident_swipe_tracking = false
+		var delta_y := touch.position.y - _resident_swipe_start.y
+		if absf(delta_y) >= RESIDENT_SWIPE_THRESHOLD:
+			if scroll_residents(-1 if delta_y > 0.0 else 1):
+				get_viewport().set_input_as_handled()
+		return
 	if not event is InputEventMouseButton:
 		return
 	var mouse_event := event as InputEventMouseButton
@@ -1289,6 +1320,13 @@ func _apply_responsive_layout() -> void:
 			available.size.y / PANEL_SIZE.y
 		)
 	)
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		# Mobile observation replaces the map view. Scale the approved page to the
+		# full height and center it; the host page blocks the remaining margins.
+		scale_factor = minf(
+			available.size.x / PANEL_SIZE.x,
+			available.size.y / PANEL_SIZE.y,
+		)
 	_layout_profile = (
 		"desktop_sidebar"
 		if is_equal_approx(scale_factor, 1.0)
@@ -1301,6 +1339,8 @@ func _apply_responsive_layout() -> void:
 		DESKTOP_RIGHT_MARGIN,
 		maxf(0.0, available.size.x - panel_display_size.x)
 	)
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		right_margin = maxf(0.0, (available.size.x - panel_display_size.x) * 0.5)
 	var expanded_position := Vector2(
 		available.end.x - panel_display_size.x - right_margin,
 		available.position.y

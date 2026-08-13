@@ -39,6 +39,7 @@ const OVERVIEW_DESKTOP_RIGHT_MARGIN := 48.0
 const OVERVIEW_DESKTOP_TOP := 64.0
 const MINIMUM_TOUCH_SIZE := Vector2(48, 48)
 const DRAFT_DEBOUNCE_SECONDS := 0.12
+const HISTORY_SWIPE_THRESHOLD := 40.0
 
 const EXPECTED_INTENTS := {
 	"openComposer": "announcements.composer.open",
@@ -121,6 +122,8 @@ var _history_page := 0
 var _history_page_count := 1
 var _history_page_size := 2
 var _history_anchor_id := ""
+var _history_swipe_tracking := false
+var _history_swipe_start := Vector2.ZERO
 var _items: Array = []
 var _visible_item_ids: Array[String] = []
 var _safe_insets := Rect2()
@@ -1620,6 +1623,20 @@ func _on_older_pressed() -> void:
 
 
 func _on_history_gui_input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		if touch.pressed:
+			_history_swipe_tracking = true
+			_history_swipe_start = touch.position
+			return
+		if not _history_swipe_tracking:
+			return
+		_history_swipe_tracking = false
+		var delta_x := touch.position.x - _history_swipe_start.x
+		if absf(delta_x) >= HISTORY_SWIPE_THRESHOLD:
+			_set_history_page(_history_page - 1 if delta_x > 0.0 else _history_page + 1)
+			get_viewport().set_input_as_handled()
+		return
 	if not event is InputEventMouseButton:
 		return
 	var mouse_event := event as InputEventMouseButton
