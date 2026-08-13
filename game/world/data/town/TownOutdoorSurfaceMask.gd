@@ -5,7 +5,7 @@ extends RefCounted
 const SURFACE_MASK_PATH := (
 	"res://world/presentation/environment/assets/town_surface_masks.png"
 )
-const TOWN_MAP_PATH := "res://world/maps/town/assets/town.png"
+const TOWN_MAP_PATH := "res://world/maps/town/assets/runtime/town_4k.png"
 const WATER_THRESHOLD := 0.01
 const GROUND_THRESHOLD := 0.01
 const SEGMENT_SAMPLE_STEP_PX := 3
@@ -63,7 +63,7 @@ static func body_origin_is_dry(
 	if surface.g > GROUND_THRESHOLD:
 		return true
 	var town := _town_image()
-	return town != null and not _looks_like_water(town.get_pixelv(pixel))
+	return town != null and not _looks_like_water(_town_color_at_map_pixel(town, pixel))
 
 
 static func body_segment_is_dry(
@@ -97,14 +97,22 @@ static func _town_image() -> Image:
 	if texture == null:
 		return null
 	var loaded_image := texture.get_image()
-	if (
-		loaded_image == null
-		or loaded_image.is_empty()
-		or loaded_image.get_size() != Vector2i(MOVEMENT_CLEARANCE.MAP_SIZE)
-	):
+	if loaded_image == null or loaded_image.is_empty():
 		return null
 	_cached_town_image = loaded_image
 	return _cached_town_image
+
+
+static func _town_color_at_map_pixel(town: Image, map_pixel: Vector2i) -> Color:
+	var map_size := Vector2i(MOVEMENT_CLEARANCE.MAP_SIZE)
+	var image_size := town.get_size()
+	if image_size == map_size:
+		return town.get_pixelv(map_pixel)
+	var image_pixel := Vector2i(
+		roundi(float(map_pixel.x) * float(image_size.x - 1) / float(map_size.x - 1)),
+		roundi(float(map_pixel.y) * float(image_size.y - 1) / float(map_size.y - 1)),
+	)
+	return town.get_pixelv(image_pixel)
 
 
 static func _looks_like_water(color: Color) -> bool:

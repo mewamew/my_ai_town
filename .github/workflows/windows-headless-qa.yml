@@ -1,0 +1,128 @@
+name: windows-headless-qa
+
+on:
+  push:
+    branches:
+      - "codex/windows-headless-qa-**"
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: "4.7.1"
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+
+jobs:
+  windows-headless-qa:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 运行仓库检查项
+        shell: bash
+        run: tools/guards/run_guards.sh
+
+      - name: 下载 Godot Windows
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP "godot-windows.zip"
+          $destination = Join-Path $env:RUNNER_TEMP "godot-windows"
+          Invoke-WebRequest -Uri "https://github.com/godotengine/godot/releases/download/$env:GODOT_VERSION-stable/Godot_v$env:GODOT_VERSION-stable_win64.exe.zip" -OutFile $archive
+          Expand-Archive -Path $archive -DestinationPath $destination
+          $godot = Get-ChildItem -Path $destination -Filter "Godot*_win64.exe" -Recurse | Select-Object -First 1
+          if ($null -eq $godot) { throw "Godot Windows executable not found" }
+          "GODOT_BIN=$($godot.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: 无窗口导入与性能记录
+        shell: pwsh
+        run: |
+          $stdout = Join-Path $env:RUNNER_TEMP "windows-import.stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "windows-import.stderr.log"
+          $watch = [System.Diagnostics.Stopwatch]::StartNew()
+          $process = Start-Process -FilePath $env:GODOT_BIN -ArgumentList @("--headless", "--path", "game", "--import") -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          [long]$peakWorkingSet = 0
+          while (-not $process.HasExited) {
+            $process.Refresh()
+            $peakWorkingSet = [Math]::Max($peakWorkingSet, $process.WorkingSet64)
+            Start-Sleep -Milliseconds 100
+          }
+          $process.WaitForExit()
+          $watch.Stop()
+          Get-Content $stdout
+          Get-Content $stderr
+          "WINDOWS_IMPORT_PERFORMANCE elapsed_ms=$($watch.ElapsedMilliseconds) peak_working_set_bytes=$peakWorkingSet exit=$($process.ExitCode)"
+          if ($process.ExitCode -ne 0) { exit $process.ExitCode }
+          $combined = (Get-Content $stdout -Raw) + (Get-Content $stderr -Raw)
+          if ($combined -match "(?m)^(ERROR:|SCRIPT ERROR:)|Parse Error:|Failed to load script") { throw "Windows import produced engine or script errors" }
+
+      - name: Windows 启动页无窗口性能
+        shell: pwsh
+        run: |
+          $stdout = Join-Path $env:RUNNER_TEMP "windows-startup.stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "windows-startup.stderr.log"
+          $watch = [System.Diagnostics.Stopwatch]::StartNew()
+          $process = Start-Process -FilePath $env:GODOT_BIN -ArgumentList @("--headless", "--path", "game", "--script", "res://tests/startup_performance_compatibility_test.gd") -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          [long]$peakWorkingSet = 0
+          while (-not $process.HasExited) {
+            $process.Refresh()
+            $peakWorkingSet = [Math]::Max($peakWorkingSet, $process.WorkingSet64)
+            Start-Sleep -Milliseconds 100
+          }
+          $process.WaitForExit()
+          $watch.Stop()
+          Get-Content $stdout
+          Get-Content $stderr
+          "WINDOWS_STARTUP_PERFORMANCE elapsed_ms=$($watch.ElapsedMilliseconds) peak_working_set_bytes=$peakWorkingSet exit=$($process.ExitCode)"
+          if ($process.ExitCode -ne 0) { exit $process.ExitCode }
+          $combined = (Get-Content $stdout -Raw) + (Get-Content $stderr -Raw)
+          if ($combined -notmatch "STARTUP_PERFORMANCE_COMPATIBILITY_PASS checks=28") { throw "Startup performance marker missing" }
+          if ($combined -match "SCRIPT ERROR:|Parse Error:|Failed to load script") { throw "Startup performance test produced script errors" }
+
+      - name: Windows 传统路径边界回归
+        shell: pwsh
+        run: |
+          $stdout = Join-Path $env:RUNNER_TEMP "windows-path.stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "windows-path.stderr.log"
+          $process = Start-Process -FilePath $env:GODOT_BIN -ArgumentList @("--headless", "--path", "game", "--script", "res://tests/windows_directory_cleanup_test.gd") -RedirectStandardOutput $stdout -RedirectStandardError $stderr -Wait -PassThru
+          Get-Content $stdout
+          Get-Content $stderr
+          if ($process.ExitCode -ne 0) { exit $process.ExitCode }
+          $combined = (Get-Content $stdout -Raw) + (Get-Content $stderr -Raw)
+          if ($combined -notmatch "WINDOWS_DIRECTORY_CLEANUP_PASS checks=69") { throw "Windows path regression marker missing" }
+          if ($combined -match "(?m)^ERROR:|SCRIPT ERROR:|Parse Error:|Failed to load script") { throw "Windows path regression produced errors" }
+
+      - name: Windows 真实生产入口主链路
+        shell: pwsh
+        run: |
+          $stdout = Join-Path $env:RUNNER_TEMP "windows-formal-entry.stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "windows-formal-entry.stderr.log"
+          $watch = [System.Diagnostics.Stopwatch]::StartNew()
+          $process = Start-Process -FilePath $env:GODOT_BIN -ArgumentList @("--headless", "--path", "game", "--script", "res://tests/game_flow_host_formal_entry_test.gd") -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          [long]$peakWorkingSet = 0
+          while (-not $process.HasExited) {
+            $process.Refresh()
+            $peakWorkingSet = [Math]::Max($peakWorkingSet, $process.WorkingSet64)
+            Start-Sleep -Milliseconds 100
+          }
+          $process.WaitForExit()
+          $watch.Stop()
+          Get-Content $stdout
+          Get-Content $stderr
+          "WINDOWS_FORMAL_ENTRY_PERFORMANCE elapsed_ms=$($watch.ElapsedMilliseconds) peak_working_set_bytes=$peakWorkingSet exit=$($process.ExitCode)"
+          if ($process.ExitCode -ne 0) { exit $process.ExitCode }
+          $combined = (Get-Content $stdout -Raw) + (Get-Content $stderr -Raw)
+          if ($combined -notmatch "GAME_FLOW_HOST_FORMAL_ENTRY_PASS") { throw "Formal entry marker missing" }
+          $unexpected = $combined -split "\r?\n" | Where-Object { $_ -match "^ERROR:" -and $_ -notmatch "^ERROR: Agent Gateway 初始化失败：当前 session 要求正式 Agent Gateway。$" }
+          if ($unexpected) { throw "Formal entry produced unexpected engine errors: $($unexpected -join '; ')" }
+          if ($combined -match "SCRIPT ERROR:|Parse Error:|Failed to load script") { throw "Formal entry produced script errors" }
+
+      - name: 上传 Windows 测试日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-headless-qa-logs
+          path: ${{ runner.temp }}/windows-*.log
+          if-no-files-found: warn
+          retention-days: 7

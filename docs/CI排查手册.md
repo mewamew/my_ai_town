@@ -162,6 +162,26 @@ Godot 无头导入确认。
 
 最终验证：`windows_directory_cleanup_test.gd` 必须分别构造旧式长度不少于 260 字符的恢复事务锁、槽位事务锁、Agent 快照、会话照片、正式归档和居民运行时记忆路径，完成实际事务建立、写入、重新读取和递归清理，同时确认新的临时路径保持在传统边界内。当前最低检查数为 56。Godot 项目与发行工作流继续固定使用 4.7 或更新版本，以获得引擎 Windows 文件层的原生长路径处理。
 
+### Windows 检查脚本输出中文时出现 `UnicodeEncodeError`
+
+表现：同一组防复发检查在 macOS 和 Linux 通过，在 `windows-latest` 上却从第一条中文成功提示开始连续报 `UnicodeEncodeError: 'charmap' codec can't encode characters`，最终得到 `GUARDS_FAILED`，后续 Godot 测试全部跳过。
+
+直接原因：Windows GitHub 执行器中的 Python 标准输出仍使用 `cp1252`，仓库检查脚本会打印中文结果；检查逻辑本身已经完成，但输出成功提示时编码失败，进程因此返回非零状态。
+
+处理方法：在需要直接运行仓库 Python 检查脚本的 Windows 工作流中设置 `PYTHONUTF8=1` 和 `PYTHONIOENCODING=utf-8`。不要删除或改写中文提示，也不要把 `GUARDS_FAILED` 当作游戏代码失败继续排查。
+
+最终验证：重新运行 Windows 防复发检查，确认所有中文提示正常输出并出现 `GUARDS_PASS`，随后继续执行同一任务中的 Godot 无窗口导入、Windows 路径回归和正式入口测试；不能只看到编码错误消失就结束验证。
+
+### Windows 正式入口已通过，却把允许的错误行判成失败
+
+表现：正式入口测试已经输出 `GAME_FLOW_HOST_FORMAL_ENTRY_PASS`，测试进程也是成功退出；验收脚本仍报告那条预期的 Agent Gateway 初始化错误属于“额外引擎错误”。同一允许规则在 macOS 的 zsh 脚本中可以通过。
+
+直接原因：Windows 日志使用 CRLF 行尾。PowerShell 只按换行符拆分后，每行末尾仍保留回车，带行尾锚点的精确允许规则因此无法匹配。另一个同时暴露的问题是进程结束后读取 `PeakWorkingSet64` 会得到空值，不能作为性能结果。
+
+处理方法：PowerShell 日志检查使用能够同时识别 CRLF 和 LF 的 `\r?\n` 拆分，再执行精确的整行允许匹配；性能采样在 Godot 进程运行期间定时刷新 `WorkingSet64` 并累计峰值，不能等进程退出后再读取。
+
+最终验证：远端 Windows 正式入口既要输出通过标记、没有额外引擎错误，也要记录非空且大于零的耗时和峰值内存；只有通过标记而性能值为空，仍不算完成 Windows 无窗口性能验收。
+
 ### 动态调用检查失败
 
 常见提示：
@@ -311,6 +331,20 @@ gh run view <运行编号> --log-failed \
 
 ## 已发生案例
 
+### 2026-08-14：Windows 无窗口验收被 Python 控制台编码阻断
+
+表现：Windows 测试机完成检出后，防复发检查的行数、动态调用、零引用和正式测试清单脚本都在打印中文成功提示时抛出 `UnicodeEncodeError`；素材、跨平台文本、前景着色器、README 同步和发行工具测试仍能通过，但汇总结果为 `GUARDS_FAILED`，Godot 步骤没有开始。
+
+直接原因：Windows 执行器中的 Python 3.12 标准输出使用 `cp1252`，工作流没有像项目文本契约那样显式固定 UTF-8。
+
+修复：为 Windows 无窗口验收工作流统一设置 `PYTHONUTF8=1` 和 `PYTHONIOENCODING=utf-8`，保留原检查脚本及中文输出不变。
+
+最终验证：修复后的同一提交必须在真正的 `windows-latest` 上先得到 `GUARDS_PASS`，再完成 Godot 无窗口导入、启动页性能记录、传统 260 字符路径回归和正式生产入口主链路。
+
+补充表现：编码修复后的第二次运行中，Godot 正式入口在 43.3 秒后输出通过标记并以 0 退出，但 PowerShell 允许规则受 CRLF 行尾影响仍把唯一的预期错误判为失败；同时进程退出后的 `PeakWorkingSet64` 为空。
+
+补充修复：日志按 `\r?\n` 拆分后再做整行匹配，并在 Godot 运行期间每 100 毫秒采样一次工作集峰值。最终验证必须同时确认主链路通过和性能字段非空。
+
 ### 2026-08-12：备餐时长调整后遗漏活动收据重建
 
 表现：食堂活动回归和防复发守卫均通过，远端 Agent 离线套件为 `47/48`；唯一失败的 `agent_debug_lab_test.gd` 在正式 Bootstrap 启动时得到 `WORLD_DATA_INVALID`，后续居民数、存档和恢复断言都是连带失败。
@@ -386,6 +420,8 @@ gh run view <运行编号> --log-failed \
 - [ ] 所有新增资源路径已经检查大小写，并确认文件被 Git 跟踪。
 - [ ] 修改活动源文档后已运行 `TownWorldDataBuild.gd`，并确认活动收据和来源指纹同步更新。
 - [ ] 涉及存档目录、事务或临时文件时，Windows 超长路径恢复与清理测试已经通过。
+- [ ] 新增 Windows Python 检查任务时已固定 UTF-8 输出，并确认中文检查结果可以正常打印。
+- [ ] Windows 日志精确允许规则兼容 CRLF，性能记录在进程运行期间采样且结果非空。
 - [ ] `tools/guards/run_guards.sh` 通过。
 - [ ] Godot 无头导入没有脚本或引擎错误。
 - [ ] 相关测试通过；发行改动完成正式测试套件。

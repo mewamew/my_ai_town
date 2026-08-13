@@ -4,7 +4,9 @@ extends Node
 
 const VISUAL_CONFIG_PATH := "res://world/presentation/environment/town_environment_visuals.json"
 const FORMAL_SPACES_PATH := "res://world/data/town/source/spaces.json"
-const MAP_TEXTURE_PATH := "res://world/maps/town/assets/town.png"
+const MAP_TEXTURE_PATH := (
+	"res://world/maps/town/assets/runtime/town_4k.png"
+)
 const SURFACE_MASK_PATH := (
 	"res://world/presentation/environment/assets/town_surface_masks.png"
 )
