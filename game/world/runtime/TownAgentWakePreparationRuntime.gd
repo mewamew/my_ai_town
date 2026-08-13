@@ -586,7 +586,11 @@ func conversation_service_route_available(
 ) -> Dictionary:
 	var from_place := String(resident.get("currentPlace", ""))
 	if target_place.is_empty() or target_place == from_place:
-		return {"ok": target_place == from_place, "action": {}}
+		return {
+			"ok": target_place == from_place,
+			# 同地点不需要构造寻路动作，但仍是可用的服务选项。
+			"action": {"samePlace": true} if target_place == from_place else {},
+		}
 	var dining_failure := DINING_SERVICE.go_admission_failure(
 		world,
 		resident,

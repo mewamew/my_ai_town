@@ -478,6 +478,9 @@ const ACTION_PRESENTATION := preload(
 	"res://world/runtime/presentation/TownActionPresentationSemantics.gd"
 )
 const ROUTE_QUERY := preload("res://world/data/town/TownWorldRouteQuery.gd")
+const WAKE_PREPARATION_RUNTIME := preload(
+	"res://world/runtime/TownAgentWakePreparationRuntime.gd"
+)
 const RESIDENT_NAME := "叶澄"
 const ACTIVITY_ID := "activity_fisher_organize_gear"
 const SCENARIOS := preload("res://agent/debug/AgentDebugScenarios.gd")
@@ -519,6 +522,7 @@ func _scenario_agent_gateway_continuity() -> void:
 	_test_world_heavy_frame_defers_agent_budget()
 	_test_gateway_staged_preparation_eventually_dispatches()
 	_test_service_option_route_preflight_uses_place_connectivity()
+	_test_same_place_service_option_route_preflight()
 	_test_replacement_request_retires_old_gateway_slot()
 	_test_full_queue_only_dispatches_request_that_frees_slot()
 	_test_unconsumed_submission_rolls_back_without_social_side_effect()
@@ -795,6 +799,23 @@ func _test_service_option_route_preflight_uses_place_connectivity() -> void:
 		ROUTE_QUERY.place_route_exists(data, "不存在的地点", "公共食堂"),
 		false,
 		"不存在的地点不会被服务选项预检误判为可达",
+	)
+
+
+func _test_same_place_service_option_route_preflight() -> void:
+	var preparation := WAKE_PREPARATION_RUNTIME.new()
+	var result := preparation.conversation_service_route_available(
+		null,
+		{"currentPlace": "公共食堂"},
+		"公共食堂",
+	)
+	_expect(
+		bool(result.get("ok", false)),
+		"居民已经在服务地点时预检仍保留服务选项",
+	)
+	_expect(
+		not (result.get("action", {}) as Dictionary).is_empty(),
+		"同地点服务选项明确标记为无需寻路，不能被后续阶段过滤",
 	)
 
 
