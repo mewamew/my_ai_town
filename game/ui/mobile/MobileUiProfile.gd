@@ -144,3 +144,58 @@ static func safe_insets(viewport_size: Vector2, window: Window) -> Dictionary:
 	result["right"] = (window_size.x - safe_area.end.x) * scale.x
 	result["bottom"] = (window_size.y - safe_area.end.y) * scale.y
 	return result
+
+
+static func apply_mobile_typography(
+	root: Node,
+	minimum_size := 21,
+	increase := 3,
+	maximum_size := 34,
+) -> void:
+	if not is_mobile_runtime() or root == null:
+		return
+	_apply_mobile_typography_recursive(root, minimum_size, increase, maximum_size)
+
+
+static func _apply_mobile_typography_recursive(
+	node: Node,
+	minimum_size: int,
+	increase: int,
+	maximum_size: int,
+) -> void:
+	if node is Control and not node.has_meta("mobile_typography_applied"):
+		var control := node as Control
+		if (
+			control is Label
+			or control is BaseButton
+			or control is LineEdit
+			or control is TextEdit
+			or control is OptionButton
+			or control is RichTextLabel
+		):
+			var current_size := control.get_theme_font_size("font_size")
+			control.add_theme_font_size_override(
+				"font_size",
+				clampi(maxi(current_size + increase, minimum_size), 1, maximum_size),
+			)
+			if control is RichTextLabel:
+				for property in [
+					"normal_font_size",
+					"bold_font_size",
+					"italics_font_size",
+					"bold_italics_font_size",
+					"mono_font_size",
+				]:
+					var rich_size := control.get_theme_font_size(property)
+					control.add_theme_font_size_override(
+						property,
+						clampi(maxi(rich_size + increase, minimum_size), 1, maximum_size),
+					)
+			control.set_meta("mobile_typography_applied", true)
+		if control is BaseButton or control is LineEdit or control is OptionButton:
+			control.custom_minimum_size.y = maxf(
+				control.custom_minimum_size.y,
+				MINIMUM_TOUCH_TARGET,
+			)
+	for child: Node in node.get_children():
+		_apply_mobile_typography_recursive(child, minimum_size, increase, maximum_size)

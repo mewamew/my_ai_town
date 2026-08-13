@@ -34,14 +34,14 @@ const PROGRESS_RECT_REFERENCE := Rect2(577.0, 708.0, 520.0, 31.0)
 const PROGRESS_INNER_OFFSET := Vector2(3.0, 3.0)
 const PROGRESS_INNER_SIZE := Vector2(514.0, 25.0)
 const INITIAL_PROGRESS := 0.08
-const QUIT_AUTO_PROGRESS_INTERVAL := 0.55
-const QUIT_AUTO_PROGRESS_CAP := 0.54
-const QUIT_AUTO_PROGRESS_STEPS: Array[float] = [
+const AUTO_PROGRESS_INTERVAL := 0.12
+const AUTO_PROGRESS_CAP := 0.92
+const AUTO_PROGRESS_STEPS: Array[float] = [
+	0.009,
+	0.014,
+	0.007,
 	0.012,
-	0.018,
-	0.010,
-	0.015,
-	0.008,
+	0.006,
 ]
 
 var _blocker: Control
@@ -89,22 +89,21 @@ func begin(route_kind: String) -> void:
 func _process(delta: float) -> void:
 	if (
 		not _active
-		or _route_kind != "quit_game"
-		or _progress_value >= QUIT_AUTO_PROGRESS_CAP
+		or _progress_value >= AUTO_PROGRESS_CAP
 	):
 		return
 	_auto_progress_elapsed += maxf(0.0, delta)
 	while (
-		_auto_progress_elapsed >= QUIT_AUTO_PROGRESS_INTERVAL
-		and _progress_value < QUIT_AUTO_PROGRESS_CAP
+		_auto_progress_elapsed >= AUTO_PROGRESS_INTERVAL
+		and _progress_value < AUTO_PROGRESS_CAP
 	):
-		_auto_progress_elapsed -= QUIT_AUTO_PROGRESS_INTERVAL
-		var step := QUIT_AUTO_PROGRESS_STEPS[
-			_auto_progress_step_index % QUIT_AUTO_PROGRESS_STEPS.size()
+		_auto_progress_elapsed -= AUTO_PROGRESS_INTERVAL
+		var step := AUTO_PROGRESS_STEPS[
+			_auto_progress_step_index % AUTO_PROGRESS_STEPS.size()
 		]
 		_auto_progress_step_index += 1
 		_progress_value = minf(
-			QUIT_AUTO_PROGRESS_CAP,
+			AUTO_PROGRESS_CAP,
 			_progress_value + step,
 		)
 		_sync_progress_visual()
@@ -145,13 +144,11 @@ func is_active() -> bool:
 
 
 func debug_snapshot() -> Dictionary:
-		return {
+	return {
 			"active": _active,
 			"routeKind": _route_kind,
 			"progress": _progress_value,
-			"automaticProgress": (
-				_active and _route_kind == "quit_game"
-			),
+		"automaticProgress": _active,
 		"title": _title.text if _title != null else "",
 		"status": _status.text if _status != null else "",
 		"blocksInput": (
@@ -175,6 +172,16 @@ func debug_snapshot() -> Dictionary:
 		),
 		"referenceScale": _reference_scale,
 		"referenceOffset": _reference_offset,
+		"backgroundRect": (
+			Rect2(_background.position, _background.size)
+			if _background != null
+			else Rect2()
+		),
+		"backgroundCoversViewport": (
+			_background != null
+			and _background.position == Vector2.ZERO
+			and _background.size == _blocker.size
+		),
 		"backgroundTexturePath": BACKGROUND_TEXTURE_PATH,
 		"shellTexturePath": SHELL_TEXTURE_PATH,
 		"progressTrackPath": PROGRESS_TRACK_PATH,
@@ -198,14 +205,15 @@ func _ensure_nodes() -> void:
 	_blocker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_blocker.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(_blocker)
+	_background = _texture_rect("OpeningFlowLoadingBackground", BACKGROUND_TEXTURE_PATH)
+	_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	_blocker.add_child(_background)
 
 	_visual_root = Control.new()
 	_visual_root.name = "OpeningFlowLoadingVisual"
 	_visual_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_blocker.add_child(_visual_root)
 
-	_background = _texture_rect("OpeningFlowLoadingBackground", BACKGROUND_TEXTURE_PATH)
-	_visual_root.add_child(_background)
 	_shell = _texture_rect("OpeningFlowLoadingShell", SHELL_TEXTURE_PATH)
 	_visual_root.add_child(_shell)
 
@@ -299,7 +307,7 @@ func _layout_for_size(viewport_size: Vector2) -> void:
 	_visual_root.position = _reference_offset
 	_visual_root.size = visual_size
 	_background.position = Vector2.ZERO
-	_background.size = visual_size
+	_background.size = safe_size
 	_shell.position = Vector2.ZERO
 	_shell.size = visual_size
 	_apply_reference_rect(_title, TITLE_RECT_REFERENCE)

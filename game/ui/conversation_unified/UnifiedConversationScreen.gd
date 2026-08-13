@@ -1,6 +1,8 @@
 class_name UnifiedConversationScreen
 extends Control
 
+const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
+
 
 signal intent_requested(intent: StringName, payload: Dictionary)
 signal action_blocked(intent: StringName, reason: String)
@@ -713,6 +715,7 @@ func _render() -> void:
 	_render_header()
 	_rebuild_messages()
 	_render_composer()
+	MOBILE_UI_PROFILE.apply_mobile_typography(self, 22, 3, 34)
 	_apply_layout()
 
 
@@ -1573,7 +1576,7 @@ func _apply_layout() -> void:
 	_stage.scale = Vector2.ONE * scale_factor
 	_stage.position = Vector2(
 		floorf(viewport.x - BASE_SIZE.x * scale_factor - 16.0),
-		floorf((viewport.y - BASE_SIZE.y * scale_factor) * 0.5)
+		floorf((viewport.y - BASE_SIZE.y * scale_factor) * 0.5),
 	)
 
 

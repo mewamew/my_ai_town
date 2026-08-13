@@ -11,10 +11,15 @@ const UI_KIT := preload(
 const UI_SIGNALS := preload(
 	"res://ui/common/AiTownUiSignals.gd"
 )
+const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
 const SCOPE := "resident_overview"
 const SHELL_TEXTURE := preload(
 	"res://assets/ui/resident_overview/runtime/"
 	+ "resident_overview_editable_shell_1920x1080.png"
+)
+const MOBILE_BACKDROP_TEXTURE := preload(
+	"res://assets/ui/opening_flow/shared/background/"
+	+ "opening_flow_town_background_v1.png"
 )
 const MAIN_MENU_FONT_FILE := preload(
 	"res://assets/ui/startup/fonts/noto_sans_cjk_sc_medium/"
@@ -32,6 +37,9 @@ const CAPTURE_SLOT_COLOR := Color("6dff8d")
 const CAPTURE_HOST_COLOR := Color("ffd166")
 const CAPTURE_BASELINE_COLOR := Color("ff5ad6")
 const CAPTURE_BUTTON_COLOR := Color("ff8f3f")
+const MOBILE_VISIBLE_ROSTER_ROWS := 7
+const MOBILE_ROSTER_PAGE_STEP := 4
+const MOBILE_ROSTER_ROW_SOURCE_RECT := Rect2(48, 150, 352, 48)
 
 var _adapter: Object
 var _view_model: Dictionary = {}
@@ -44,12 +52,14 @@ var _feedback_error := false
 
 var _font: FontVariation
 var _selected_font: FontVariation
+var _mobile_backdrop: TextureRect
 var _canvas: Control
 var _back_label: Label
 var _title_label: Label
 var _subtitle_label: Label
 var _count_label: Label
 var _mode_label: Label
+var _mobile_roster_faces: Array[NinePatchRect] = []
 var _roster_labels: Array[Label] = []
 var _roster_buttons: Array[Button] = []
 var _detail_labels: Dictionary = {}
@@ -64,6 +74,10 @@ var _tertiary_label: Label
 var _safe_area_capture_mode := false
 var _safe_area_capture_overlay: Control
 var _layout_queued := false
+var _mobile_roster_offset := 0
+var _mobile_roster_pointer := -1
+var _mobile_roster_press_y := 0.0
+var _mobile_roster_dragged := false
 
 
 func _ready() -> void:
@@ -301,6 +315,16 @@ func select_resident_for_test(resident_id: String) -> bool:
 
 
 func _build_interface() -> void:
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		_mobile_backdrop = TextureRect.new()
+		_mobile_backdrop.name = &"ResidentOverviewMobileBackdrop"
+		_mobile_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_mobile_backdrop.texture = MOBILE_BACKDROP_TEXTURE
+		_mobile_backdrop.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_mobile_backdrop.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		_mobile_backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_mobile_backdrop.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		add_child(_mobile_backdrop)
 	_canvas = Control.new()
 	_canvas.name = &"ResidentOverviewCanvas"
 	_canvas.size = DESIGN_SIZE
@@ -361,8 +385,36 @@ func _build_interface() -> void:
 		# The paper rows are separated by ornamental rules. Keep the glyph band
 		# inside the row's true writable strip instead of centering against the
 		# full painted row including its rule.
-		var row_rect := Rect2(62, 150 + index * 48.15, 330, 36)
-		var row_label := _add_label("", row_rect, 17, MUTED_INK)
+		var row_rect := (
+			Rect2(48, 146 + index * 100.0, 360, 86)
+			if MOBILE_UI_PROFILE.is_mobile_runtime()
+			else Rect2(62, 150 + index * 48.15, 330, 36)
+		)
+		if MOBILE_UI_PROFILE.is_mobile_runtime():
+			var row_texture := AtlasTexture.new()
+			row_texture.atlas = SHELL_TEXTURE
+			row_texture.region = MOBILE_ROSTER_ROW_SOURCE_RECT
+			var row_face := NinePatchRect.new()
+			row_face.name = StringName("ResidentOverviewRosterFace%02d" % index)
+			row_face.position = row_rect.position
+			row_face.size = row_rect.size
+			row_face.texture = row_texture
+			row_face.patch_margin_left = 14
+			row_face.patch_margin_top = 12
+			row_face.patch_margin_right = 14
+			row_face.patch_margin_bottom = 12
+			row_face.axis_stretch_horizontal = NinePatchRect.AXIS_STRETCH_MODE_STRETCH
+			row_face.axis_stretch_vertical = NinePatchRect.AXIS_STRETCH_MODE_STRETCH
+			row_face.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			row_face.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_canvas.add_child(row_face)
+			_mobile_roster_faces.append(row_face)
+		var row_label := _add_label(
+			"",
+			row_rect.grow(-10.0) if MOBILE_UI_PROFILE.is_mobile_runtime() else row_rect,
+			22 if MOBILE_UI_PROFILE.is_mobile_runtime() else 17,
+			MUTED_INK,
+		)
 		row_label.name = StringName("ResidentRosterLabel%02d" % index)
 		_roster_labels.append(row_label)
 		var row_button := _add_button(
@@ -371,6 +423,7 @@ func _build_interface() -> void:
 			"选择第 %d 位居民" % (index + 1),
 		)
 		row_button.pressed.connect(_select_row.bind(index))
+		row_button.gui_input.connect(_on_mobile_roster_input)
 		_roster_buttons.append(row_button)
 
 	_detail_labels["identity"] = _add_label(
@@ -850,18 +903,41 @@ func _selected_item() -> Dictionary:
 func _render() -> void:
 	if _count_label == null:
 		return
-	_count_label.text = "%d 位居民" % _items.size()
+	var mobile_last := mini(
+		_mobile_roster_offset + MOBILE_VISIBLE_ROSTER_ROWS,
+		_items.size(),
+	)
+	_count_label.text = (
+		"%d 位 · %d-%d" % [
+			_items.size(),
+			_mobile_roster_offset + 1,
+			mobile_last,
+		]
+		if MOBILE_UI_PROFILE.is_mobile_runtime() and not _items.is_empty()
+		else "%d 位居民" % _items.size()
+	)
 	_mode_label.text = "本局居民总览"
 	for index in 15:
-		var visible := index < _items.size()
+		var item_index := (
+			_mobile_roster_offset + index
+			if MOBILE_UI_PROFILE.is_mobile_runtime()
+			else index
+		)
+		var visible := (
+			index < MOBILE_VISIBLE_ROSTER_ROWS and item_index < _items.size()
+			if MOBILE_UI_PROFILE.is_mobile_runtime()
+			else item_index < _items.size()
+		)
 		_roster_labels[index].visible = visible
 		_roster_buttons[index].visible = visible
+		if index < _mobile_roster_faces.size():
+			_mobile_roster_faces[index].visible = visible
 		if not visible:
 			continue
-		var item := _items[index]
+		var item := _items[item_index]
 		var selected := String(item.get("residentId", "")) == _selected_resident_id
 		_roster_labels[index].text = "%02d  %s  %s" % [
-			index + 1,
+			item_index + 1,
 			String(item.get("displayName", "未命名居民")),
 			String(item.get("occupationLabel", "暂无职业")),
 		]
@@ -1002,12 +1078,58 @@ func _render_portrait(
 
 
 func _select_row(index: int) -> void:
-	if index < 0 or index >= _items.size():
+	if _mobile_roster_dragged:
 		return
-	_selected_resident_id = String(_items[index].get("residentId", ""))
+	var item_index := (
+		_mobile_roster_offset + index
+		if MOBILE_UI_PROFILE.is_mobile_runtime()
+		else index
+	)
+	if item_index < 0 or item_index >= _items.size():
+		return
+	_selected_resident_id = String(_items[item_index].get("residentId", ""))
 	_feedback_text = ""
 	_feedback_error = false
 	_render()
+
+
+func _on_mobile_roster_input(event: InputEvent) -> void:
+	if not MOBILE_UI_PROFILE.is_mobile_runtime():
+		return
+	if event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		if touch.pressed and _mobile_roster_pointer < 0:
+			_mobile_roster_pointer = touch.index
+			_mobile_roster_press_y = touch.position.y
+			_mobile_roster_dragged = false
+		elif not touch.pressed and touch.index == _mobile_roster_pointer:
+			if _mobile_roster_dragged:
+				var direction := (
+					MOBILE_ROSTER_PAGE_STEP
+					if touch.position.y < _mobile_roster_press_y
+					else -MOBILE_ROSTER_PAGE_STEP
+				)
+				_mobile_roster_offset = clampi(
+					_mobile_roster_offset + direction,
+					0,
+					maxi(_items.size() - MOBILE_VISIBLE_ROSTER_ROWS, 0),
+				)
+				_render()
+				accept_event()
+			_mobile_roster_pointer = -1
+			_reset_mobile_roster_drag.call_deferred()
+	elif event is InputEventScreenDrag:
+		var drag := event as InputEventScreenDrag
+		if (
+			drag.index == _mobile_roster_pointer
+			and absf(drag.position.y - _mobile_roster_press_y) >= 24.0
+		):
+			_mobile_roster_dragged = true
+			accept_event()
+
+
+func _reset_mobile_roster_drag() -> void:
+	_mobile_roster_dragged = false
 
 
 func _on_primary_pressed() -> void:

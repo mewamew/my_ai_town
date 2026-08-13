@@ -1648,6 +1648,7 @@ func _scenario_mobile_platform_foundation() -> void:
 	await _verify_mobile_touch_scroll_router()
 	await _verify_mobile_text_input_policy()
 	await _verify_mobile_scene_interaction()
+	_verify_mobile_page_layout_assets()
 	var project_text := FileAccess.get_file_as_string("res://project.godot")
 	_expect(project_text.contains("window/size/resizable.mobile=true"), "Android 窗口允许重新布局")
 	_expect(project_text.contains("window/size/viewport_width.mobile=1280"), "Android 使用独立参考宽度")
@@ -1785,6 +1786,34 @@ func _verify_mobile_scene_interaction() -> void:
 	_expect_equal(input.merged_with(Vector2(1.0, 0.0)), Vector2(1.0, 0.0), "物理输入优先于较弱触控输入")
 	joystick.queue_free()
 	await process_frame
+
+
+func _verify_mobile_page_layout_assets() -> void:
+	for asset_path: String in [
+		"res://assets/ui/resident_detail/runtime/resident_detail_background_transparent_v1.png",
+		"res://assets/ui/resident_detail/runtime/relationship_page_transparent_v1.png",
+		"res://assets/ui/resident_detail/runtime/memory_page_transparent_v1.png",
+		"res://assets/ui/resident_detail/runtime/memory_operation_page_transparent_v1.png",
+	]:
+		_expect(FileAccess.file_exists(asset_path), "居民详情移动端透明页面资产已进入正式资源目录")
+	var loading_source := FileAccess.get_file_as_string(
+		"res://ui/startup/TownEntryLoadingOverlay.gd"
+	)
+	_expect(
+		loading_source.contains("TextureRect.STRETCH_KEEP_ASPECT_COVERED"),
+		"进入小镇加载底图按比例覆盖完整视口",
+	)
+	_expect(
+		loading_source.contains("AUTO_PROGRESS_CAP := 0.92"),
+		"进入小镇加载进度会自动推进到等待上限",
+	)
+	var overview_source := FileAccess.get_file_as_string(
+		"res://ui/resident_overview/ResidentOverviewScreen.gd"
+	)
+	_expect(
+		overview_source.contains("MOBILE_VISIBLE_ROSTER_ROWS := 7"),
+		"居民总览移动端一次显示七个可滑动条目",
+	)
 
 
 func _mobile_touch(index: int, pressed: bool, position: Vector2) -> InputEventScreenTouch:

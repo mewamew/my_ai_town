@@ -6,6 +6,8 @@ const UI_VIEW_MODEL := preload(
 	"res://ui/common/AiTownUiViewModel.gd"
 )
 const UiNodeRetirement := preload("res://ui/common/AiTownUiNodeRetirement.gd")
+const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
+const RESPONSIVE_VIEWPORT := preload("res://ui/common/ResponsiveViewportPolicy.gd")
 
 
 signal intent_requested(intent: StringName, payload: Dictionary)
@@ -975,7 +977,7 @@ func _rebuild_layout() -> void:
 	_provider_list_root = null
 	_detail_root = null
 	_detail_scroll = null
-	if _use_composite_desktop(viewport_size):
+	if _use_formal_composite(viewport_size):
 		_rebuild_composite_desktop(viewport_size)
 		_refresh_operation_state()
 		_schedule_focus_after_rebuild(input_focus_state)
@@ -1114,9 +1116,24 @@ func _use_composite_desktop(viewport_size: Vector2) -> bool:
 	return viewport_size.x >= 1280.0 and viewport_size.y >= 720.0
 
 
+func _use_formal_composite(viewport_size: Vector2) -> bool:
+	# Mobile uses the formal composite at every supported size. Desktop keeps
+	# the established breakpoint so its layout and text contracts do not change.
+	return MOBILE_UI_PROFILE.is_mobile_runtime() or _use_composite_desktop(viewport_size)
+
+
 func _rebuild_composite_desktop(viewport_size: Vector2) -> void:
+	var design_frame := RESPONSIVE_VIEWPORT.centered_design_rect(
+		viewport_size,
+		Vector2(RESPONSIVE_VIEWPORT.DESIGN_SIZE),
+	)
+	var mobile := MOBILE_UI_PROFILE.is_mobile_runtime()
+	var formal_viewport_size := design_frame.size if mobile else viewport_size
 	_composite_desktop = CompositeDesktop.new()
 	_composite_desktop.name = "CompositeDesktopRoot"
+	if mobile:
+		_composite_desktop.position = design_frame.position
+		_composite_desktop.size = formal_viewport_size
 	_layout_root = _composite_desktop
 	add_child(_layout_root)
 	var composite_data := _render_data.duplicate(true)
@@ -1148,7 +1165,7 @@ func _rebuild_composite_desktop(viewport_size: Vector2) -> void:
 		_show_key,
 		_provider_page,
 		_model_page,
-		viewport_size
+		formal_viewport_size
 	)
 	if not configured:
 		push_error("Provider composite desktop failed to configure.")
@@ -2530,11 +2547,15 @@ func _build_status_section(provider: Dictionary) -> Control:
 		"connection_status_message"
 	)
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	message.max_lines_visible = -1
-	message.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
-	message.clip_text = false
-	message.tooltip_text = message.text
-	message.custom_minimum_size.y = _connection_message_height(message)
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		message.max_lines_visible = 2
+		message.custom_minimum_size.y = _message_slot_height()
+	else:
+		message.max_lines_visible = -1
+		message.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+		message.clip_text = false
+		message.tooltip_text = message.text
+		message.custom_minimum_size.y = _connection_message_height(message)
 	message.set_meta("full_text", message.text)
 	status_column.add_child(message)
 	_check_button = _button(
@@ -3180,6 +3201,11 @@ func _capability_compact_label(capability: String) -> String:
 
 
 func _profile_for(viewport_size: Vector2) -> String:
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		var profile := MOBILE_UI_PROFILE.layout_profile(viewport_size)
+		if profile == MOBILE_UI_PROFILE.PHONE_LANDSCAPE:
+			return "short_landscape"
+		return profile
 	if viewport_size.x < 960:
 		return (
 			"short_landscape"
@@ -3202,7 +3228,11 @@ func _base_margin_for(profile: String) -> float:
 
 
 func _is_phone_profile() -> bool:
-	return _layout_profile in ["phone_portrait", "short_landscape"]
+	return _layout_profile in [
+		"phone_portrait",
+		"phone_landscape",
+		"short_landscape",
+	]
 
 
 func _body_font_size() -> int:
