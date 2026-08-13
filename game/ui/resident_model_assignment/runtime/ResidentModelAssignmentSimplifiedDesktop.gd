@@ -265,6 +265,50 @@ func asset_animation_snapshot() -> Dictionary:
 	}
 
 
+static func should_apply_draft(data: Dictionary, apply_enabled: bool) -> bool:
+	if not apply_enabled:
+		return false
+	return not has_pending_rebind(data)
+
+
+static func has_pending_rebind(data: Dictionary) -> bool:
+	var target_binding := data.get("targetBinding", {}) as Dictionary
+	var target_key := _binding_key(target_binding)
+	if String(data.get("mode", "single")) == "batch":
+		var selected_ids := data.get("selectedBatchResidentIds", []) as Array
+		for resident_value: Variant in data.get("residents", []) as Array:
+			if not resident_value is Dictionary:
+				continue
+			var resident := resident_value as Dictionary
+			if not selected_ids.has(String(resident.get("residentId", ""))):
+				continue
+			var current_binding := resident.get("llmBinding", {}) as Dictionary
+			if (
+				_binding_key(current_binding) != target_key
+				and not String(current_binding.get("providerId", "")).is_empty()
+				and not String(current_binding.get("modelId", "")).is_empty()
+			):
+				return true
+		return false
+	var selected_resident := data.get("selectedResident", {}) as Dictionary
+	if selected_resident.is_empty():
+		return false
+	var current_binding := selected_resident.get("llmBinding", {}) as Dictionary
+	return (
+		_binding_key(current_binding) != target_key
+		and not String(current_binding.get("providerId", "")).is_empty()
+		and not String(current_binding.get("modelId", "")).is_empty()
+	)
+
+
+static func _binding_key(binding: Dictionary) -> String:
+	return "%s|%s|%s" % [
+		String(binding.get("mode", "")),
+		String(binding.get("providerId", "")),
+		String(binding.get("modelId", "")),
+	]
+
+
 func _build_shell() -> void:
 	var background := _texture_rect(
 		"OriginalSimplifiedV34StructuralShell",
@@ -835,7 +879,8 @@ func _render_models() -> void:
 
 
 func _render_action_states(batch_mode: bool) -> void:
-	var ready_to_start := _action_enabled("applyDraft")
+	var ready_to_start := should_apply_draft(_data, _action_enabled("applyDraft"))
+	var pending_rebind := has_pending_rebind(_data)
 	_set_action_state("back", "back")
 	_set_action_state("mode", "setMode")
 	_set_action_state(
@@ -857,9 +902,11 @@ func _render_action_states(batch_mode: bool) -> void:
 				else "已全部分配 · 开始游戏"
 			)
 			if ready_to_start
+			else "改绑已选 %d 人" % (_data.get("selectedBatchResidentIds", []) as Array).size()
+			if pending_rebind and batch_mode
 			else "分配给已选 %d 人" % (_data.get("selectedBatchResidentIds", []) as Array).size()
 			if batch_mode
-			else "分配给当前居民"
+			else "改绑当前居民" if pending_rebind else "分配给当前居民"
 		),
 	)
 	(_labels.get("AssignCopy") as Label).add_theme_color_override(
@@ -1211,9 +1258,7 @@ func _model_card_path(
 
 
 func _on_primary_action_pressed() -> void:
-	var completed := int(_data.get("completedCount", 0))
-	var total := int(_data.get("residentCount", 0))
-	if total > 0 and completed >= total and _action_enabled("applyDraft"):
+	if should_apply_draft(_data, _action_enabled("applyDraft")):
 		apply_pressed.emit()
 		return
 	var binding := {
@@ -1265,6 +1310,12 @@ func _operation_copy(view_model: Dictionary) -> String:
 			return error_message if not error_message.is_empty() else "操作未完成，原分配已保留"
 		"disabled":
 			return "当前没有可用模型"
+	if has_pending_rebind(_data):
+		return (
+			"选中的新模型还没有应用，点击底部改绑按钮后再继续"
+			if String(_data.get("mode", "single")) == "single"
+			else "选中的新模型还没有应用，点击底部改绑已选居民后再继续"
+		)
 	if _action_enabled("applyDraft"):
 		return (
 			"调整完成后，点击确认返回模型设置"

@@ -5,6 +5,9 @@ const HOST := preload("res://world/presentation/game_flow/GameFlowHost.gd")
 const ASSIGNMENT_SERVICE := preload(
 	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentService.gd"
 )
+const ASSIGNMENT_DESKTOP := preload(
+	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentSimplifiedDesktop.gd"
+)
 
 
 class FakeGateway:
@@ -89,6 +92,7 @@ func _run() -> void:
 	_expect(gateway.bindings == updated, "Agent 网关收到新绑定")
 	_expect(runtime.bindings == updated, "小镇运行时收到新绑定")
 	_expect(session.bindings == updated and session.saved, "改绑会更新存档并立即保存")
+	_test_completed_assignment_rebind_action()
 	_test_single_resident_assignment_mode()
 	host.set("_gateway", null)
 	host.set("_town_runtime", null)
@@ -148,6 +152,70 @@ func _test_single_resident_assignment_mode() -> void:
 	_expect(
 		not bool((actions.get("selectAllBatch", {}) as Dictionary).get("enabled", true)),
 		"入镇绑定页禁用全选",
+	)
+
+
+func _test_completed_assignment_rebind_action() -> void:
+	var old_binding := {
+		"mode": "model",
+		"providerId": "deepseek",
+		"modelId": "deepseek-chat",
+	}
+	var new_binding := {
+		"mode": "model",
+		"providerId": "deepseek",
+		"modelId": "deepseek-reasoner",
+	}
+	var data := {
+		"mode": "single",
+		"selectedResident": {
+			"residentId": "resident-a",
+			"llmBinding": old_binding.duplicate(true),
+		},
+		"targetBinding": old_binding.duplicate(true),
+	}
+	_expect(
+		ASSIGNMENT_DESKTOP.should_apply_draft(data, true),
+		"全部绑定完成且没有待提交改绑时仍可开始",
+	)
+	data["targetBinding"] = new_binding.duplicate(true)
+	_expect(
+		not ASSIGNMENT_DESKTOP.should_apply_draft(data, true),
+		"全部绑定完成后选择新模型会回到底部改绑动作",
+	)
+	_expect(
+		ASSIGNMENT_DESKTOP.has_pending_rebind(data),
+		"开始界面会明确显示当前居民正在改绑",
+	)
+	var selected_resident := data["selectedResident"] as Dictionary
+	selected_resident["llmBinding"] = new_binding.duplicate(true)
+	_expect(
+		ASSIGNMENT_DESKTOP.should_apply_draft(data, true),
+		"改绑提交后底部动作恢复为开始",
+	)
+	_expect(
+		not ASSIGNMENT_DESKTOP.has_pending_rebind(data),
+		"改绑提交后开始界面不再保留待改绑提示",
+	)
+	data["mode"] = "batch"
+	data["residents"] = [
+		{
+			"residentId": "resident-a",
+			"llmBinding": new_binding.duplicate(true),
+		},
+		{
+			"residentId": "resident-b",
+			"llmBinding": old_binding.duplicate(true),
+		},
+	]
+	data["selectedBatchResidentIds"] = ["resident-a", "resident-b"]
+	_expect(
+		not ASSIGNMENT_DESKTOP.should_apply_draft(data, true),
+		"批量选择中存在待改绑居民时不会直接开始",
+	)
+	_expect(
+		ASSIGNMENT_DESKTOP.has_pending_rebind(data),
+		"开始界面会明确显示批量居民正在改绑",
 	)
 
 
