@@ -1814,6 +1814,24 @@ func _verify_mobile_page_layout_assets() -> void:
 		overview_source.contains("MOBILE_VISIBLE_ROSTER_ROWS := 7"),
 		"居民总览移动端一次显示七个可滑动条目",
 	)
+	var hud_source := FileAccess.get_file_as_string(
+		"res://ui/town/hud/runtime/TownHudOverlay.gd"
+	)
+	_expect(
+		hud_source.contains("MOBILE_LEFT_RAIL_RECT")
+			and hud_source.contains("MOBILE_RIGHT_RAIL_RECT"),
+		"移动端 HUD 左右导轨使用独立比例锁定组件",
+	)
+	_expect(
+		hud_source.contains("mobile_time_component")
+			and hud_source.contains("mobile_avatar_component"),
+		"移动端 HUD 时间与化身区域不随宽屏横向拉伸",
+	)
+	_expect(
+		hud_source.contains("STRETCH_KEEP_ASPECT_CENTERED")
+			and hud_source.contains("MOBILE_TOP_FRAME_BAND_RECT"),
+		"移动端 HUD 仅让空白边带延展并保持图标比例",
+	)
 
 
 func _mobile_touch(index: int, pressed: bool, position: Vector2) -> InputEventScreenTouch:

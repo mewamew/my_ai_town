@@ -3,6 +3,7 @@ extends Control
 
 
 const UiViewModel := preload("res://ui/common/AiTownUiViewModel.gd")
+const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
 const Typography := preload(
 	"res://ui/town/hud/runtime/TownHudTypographyContract.gd"
 )
@@ -55,6 +56,46 @@ const TIME_SPEED_CONTROLS := {
 	"time_speed_3": {"actionKey": "timeSpeed3", "multiplier": 3},
 }
 const HUD_REFERENCE_SIZE := Vector2(1672.0, 941.0)
+const MOBILE_LEFT_RAIL_RECT := Rect2(0.0, 0.0, 155.0, 941.0)
+const MOBILE_RIGHT_RAIL_RECT := Rect2(1517.0, 0.0, 155.0, 941.0)
+const MOBILE_TOP_FRAME_BAND_RECT := Rect2(155.0, 0.0, 402.0, 20.0)
+const MOBILE_BOTTOM_FRAME_BAND_RECT := Rect2(155.0, 924.0, 561.0, 17.0)
+const MOBILE_TIME_COMPONENT_RECT := Rect2(557.0, 20.0, 558.0, 94.0)
+const MOBILE_AVATAR_COMPONENT_RECT := Rect2(716.0, 818.0, 232.0, 123.0)
+const MOBILE_CONTROL_SOURCE_RECTS := {
+	"weatherChange": Rect2(995, 28, 94, 76),
+	"nav_residents": Rect2(28, 89, 88, 86),
+	"nav_places": Rect2(28, 190, 88, 84),
+	"nav_relationships": Rect2(28, 289, 88, 84),
+	"nav_log": Rect2(28, 386, 88, 84),
+	"nav_bulletin": Rect2(28, 484, 88, 84),
+	"nav_settings": Rect2(28, 584, 88, 84),
+	"camera_fit": Rect2(1574, 92, 68, 74),
+	"camera_zoom_in": Rect2(1574, 184, 68, 74),
+	"camera_zoom_out": Rect2(1574, 277, 68, 74),
+	"time_pause": Rect2(1568, 392, 68, 68),
+	"time_speed_1": Rect2(1568, 469, 68, 68),
+	"time_speed_2": Rect2(1568, 545, 68, 68),
+	"time_speed_3": Rect2(1568, 621, 68, 68),
+	"avatar_toggle": Rect2(775, 831, 126, 96),
+}
+const MOBILE_LEFT_CONTROL_IDS := [
+	"nav_residents",
+	"nav_places",
+	"nav_relationships",
+	"nav_log",
+	"nav_bulletin",
+	"nav_settings",
+]
+const MOBILE_RIGHT_CONTROL_IDS := [
+	"camera_fit",
+	"camera_zoom_in",
+	"camera_zoom_out",
+	"time_pause",
+	"time_speed_1",
+	"time_speed_2",
+	"time_speed_3",
+]
 const TIME_CONTROL_BACKGROUND_MASK_SHADER := """
 shader_type canvas_item;
 
@@ -453,11 +494,15 @@ func _build_runtime_skin() -> void:
 	var outer := NinePatchRect.new()
 	outer.name = &"ConfirmedObserverV5StaticShell"
 	outer.texture = OUTER_SHELL_TEXTURE
-	outer.patch_margin_left = 20
+	outer.patch_margin_left = 155 if MOBILE_UI_PROFILE.is_mobile_runtime() else 20
 	outer.patch_margin_top = 740
-	outer.patch_margin_right = 20
+	outer.patch_margin_right = 155 if MOBILE_UI_PROFILE.is_mobile_runtime() else 20
 	outer.patch_margin_bottom = 200
-	outer.axis_stretch_horizontal = NinePatchRect.AXIS_STRETCH_MODE_STRETCH
+	outer.axis_stretch_horizontal = (
+		NinePatchRect.AXIS_STRETCH_MODE_TILE_FIT
+		if MOBILE_UI_PROFILE.is_mobile_runtime()
+		else NinePatchRect.AXIS_STRETCH_MODE_STRETCH
+	)
 	outer.axis_stretch_vertical = NinePatchRect.AXIS_STRETCH_MODE_STRETCH
 	outer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	outer.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -468,6 +513,39 @@ func _build_runtime_skin() -> void:
 	outer.set_meta("visible_border_owner", true)
 	_skin_root.add_child(outer)
 	_skin_nodes["outer_shell"] = outer
+
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		# The wide phone shell may stretch only its empty frame bands. Painted
+		# controls are mounted as separate atlas pieces and keep uniform scale.
+		for spec: Dictionary in [
+			{"id": "mobile_left_rail", "rect": MOBILE_LEFT_RAIL_RECT},
+			{"id": "mobile_right_rail", "rect": MOBILE_RIGHT_RAIL_RECT},
+			{"id": "mobile_top_frame_band", "rect": MOBILE_TOP_FRAME_BAND_RECT},
+			{"id": "mobile_bottom_frame_band", "rect": MOBILE_BOTTOM_FRAME_BAND_RECT},
+			{"id": "mobile_time_component", "rect": MOBILE_TIME_COMPONENT_RECT},
+			{"id": "mobile_avatar_component", "rect": MOBILE_AVATAR_COMPONENT_RECT},
+		]:
+			var piece := TextureRect.new()
+			piece.name = StringName(String(spec["id"]).to_pascal_case())
+			piece.texture = _atlas_texture(
+				OUTER_SHELL_TEXTURE,
+				spec["rect"] as Rect2,
+			)
+			piece.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			piece.stretch_mode = (
+				TextureRect.STRETCH_SCALE
+				if String(spec["id"]).ends_with("frame_band")
+				else TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			)
+			piece.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			piece.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			piece.set_meta(
+				"asset_id",
+				"ui.town.hud.%s.aspect-locked" % String(spec["id"]),
+			)
+			piece.set_meta("visible_border_owner", false)
+			_skin_root.add_child(piece)
+			_skin_nodes[String(spec["id"])] = piece
 
 	_time_control_panel_face = TextureRect.new()
 	_time_control_panel_face.name = &"TimeControlPanelVisual"
@@ -644,7 +722,20 @@ func _make_button(id: String) -> void:
 
 
 func _apply_layout() -> void:
-	_layout = Typography.layout_for(size, safe_insets, physical_scale)
+	var typography_insets := safe_insets
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		var mobile_insets := MOBILE_UI_PROFILE.safe_insets(size, get_window())
+		safe_insets = Vector4(
+			float(mobile_insets.get("left", 0.0)),
+			float(mobile_insets.get("top", 0.0)),
+			float(mobile_insets.get("right", 0.0)),
+			float(mobile_insets.get("bottom", 0.0)),
+		)
+		# The viewport delivered by Android already includes the physical display
+		# bounds. Keep the painted HUD on those bounds; only map-semantic bubbles
+		# use cutout insets. Applying the inset twice visibly detaches the rails.
+		typography_insets = Vector4.ZERO
+	_layout = Typography.layout_for(size, typography_insets, physical_scale)
 	if is_instance_valid(_far_resident_activity_layer):
 		_far_resident_activity_layer.safe_insets = safe_insets
 	_apply_runtime_skin_layout()
@@ -656,7 +747,7 @@ func _apply_layout() -> void:
 		if not _labels.has(id):
 			continue
 		var label := _labels[id] as Label
-		var rect := slot["rect"] as Rect2
+		var rect := _mobile_hud_text_rect(id, slot["rect"] as Rect2)
 		label.position = rect.position
 		label.size = rect.size
 		label.visible = not rect.has_area() and false
@@ -668,7 +759,7 @@ func _apply_layout() -> void:
 		if not _buttons.has(id):
 			continue
 		var button := _buttons[id] as Button
-		var rect := target["rect"] as Rect2
+		var rect := _mobile_hud_control_rect(id, target["rect"] as Rect2)
 		button.position = rect.position
 		button.size = rect.size
 		button.visible = rect.has_area() and _button_should_be_visible(id)
@@ -693,6 +784,15 @@ func _apply_resident_directory_layout() -> void:
 		drawer_width = minf(safe.size.x - 24.0, drawer_height * 0.666667)
 		drawer_position = Vector2(
 			safe.get_center().x - drawer_width * 0.5,
+			safe.get_center().y - drawer_height * 0.5,
+		)
+	elif MOBILE_UI_PROFILE.is_mobile_runtime():
+		# The drawer source is 2:3. Scale the whole authored window uniformly to
+		# the phone height instead of widening only its contents.
+		drawer_height = safe.size.y - 24.0
+		drawer_width = drawer_height * 0.666667
+		drawer_position = Vector2(
+			nav_rect.end.x + 8.0,
 			safe.get_center().y - drawer_height * 0.5,
 		)
 	else:
@@ -725,6 +825,15 @@ func _apply_place_directory_layout() -> void:
 			safe.get_center().x - drawer_width * 0.5,
 			safe.get_center().y - drawer_height * 0.5,
 		)
+	elif MOBILE_UI_PROFILE.is_mobile_runtime():
+		# Keep the same uniform 2:3 scale as the resident drawer so both windows
+		# grow together and all painted slots remain aligned with their labels.
+		drawer_height = safe.size.y - 24.0
+		drawer_width = drawer_height * 0.666667
+		drawer_position = Vector2(
+			nav_rect.end.x + 8.0,
+			safe.get_center().y - drawer_height * 0.5,
+		)
 	else:
 		drawer_height = minf(720.0, safe.size.y - 164.0)
 		drawer_height = maxf(drawer_height, 480.0)
@@ -747,6 +856,56 @@ func _apply_runtime_skin_layout() -> void:
 	var outer := _skin_nodes.get("outer_shell") as NinePatchRect
 	if outer == null:
 		return
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		# Assemble the phone HUD from independent source regions. Only the empty
+		# top and bottom frame bands stretch; rails, time/weather and avatar art
+		# retain uniform scale.
+		var safe := _layout.get("safeRect", Rect2(Vector2.ZERO, size)) as Rect2
+		var mobile_scale := safe.size.y / HUD_REFERENCE_SIZE.y
+		outer.visible = false
+		_layout_mobile_hud_piece(
+			"mobile_left_rail",
+			MOBILE_LEFT_RAIL_RECT,
+			mobile_scale,
+			&"left",
+			safe,
+		)
+		_layout_mobile_hud_piece(
+			"mobile_right_rail",
+			MOBILE_RIGHT_RAIL_RECT,
+			mobile_scale,
+			&"right",
+			safe,
+		)
+		_layout_mobile_hud_piece(
+			"mobile_top_frame_band",
+			MOBILE_TOP_FRAME_BAND_RECT,
+			mobile_scale,
+			&"top_band",
+			safe,
+		)
+		_layout_mobile_hud_piece(
+			"mobile_bottom_frame_band",
+			MOBILE_BOTTOM_FRAME_BAND_RECT,
+			mobile_scale,
+			&"bottom_band",
+			safe,
+		)
+		_layout_mobile_hud_piece(
+			"mobile_time_component",
+			MOBILE_TIME_COMPONENT_RECT,
+			mobile_scale,
+			&"center",
+			safe,
+		)
+		_layout_mobile_hud_piece(
+			"mobile_avatar_component",
+			MOBILE_AVATAR_COMPONENT_RECT,
+			mobile_scale,
+			&"center_bottom",
+			safe,
+		)
+		return
 	var uniform_scale := minf(
 		size.x / HUD_REFERENCE_SIZE.x,
 		size.y / HUD_REFERENCE_SIZE.y,
@@ -766,6 +925,118 @@ func _apply_runtime_skin_layout() -> void:
 			HUD_REFERENCE_SIZE.y,
 		)
 	outer.scale = Vector2.ONE * uniform_scale
+
+
+func _mobile_hud_text_rect(id: String, fallback: Rect2) -> Rect2:
+	if not MOBILE_UI_PROFILE.is_mobile_runtime() or id != "time_weather":
+		return fallback
+	return _mobile_hud_reference_rect(Rect2(610, 34, 382, 60), &"center")
+
+
+func _mobile_hud_control_rect(id: String, fallback: Rect2) -> Rect2:
+	if not MOBILE_UI_PROFILE.is_mobile_runtime() or not MOBILE_CONTROL_SOURCE_RECTS.has(id):
+		return fallback
+	var anchor := &"center" as StringName
+	if id in MOBILE_LEFT_CONTROL_IDS:
+		anchor = &"left"
+	elif id in MOBILE_RIGHT_CONTROL_IDS:
+		anchor = &"right"
+	elif id == "avatar_toggle":
+		anchor = &"center_bottom"
+	return _mobile_hud_reference_rect(
+		MOBILE_CONTROL_SOURCE_RECTS[id] as Rect2,
+		anchor,
+	)
+
+
+func _mobile_hud_reference_rect(
+	source_rect: Rect2,
+	anchor: StringName,
+) -> Rect2:
+	var mobile_scale := size.y / HUD_REFERENCE_SIZE.y
+	var display_size := source_rect.size * mobile_scale
+	var display_position := source_rect.position * mobile_scale
+	match anchor:
+		&"right":
+			display_position.x = size.x - (
+				HUD_REFERENCE_SIZE.x - source_rect.end.x
+			) * mobile_scale - display_size.x
+		&"center":
+			var center_offset := (
+				source_rect.get_center().x - HUD_REFERENCE_SIZE.x * 0.5
+			) * mobile_scale
+			display_position.x = size.x * 0.5 + center_offset - display_size.x * 0.5
+		&"center_bottom":
+			var center_offset := (
+				source_rect.get_center().x - HUD_REFERENCE_SIZE.x * 0.5
+			) * mobile_scale
+			display_position.x = size.x * 0.5 + center_offset - display_size.x * 0.5
+			display_position.y = size.y - (
+				HUD_REFERENCE_SIZE.y - source_rect.end.y
+			) * mobile_scale - display_size.y
+		_:
+			pass
+	return Rect2(display_position.round(), display_size.round())
+
+
+func _layout_mobile_hud_piece(
+	id: String,
+	source_rect: Rect2,
+	mobile_scale: float,
+	anchor: StringName,
+	safe: Rect2,
+) -> void:
+	var piece := _skin_nodes.get(id) as TextureRect
+	if piece == null:
+		return
+	var display_size := source_rect.size * mobile_scale
+	var display_position := safe.position + source_rect.position * mobile_scale
+	match anchor:
+		&"right":
+			display_position.x = safe.end.x - (
+				HUD_REFERENCE_SIZE.x - source_rect.end.x
+			) * mobile_scale - display_size.x
+		&"center":
+			display_position.x = safe.get_center().x - display_size.x * 0.5
+		&"center_bottom":
+			display_position.x = safe.get_center().x - display_size.x * 0.5
+			display_position.y = safe.end.y - (
+				HUD_REFERENCE_SIZE.y - source_rect.end.y
+			) * mobile_scale - display_size.y
+		&"top_band":
+			display_position = Vector2(
+				safe.position.x + MOBILE_LEFT_RAIL_RECT.size.x * mobile_scale,
+				safe.position.y,
+			)
+			display_size.x = maxf(
+				1.0,
+				safe.size.x
+				- (MOBILE_LEFT_RAIL_RECT.size.x + MOBILE_RIGHT_RAIL_RECT.size.x)
+				* mobile_scale,
+			)
+		&"bottom_band":
+			display_size.x = maxf(
+				1.0,
+				safe.size.x
+				- (MOBILE_LEFT_RAIL_RECT.size.x + MOBILE_RIGHT_RAIL_RECT.size.x)
+				* mobile_scale,
+			)
+			display_position = Vector2(
+				safe.position.x + MOBILE_LEFT_RAIL_RECT.size.x * mobile_scale,
+				safe.end.y - display_size.y,
+			)
+		_:
+			pass
+	piece.position = display_position.round()
+	piece.size = display_size.round()
+	piece.visible = not _avatar_mode_active
+
+
+func _atlas_texture(source: Texture2D, region: Rect2) -> AtlasTexture:
+	var atlas := AtlasTexture.new()
+	atlas.atlas = source
+	atlas.region = region
+	return atlas
 
 
 func _density_band() -> String:
@@ -907,6 +1178,11 @@ func _confirmed_time_speed_button_id() -> String:
 func _time_control_panel_visual_rect() -> Rect2:
 	if size.x <= 0.0 or size.y <= 0.0:
 		return Rect2()
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		return _mobile_hud_reference_rect(
+			TIME_CONTROL_PANEL_SOURCE_RECT,
+			&"right",
+		)
 	var uniform_scale := minf(
 		size.x / HUD_REFERENCE_SIZE.x,
 		size.y / HUD_REFERENCE_SIZE.y,
@@ -1138,7 +1414,20 @@ func _update_runtime_skin_visibility() -> void:
 				not _avatar_mode_active and id == "outer_shell"
 			)
 		return
-	_set_skin_visibility("outer_shell", true)
+	_set_skin_visibility(
+		"outer_shell",
+		not MOBILE_UI_PROFILE.is_mobile_runtime(),
+	)
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		for id: String in [
+			"mobile_left_rail",
+			"mobile_right_rail",
+			"mobile_top_frame_band",
+			"mobile_bottom_frame_band",
+			"mobile_time_component",
+			"mobile_avatar_component",
+		]:
+			_set_skin_visibility(id, true)
 
 
 func _resident_directory_open() -> bool:
