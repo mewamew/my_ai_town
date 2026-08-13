@@ -25,6 +25,7 @@ var _place_name := ""
 var _enter_button: Button
 var _door_icon: TextureRect
 var _camera_zoom := Vector2.ONE
+var _touch_scale_multiplier := 1.0
 
 
 func configure(
@@ -58,7 +59,12 @@ func set_camera_zoom(camera_zoom: Vector2) -> void:
 		normalized_zoom = Vector2.ONE
 	_camera_zoom = normalized_zoom
 	var minimum_zoom := minf(normalized_zoom.x, normalized_zoom.y)
-	scale = Vector2.ONE * maxf(1.0, 1.0 / minimum_zoom)
+	scale = Vector2.ONE * maxf(1.0, 1.0 / minimum_zoom) * _touch_scale_multiplier
+
+
+func set_touch_scale_multiplier(multiplier: float) -> void:
+	_touch_scale_multiplier = maxf(multiplier, 1.0)
+	set_camera_zoom(_camera_zoom)
 
 
 func display_size() -> Vector2:

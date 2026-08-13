@@ -1,6 +1,8 @@
 class_name ResidentCharacterBody
 extends CharacterBody2D
 
+const POINTER_INPUT := preload("res://ui/mobile/PointerInput.gd")
+
 
 signal visible_space_changed(
 	resident_id: String,
@@ -2058,9 +2060,7 @@ func _on_hit_area_input(
 ) -> void:
 	if (
 		not can_receive_pointer_input()
-		or not (event is InputEventMouseButton)
-		or event.button_index != MOUSE_BUTTON_LEFT
-		or not event.pressed
+		or not POINTER_INPUT.is_primary_press(event)
 	):
 		return
 		resident_pressed.emit(_resident_id, _resident_name)

@@ -3,6 +3,7 @@ extends Node
 
 
 signal animal_petted(result: Dictionary)
+signal animal_touch_requested(animal_id: String)
 signal resident_animal_interaction(result: Dictionary)
 
 const ANIMAL := preload("res://world/presentation/animals/TownAnimal.gd")
@@ -138,6 +139,7 @@ func bind_character_root(character_root: Node2D) -> Dictionary:
 			continue
 		character_root.add_child(animal)
 		animal.petted.connect(_on_animal_petted)
+		animal.touch_requested.connect(_on_animal_touch_requested)
 		_animals.append(animal)
 	return {
 		"ok": errors.is_empty(),
@@ -352,6 +354,21 @@ func try_pet_nearest(player_position: Vector2 = Vector2.INF) -> Dictionary:
 	return result
 
 
+func try_pet_animal(animal_id: String, player_position: Vector2) -> Dictionary:
+	_player_position = player_position
+	if not _can_interact or not _world_visible or _simulation_paused:
+		return {"ok": false, "errorCode": "ANIMAL_INTERACTION_UNAVAILABLE"}
+	for animal: TownAnimal in _animals:
+		if animal.animal_id != animal_id:
+			continue
+		var result := animal.begin_pet(player_position)
+		if result.get("ok") == true:
+			_focused_animal = animal
+			_last_pet_result = result.duplicate(true)
+		return result
+	return {"ok": false, "errorCode": "ANIMAL_NOT_FOUND"}
+
+
 func get_snapshot() -> Dictionary:
 	var animal_snapshots: Array[Dictionary] = []
 	var species_counts := {"cat": 0, "dog": 0, "bird": 0}
@@ -415,6 +432,10 @@ func _on_animal_petted(
 		"species": species,
 	}
 	animal_petted.emit(result)
+
+
+func _on_animal_touch_requested(animal_id: String) -> void:
+	animal_touch_requested.emit(animal_id)
 
 
 func _sync_cat_world_props() -> void:

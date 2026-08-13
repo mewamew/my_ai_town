@@ -4159,6 +4159,11 @@ func _bind_town_runtime(runtime: Node) -> void:
 			"intent_requested",
 			Callable(self, "_on_avatar_hud_intent_requested"),
 		)
+		_connect_once(
+			_avatar_hud,
+			"movement_input_changed",
+			Callable(self, "_on_avatar_movement_input_changed"),
+		)
 	else:
 		_avatar_hud = _town_ui_canvas_layer.get_node("AvatarModeHud") as Control
 		var existing_avatar_issues := _avatar_hud.call(
@@ -4174,6 +4179,11 @@ func _bind_town_runtime(runtime: Node) -> void:
 			_avatar_hud,
 			"intent_requested",
 			Callable(self, "_on_avatar_hud_intent_requested"),
+		)
+		_connect_once(
+			_avatar_hud,
+			"movement_input_changed",
+			Callable(self, "_on_avatar_movement_input_changed"),
 		)
 	if _town_ui_canvas_layer.get_node_or_null("PauseMenuNavigationHost") == null:
 		_pause_host = _instantiate_control_scene(PAUSE_MENU_HOST_SCENE_PATH)
@@ -5554,6 +5564,12 @@ func _on_avatar_hud_intent_requested(_intent: String, _payload: Dictionary) -> v
 	# it is not a request to open ResidentActionMenu. Explicit resident-action
 	# entry points remain owned by TownUiRuntimeHost.
 	pass
+
+
+func _on_avatar_movement_input_changed(value: Vector2) -> void:
+	var town_runtime := _town_runtime as AiTownRuntime
+	if is_instance_valid(town_runtime):
+		town_runtime.set_virtual_movement_input(value)
 
 
 func _on_town_ui_pause_requested() -> void:

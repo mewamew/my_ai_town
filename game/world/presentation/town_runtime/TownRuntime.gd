@@ -1,4 +1,5 @@
 # 正式 Town 的组合根：世界、居民 Agent 与表现层只通过各自公开接口联合运行。
+class_name AiTownRuntime
 extends "res://world/maps/town/Town.gd"
 
 
@@ -43,6 +44,12 @@ const BUILDING_ENTRY_CONFIRM := preload(
 const SPACE_VIEW_SYNC := preload(
 	"res://world/presentation/town_runtime/TownSpaceViewSync.gd"
 )
+const TOUCH_CAMERA_GESTURE := preload(
+	"res://ui/mobile/TouchCameraGesture.gd"
+)
+const MOBILE_MOVEMENT_INPUT := preload(
+	"res://ui/mobile/MobileMovementInput.gd"
+)
 # 表现层激活空间与实际可视空间的周期兜底核对间隔（秒）。
 const SPACE_VIEW_SYNC_INTERVAL_SECONDS := 0.5
 const RESIDENT_WARDROBE_CATALOG_PATH := (
@@ -71,6 +78,8 @@ const AVATAR_COLLISION_MASK := (
 const BULLETIN_BOARD_HOTSPOT_CENTER := Vector2(3064.0, 1683.0)
 const BULLETIN_BOARD_HOTSPOT_SIZE := Vector2(160.0, 128.0)
 const BUILDING_ENTRY_CONFIRM_SIZE := Vector2(214.0, 44.0)
+const MOBILE_BUILDING_RESIDENT_MARKER_TOUCH_SCALE := 1.45
+const MOBILE_BUILDING_ENTRY_CONFIRM_TOUCH_SCALE := 1.65
 const BUILDING_ENTRY_CONFIRM_SCREEN_INSETS := Vector4(175.0, 145.0, 185.0, 70.0)
 const RESIDENT_ACTION_MENU_EXTENTS := Vector4(196.0, 341.0, 196.0, 14.0)
 const REQUIRED_AGENT_GATEWAY_METHODS: Array[String] = [
@@ -127,7 +136,7 @@ var _building_observation_hotspots: Dictionary = {}
 var _building_resident_markers: Dictionary = {}
 var _resident_portrait_path_by_appearance: Dictionary = {}
 var _focused_building_place_name := ""
-var _building_entry_confirm: Node2D
+var _building_entry_confirm: BuildingEntryConfirm
 var _building_entry_confirm_place_name := ""
 var _expanded_building_resident_marker: Node2D
 var _observed_place_name := ""
@@ -176,6 +185,7 @@ var _observer_camera_position := OBSERVER_START_POSITION
 var _observer_camera_input_enabled := true
 var _avatar_movement_input_enabled := true
 var _avatar_conflict_input_blocked := false
+var _mobile_movement_input: MobileMovementInput = MOBILE_MOVEMENT_INPUT.new()
 var _frame_profile_enabled := false
 var _last_frame_profile: Dictionary = {}
 # A1 探针:仅 AI_TOWN_UI_FRAME_PROBE=1 时加载,关闭时保持 null、零开销。
@@ -184,6 +194,7 @@ var _observer_drag_active := false
 var _observer_drag_button := MOUSE_BUTTON_NONE
 var _observer_magnify_accumulator := 0.0
 var _avatar_magnify_accumulator := 0.0
+var _touch_camera_gesture: TouchCameraGesture = TOUCH_CAMERA_GESTURE.new()
 var _agent_dispatch_hold_process_turns := 0
 var _agent_dispatch_not_before_drawn_frame := -1
 var _agent_dispatch_first_draw_deadline_msec := 0
@@ -483,6 +494,11 @@ func _input(event: InputEvent) -> void:
 		var focus_owner := get_viewport().gui_get_focus_owner()
 		if focus_owner == null or not focus_owner.get_global_rect().has_point(event.position):
 			_release_text_input_focus()
+	elif event is InputEventScreenTouch and event.pressed:
+		var touch := event as InputEventScreenTouch
+		var focus_owner := get_viewport().gui_get_focus_owner()
+		if focus_owner == null or not focus_owner.get_global_rect().has_point(touch.position):
+			_release_text_input_focus()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -491,11 +507,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_dismiss_building_entry_confirm()
 			get_viewport().set_input_as_handled()
 			return
-		if (
-			event is InputEventMouseButton
-			and event.pressed
-			and event.button_index == MOUSE_BUTTON_LEFT
-		):
+		if _is_primary_pointer_press(event):
 			_dismiss_building_entry_confirm()
 			get_viewport().set_input_as_handled()
 			return
@@ -504,15 +516,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			_collapse_building_resident_marker()
 			get_viewport().set_input_as_handled()
 			return
-		if (
-			event is InputEventMouseButton
-			and event.pressed
-			and event.button_index == MOUSE_BUTTON_LEFT
-		):
+		if _is_primary_pointer_press(event):
 			_collapse_building_resident_marker()
 			get_viewport().set_input_as_handled()
 			return
 	if _avatar_mode == AVATAR_MODE_OBSERVER:
+		if _handle_touch_camera_input(event, true):
+			get_viewport().set_input_as_handled()
+			return
 		if _handle_observer_zoom_input(event):
 			get_viewport().set_input_as_handled()
 			return
@@ -538,9 +549,13 @@ func _unhandled_input(event: InputEvent) -> void:
 					_cancel_observer_drag()
 				get_viewport().set_input_as_handled()
 				return
-	elif _handle_avatar_zoom_input(event):
-		get_viewport().set_input_as_handled()
-		return
+	else:
+		if _handle_touch_camera_input(event, false):
+			get_viewport().set_input_as_handled()
+			return
+		if _handle_avatar_zoom_input(event):
+			get_viewport().set_input_as_handled()
+			return
 	if (
 		enable_player_avatar
 		and event.is_action_pressed("interact")
@@ -1097,14 +1112,6 @@ func _update_animal_presentation_state() -> void:
 		and not world_paused
 		and not _is_text_input_focused()
 	)
-	if can_interact:
-		var avatar := _world.get_player_avatar_state() as Dictionary
-		var nearby_value: Variant = avatar.get("nearby", [])
-		var has_nearby_resident := (
-			nearby_value is Array
-			and not (nearby_value as Array).is_empty()
-		)
-		can_interact = not has_nearby_resident
 	_animal_presentation.set_runtime_state(
 		_player.position,
 		can_interact,
@@ -1125,6 +1132,26 @@ func _try_pet_nearest_animal() -> bool:
 	):
 		_world.record_player_animal_pet(String(result.get("animalId", "")),)
 	return result.get("ok") == true
+
+
+func _on_animal_touch_requested(_animal_id: String) -> void:
+	# 手机版的摸动物操作统一由化身 HUD 右侧动作区发起。动物本体不再
+	# 直接执行动作，避免场景点击和动作按钮同时触发。
+	return
+
+
+func try_pet_nearest_animal_from_ui() -> Dictionary:
+	if _try_pet_nearest_animal():
+		return {
+			"ok": true,
+			"errorCode": "",
+			"retryable": false,
+		}
+	return {
+		"ok": false,
+		"errorCode": "NO_NEARBY_ANIMAL",
+		"retryable": false,
+	}
 
 
 func get_runtime_state() -> Dictionary:
@@ -1305,6 +1332,8 @@ func set_observer_camera_input_enabled(enabled: bool) -> Dictionary:
 func set_avatar_movement_input_enabled(enabled: bool) -> Dictionary:
 	var changed := _avatar_movement_input_enabled != enabled
 	_avatar_movement_input_enabled = enabled
+	if not enabled:
+		_mobile_movement_input.clear()
 	if changed:
 		_clear_move_action_state()
 	if not enabled and enable_player_avatar:
@@ -1323,6 +1352,14 @@ func set_avatar_movement_input_enabled(enabled: bool) -> Dictionary:
 		"requestedEnabled": _avatar_movement_input_enabled,
 		"conflictBlocked": _avatar_conflict_input_blocked,
 	}
+
+
+func set_virtual_movement_input(value: Vector2) -> void:
+	_mobile_movement_input.set_value(value)
+
+
+func _read_move_input() -> Vector2:
+	return _mobile_movement_input.merged_with(super._read_move_input())
 
 
 func _on_conflict_visuals_changed(snapshot: Dictionary) -> void:
@@ -1741,6 +1778,9 @@ func _start_world() -> void:
 	_animal_presentation = ANIMAL_PRESENTATION.new() as TownAnimalPresentation
 	_animal_presentation.name = "TownAnimalPresentation"
 	add_child(_animal_presentation)
+	_animal_presentation.animal_touch_requested.connect(
+		_on_animal_touch_requested,
+	)
 	var animal_binding := _animal_presentation.bind_character_root(
 		_resident_character_root,
 	)
@@ -2212,7 +2252,9 @@ func _set_avatar_mode(next_mode: String) -> Dictionary:
 			_avatar_descent_presentation.cancel()
 		_stop_avatar_visual_motion()
 		_disable_avatar_control()
-	_set_building_hotspots_available(next_mode == AVATAR_MODE_OBSERVER)
+	# The availability method keeps desktop avatar mode unchanged while allowing
+	# mobile avatar taps to route to a building entrance.
+	_set_building_hotspots_available(true)
 	avatar_mode_changed.emit(_avatar_mode, previous_mode)
 	_update_runtime_hud()
 	return presentation_result
@@ -2419,9 +2461,68 @@ func _handle_avatar_zoom_input(event: InputEvent) -> bool:
 	return false
 
 
+func _handle_touch_camera_input(event: InputEvent, allow_pan: bool) -> bool:
+	if not event is InputEventScreenTouch and not event is InputEventScreenDrag:
+		return false
+	var accepts_input := (
+		_observer_camera_accepts_input()
+		if allow_pan
+		else _avatar_camera_accepts_zoom_input()
+	)
+	if not accepts_input:
+		_touch_camera_gesture.reset()
+		return false
+	var gesture := _touch_camera_gesture.consume(event)
+	if not bool(gesture.get("handled", false)):
+		return false
+	var pan := gesture.get("pan", Vector2.ZERO) as Vector2
+	if allow_pan and pan.length_squared() > 0.0:
+		_stop_following_for_observer_pan()
+		var zoom_value := maxf(_camera.zoom.x, 0.001)
+		_set_observer_camera_position(
+			_observer_camera_position - pan / zoom_value,
+			true,
+		)
+	var pinch_log := float(gesture.get("pinchLog", 0.0))
+	if not is_zero_approx(pinch_log):
+		_apply_touch_zoom_log(pinch_log, allow_pan)
+	return true
+
+
+func _apply_touch_zoom_log(pinch_log: float, observer: bool) -> void:
+	if observer:
+		_observer_magnify_accumulator += pinch_log
+		if _observer_magnify_accumulator >= OBSERVER_MAGNIFY_STEP_THRESHOLD:
+			_observer_magnify_accumulator -= OBSERVER_MAGNIFY_STEP_THRESHOLD
+			_set_observer_zoom_index(_zoom_index + 1)
+		elif _observer_magnify_accumulator <= -OBSERVER_MAGNIFY_STEP_THRESHOLD:
+			_observer_magnify_accumulator += OBSERVER_MAGNIFY_STEP_THRESHOLD
+			_set_observer_zoom_index(_zoom_index - 1)
+		return
+	_avatar_magnify_accumulator += pinch_log
+	if _avatar_magnify_accumulator >= OBSERVER_MAGNIFY_STEP_THRESHOLD:
+		_avatar_magnify_accumulator -= OBSERVER_MAGNIFY_STEP_THRESHOLD
+		_set_zoom_index(_zoom_index + 1)
+	elif _avatar_magnify_accumulator <= -OBSERVER_MAGNIFY_STEP_THRESHOLD:
+		_avatar_magnify_accumulator += OBSERVER_MAGNIFY_STEP_THRESHOLD
+		_set_zoom_index(_zoom_index - 1)
+
+
+func _is_primary_pointer_press(event: InputEvent) -> bool:
+	return (
+		(
+			event is InputEventMouseButton
+			and event.pressed
+			and event.button_index == MOUSE_BUTTON_LEFT
+		)
+		or (event is InputEventScreenTouch and event.pressed)
+	)
+
+
 func _cancel_observer_drag() -> void:
 	_observer_drag_active = false
 	_observer_drag_button = MOUSE_BUTTON_NONE
+	_touch_camera_gesture.reset()
 
 
 func _stop_following_for_observer_pan() -> void:
@@ -2570,7 +2671,13 @@ func _on_resident_selected(
 	_resident_id: String,
 	resident_name: String,
 ) -> void:
-	if _avatar_mode != AVATAR_MODE_OBSERVER:
+	if (
+		_avatar_mode != AVATAR_MODE_OBSERVER
+		and not (
+			MOBILE_UI_PROFILE.is_mobile_runtime()
+			and _avatar_mode == AVATAR_MODE_ACTIVE
+		)
+	):
 		return
 	if not select_resident(resident_name):
 		return
@@ -2621,6 +2728,14 @@ func attach_world_resident_action_menu(
 		menu_position = _resident_action_menu_safe_anchor(menu_parent, menu_position)
 	menu_parent.add_child(menu)
 	menu.position = menu_position
+	if MOBILE_UI_PROFILE.is_mobile_runtime() and menu_parent == body:
+		# World bubbles must retain a finger-sized on-screen hit target even when
+		# the observer camera is zoomed out to show the whole town.
+		var minimum_zoom := minf(
+			maxf(absf(_camera.zoom.x), 0.001),
+			maxf(absf(_camera.zoom.y), 0.001),
+		)
+		menu.scale = Vector2.ONE * maxf(1.0, 1.0 / minimum_zoom)
 	return {
 		"ok": true,
 		"errorCode": "",
@@ -2670,6 +2785,13 @@ func _on_building_pressed(place_name: String) -> void:
 		and not bool(_ui_adapter.call("dismiss_resident_action_menu"))
 	):
 		return
+	_show_building_entry_confirm(normalized)
+
+
+func _show_building_entry_confirm(place_name: String) -> void:
+	var normalized := place_name.strip_edges()
+	if normalized.is_empty() or _portal_id_for_place(normalized).is_empty():
+		return
 	if (
 		is_instance_valid(_building_entry_confirm)
 		and _building_entry_confirm_place_name == normalized
@@ -2686,9 +2808,7 @@ func _on_building_pressed(place_name: String) -> void:
 	var entry_display_size := _building_entry_confirm_display_size()
 	if marker != null:
 		resident_entries = marker.resident_entries() as Array
-		var marker_display_size := marker.marker_size() as Vector2
-		if marker.has_method("display_size"):
-			marker_display_size = marker.call("display_size") as Vector2
+		var marker_display_size := marker.display_size() as Vector2
 		local_anchor = marker.position + Vector2(
 			0.0,
 			-marker_display_size.y * 0.5
@@ -2706,6 +2826,10 @@ func _on_building_pressed(place_name: String) -> void:
 		local_anchor,)):
 		confirm.free()
 		return
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		confirm.set_touch_scale_multiplier(
+			MOBILE_BUILDING_ENTRY_CONFIRM_TOUCH_SCALE
+		)
 	confirm.set_camera_zoom(_camera.zoom)
 	confirm.connect("enter_requested", _on_building_entry_confirmed)
 	hotspot.add_child(confirm)
@@ -2831,7 +2955,16 @@ func _building_entry_confirm_display_size() -> Vector2:
 		maxf(absf(_camera.zoom.x), 0.001),
 		maxf(absf(_camera.zoom.y), 0.001),
 	)
-	return BUILDING_ENTRY_CONFIRM_SIZE * maxf(1.0, 1.0 / minimum_zoom)
+	var touch_scale := (
+		MOBILE_BUILDING_ENTRY_CONFIRM_TOUCH_SCALE
+		if MOBILE_UI_PROFILE.is_mobile_runtime()
+		else 1.0
+	)
+	return (
+		BUILDING_ENTRY_CONFIRM_SIZE
+		* maxf(1.0, 1.0 / minimum_zoom)
+		* touch_scale
+	)
 
 
 func _resident_action_menu_safe_anchor(
@@ -3099,6 +3232,10 @@ func _build_building_observation_hotspots() -> void:
 		add_child(hotspot)
 		_building_observation_hotspots[place_name] = hotspot
 		var marker := BUILDING_RESIDENT_MARKER.new() as Node2D
+		if MOBILE_UI_PROFILE.is_mobile_runtime():
+			marker.set_touch_scale_multiplier(
+				MOBILE_BUILDING_RESIDENT_MARKER_TOUCH_SCALE
+			)
 		var marker_anchor := Vector2(
 			0.0,
 			-hotspot_size.y * 0.5 - 46.0,
@@ -3231,7 +3368,9 @@ func _on_bulletin_board_pressed(_entity_name: String) -> void:
 
 
 func _set_building_hotspots_available(available: bool) -> void:
-	var building_available := available and _avatar_mode == AVATAR_MODE_OBSERVER
+	var building_available := (
+		available and _avatar_mode == AVATAR_MODE_OBSERVER
+	)
 	if not building_available:
 		_dismiss_building_entry_confirm()
 		_collapse_building_resident_marker()
@@ -3239,12 +3378,16 @@ func _set_building_hotspots_available(available: bool) -> void:
 	for hotspot_value: Variant in _building_observation_hotspots.values():
 		(hotspot_value as Node2D).set_available(building_available)
 	for marker_value: Variant in _building_resident_markers.values():
-		(marker_value as Node2D).set_available(building_available)
+		(marker_value as Node2D).set_available(
+			building_available and _avatar_mode == AVATAR_MODE_OBSERVER
+		)
 	if _bulletin_hotspot != null:
 		# Publishing a town-wide announcement is an observer-mode lever.
 		# Avatar mode is intentionally limited to physical movement,
 		# conversation and photo sharing.
-		_bulletin_hotspot.set_available(building_available)
+		_bulletin_hotspot.set_available(
+			available and _avatar_mode == AVATAR_MODE_OBSERVER
+		)
 
 
 func set_place_focus_route_active(active: bool) -> void:

@@ -1588,6 +1588,16 @@ func _build_avatar_view_model(operation: Dictionary, error: Dictionary) -> Dicti
 	var avatar_attack_animation_active := bool(
 		runtime_state.get("avatarConflictInputBlocked", false)
 	)
+	var animal_snapshot := runtime_state.get("animals", {}) as Dictionary
+	var can_pet_animal := (
+		mode == "avatar_active"
+		and not has_conversation
+		and not avatar_attack_animation_active
+		and bool(animal_snapshot.get("canInteract", false))
+		and not String(animal_snapshot.get("focusedAnimalId", "")).is_empty()
+		and _runtime != null
+		and _runtime.has_method("try_pet_nearest_animal_from_ui")
+	)
 	current_can_talk = current_can_talk and not avatar_attack_animation_active
 	can_switch_target = can_switch_target and not avatar_attack_animation_active
 	var attack_interface_available := (
@@ -1710,6 +1720,11 @@ func _build_avatar_view_model(operation: Dictionary, error: Dictionary) -> Dicti
 				),
 			),
 			"attackTarget": attack_action,
+			"petAnimal": _action(
+				"avatar.pet_animal",
+				can_pet_animal,
+				"NO_NEARBY_ANIMAL" if not can_pet_animal else "",
+			),
 			"exitMode": _action(
 				"avatar.exit_mode",
 				(
@@ -4626,6 +4641,10 @@ func _execute_avatar_intent(intent: String, payload: Dictionary) -> Dictionary:
 			return _focus_nearby_target(payload)
 		"avatar.attack_target":
 			return _attack_avatar_target(payload)
+		"avatar.pet_animal":
+			var town_runtime := _runtime as AiTownRuntime
+			if is_instance_valid(town_runtime):
+				return _normalize_command_result(town_runtime.try_pet_nearest_animal_from_ui())
 		"avatar.enter_mode":
 			if _runtime != null and _runtime.has_method("enter_avatar_mode"):
 				return _normalize_command_result(_runtime.call("enter_avatar_mode"))

@@ -1543,6 +1543,9 @@ const MOBILE_TOUCH_SCROLL_ROUTER := preload(
 const MOBILE_TEXT_INPUT_POLICY := preload(
 	"res://ui/mobile/MobileTextInputPolicy.gd"
 )
+const VIRTUAL_JOYSTICK := preload("res://ui/mobile/VirtualJoystick.gd")
+const TOUCH_CAMERA_GESTURE := preload("res://ui/mobile/TouchCameraGesture.gd")
+const MOBILE_MOVEMENT_INPUT := preload("res://ui/mobile/MobileMovementInput.gd")
 
 var _adapter: AdapterHarness
 var _host: Control
@@ -1644,6 +1647,7 @@ func _scenario_mobile_platform_foundation() -> void:
 	)
 	await _verify_mobile_touch_scroll_router()
 	await _verify_mobile_text_input_policy()
+	await _verify_mobile_scene_interaction()
 	var project_text := FileAccess.get_file_as_string("res://project.godot")
 	_expect(project_text.contains("window/size/resizable.mobile=true"), "Android 窗口允许重新布局")
 	_expect(project_text.contains("window/size/viewport_width.mobile=1280"), "Android 使用独立参考宽度")
@@ -1737,6 +1741,49 @@ func _verify_mobile_text_input_policy() -> void:
 	)
 	policy.queue_free()
 	line.queue_free()
+	await process_frame
+
+
+func _verify_mobile_scene_interaction() -> void:
+	for asset_path: String in [
+		"res://assets/ui/avatar_mode/runtime/mobile_joystick/mobile_joystick_base_v2.png",
+		"res://assets/ui/avatar_mode/runtime/mobile_joystick/mobile_joystick_knob_v2.png",
+		"res://assets/ui/avatar_mode/runtime/mobile_context_actions/mobile_talk_action_v1.png",
+		"res://assets/ui/avatar_mode/runtime/mobile_context_actions/mobile_pet_cat_action_v1.png",
+	]:
+		_expect(FileAccess.file_exists(asset_path), "移动端场景交互资产已进入正式资源目录")
+	var joystick := VIRTUAL_JOYSTICK.new() as Control
+	joystick.size = Vector2(300.0, 300.0)
+	root.add_child(joystick)
+	var knob := Control.new()
+	knob.size = Vector2(120.0, 120.0)
+	joystick.add_child(knob)
+	joystick.configure(knob)
+	var movement_events: Array[Vector2] = []
+	joystick.movement_changed.connect(func(value: Vector2) -> void: movement_events.append(value))
+	var press := _mobile_touch(7, true, Vector2(285.0, 150.0))
+	joystick.call("_gui_input", press)
+	_expect((joystick.call("movement") as Vector2).x > 0.7, "摇杆按下后输出连续方向")
+	joystick.call("_gui_input", _mobile_touch(7, false, Vector2(285.0, 150.0)))
+	_expect((joystick.call("movement") as Vector2).is_zero_approx(), "摇杆抬手后回中并清空移动输入")
+	_expect(movement_events.size() >= 2, "摇杆按下与抬手都通知运行时")
+	var gesture := TOUCH_CAMERA_GESTURE.new()
+	_expect(
+		not bool(gesture.consume(_mobile_touch(1, true, Vector2(100.0, 100.0))).get("handled", true)),
+		"单指起点保留给场景点击",
+	)
+	var pan := InputEventScreenDrag.new()
+	pan.index = 1
+	pan.position = Vector2(130.0, 100.0)
+	pan.relative = Vector2(30.0, 0.0)
+	var pan_result := gesture.consume(pan)
+	_expect_equal(pan_result.get("pan"), Vector2(30.0, 0.0), "单指拖动输出镜头平移")
+	gesture.consume(_mobile_touch(1, false, pan.position))
+	var input := MOBILE_MOVEMENT_INPUT.new()
+	input.set_value(Vector2(0.8, 0.0))
+	_expect_equal(input.merged_with(Vector2.ZERO), Vector2(0.8, 0.0), "触控移动输入在物理输入为空时生效")
+	_expect_equal(input.merged_with(Vector2(1.0, 0.0)), Vector2(1.0, 0.0), "物理输入优先于较弱触控输入")
+	joystick.queue_free()
 	await process_frame
 
 
