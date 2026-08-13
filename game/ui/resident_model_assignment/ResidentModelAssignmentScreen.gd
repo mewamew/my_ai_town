@@ -1226,10 +1226,11 @@ func _render_inspector() -> void:
 				_operation_label.text = "正式接口不可用。"
 			_:
 				_operation_label.text = "选择居民和可用模型后更新草稿。"
+	var pending_rebind := CompositeDesktop.has_pending_rebind(_render_data)
 	_assign_button.text = (
-		"应用到已选 %d 人" % batch_count
+		("改绑已选 %d 人" if pending_rebind else "应用到已选 %d 人") % batch_count
 		if mode == "batch"
-		else "更新当前居民草稿"
+		else ("改绑当前居民" if pending_rebind else "更新当前居民草稿")
 	)
 	_apply_button.text = (
 		"确认入镇"
@@ -1249,6 +1250,12 @@ func _render_action_states() -> void:
 	_apply_action_state(_assign_button, "assignBatch" if String(_render_data.get("mode", "single")) == "batch" else "assignOne")
 	_apply_action_state(_apply_button, "applyDraft")
 	_apply_action_state(_native_modal_start_button, "applyDraft")
+	var apply_enabled := CompositeDesktop.should_apply_draft(
+		_render_data,
+		UiViewModel.action_enabled(UiViewModel.action(_view_model, "applyDraft")),
+	)
+	_apply_button.disabled = not apply_enabled
+	_native_modal_start_button.disabled = not apply_enabled
 	_native_modal_return_button.disabled = false
 	var loading := String((_view_model.get("operation", {}) as Dictionary).get("status", "")) == "loading"
 	if loading:
@@ -1424,10 +1431,17 @@ func _apply_draft() -> void:
 
 func _open_completion_modal() -> void:
 	var action := UiViewModel.action(_view_model, "applyDraft")
-	if not UiViewModel.action_enabled(action):
+	if not CompositeDesktop.should_apply_draft(
+		_render_data,
+		UiViewModel.action_enabled(action),
+	):
 		var reason := UiViewModel.disabled_reason(action)
 		if reason.is_empty():
-			reason = "仍有居民未完成有效模型分配"
+			reason = (
+			"选中的新模型还没有应用，请先完成改绑"
+			if CompositeDesktop.has_pending_rebind(_render_data)
+			else "仍有居民未完成有效模型分配"
+		)
 		action_blocked.emit(String(action.get("intent", "")), reason)
 		return
 	_completion_modal_open = true
