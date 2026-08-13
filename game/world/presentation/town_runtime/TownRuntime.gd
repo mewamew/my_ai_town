@@ -1134,10 +1134,23 @@ func _try_pet_nearest_animal() -> bool:
 	return result.get("ok") == true
 
 
-func _on_animal_touch_requested(_animal_id: String) -> void:
-	# 手机版的摸动物操作统一由化身 HUD 右侧动作区发起。动物本体不再
-	# 直接执行动作，避免场景点击和动作按钮同时触发。
-	return
+func _on_animal_touch_requested(animal_id: String) -> void:
+	# 场景触控与 HUD 动作按钮共用同一正式宠物接口；触控命中的是具体
+	# 动物，因此不能退化成“只发信号不执行”。HUD 仍会在需要时调用
+	# try_pet_nearest_animal_from_ui()，两条入口都由同一运行时状态门控。
+	if _animal_presentation == null or _player == null:
+		return
+	_update_animal_presentation_state()
+	var result := _animal_presentation.try_pet_animal(
+		animal_id,
+		_player.position,
+	)
+	if (
+		result.get("ok") == true
+		and _world != null
+		and _world.has_method("record_player_animal_pet")
+	):
+		_world.record_player_animal_pet(String(result.get("animalId", "")),)
 
 
 func try_pet_nearest_animal_from_ui() -> Dictionary:
