@@ -1153,8 +1153,11 @@ func _on_resident_scroll_input(event: InputEvent) -> void:
 		_resident_swipe_tracking = false
 		var delta_y := touch.position.y - _resident_swipe_start.y
 		if absf(delta_y) >= RESIDENT_SWIPE_THRESHOLD:
-			if scroll_residents(-1 if delta_y > 0.0 else 1):
-				get_viewport().set_input_as_handled()
+			# Consume a real swipe even when already at the first/last page;
+			# otherwise the release can fall through to the resident Button and
+			# accidentally focus a resident at the edge of the list.
+			scroll_residents(-1 if delta_y > 0.0 else 1)
+			get_viewport().set_input_as_handled()
 		return
 	if not event is InputEventMouseButton:
 		return
