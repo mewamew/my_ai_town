@@ -953,25 +953,30 @@ func _mobile_hud_reference_rect(
 	source_rect: Rect2,
 	anchor: StringName,
 ) -> Rect2:
-	var mobile_scale := size.y / HUD_REFERENCE_SIZE.y
+	var safe := MOBILE_UI_PROFILE.safe_rect(size, safe_insets)
+	var mobile_scale := safe.size.y / HUD_REFERENCE_SIZE.y
 	var display_size := source_rect.size * mobile_scale
-	var display_position := source_rect.position * mobile_scale
+	var display_position := safe.position + source_rect.position * mobile_scale
 	match anchor:
 		&"right":
-			display_position.x = size.x - (
+			display_position.x = safe.end.x - (
 				HUD_REFERENCE_SIZE.x - source_rect.end.x
 			) * mobile_scale - display_size.x
 		&"center":
 			var center_offset := (
 				source_rect.get_center().x - HUD_REFERENCE_SIZE.x * 0.5
 			) * mobile_scale
-			display_position.x = size.x * 0.5 + center_offset - display_size.x * 0.5
+			display_position.x = (
+				safe.get_center().x + center_offset - display_size.x * 0.5
+			)
 		&"center_bottom":
 			var center_offset := (
 				source_rect.get_center().x - HUD_REFERENCE_SIZE.x * 0.5
 			) * mobile_scale
-			display_position.x = size.x * 0.5 + center_offset - display_size.x * 0.5
-			display_position.y = size.y - (
+			display_position.x = (
+				safe.get_center().x + center_offset - display_size.x * 0.5
+			)
+			display_position.y = safe.end.y - (
 				HUD_REFERENCE_SIZE.y - source_rect.end.y
 			) * mobile_scale - display_size.y
 		_:
