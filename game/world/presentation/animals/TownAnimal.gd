@@ -33,6 +33,7 @@ const GROUND_COLLISION_MASK := (
 	| RESIDENT_COLLISION_LAYER
 )
 const PET_REACTION_SECONDS := 1.35
+const TOUCH_TAP_SLOP := 18.0
 const ARRIVAL_DISTANCE := 24.0
 const CAT_ACTIVE_MIN_SECONDS := 24.0
 const CAT_ACTIVE_MAX_SECONDS := 46.0
@@ -71,6 +72,9 @@ var _shadow: Polygon2D
 var _hint: PanelContainer
 var _hint_label: Label
 var _touch_area: Area2D
+var _touch_tracking_index := -1
+var _touch_tracking_start := Vector2.ZERO
+var _touch_tracking_cancelled := false
 var _target := Vector2.ZERO
 var _idle_remaining := 0.0
 var _pet_remaining := 0.0
@@ -718,12 +722,43 @@ func _build_touch_area() -> void:
 
 
 func _on_touch_area_input(viewport: Node, event: InputEvent, _shape_index: int) -> void:
-	if not event is InputEventScreenTouch or not (event as InputEventScreenTouch).pressed:
+	if event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		if touch.pressed:
+			# Keep the press available to the camera recognizer. A pet action is
+			# committed only on release, after we know this was a tap rather than
+			# the start of a one-finger camera drag.
+			if _touch_tracking_index == -1:
+				_touch_tracking_index = touch.index
+				_touch_tracking_start = touch.position
+				_touch_tracking_cancelled = false
+			else:
+				_touch_tracking_cancelled = true
+			return
+		if touch.index != _touch_tracking_index:
+			return
+		var is_tap := (
+			not _touch_tracking_cancelled
+			and touch.position.distance_to(_touch_tracking_start) <= TOUCH_TAP_SLOP
+		)
+		_touch_tracking_index = -1
+		_touch_tracking_cancelled = false
+		if (
+			is_tap
+			and _world_visible
+			and not _simulation_paused
+			and is_active_for_interaction()
+		):
+			touch_requested.emit(animal_id)
+			viewport.set_input_as_handled()
 		return
-	if not _world_visible or _simulation_paused or not is_active_for_interaction():
-		return
-	touch_requested.emit(animal_id)
-	viewport.set_input_as_handled()
+	if event is InputEventScreenDrag:
+		var drag := event as InputEventScreenDrag
+		if (
+			drag.index == _touch_tracking_index
+			and drag.position.distance_to(_touch_tracking_start) > TOUCH_TAP_SLOP
+		):
+			_touch_tracking_cancelled = true
 
 
 func _build_hint() -> void:
