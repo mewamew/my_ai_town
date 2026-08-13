@@ -3,6 +3,7 @@ extends CharacterBody2D
 
 
 signal petted(animal_id: String, display_name: String, species: String)
+signal touch_requested(animal_id: String)
 signal resident_petted(
 	animal_id: String,
 	display_name: String,
@@ -13,6 +14,7 @@ signal resident_petted(
 const ANIMAL_SPRITE := preload(
 	"res://world/presentation/animals/TownAnimalSprite.gd"
 )
+const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
 const OUTDOOR_CLEARANCE := preload(
 	"res://world/data/town/TownOutdoorMovementClearance.gd"
 )
@@ -24,6 +26,7 @@ const MAP_COLLISION_LAYER := 1
 const PLAYER_COLLISION_LAYER := 2
 const RESIDENT_COLLISION_LAYER := 4
 const GROUND_ANIMAL_COLLISION_LAYER := 8
+const TOUCH_PICK_LAYER := 16
 const GROUND_COLLISION_MASK := (
 	MAP_COLLISION_LAYER
 	| PLAYER_COLLISION_LAYER
@@ -67,6 +70,7 @@ var _foot_point: Marker2D
 var _shadow: Polygon2D
 var _hint: PanelContainer
 var _hint_label: Label
+var _touch_area: Area2D
 var _target := Vector2.ZERO
 var _idle_remaining := 0.0
 var _pet_remaining := 0.0
@@ -191,7 +195,7 @@ func _physics_process(delta: float) -> void:
 		_clear_blocking_normals()
 		_visual.advance(delta, _last_direction, 0.0, true)
 		if _pet_remaining <= 0.0:
-			_hint_label.text = "E  摸摸%s" % display_name
+			_set_hint_text("E  摸摸%s" % display_name)
 		return
 	if _resident_wait_remaining > 0.0:
 		_resident_wait_remaining = maxf(0.0, _resident_wait_remaining - delta)
@@ -542,7 +546,7 @@ func begin_resident_pet(
 	_resident_pet_count += 1
 	_resident_reservation_id = resident_id
 	_resident_wait_remaining = PET_REACTION_SECONDS
-	_hint_label.text = "♥  %s在陪%s" % [resident_name, display_name]
+	_set_hint_text("♥  %s在陪%s" % [resident_name, display_name])
 	resident_petted.emit(animal_id, display_name, resident_id, resident_name)
 	return {
 		"ok": true,
@@ -564,7 +568,7 @@ func begin_pet(player_position: Vector2) -> Dictionary:
 		}
 	_begin_pet_reaction(player_position)
 	_pet_count += 1
-	_hint_label.text = "♥  %s很开心" % display_name
+	_set_hint_text("♥  %s很开心" % display_name)
 	petted.emit(animal_id, display_name, species)
 	return {
 		"ok": true,
@@ -691,7 +695,35 @@ func _ensure_built(tint: Color, color_seed: int) -> void:
 	_visual.name = "AnimalSprite"
 	add_child(_visual)
 	_visual.configure(species, tint, color_seed)
-	_build_hint()
+	_build_touch_area()
+	if not MOBILE_UI_PROFILE.is_mobile_runtime():
+		_build_hint()
+
+
+func _build_touch_area() -> void:
+	_touch_area = Area2D.new()
+	_touch_area.name = "TouchArea"
+	_touch_area.input_pickable = true
+	_touch_area.collision_layer = TOUCH_PICK_LAYER
+	_touch_area.collision_mask = 0
+	var collision := CollisionShape2D.new()
+	collision.name = "TouchShape"
+	collision.position = Vector2(0.0, -30.0 if species == "cat" else -22.0)
+	var shape := CircleShape2D.new()
+	shape.radius = 72.0 if species == "cat" else 64.0
+	collision.shape = shape
+	_touch_area.add_child(collision)
+	_touch_area.input_event.connect(_on_touch_area_input)
+	add_child(_touch_area)
+
+
+func _on_touch_area_input(viewport: Node, event: InputEvent, _shape_index: int) -> void:
+	if not event is InputEventScreenTouch or not (event as InputEventScreenTouch).pressed:
+		return
+	if not _world_visible or _simulation_paused or not is_active_for_interaction():
+		return
+	touch_requested.emit(animal_id)
+	viewport.set_input_as_handled()
 
 
 func _build_hint() -> void:
@@ -725,6 +757,11 @@ func _build_hint() -> void:
 	_hint_label.add_theme_color_override("font_color", Color("#4d2f1c"))
 	_hint.add_child(_hint_label)
 	_hint.visible = false
+
+
+func _set_hint_text(value: String) -> void:
+	if _hint_label != null:
+		_hint_label.text = value
 
 
 func _choose_next_state() -> void:
@@ -1160,7 +1197,7 @@ func _advance_bird_behavior(delta: float) -> void:
 		velocity = Vector2.ZERO
 		_visual.advance(delta, _last_direction, 0.0, true)
 		if _pet_remaining <= 0.0:
-			_hint_label.text = "E  摸摸%s" % display_name
+			_set_hint_text("E  摸摸%s" % display_name)
 		return
 	match _bird_state:
 		"landed":

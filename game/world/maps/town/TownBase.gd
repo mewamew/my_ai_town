@@ -11,6 +11,7 @@ const PORTAL_CATALOG := preload(
 	"res://world/data/town/TownPortalCatalog.gd"
 )
 const MAP_RUNTIME_LAYER_LOADER_SCRIPT := preload("res://world/runtime/MapRuntimeLayerLoader.gd")
+const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
 const RUNTIME_LAYER_WATCH_GENERATED_FILES := false
 const RUNTIME_LAYER_PRINT_RELOAD_MESSAGES := false
 const INTERIOR_ROOM_SCENE := preload("res://world/maps/town/interiors/InteriorRoom.tscn")
@@ -217,6 +218,7 @@ const EXTERIOR_INTERIOR_PORTALS: Array[Dictionary] = (
 const OVERVIEW_ZOOM_INDEX := 0
 const DEFAULT_ZOOM_INDEX := 2
 const OVERVIEW_ZOOM_MARGIN := 0.96
+const OVERVIEW_ZOOM_COVER_MARGIN := 1.005
 # 0 号档位运行时按窗口和地图尺寸计算；其余档位保持像素画常用倍率。
 const ZOOM_LEVELS: Array[float] = [0.0, 0.5, 1.0, 2.0]
 const WATER_FLOW_LOOP_SECONDS := 9.0
@@ -2504,6 +2506,12 @@ func _overview_zoom_value() -> float:
 	var viewport_size := _viewport_size_or_default()
 	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
 		return 0.25
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		return MOBILE_UI_PROFILE.uniform_cover_scale(
+			viewport_size,
+			MAP_SIZE,
+			OVERVIEW_ZOOM_COVER_MARGIN,
+		)
 	return minf(viewport_size.x / MAP_SIZE.x, viewport_size.y / MAP_SIZE.y) * OVERVIEW_ZOOM_MARGIN
 
 

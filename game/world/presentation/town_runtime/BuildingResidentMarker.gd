@@ -1,6 +1,8 @@
 class_name BuildingResidentMarker
 extends Node2D
 
+const POINTER_INPUT := preload("res://ui/mobile/PointerInput.gd")
+
 
 signal resident_activated(resident_id: String, resident_name: String)
 signal expanded_changed(place_name: String, expanded: bool)
@@ -63,6 +65,7 @@ var _layout_columns := 0
 var _hit_area: Area2D
 var _content_root: Node2D
 var _camera_zoom := Vector2.ONE
+var _touch_scale_multiplier := 1.0
 
 
 func _ready() -> void:
@@ -198,11 +201,16 @@ func set_camera_zoom(camera_zoom: Vector2) -> void:
 		normalized_zoom = Vector2.ONE
 	_camera_zoom = normalized_zoom
 	var minimum_zoom := minf(normalized_zoom.x, normalized_zoom.y)
-	var screen_scale := Vector2.ONE * maxf(1.0, 1.0 / minimum_zoom)
+	var screen_scale := Vector2.ONE * maxf(1.0, 1.0 / minimum_zoom) * _touch_scale_multiplier
 	if _content_root != null:
 		_content_root.scale = screen_scale
 	if _hit_area != null:
 		_hit_area.scale = screen_scale
+
+
+func set_touch_scale_multiplier(multiplier: float) -> void:
+	_touch_scale_multiplier = maxf(multiplier, 1.0)
+	set_camera_zoom(_camera_zoom)
 
 
 func debug_asset_snapshot() -> Dictionary:
@@ -475,15 +483,12 @@ func _on_hit_area_input(
 ) -> void:
 	if (
 		not _available
-		or not event is InputEventMouseButton
-		or not event.pressed
-		or event.button_index != MOUSE_BUTTON_LEFT
+		or not POINTER_INPUT.is_primary_press(event)
 	):
 		return
 	if _hit_area == null or not _hit_area.input_pickable:
 		return
-	var mouse_event := event as InputEventMouseButton
-	var local_position := _hit_area.to_local(mouse_event.position)
+	var local_position := _hit_area.to_local(POINTER_INPUT.position(event))
 	if _overflow_cell.has_area() and _overflow_cell.has_point(local_position):
 		viewport.set_input_as_handled()
 		expand()

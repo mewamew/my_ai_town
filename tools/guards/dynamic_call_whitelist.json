@@ -166,6 +166,13 @@
     },
     {
       "path": "game/world/presentation/game_flow/GameFlowHost.gd",
+      "func": "_bind_town_runtime",
+      "call": "string:Callable(self, \"_on_avatar_movement_input_changed\")",
+      "count": 2,
+      "reason": "AvatarModeHud 的触控摇杆信号由宿主统一接线；Callable 绑定固定回调，不按字符串派发业务方法。"
+    },
+    {
+      "path": "game/world/presentation/game_flow/GameFlowHost.gd",
       "func": "_on_town_environment_changed",
       "call": "string:.call(\"create_save\", { \"reason\": DAILY_AUTO_SAVE_REASON, })",
       "reason": "本次 PR 引入的动态派发保留，需通过门禁白名单。"

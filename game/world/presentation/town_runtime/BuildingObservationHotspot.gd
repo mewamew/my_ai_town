@@ -1,5 +1,7 @@
 extends Area2D
 
+const POINTER_INPUT := preload("res://ui/mobile/PointerInput.gd")
+
 
 signal activated(place_name: String)
 
@@ -171,9 +173,7 @@ func activate_from_overlapping_marker(
 func _activate_from_pointer(viewport: Viewport, event: InputEvent) -> void:
 	if (
 		not _available
-		or not event is InputEventMouseButton
-		or not event.pressed
-		or event.button_index != MOUSE_BUTTON_LEFT
+		or not POINTER_INPUT.is_primary_press(event)
 	):
 		return
 	viewport.set_input_as_handled()
