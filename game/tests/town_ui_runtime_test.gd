@@ -1643,7 +1643,7 @@ func _verify_mobile_touch_scroll_router() -> void:
 func _verify_mobile_text_input_policy() -> void:
 	var policy := MOBILE_TEXT_INPUT_POLICY.new() as Node
 	root.add_child(policy)
-	policy.configure(true)
+	policy.configure(true, true)
 	var line := LineEdit.new()
 	line.position = Vector2(500.0, 100.0)
 	line.size = Vector2(360.0, 80.0)
@@ -1672,6 +1672,15 @@ func _verify_mobile_text_input_policy() -> void:
 		(policy.get("_touch_candidates") as Dictionary).size(),
 		0,
 		"触控结束后清理输入候选状态",
+	)
+	line.grab_focus()
+	policy.call("_show_system_keyboard", line)
+	_expect(bool(policy.get("_keyboard_visible")), "短按后记录已打开的系统键盘")
+	line.release_focus()
+	policy.call("_process", 0.0)
+	_expect(
+		not bool(policy.get("_keyboard_visible")),
+		"输入框失去焦点后收起手动打开的系统键盘",
 	)
 	policy.queue_free()
 	line.queue_free()

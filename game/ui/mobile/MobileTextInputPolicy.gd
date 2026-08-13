@@ -10,7 +10,10 @@ const ANDROID_ACTION_SELECT_ALL := 2
 
 
 var _force_touch_runtime := false
+var _force_android_text_actions := false
 var _touch_candidates: Dictionary = {}
+var _keyboard_control: Control
+var _keyboard_visible := false
 var _native_action_control: Control
 var _native_action_callback: RefCounted
 var _native_action_proxy: Variant
@@ -51,10 +54,15 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if get_tree().node_added.is_connected(_on_node_added):
 		get_tree().node_added.disconnect(_on_node_added)
+	_hide_virtual_keyboard()
 
 
-func configure(force_touch_runtime := false) -> void:
+func configure(
+	force_touch_runtime := false,
+	force_android_text_actions := false,
+) -> void:
 	_force_touch_runtime = force_touch_runtime
+	_force_android_text_actions = force_android_text_actions
 	_configure_subtree(get_tree().root if is_inside_tree() else null)
 
 
@@ -70,6 +78,14 @@ func _input(event: InputEvent) -> void:
 func _process(_delta: float) -> void:
 	if not _touch_runtime_enabled():
 		return
+	if (
+		_keyboard_visible
+		and (
+			not is_instance_valid(_keyboard_control)
+			or not _keyboard_control.has_focus()
+		)
+	):
+		_hide_virtual_keyboard()
 	var now := Time.get_ticks_msec()
 	for touch_index: Variant in _touch_candidates.keys():
 		var candidate: Dictionary = _touch_candidates.get(touch_index, {})
@@ -204,12 +220,14 @@ func _configure_text_input(node: Node) -> void:
 	control.set_meta("mobile_text_input_policy", true)
 	if node is LineEdit:
 		var line := node as LineEdit
-		line.context_menu_enabled = false
+		if _native_text_actions_enabled():
+			line.context_menu_enabled = false
 		line.shortcut_keys_enabled = true
 		line.virtual_keyboard_enabled = false
 	else:
 		var edit := node as TextEdit
-		edit.context_menu_enabled = false
+		if _native_text_actions_enabled():
+			edit.context_menu_enabled = false
 		edit.shortcut_keys_enabled = true
 		edit.virtual_keyboard_enabled = false
 
@@ -251,6 +269,15 @@ func _show_system_keyboard(control: Control) -> void:
 		cursor_start,
 		cursor_end,
 	)
+	_keyboard_control = control
+	_keyboard_visible = true
+
+
+func _hide_virtual_keyboard() -> void:
+	if _keyboard_visible:
+		DisplayServer.virtual_keyboard_hide()
+	_keyboard_control = null
+	_keyboard_visible = false
 
 
 func _text_input_at(position: Vector2) -> Control:
@@ -281,3 +308,9 @@ func _collect_text_inputs(
 
 func _touch_runtime_enabled() -> bool:
 	return _force_touch_runtime or MOBILE_UI_PROFILE.is_mobile_runtime()
+
+
+func _native_text_actions_enabled() -> bool:
+	return _force_android_text_actions or (
+		OS.get_name() == "Android" and Engine.has_singleton("AndroidRuntime")
+	)
