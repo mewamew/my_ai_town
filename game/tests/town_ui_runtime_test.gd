@@ -1832,6 +1832,15 @@ func _verify_mobile_page_layout_assets() -> void:
 			and hud_source.contains("MOBILE_TOP_FRAME_BAND_RECT"),
 		"移动端 HUD 仅让空白边带延展并保持图标比例",
 	)
+	var bubble_source := FileAccess.get_file_as_string(
+		"res://ui/town/hud/runtime/TownFarResidentActivityLayer.gd"
+	)
+	_expect(
+		bubble_source.contains("func _render_readable_fallback")
+			and bubble_source.contains("MOBILE_THOUGHT_SIZE")
+			and bubble_source.contains("MOBILE_UI_PROFILE.is_mobile_runtime()"),
+		"移动端居民气泡使用独立可读布局且不改变桌面分支",
+	)
 
 
 func _mobile_touch(index: int, pressed: bool, position: Vector2) -> InputEventScreenTouch:

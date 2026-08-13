@@ -3,6 +3,7 @@ extends Control
 
 
 const UiViewModel := preload("res://ui/common/AiTownUiViewModel.gd")
+const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
 const FONT := preload(
 	"res://assets/fonts/zheng_ge_dian_hei_16/"
 	+ "ZhengGeDianHei-16.ttf"
@@ -58,10 +59,12 @@ const ACTION_ICON_FRAME_SIZE := Vector2(32.0, 32.0)
 const ACTION_ICON_FRAME_MSEC := 600
 const CONVERSATION_SIZE := Vector2(340.0, 133.0)
 const THOUGHT_SIZE := Vector2(267.0, 88.0)
+const MOBILE_THOUGHT_SIZE := Vector2(296.0, 98.0)
 const ELLIPSIS_SIZE := Vector2(60.0, 56.0)
 const ACTION_SIZE := Vector2(60.0, 56.0)
 const THOUGHT_TEXT_MAX_LENGTH := 18
 const THOUGHT_FONT_SIZE := 20
+const MOBILE_THOUGHT_FONT_SIZE := 18
 const SEMANTIC_THOUGHT_PAGE_MAX_UNITS := 16
 const SEMANTIC_THOUGHT_PAGE_DURATION_MSEC := 2000
 const SEMANTIC_ACTION_FONT_SIZE := 20
@@ -70,6 +73,7 @@ const SEMANTIC_ACTION_PAGE_DURATION_MSEC := 2000
 const SEMANTIC_THOUGHT_LINE_MAX_UNITS := 11.0
 const SEMANTIC_ACTION_LINE_MAX_UNITS := 8.0
 const SEMANTIC_ACTION_LABEL_RECT := Rect2(68.0, 7.0, 177.0, 62.0)
+const MOBILE_SEMANTIC_ACTION_LABEL_RECT := Rect2(68.0, 7.0, 214.0, 72.0)
 const SEMANTIC_BACKDROP_POSITION := Vector2(13.0, 17.0)
 const SEMANTIC_BACKDROP_SIZE := Vector2(46.0, 18.0)
 const SEMANTIC_ICON_SIZE := Vector2(32.0, 32.0)
@@ -928,9 +932,9 @@ func _render() -> void:
 			public_item.get("thoughtId", resident_id)
 		)
 		render_item["kind"] = (
-			"public_thought_ellipsis"
-			if compact_activity_band
-			else "public_thought"
+			"public_thought"
+			if _is_mobile_runtime() or not compact_activity_band
+			else "public_thought_ellipsis"
 		)
 		render_item["anchorPolicy"] = "live_resident_head"
 		render_item["motionPolicy"] = "follow_resident"
@@ -998,24 +1002,31 @@ func _render_slot(index: int, item: Dictionary) -> void:
 					item.get("thoughtLabel", item.get("label", ""))
 				)
 			)
-			slot.size = THOUGHT_SIZE
+			slot.size = _thought_size()
 			label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			label.add_theme_font_size_override(
-				"font_size",
-				THOUGHT_FONT_SIZE,
-			)
+			label.add_theme_font_size_override("font_size", _thought_font_size())
 			label.max_lines_visible = 2
-			label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			label.text_overrun_behavior = (
+				TextServer.OVERRUN_NO_TRIMMING
+				if _is_mobile_runtime()
+				else TextServer.OVERRUN_TRIM_ELLIPSIS
+			)
 			label.clip_text = true
 			label.visible = not label.text.is_empty()
 			label.position = Vector2(14, 7)
-			label.size = Vector2(239, 62)
+			label.size = _thought_label_rect().size
 		"public_thought_ellipsis":
-			slot.size = ELLIPSIS_SIZE
-			skin.texture = ELLIPSIS_SHELL
+			if _is_mobile_runtime():
+				_render_readable_fallback(index, item)
+			else:
+				slot.size = ELLIPSIS_SIZE
+				skin.texture = ELLIPSIS_SHELL
 		"activity_ellipsis":
-			slot.size = ELLIPSIS_SIZE
-			skin.texture = ELLIPSIS_SHELL
+			if _is_mobile_runtime():
+				_render_readable_fallback(index, item)
+			else:
+				slot.size = ELLIPSIS_SIZE
+				skin.texture = ELLIPSIS_SHELL
 		"semantic_icon":
 			var show_label := bool(item.get("showLabel", false))
 			if show_label:
@@ -1095,10 +1106,12 @@ func _render_semantic_thought(index: int, thought_page: String) -> void:
 		thought_page,
 		SEMANTIC_THOUGHT_LINE_MAX_UNITS,
 	)
+	if _is_mobile_runtime():
+		label.text = thought_page
 	label.position = Vector2(14.0, 7.0)
-	label.size = Vector2(239.0, 62.0)
+	label.size = _thought_label_rect().size
 	label.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
-	label.add_theme_font_size_override("font_size", THOUGHT_FONT_SIZE)
+	label.add_theme_font_size_override("font_size", _thought_font_size())
 	label.max_lines_visible = 2
 	label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 	label.clip_text = true
@@ -1135,6 +1148,15 @@ func _render_semantic_action(
 		if not action_pages.is_empty()
 		else ""
 	)
+	if _is_mobile_runtime() and not action_pages.is_empty():
+		behavior_label.text = action_pages[page_index]
+	behavior_label.position = _semantic_action_label_rect().position
+	behavior_label.size = _semantic_action_label_rect().size
+	behavior_label.add_theme_font_size_override(
+		"font_size",
+		MOBILE_THOUGHT_FONT_SIZE if _is_mobile_runtime() else SEMANTIC_ACTION_FONT_SIZE,
+	)
+	behavior_label.max_lines_visible = 2
 	behavior_label.visible = not behavior_label.text.is_empty()
 	_slot_labels[index].visible = false
 
@@ -1171,6 +1193,9 @@ func _semantic_thought_pages(item: Dictionary) -> Array[String]:
 
 
 func _split_thought_pages(value: String) -> Array[String]:
+	if _is_mobile_runtime():
+		var mobile_normalized := _normalized_bubble_line(value)
+		return [mobile_normalized] if not mobile_normalized.is_empty() else []
 	return _split_balanced_display_pages(
 		_normalized_public_bubble_line(value),
 		float(SEMANTIC_THOUGHT_PAGE_MAX_UNITS),
@@ -1178,6 +1203,11 @@ func _split_thought_pages(value: String) -> Array[String]:
 
 
 func _semantic_action_pages(item: Dictionary) -> Array[String]:
+	if _is_mobile_runtime():
+		var mobile_action := _normalized_bubble_line(
+			String(item.get("activeActionLabel", item.get("label", "")))
+		)
+		return [mobile_action] if not mobile_action.is_empty() else []
 	return _split_balanced_display_pages(
 		_normalized_public_bubble_line(
 			String(item.get("activeActionLabel", item.get("label", "")))
@@ -1276,7 +1306,60 @@ func _compact_public_thought(value: String) -> String:
 		normalized = normalized.replace(separator, " ")
 	while normalized.contains("  "):
 		normalized = normalized.replace("  ", " ")
-	return _trim_by_display_width(normalized, float(THOUGHT_TEXT_MAX_LENGTH))
+	return (
+		normalized
+		if _is_mobile_runtime()
+		else _trim_by_display_width(normalized, float(THOUGHT_TEXT_MAX_LENGTH))
+	)
+
+
+func _render_readable_fallback(index: int, item: Dictionary) -> void:
+	var slot := _slots[index]
+	var skin := _slot_skins[index]
+	var label := _slot_labels[index]
+	slot.size = _thought_size()
+	skin.texture = THOUGHT_SHELL
+	label.text = _normalized_bubble_line(
+		String(item.get("label", item.get("thoughtLabel", "正在行动")))
+	)
+	if label.text.is_empty():
+		label.text = "正在行动"
+	label.position = Vector2(14.0, 7.0)
+	label.size = _thought_label_rect().size
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_size_override("font_size", _thought_font_size())
+	label.max_lines_visible = 2
+	label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+	label.clip_text = true
+	label.visible = true
+
+
+func _is_mobile_runtime() -> bool:
+	return MOBILE_UI_PROFILE.is_mobile_runtime()
+
+
+func _thought_size() -> Vector2:
+	return MOBILE_THOUGHT_SIZE if _is_mobile_runtime() else THOUGHT_SIZE
+
+
+func _thought_label_rect() -> Rect2:
+	return (
+		Rect2(14.0, 7.0, 268.0, 72.0)
+		if _is_mobile_runtime()
+		else Rect2(14.0, 7.0, 239.0, 62.0)
+	)
+
+
+func _thought_font_size() -> int:
+	return MOBILE_THOUGHT_FONT_SIZE if _is_mobile_runtime() else THOUGHT_FONT_SIZE
+
+
+func _semantic_action_label_rect() -> Rect2:
+	return (
+		MOBILE_SEMANTIC_ACTION_LABEL_RECT
+		if _is_mobile_runtime()
+		else SEMANTIC_ACTION_LABEL_RECT
+	)
 
 
 func _near_semantic_label(formal_value: String, thought_value: String) -> String:
