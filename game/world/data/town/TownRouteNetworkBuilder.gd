@@ -35,7 +35,7 @@ var _legal_cells := {}
 var _region_by_cell := {}
 var _place_by_cell := {}
 var _collision_records: Array[Dictionary] = []
-var _surface_mask: Image
+var _surface_mask := PackedByteArray()
 var _route_cell_by_node_id: Dictionary = {}
 var _component_by_cell_key: Dictionary = {}
 var _cells_by_component: Dictionary = {}
@@ -135,10 +135,10 @@ static func _runtime_outdoor_pathfinder() -> RefCounted:
 	candidate._collision_records = MOVEMENT_CLEARANCE.collision_records(
 		collision_values,
 	)
-	candidate._surface_mask = MOVEMENT_SURFACE.image()
+	candidate._surface_mask = MOVEMENT_SURFACE.data()
 	if (
 		candidate._collision_records.is_empty()
-		or candidate._surface_mask == null
+		or candidate._surface_mask.is_empty()
 		or not candidate._prepare_grid_from_cache(navigation_cache)
 	):
 		return null
@@ -185,8 +185,8 @@ func build_documents(
 	if _collision_records.is_empty():
 		_fail("无法读取正式室外碰撞，不能生成居民移动路线")
 		return _failed_result()
-	_surface_mask = MOVEMENT_SURFACE.image()
-	if _surface_mask == null:
+	_surface_mask = MOVEMENT_SURFACE.data()
+	if _surface_mask.is_empty():
 		_fail("无法读取正式水域遮罩，不能生成居民移动路线")
 		return _failed_result()
 	if not _prepare_grid(perception):
@@ -526,7 +526,7 @@ func _release_working_state() -> void:
 	_region_by_cell = {}
 	_place_by_cell = {}
 	_collision_records.clear()
-	_surface_mask = null
+	_surface_mask = PackedByteArray()
 	_route_cell_by_node_id.clear()
 	_component_by_cell_key.clear()
 	_cells_by_component.clear()
@@ -1293,7 +1293,7 @@ func _nearest_connected_route_cell(
 
 func _movement_origin_is_safe(position: Vector2) -> bool:
 	return (
-		_surface_mask != null
+		not _surface_mask.is_empty()
 		and MOVEMENT_CLEARANCE.body_origin_is_safe(
 			position,
 			_collision_records,
@@ -1304,7 +1304,7 @@ func _movement_origin_is_safe(position: Vector2) -> bool:
 
 func _movement_segment_is_safe(from_position: Vector2, to_position: Vector2) -> bool:
 	return (
-		_surface_mask != null
+		not _surface_mask.is_empty()
 		and MOVEMENT_CLEARANCE.body_segment_is_safe(
 			from_position,
 			to_position,

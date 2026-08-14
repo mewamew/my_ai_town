@@ -229,7 +229,14 @@ const VISUAL_CONFIG_PATH := (
 	"res://world/presentation/environment/town_environment_visuals.json"
 )
 const MAP_SIZE := Vector2i(6688, 3764)
+const AUXILIARY_MASK_PATH := (
+	"res://world/presentation/environment/assets/town_auxiliary_masks.png"
+)
+const WALKABILITY_MASK_PATH := (
+	"res://world/presentation/environment/assets/town_dry_walkability_mask.bin"
+)
 const MAP_MASK_PATHS: Array[String] = [
+	AUXILIARY_MASK_PATH,
 	"res://world/presentation/environment/assets/town_puddle_mask.png",
 	"res://world/presentation/environment/assets/town_shadow_caster_mask.png",
 	"res://world/presentation/environment/assets/town_surface_masks.png",
@@ -4712,6 +4719,7 @@ func _scenario_environment_presentation() -> void:
 	var snow_particles: GPUParticles2D = null
 	_expect(local_root != null, "local environment root exists")
 	if local_root != null:
+		var auxiliary_mask := load(AUXILIARY_MASK_PATH) as Texture2D
 		_expect(
 			local_root.get_node_or_null("FormalWorldWaterMotion") != null,
 			"formal water motion exists",
@@ -4728,14 +4736,35 @@ func _scenario_environment_presentation() -> void:
 					) > 0.0,
 				"water detail receives camera-aware overview LOD",
 			)
+		var directional_shadow := local_root.get_node_or_null(
+			"FormalWorldDirectionalShadow",
+		) as Sprite2D
 		_expect(
-			local_root.get_node_or_null("FormalWorldDirectionalShadow") != null,
+			directional_shadow != null,
 			"moving sun, moon, and cloud shadow overlay exists",
 		)
 		_expect(
-			local_root.get_node_or_null("FormalWorldGroundWeather") != null,
+			directional_shadow != null
+				and directional_shadow.texture == auxiliary_mask,
+			"directional shadow reads the shared lossless auxiliary mask",
+		)
+		var ground_weather := local_root.get_node_or_null(
+			"FormalWorldGroundWeather",
+		) as Sprite2D
+		_expect(
+			ground_weather != null,
 			"authored ground wetness and puddle surface exists",
 		)
+		if ground_weather != null:
+			var ground_material := ground_weather.material as ShaderMaterial
+			_expect(
+				ground_material != null
+					and (
+						ground_material.get_shader_parameter("auxiliary_masks")
+						== auxiliary_mask
+					),
+				"ground weather reads packed puddles from the shared mask",
+			)
 		var window_emissive := local_root.get_node_or_null(
 			"FormalWorldWindowEmissive",
 		) as Sprite2D
@@ -4743,12 +4772,22 @@ func _scenario_environment_presentation() -> void:
 			window_emissive != null,
 			"exact window emissive mask exists",
 		)
+		_expect(
+			window_emissive != null
+				and window_emissive.texture == auxiliary_mask,
+			"window emissive keeps its exact packed source channel",
+		)
 		var window_projection := local_root.get_node_or_null(
 			"FormalWorldWindowGroundProjection",
 		) as Sprite2D
 		_expect(
 			window_projection != null,
 			"window light projects onto authored ground",
+		)
+		_expect(
+			window_projection != null
+				and window_projection.texture == auxiliary_mask,
+			"window ground beam keeps its exact packed gradient channel",
 		)
 		if window_emissive != null:
 			_expect(
@@ -5165,6 +5204,15 @@ func _verify_committed_config_and_assets() -> void:
 		_expect(texture != null, "%s loads as a Godot texture" % path)
 		if texture != null:
 			_expect_equal(texture.get_size(), Vector2(MAP_SIZE), "%s matches the town map" % path)
+	_expect(FileAccess.file_exists(WALKABILITY_MASK_PATH), "baked outdoor walkability data exists")
+	var walkability_file := FileAccess.open(WALKABILITY_MASK_PATH, FileAccess.READ)
+	_expect(walkability_file != null, "outdoor movement can read baked walkability data")
+	if walkability_file != null:
+		_expect_equal(
+			walkability_file.get_length(),
+			16 + ceili(float(MAP_SIZE.x * MAP_SIZE.y) / 8.0),
+			"outdoor walkability stays one bit per map pixel",
+		)
 	var snowflake_atlas := load(SNOWFLAKE_ATLAS_PATH) as Texture2D
 	_expect(snowflake_atlas != null, "snowflake atlas loads as a Godot texture")
 	if snowflake_atlas != null:

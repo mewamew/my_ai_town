@@ -82,6 +82,7 @@ func update_for_subjects(subjects: Array[Node2D]) -> void:
 			continue
 		valid_subjects.append(subject)
 		behind_z = mini(behind_z, subject.z_index - z_step)
+	_prune_subject_overlays(valid_subjects)
 	_hide_subject_overlays()
 	for occluder in _occluders:
 		if not is_instance_valid(occluder):
@@ -265,6 +266,32 @@ func _hide_subject_overlays() -> void:
 			overlay.visible = false
 
 
+func _prune_subject_overlays(subjects: Array[Node2D]) -> void:
+	# ResidentCharacterBody instances are recreated when a resident changes
+	# space or presentation identity. Keep overlays only for subjects that are
+	# still in the current map subject set; otherwise every recreation would
+	# leave a Polygon2D + ShaderMaterial child behind indefinitely.
+	var active_subject_ids := {}
+	for subject in subjects:
+		if is_instance_valid(subject) and subject.is_inside_tree():
+			active_subject_ids[subject.get_instance_id()] = true
+	for key_value: Variant in _subject_overlays.keys():
+		var key := String(key_value)
+		var separator := key.rfind(":")
+		var overlay := _subject_overlays.get(key_value) as Polygon2D
+		var subject_id := -1
+		if separator >= 0:
+			subject_id = int(key.substr(separator + 1))
+		if (
+			separator < 0
+			or not active_subject_ids.has(subject_id)
+			or not is_instance_valid(overlay)
+		):
+			if is_instance_valid(overlay):
+				overlay.free()
+			_subject_overlays.erase(key_value)
+
+
 func get_performance_snapshot() -> Dictionary:
 	return {
 		"occluderCount": _occluders.size(),
@@ -272,6 +299,7 @@ func get_performance_snapshot() -> Dictionary:
 		"polygonPointTestCount": _last_polygon_point_test_count,
 		"updateCount": _update_count,
 		"unchangedSkipCount": _unchanged_skip_count,
+		"subjectOverlayCount": _subject_overlays.size(),
 	}
 
 

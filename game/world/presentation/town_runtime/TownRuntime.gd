@@ -134,6 +134,7 @@ var _hint_label := Label.new()
 var _startup_error := ""
 var _building_observation_hotspots: Dictionary = {}
 var _building_resident_markers: Dictionary = {}
+var _space_presentation_sync_queued := false
 var _resident_portrait_path_by_appearance: Dictionary = {}
 var _focused_building_place_name := ""
 var _building_entry_confirm: BuildingEntryConfirm
@@ -3128,8 +3129,7 @@ func _on_runtime_resident_place_changed(
 	_resident_name: String,
 	_change: Dictionary,
 ) -> void:
-	_sync_environment_space_occupancy()
-	_sync_building_resident_markers()
+	_queue_space_presentation_sync()
 
 
 func _on_resident_body_space_changed(
@@ -3137,13 +3137,33 @@ func _on_resident_body_space_changed(
 	_previous_space_id: String,
 	_space_id: String,
 ) -> void:
-	_sync_building_resident_markers()
+	_queue_space_presentation_sync()
 	var followed_actor := (
 		_resident_presentation.get_actor(_followed_resident)
 		as ResidentCharacterBody
 	)
 	if followed_actor != null and followed_actor.get_resident_id() == resident_id:
 		_queue_follow_view_sync()
+
+
+func _queue_space_presentation_sync() -> void:
+	# A single World minute can move several residents across doors. Each signal
+	# used to rescan every resident and every place, then rewrite the same roof
+	# markers and window-light uniforms repeatedly in one visible frame. Keep the
+	# authoritative final state, but commit this purely visual projection once at
+	# the end of the signal burst.
+	if _space_presentation_sync_queued:
+		return
+	_space_presentation_sync_queued = true
+	_flush_space_presentation_sync.call_deferred()
+
+
+func _flush_space_presentation_sync() -> void:
+	_space_presentation_sync_queued = false
+	if not is_inside_tree() or _world == null:
+		return
+	_sync_environment_space_occupancy()
+	_sync_building_resident_markers()
 
 
 func _on_runtime_world_restored(_summary: Dictionary) -> void:
@@ -3363,15 +3383,10 @@ func _sync_building_resident_markers() -> void:
 			continue
 		var state := state_value as Dictionary
 		var space_id := String(state.get("spaceId", "")).strip_edges()
-		if _resident_presentation != null:
-			var body := (
-				_resident_presentation.get_actor(
-					String(state.get("residentId", "")),
-				)
-				as ResidentCharacterBody
-			)
-			if body != null:
-				space_id = body.get_space_id().strip_edges()
+		# Building occupancy is a World fact. A resident body may deliberately
+		# finish a visible portal handoff after World has crossed the boundary;
+		# using that lagging presentation space here can leave a roof marker stale
+		# indefinitely while the body is inactive off-screen.
 		if (
 			space_id.is_empty()
 			or space_id == "town_outdoor"

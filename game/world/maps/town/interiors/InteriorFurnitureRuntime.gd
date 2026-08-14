@@ -15,6 +15,10 @@ const RUNTIME_OCCLUSION := preload(
 const DIRECTIONS: Array[String] = ["down", "right", "up", "left"]
 const GRID_SIZE := 32.0
 const INVALID_CELL := Vector2i(2147483647, 2147483647)
+# 家具定义的像素级重叠校验属于制作阶段。正式运行只需要读取已经烘焙好的
+# occupied_cells 和方向贴图；再次把每个家具的源图读成 Image 会把整套家具
+# 复制进 CPU 常驻内存，而且与画面没有关系。
+const VALIDATE_ASSET_PIXELS_AT_RUNTIME := false
 
 var _manifest_path := ""
 var _layout_path := ""
@@ -447,10 +451,11 @@ func _load_definitions(manifest: Dictionary) -> void:
 		if str(definition.get("asset_id", "")) != asset_id:
 			_errors.append("%s 的定义 asset_id 不一致" % asset_id)
 			continue
-		for error in GEOMETRY.validate_definition(definition):
-			_errors.append("%s：%s" % [asset_id, error])
-		if not GEOMETRY.occupied_cells_match_ground_contact(definition):
-			_errors.append("%s：occupied_cells 不是 ground_contact 的烘焙结果" % asset_id)
+		if VALIDATE_ASSET_PIXELS_AT_RUNTIME:
+			for error in GEOMETRY.validate_definition(definition):
+				_errors.append("%s：%s" % [asset_id, error])
+			if not GEOMETRY.occupied_cells_match_ground_contact(definition):
+				_errors.append("%s：occupied_cells 不是 ground_contact 的烘焙结果" % asset_id)
 		_definitions[asset_id] = definition
 
 

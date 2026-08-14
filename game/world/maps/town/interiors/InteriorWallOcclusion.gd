@@ -186,6 +186,7 @@ func update_for_subjects(subject_values: Variant) -> void:
 		if not value is Node2D:
 			return
 		subjects.append(value as Node2D)
+	_prune_subject_overlays(subjects)
 	_hide_subject_overlays()
 	var has_valid_subject := false
 	var behind_z := DEFAULT_FOREGROUND_Z
@@ -330,6 +331,36 @@ func _hide_subject_overlays() -> void:
 		var overlay := overlay_value as Sprite2D
 		if is_instance_valid(overlay):
 			overlay.visible = false
+
+
+func _prune_subject_overlays(subjects: Array[Node2D]) -> void:
+	# Residents can be represented by a new Node2D after an indoor/outdoor or
+	# identity transition. Do not retain one wall Sprite2D/AtlasTexture for each
+	# historical instance ID; only subjects in the current visible set are
+	# allowed to keep a cached slice.
+	var active_subject_ids := {}
+	for subject in subjects:
+		if (
+			is_instance_valid(subject)
+			and subject.is_inside_tree()
+			and subject.is_visible_in_tree()
+		):
+			active_subject_ids[subject.get_instance_id()] = true
+	for key_value: Variant in _subject_overlays.keys():
+		var key := String(key_value)
+		var separator := key.rfind(":")
+		var overlay := _subject_overlays.get(key_value) as Sprite2D
+		var subject_id := -1
+		if separator >= 0:
+			subject_id = int(key.substr(separator + 1))
+		if (
+			separator < 0
+			or not active_subject_ids.has(subject_id)
+			or not is_instance_valid(overlay)
+		):
+			if is_instance_valid(overlay):
+				overlay.free()
+			_subject_overlays.erase(key_value)
 
 
 func _process(_delta: float) -> void:

@@ -8,14 +8,8 @@ const MAP_TEXTURE_PATH := "res://world/maps/town/assets/town.png"
 const SURFACE_MASK_PATH := (
 	"res://world/presentation/environment/assets/town_surface_masks.png"
 )
-const WINDOW_EMISSIVE_MASK_PATH := (
-	"res://world/presentation/environment/assets/town_window_emissive_mask.png"
-)
-const PUDDLE_MASK_PATH := (
-	"res://world/presentation/environment/assets/town_puddle_mask.png"
-)
-const SHADOW_CASTER_MASK_PATH := (
-	"res://world/presentation/environment/assets/town_shadow_caster_mask.png"
+const AUXILIARY_MASK_PATH := (
+	"res://world/presentation/environment/assets/town_auxiliary_masks.png"
 )
 const SNOWFLAKE_ATLAS_PATH := (
 	"res://world/presentation/environment/assets/particles/snowflake_atlas_v1.png"
@@ -124,34 +118,40 @@ void fragment() {
 		+ value_noise(cloud_uv * 2.03 + vec2(7.1, 2.3)) * 0.32;
 	float cloud_alpha = cloud * mix(0.035, 0.145, smoothstep(0.32, 0.78, cloud_shape));
 
-	float near_rain = rain_layer(
-		pixel,
-		vec2(42.0, 78.0),
-		7.8,
-		rain_density * 0.34,
-		rain_width,
-		rain_length,
-		3.0
-	);
-	float middle_rain = rain_layer(
-		pixel,
-		vec2(31.0, 58.0),
-		5.9,
-		rain_density * 0.27,
-		rain_width * 0.88,
-		rain_length * 0.90,
-		19.0
-	);
-	float far_rain = rain_layer(
-		pixel,
-		vec2(23.0, 42.0),
-		4.4,
-		rain_density * 0.20,
-		rain_width * 0.72,
-		rain_length * 0.78,
-		47.0
-	);
-	float rain_line = max(near_rain, max(middle_rain * 0.72, far_rain * 0.48)) * rain;
+	float rain_line = 0.0;
+	if (rain > 0.0) {
+		float near_rain = rain_layer(
+			pixel,
+			vec2(42.0, 78.0),
+			7.8,
+			rain_density * 0.34,
+			rain_width,
+			rain_length,
+			3.0
+		);
+		float middle_rain = rain_layer(
+			pixel,
+			vec2(31.0, 58.0),
+			5.9,
+			rain_density * 0.27,
+			rain_width * 0.88,
+			rain_length * 0.90,
+			19.0
+		);
+		float far_rain = rain_layer(
+			pixel,
+			vec2(23.0, 42.0),
+			4.4,
+			rain_density * 0.20,
+			rain_width * 0.72,
+			rain_length * 0.78,
+			47.0
+		);
+		rain_line = max(
+			near_rain,
+			max(middle_rain * 0.72, far_rain * 0.48)
+		) * rain;
+	}
 
 	vec3 color = vec3(0.20, 0.27, 0.34);
 	float alpha = cloud_alpha;
@@ -198,17 +198,23 @@ void fragment() {
 	float dash_start = 0.16;
 	float dash_end = min(0.78, max(0.62, dash_start + world_per_screen_px * 4.0 / 54.0));
 	dash *= step(dash_start, local.x) * (1.0 - step(dash_end, local.x));
-	vec2 ripple_cell = floor(pixel / vec2(48.0, 30.0));
-	vec2 ripple_local = fract(pixel / vec2(48.0, 30.0)) - vec2(0.5);
-	float ripple_seed = hash21(ripple_cell + floor(elapsed * 3.0));
-	float ripple_radius = fract(elapsed * mix(0.65, 1.1, ripple_seed));
-	float ripple_distance = length(ripple_local * vec2(1.0, 1.7));
-	float rain_ripple = rain * step(mix(0.96, 0.74, rain), ripple_seed);
-	float ripple_half_width = max(0.042, world_per_screen_px * 1.10 / 30.0);
-	rain_ripple *= 1.0 - step(
-		ripple_half_width,
-		abs(ripple_distance - ripple_radius * 0.34)
-	);
+	float rain_ripple = 0.0;
+	if (rain > 0.0) {
+		vec2 ripple_cell = floor(pixel / vec2(48.0, 30.0));
+		vec2 ripple_local = fract(pixel / vec2(48.0, 30.0)) - vec2(0.5);
+		float ripple_seed = hash21(ripple_cell + floor(elapsed * 3.0));
+		float ripple_radius = fract(elapsed * mix(0.65, 1.1, ripple_seed));
+		float ripple_distance = length(ripple_local * vec2(1.0, 1.7));
+		rain_ripple = rain * step(mix(0.96, 0.74, rain), ripple_seed);
+		float ripple_half_width = max(
+			0.042,
+			world_per_screen_px * 1.10 / 30.0
+		);
+		rain_ripple *= 1.0 - step(
+			ripple_half_width,
+			abs(ripple_distance - ripple_radius * 0.34)
+		);
+	}
 
 	float shore_sample_px = max(4.0, world_per_screen_px * 2.2);
 	vec2 edge_step = TEXTURE_PIXEL_SIZE * shore_sample_px;
@@ -244,7 +250,7 @@ const SURFACE_SHADER := """
 shader_type canvas_item;
 render_mode unshaded, blend_mix;
 
-uniform sampler2D puddle_mask : filter_nearest, repeat_disable;
+uniform sampler2D auxiliary_masks : filter_nearest, repeat_disable;
 uniform sampler2D town_texture : filter_nearest, repeat_disable;
 uniform float elapsed = 0.0;
 uniform float rain = 0.0;
@@ -262,7 +268,7 @@ float hash21(vec2 p) {
 void fragment() {
 	vec4 masks = texture(TEXTURE, UV);
 	float ground = masks.g;
-	float puddle = texture(puddle_mask, UV).r;
+	float puddle = texture(auxiliary_masks, UV).g;
 	vec2 pixel = floor(UV / TEXTURE_PIXEL_SIZE / 3.0) * 3.0;
 
 	vec3 color = vec3(0.0);
@@ -339,16 +345,19 @@ void fragment() {
 	}
 	cast_shadow *= (1.0 - caster_here) * ground;
 
-	vec2 pixel = floor(UV / TEXTURE_PIXEL_SIZE / 3.0) * 3.0;
-	vec2 cloud_uv = pixel / vec2(420.0, 260.0);
-	cloud_uv += vec2(
-		elapsed * (0.010 + wind * 0.010),
-		elapsed * 0.003
-	);
-	float cloud_shape = value_noise(cloud_uv)
-		* 0.66
-		+ value_noise(cloud_uv * 2.03 + vec2(4.2, 7.8)) * 0.34;
-	float moving_cloud = smoothstep(0.48, 0.72, cloud_shape) * ground;
+	float moving_cloud = 0.0;
+	if (cloud_shadow > 0.0) {
+		vec2 pixel = floor(UV / TEXTURE_PIXEL_SIZE / 3.0) * 3.0;
+		vec2 cloud_uv = pixel / vec2(420.0, 260.0);
+		cloud_uv += vec2(
+			elapsed * (0.010 + wind * 0.010),
+			elapsed * 0.003
+		);
+		float cloud_shape = value_noise(cloud_uv)
+			* 0.66
+			+ value_noise(cloud_uv * 2.03 + vec2(4.2, 7.8)) * 0.34;
+		moving_cloud = smoothstep(0.48, 0.72, cloud_shape) * ground;
+	}
 
 	float alpha = max(
 		cast_shadow * shadow_strength,
@@ -381,32 +390,17 @@ float occupied_facade(vec2 pixel) {
 }
 
 void fragment() {
-	vec2 texel = TEXTURE_PIXEL_SIZE * 3.0;
 	vec2 pixel = UV / TEXTURE_PIXEL_SIZE;
+	float glow_class = texture(TEXTURE, UV).a;
 	float occupied = occupied_facade(pixel);
-	float source = texture(TEXTURE, UV).r;
-	float near_glow = 0.0;
-	float far_glow = 0.0;
-	for (int x = -2; x <= 2; x++) {
-		for (int y = -2; y <= 2; y++) {
-			near_glow = max(
-				near_glow,
-				texture(TEXTURE, UV + vec2(float(x), float(y)) * texel).r
-			);
-		}
-	}
-	for (int x = -3; x <= 3; x++) {
-		for (int y = -3; y <= 3; y++) {
-			far_glow = max(
-				far_glow,
-				texture(
-					TEXTURE,
-					UV + vec2(float(x), float(y)) * texel * 2.0
-				).r
-			);
-		}
-	}
-	float alpha = occupied * night_factor * max(source * 0.68, max(near_glow * 0.12, far_glow * 0.03));
+	float far_glow = step(0.16, glow_class);
+	float near_glow = step(0.50, glow_class);
+	float source = step(0.83, glow_class);
+	float glow_strength = max(
+		source * 0.68,
+		max(near_glow * 0.12, far_glow * 0.03)
+	);
+	float alpha = occupied * night_factor * glow_strength;
 	vec3 color = mix(vec3(1.0, 0.52, 0.16), vec3(1.0, 0.84, 0.46), source);
 	COLOR = vec4(color, alpha);
 }
@@ -438,7 +432,7 @@ float occupied_facade(vec2 pixel) {
 void fragment() {
 	vec2 pixel = UV / TEXTURE_PIXEL_SIZE;
 	float ground = texture(surface_masks, UV).g;
-	float beam = texture(TEXTURE, UV).g;
+	float beam = texture(TEXTURE, UV).b;
 	float occupied = occupied_facade(pixel);
 	float alpha = beam * ground * occupied * night_factor * 0.14;
 	COLOR = vec4(vec3(1.0, 0.64, 0.24), alpha);
@@ -669,6 +663,8 @@ func set_space_occupancy(occupancy_value: Variant) -> bool:
 			return false
 		if count > 0:
 			next_occupied_spaces[space_id] = count
+	if next_occupied_spaces == _occupied_spaces:
+		return true
 	_occupied_spaces = next_occupied_spaces
 	_sync_window_light_regions()
 	return true
@@ -893,7 +889,7 @@ static func snow_particle_budget_for_rendering_method(
 
 
 func _build_directional_shadow_overlay() -> void:
-	var shadow_casters := load(SHADOW_CASTER_MASK_PATH) as Texture2D
+	var shadow_casters := load(AUXILIARY_MASK_PATH) as Texture2D
 	var surface_masks := load(SURFACE_MASK_PATH) as Texture2D
 	if shadow_casters == null or surface_masks == null:
 		push_error("Formal environment directional shadow masks are incomplete")
@@ -930,11 +926,11 @@ func _build_water_overlay() -> void:
 
 func _build_surface_overlay() -> void:
 	var surface_masks := load(SURFACE_MASK_PATH) as Texture2D
-	var puddle_mask := load(PUDDLE_MASK_PATH) as Texture2D
+	var auxiliary_masks := load(AUXILIARY_MASK_PATH) as Texture2D
 	var town_texture := load(MAP_TEXTURE_PATH) as Texture2D
 	if (
 		surface_masks == null
-		or puddle_mask == null
+		or auxiliary_masks == null
 		or town_texture == null
 	):
 		push_error("Formal environment surface masks are incomplete")
@@ -947,14 +943,14 @@ func _build_surface_overlay() -> void:
 	var shader := Shader.new()
 	shader.code = SURFACE_SHADER
 	_surface_material.shader = shader
-	_surface_material.set_shader_parameter("puddle_mask", puddle_mask)
+	_surface_material.set_shader_parameter("auxiliary_masks", auxiliary_masks)
 	_surface_material.set_shader_parameter("town_texture", town_texture)
 	_surface_overlay.material = _surface_material
 	_outdoor_effect_root.add_child(_surface_overlay)
 
 
 func _build_window_emissive_overlay() -> void:
-	var texture := load(WINDOW_EMISSIVE_MASK_PATH) as Texture2D
+	var texture := load(AUXILIARY_MASK_PATH) as Texture2D
 	if texture == null:
 		push_error("Formal environment could not load the exact window emissive mask")
 		return
@@ -971,7 +967,7 @@ func _build_window_emissive_overlay() -> void:
 
 
 func _build_window_ground_projection() -> void:
-	var window_mask := load(WINDOW_EMISSIVE_MASK_PATH) as Texture2D
+	var window_mask := load(AUXILIARY_MASK_PATH) as Texture2D
 	var surface_masks := load(SURFACE_MASK_PATH) as Texture2D
 	if window_mask == null or surface_masks == null:
 		push_error("Formal environment window ground projection masks are incomplete")
@@ -1278,9 +1274,17 @@ func _update_local_effects(state: Dictionary, delta: float) -> void:
 	var cloud := float(state.get("cloud", 0.0))
 	var wind := float(state.get("wind", 0.0))
 	var light_strength := clampf(night + cloud * 0.24, 0.0, 1.0)
-	for index in _lights.size():
-		var flicker := 0.98 + sin(_elapsed * 3.7 + float(index) * 1.41) * 0.02
-		_lights[index].energy = _light_base_energy[index] * light_strength * flicker
+	if light_strength > ZERO_CONTRIBUTION_EPSILON:
+		for index in _lights.size():
+			var flicker := (
+				0.98
+				+ sin(_elapsed * 3.7 + float(index) * 1.41) * 0.02
+			)
+			_lights[index].energy = (
+				_light_base_energy[index]
+				* light_strength
+				* flicker
+			)
 	for index in _smoke_materials.size():
 		var material := _smoke_materials[index]
 		material.direction = Vector3(wind * 0.48, -1.0, 0.0).normalized()

@@ -2,79 +2,82 @@ class_name TownOutdoorSurfaceMask
 extends RefCounted
 
 
-const SURFACE_MASK_PATH := (
-	"res://world/presentation/environment/assets/town_surface_masks.png"
+const WALKABILITY_MASK_PATH := (
+	"res://world/presentation/environment/assets/town_dry_walkability_mask.bin"
 )
-const TOWN_MAP_PATH := "res://world/maps/town/assets/town.png"
-const WATER_THRESHOLD := 0.01
-const GROUND_THRESHOLD := 0.01
+# Generated losslessly from the former surface-mask plus town-map formula by
+# tools/build_town_auxiliary_masks.py. Runtime movement only needs this binary
+# answer and must not retain either full RGBA authoring image.
 const SEGMENT_SAMPLE_STEP_PX := 3
 const MOVEMENT_CLEARANCE := preload(
 	"res://world/data/town/TownOutdoorMovementClearance.gd"
 )
 
-static var _cached_image: Image
-static var _cached_town_image: Image
+const WALKABILITY_MAGIC := "ATWM"
+const WALKABILITY_VERSION := 1
+const WALKABILITY_HEADER_SIZE := 16
+
+static var _cached_bits := PackedByteArray()
 
 
-static func image() -> Image:
-	if _cached_image != null and not _cached_image.is_empty():
-		return _cached_image
-	var texture := load(SURFACE_MASK_PATH) as Texture2D
-	if texture == null:
-		return null
-	var loaded_image := texture.get_image()
-	if (
-		loaded_image == null
-		or loaded_image.is_empty()
-		or loaded_image.get_size() != Vector2i(MOVEMENT_CLEARANCE.MAP_SIZE)
-	):
-		return null
-	_cached_image = loaded_image
-	return _cached_image
+static func data() -> PackedByteArray:
+	if not _cached_bits.is_empty():
+		return _cached_bits
+	var file := FileAccess.open(WALKABILITY_MASK_PATH, FileAccess.READ)
+	if file == null or file.get_length() < WALKABILITY_HEADER_SIZE:
+		return PackedByteArray()
+	if file.get_buffer(4).get_string_from_ascii() != WALKABILITY_MAGIC:
+		return PackedByteArray()
+	if file.get_32() != WALKABILITY_VERSION:
+		return PackedByteArray()
+	var map_size := Vector2i(MOVEMENT_CLEARANCE.MAP_SIZE)
+	if file.get_32() != map_size.x or file.get_32() != map_size.y:
+		return PackedByteArray()
+	var expected_size := ceili(float(map_size.x * map_size.y) / 8.0)
+	if file.get_length() != WALKABILITY_HEADER_SIZE + expected_size:
+		return PackedByteArray()
+	var loaded_bits := file.get_buffer(expected_size)
+	if loaded_bits.size() != expected_size:
+		return PackedByteArray()
+	_cached_bits = loaded_bits
+	return _cached_bits
 
 
 static func reset_cache() -> void:
-	_cached_image = null
-	_cached_town_image = null
+	_cached_bits = PackedByteArray()
 
 
 static func body_origin_is_dry(
 	body_origin: Vector2,
-	surface_image: Image = null,
+	walkability_bits: PackedByteArray = PackedByteArray(),
 ) -> bool:
 	if not body_origin.is_finite():
 		return false
-	var mask := surface_image if surface_image != null else image()
-	if mask == null or mask.is_empty():
+	var bits := walkability_bits if not walkability_bits.is_empty() else data()
+	if bits.is_empty():
 		return false
 	var feet_center := body_origin + MOVEMENT_CLEARANCE.FEET_CENTER_OFFSET
 	var pixel := Vector2i(roundi(feet_center.x), roundi(feet_center.y))
 	if (
 		pixel.x < 0
 		or pixel.y < 0
-		or pixel.x >= mask.get_width()
-		or pixel.y >= mask.get_height()
+		or pixel.x >= MOVEMENT_CLEARANCE.MAP_SIZE.x
+		or pixel.y >= MOVEMENT_CLEARANCE.MAP_SIZE.y
 	):
 		return false
-	var surface := mask.get_pixelv(pixel)
-	if surface.r > WATER_THRESHOLD:
-		return false
-	if surface.g > GROUND_THRESHOLD:
-		return true
-	var town := _town_image()
-	return town != null and not _looks_like_water(town.get_pixelv(pixel))
+	var index := pixel.y * int(MOVEMENT_CLEARANCE.MAP_SIZE.x) + pixel.x
+	return (bits[index >> 3] & (1 << (index & 7))) != 0
 
 
 static func body_segment_is_dry(
 	from_body_origin: Vector2,
 	to_body_origin: Vector2,
-	surface_image: Image = null,
+	walkability_bits: PackedByteArray = PackedByteArray(),
 ) -> bool:
 	if not from_body_origin.is_finite() or not to_body_origin.is_finite():
 		return false
-	var mask := surface_image if surface_image != null else image()
-	if mask == null or mask.is_empty():
+	var bits := walkability_bits if not walkability_bits.is_empty() else data()
+	if bits.is_empty():
 		return false
 	var distance := from_body_origin.distance_to(to_body_origin)
 	var samples := maxi(1, ceili(distance / float(SEGMENT_SAMPLE_STEP_PX)))
@@ -84,31 +87,7 @@ static func body_segment_is_dry(
 				to_body_origin,
 				float(index) / float(samples),
 			),
-			mask,
+			bits,
 		):
 			return false
 	return true
-
-
-static func _town_image() -> Image:
-	if _cached_town_image != null and not _cached_town_image.is_empty():
-		return _cached_town_image
-	var texture := load(TOWN_MAP_PATH) as Texture2D
-	if texture == null:
-		return null
-	var loaded_image := texture.get_image()
-	if (
-		loaded_image == null
-		or loaded_image.is_empty()
-		or loaded_image.get_size() != Vector2i(MOVEMENT_CLEARANCE.MAP_SIZE)
-	):
-		return null
-	_cached_town_image = loaded_image
-	return _cached_town_image
-
-
-static func _looks_like_water(color: Color) -> bool:
-	var blue_bias := color.b - maxf(color.r, color.g * 0.82)
-	var cyan_bias := minf(color.g, color.b) - color.r * 1.12
-	var brightness := maxf(color.r, maxf(color.g, color.b))
-	return blue_bias > 0.035 and cyan_bias > 0.02 and brightness > 0.40

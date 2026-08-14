@@ -148,6 +148,11 @@ func _test_synthetic_cutout_and_state_transitions() -> void:
 		1,
 		"maximum-depth active subject keeps one independent wall slice",
 	)
+	_expect_equal(
+		(occlusion.get("_subject_overlays") as Dictionary).size(),
+		1,
+		"inactive historical subjects release their cached wall slices",
+	)
 	if overlays.size() == 1:
 		_expect_equal(
 			overlays[0].z_index,
@@ -179,6 +184,11 @@ func _test_synthetic_cutout_and_state_transitions() -> void:
 		_visible_subject_overlays(occlusion).size(),
 		0,
 		"removing every subject hides all wall foreground slices",
+	)
+	_expect_equal(
+		(occlusion.get("_subject_overlays") as Dictionary).size(),
+		0,
+		"removing every subject frees all cached wall slices",
 	)
 	occlusion.set_debug_visible("true")
 	_expect(
