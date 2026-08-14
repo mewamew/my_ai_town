@@ -774,7 +774,7 @@ func _apply_layout() -> void:
 func _apply_resident_directory_layout() -> void:
 	if not is_instance_valid(_resident_directory):
 		return
-	var safe := _layout.get("safeRect", Rect2(Vector2.ZERO, size)) as Rect2
+	var safe := _drawer_safe_rect()
 	var nav_rect := _layout_target_rect("nav_residents")
 	var breakpoint_id := StringName(_layout.get("breakpoint", &""))
 	var drawer_height: float
@@ -813,7 +813,7 @@ func _apply_resident_directory_layout() -> void:
 func _apply_place_directory_layout() -> void:
 	if not is_instance_valid(_place_directory):
 		return
-	var safe := _layout.get("safeRect", Rect2(Vector2.ZERO, size)) as Rect2
+	var safe := _drawer_safe_rect()
 	var nav_rect := _layout_target_rect("nav_places")
 	var breakpoint_id := StringName(_layout.get("breakpoint", &""))
 	var drawer_height: float
@@ -847,6 +847,14 @@ func _apply_place_directory_layout() -> void:
 			drawer_width = maxf(320.0, safe.end.x - 120.0 - drawer_position.x)
 	_place_directory.position = drawer_position.round()
 	_place_directory.size = Vector2(drawer_width, drawer_height).round()
+
+
+func _drawer_safe_rect() -> Rect2:
+	# The painted mobile HUD intentionally uses the physical viewport origin,
+	# while semantic drawers must stay inside the actual display safe area.
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		return MOBILE_UI_PROFILE.safe_rect(size, safe_insets)
+	return _layout.get("safeRect", Rect2(Vector2.ZERO, size)) as Rect2
 
 
 func _apply_runtime_skin_layout() -> void:
