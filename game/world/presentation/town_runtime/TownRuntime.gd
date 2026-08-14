@@ -3454,9 +3454,10 @@ func _set_building_hotspots_available(available: bool) -> void:
 	for hotspot_value: Variant in _building_observation_hotspots.values():
 		(hotspot_value as Node2D).set_available(building_available)
 	for marker_value: Variant in _building_resident_markers.values():
-		(marker_value as Node2D).set_available(
-			building_available and _avatar_mode == AVATAR_MODE_OBSERVER
-		)
+		# A roof marker is both a resident portrait and the fallback anchor for a
+		# resident action menu. It must remain visible while the avatar is active;
+		# only the building entrance hotspot is observer-only.
+		(marker_value as Node2D).set_available(available)
 	if _bulletin_hotspot != null:
 		# Publishing a town-wide announcement is an observer-mode lever.
 		# Avatar mode is intentionally limited to physical movement,

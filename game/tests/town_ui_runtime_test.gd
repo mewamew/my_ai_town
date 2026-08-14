@@ -1318,6 +1318,9 @@ const HOST_SCRIPT := preload(
 const AVATAR_HUD_SCENE := preload(
 	"res://ui/avatar_mode/runtime/AvatarModeHud.tscn"
 )
+const RESIDENT_DIRECTORY_DRAWER := preload(
+	"res://ui/town/hud/runtime/ResidentDirectoryDrawer.gd"
+)
 const SYSTEM_FEEDBACK_TOAST_SCENE := preload(
 	"res://ui/common/system_feedback/SystemFeedbackToast.tscn"
 )
@@ -1646,6 +1649,7 @@ func _scenario_mobile_platform_foundation() -> void:
 		"铺满背景统一等比缩放",
 	)
 	await _verify_mobile_touch_scroll_router()
+	await _verify_resident_directory_source_scaling()
 	await _verify_mobile_text_input_policy()
 	await _verify_mobile_scene_interaction()
 	_verify_mobile_page_layout_assets()
@@ -1671,6 +1675,33 @@ func _scenario_mobile_platform_foundation() -> void:
 			game_flow_host.get_node_or_null("MobileTextInputPolicy") == null,
 			"桌面运行时不能接管文本输入",
 		)
+
+
+func _verify_resident_directory_source_scaling() -> void:
+	var drawer := RESIDENT_DIRECTORY_DRAWER.new() as Control
+	drawer.size = Vector2(720.0, 1080.0)
+	root.add_child(drawer)
+	await process_frame
+	var buttons := drawer.get("_row_buttons") as Array
+	var content := (
+		(buttons[0] as Button).get_meta("content") as Control
+		if not buttons.is_empty()
+		else null
+	)
+	_expect(content != null, "居民目录行内容节点存在")
+	if content != null:
+		_expect_equal(
+			content.size,
+			Vector2(604.0, 146.0),
+			"居民目录行内容保持原始排版尺寸",
+		)
+		_expect_equal(
+			content.scale,
+			Vector2(720.0 / 1024.0, 1080.0 / 1536.0),
+			"居民目录头像与文字在平板比例下统一缩放",
+		)
+	drawer.queue_free()
+	await process_frame
 
 
 func _verify_mobile_touch_scroll_router() -> void:

@@ -32,6 +32,7 @@ func _run() -> void:
 	await _test_first_frame_and_zoom(fixture)
 	await _test_entry_strip_click_area(fixture)
 	await _test_hidden_resident_input_boundary(fixture)
+	await _test_resident_body_pointer_activation(fixture)
 	await _test_overlapping_building_click(fixture)
 	fixture.queue_free()
 	await process_frame
@@ -136,6 +137,55 @@ func _test_hidden_resident_input_boundary(fixture: Node2D) -> void:
 	_expect(
 		bool(body.call("can_receive_pointer_input")),
 		"恢复当前空间后居民点击能力恢复",
+	)
+	body.queue_free()
+
+
+func _test_resident_body_pointer_activation(fixture: Node2D) -> void:
+	var body := RESIDENT_BODY.new() as Node2D
+	body.call("set_automatic_motion", false)
+	fixture.add_child(body)
+	await process_frame
+	var configured := body.call("configure",
+		{"residentId": "resident-pointer", "residentName": "林岚"},
+		{
+			"appearance": "",
+			"position": Vector2.ZERO,
+			"spaceId": "town_outdoor",
+			"movementRevision": 1,
+		},
+	) as Dictionary
+	_expect_equal(configured.get("ok"), true, "居民点击回归夹具完成配置")
+	var activations := {"count": 0, "residentId": "", "residentName": ""}
+	body.connect("resident_pressed", func(resident_id: String, resident_name: String) -> void:
+		activations["count"] = int(activations["count"]) + 1
+		activations["residentId"] = resident_id
+		activations["residentName"] = resident_name
+	)
+	var mouse_click := InputEventMouseButton.new()
+	mouse_click.button_index = MOUSE_BUTTON_LEFT
+	mouse_click.pressed = true
+	mouse_click.position = body.get_viewport().get_mouse_position()
+	body.call("_on_hit_area_input", body.get_viewport(), mouse_click, 0)
+	var touch := InputEventScreenTouch.new()
+	touch.index = 0
+	touch.pressed = true
+	touch.position = Vector2(32.0, 32.0)
+	body.call("_on_hit_area_input", body.get_viewport(), touch, 0)
+	_expect_equal(
+		activations.get("count"),
+		2,
+		"居民本体的鼠标和触控点击都会触发选择信号",
+	)
+	_expect_equal(
+		activations.get("residentId"),
+		"resident-pointer",
+		"居民点击信号保留稳定居民 ID",
+	)
+	_expect_equal(
+		activations.get("residentName"),
+		"林岚",
+		"居民点击信号保留显示名称",
 	)
 	body.queue_free()
 

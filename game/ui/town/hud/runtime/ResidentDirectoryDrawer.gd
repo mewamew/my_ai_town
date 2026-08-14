@@ -301,8 +301,16 @@ func _layout_children() -> void:
 		_row_buttons[row_index].position = rect.position
 		_row_buttons[row_index].size = rect.size
 		var content := _row_buttons[row_index].get_meta("content") as Control
-		content.position = rect.position + Vector2(12, 7) * _scale()
-		content.size = rect.size - Vector2(24, 14) * _scale()
+		# Keep the row contents in the same source coordinate space as the
+		# artwork.  Previously only the outer MarginContainer was resized while
+		# its margins, spacing and fonts stayed at desktop pixels.  On a tablet or
+		# foldable that made the text baseline drift away from the portrait and
+		# selection frame.  Scaling the complete subtree preserves the source
+		# layout (including font metrics) at every drawer size.
+		var scale_value := _scale()
+		content.position = rect.position + Vector2(12, 7) * scale_value
+		content.size = Vector2(604, 146)
+		content.scale = scale_value
 	_layout_thumb()
 
 

@@ -2063,8 +2063,8 @@ func _on_hit_area_input(
 		or not POINTER_INPUT.is_primary_press(event)
 	):
 		return
-		resident_pressed.emit(_resident_id, _resident_name)
-		get_viewport().set_input_as_handled()
+	resident_pressed.emit(_resident_id, _resident_name)
+	get_viewport().set_input_as_handled()
 
 
 func _vector_payload(value: Vector2) -> Dictionary:
