@@ -153,7 +153,11 @@ func configure(
 		provider_page if provider_page >= 0 else _selected_provider_page()
 	)
 	_model_page = model_page if model_page >= 0 else _selected_model_page()
-	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# configure() can run before the parent has performed its first layout pass.
+	# Give the composite a concrete viewport size so the first build does not
+	# calculate zero-sized text slots and hit targets.
+	if size == Vector2.ZERO:
+		size = viewport_size
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_build()
 	return true
