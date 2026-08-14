@@ -375,6 +375,12 @@
       "func": "cancel_all_model_requests",
       "call": "string:.call(\"cancel_all_requests\")",
       "reason": "会话关闭或切换时通过 Provider 的全量取消契约终止该居民所有在途模型传输，并让同步回调走 stale 收束。"
+    },
+    {
+      "path": "game/world/integration/TownWorldAgentGateway.gd",
+      "func": "_defer_agent_result",
+      "call": "variable:.call(result)",
+      "reason": "生产 Gateway 需要把本地模型的同步完成回调移出当前派发帧；未挂入场景树的单元测试仍保留同步 Callable 契约。"
     }
   ]
 }

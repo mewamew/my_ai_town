@@ -2216,6 +2216,68 @@ func _scenario_ui_runtime_host_navigation() -> void:
 		"active avatar mode enables AvatarModeHud input",
 	)
 	var active_snapshot := _avatar_hud.call("get_runtime_snapshot") as Dictionary
+	# Resident conversation is a page transition, not an ownership transition.
+	# Keep the active avatar surface mounted and interactive while the page is
+	# waiting on resident/model work.
+	_adapter.publish("conversation", {
+		"source": "runtime",
+		"capabilityMode": "formal",
+		"formalReady": true,
+		"displayMode": "player",
+		"conversationId": "avatar-conversation-while-active",
+		"residentId": "resident-lin",
+		"residentName": "林岚",
+		"messages": [],
+		"canAttachPhoto": false,
+	})
+	await process_frame
+	await process_frame
+	_expect_equal(
+		_host.call("current_route"),
+		&"chat",
+		"active avatar can open the real conversation page",
+	)
+	_expect(_avatar_hud.visible, "conversation page never hides the active AvatarModeHud")
+	_expect_equal(
+		_avatar_hud.process_mode,
+		Node.PROCESS_MODE_ALWAYS,
+		"active AvatarModeHud keeps processing while conversation waits",
+	)
+	var conversation_active_snapshot := _avatar_hud.call("get_runtime_snapshot") as Dictionary
+	_expect(
+		not bool(conversation_active_snapshot.get("suppressedByConversation", true)),
+		"conversation projection never suppresses avatar input",
+	)
+	var conversation_editor := TextEdit.new()
+	conversation_editor.name = "ConversationShortcutInputProbe"
+	root.add_child(conversation_editor)
+	conversation_editor.grab_focus()
+	await process_frame
+	_expect(
+		not bool(_avatar_hud.call("_can_accept_interaction_input")),
+		"conversation text focus blocks avatar keyboard shortcuts while HUD stays mounted",
+	)
+	conversation_editor.release_focus()
+	conversation_editor.queue_free()
+	await process_frame
+	_adapter.publish("conversation", {
+		"source": "runtime",
+		"capabilityMode": "formal",
+		"formalReady": true,
+		"displayMode": "player",
+		"conversationId": "",
+		"residentId": "resident-lin",
+		"residentName": "林岚",
+		"messages": [],
+		"canAttachPhoto": false,
+	})
+	await process_frame
+	_expect_equal(
+		_host.call("current_route"),
+		&"town",
+		"closing conversation returns to the same active avatar route",
+	)
+	_expect(_avatar_hud.visible, "closing conversation keeps the active AvatarModeHud mounted")
 	# 化身模式已收敛为底部技能槽,不再显示常驻 WASD 移动指引。
 	_expect(
 		not bool(active_snapshot.get("wasdVisible", true)),

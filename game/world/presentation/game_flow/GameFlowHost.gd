@@ -130,6 +130,7 @@ const INTERNAL_MODEL_ENV := "AI_TOWN_PLAYTEST_MODEL"
 const INTERNAL_WINDOW_TITLE := "我的ai小镇 · 开发内测"
 const FORMAL_WINDOW_TITLE := "我的ai小镇"
 const FORMAL_UI_CANVAS_LAYER := 100
+const AVATAR_UI_CANVAS_LAYER := 110
 const FORMAL_RUNTIME_AUDIT_ENV := "AI_TOWN_FORMAL_RUNTIME_AUDIT_PATH"
 const DAILY_AUTO_SAVE_REASON := "daily_auto_save"
 const DAILY_AUTO_SAVE_RETRY_INTERVAL_MSEC := 5000
@@ -191,6 +192,7 @@ var _pending_runtime: Node
 var _town_runtime: Node
 var _town_runtime_scene: PackedScene
 var _town_ui_canvas_layer: CanvasLayer
+var _avatar_ui_canvas_layer: CanvasLayer
 var _avatar_hud: Control
 var _pause_host: Control
 var _town_ui_host: Control
@@ -1258,6 +1260,19 @@ func get_formal_runtime_audit_snapshot() -> Dictionary:
 				else -1
 			),
 		},
+		"avatarCanvas": {
+			"mounted": is_instance_valid(_avatar_ui_canvas_layer),
+			"visible": (
+				_avatar_ui_canvas_layer.visible
+				if is_instance_valid(_avatar_ui_canvas_layer)
+				else false
+			),
+			"layer": (
+				_avatar_ui_canvas_layer.layer
+				if is_instance_valid(_avatar_ui_canvas_layer)
+				else -1
+			),
+		},
 		"townUiHost": (
 			_town_ui_host.call("debug_snapshot")
 			if is_instance_valid(_town_ui_host)
@@ -1641,7 +1656,10 @@ func _unmount_town_overlays() -> void:
 			UI_NODE_RETIREMENT.retire(_pause_host)
 		if is_instance_valid(_avatar_hud):
 			UI_NODE_RETIREMENT.retire(_avatar_hud)
+	if is_instance_valid(_avatar_ui_canvas_layer):
+		UI_NODE_RETIREMENT.retire(_avatar_ui_canvas_layer)
 	_town_ui_canvas_layer = null
+	_avatar_ui_canvas_layer = null
 	_town_ui_host = null
 	_pause_host = null
 	_avatar_hud = null
@@ -1681,6 +1699,7 @@ func _release_internal_session_refs() -> void:
 	_pending_runtime = null
 	_town_runtime = null
 	_town_ui_canvas_layer = null
+	_avatar_ui_canvas_layer = null
 	_world_intro = null
 	_world_intro_vm.clear()
 	_new_game_route_context.clear()
@@ -1719,6 +1738,7 @@ func _bind_startup(startup: Node) -> void:
 	_in_session_load_pending = false
 	_town_runtime = null
 	_town_ui_canvas_layer = null
+	_avatar_ui_canvas_layer = null
 	_avatar_hud = null
 	_pause_host = null
 	_town_ui_host = null
@@ -4135,13 +4155,17 @@ func _bind_town_runtime(runtime: Node) -> void:
 		_on_town_ui_route_changed(
 			_town_ui_host.call("current_route") as StringName,
 		)
-	if _town_ui_canvas_layer.get_node_or_null("AvatarModeHud") == null:
+	# The avatar surface has its own CanvasLayer. TownUiRuntimeHost and the pause
+	# host can replace, hide or reorder their pages without changing the avatar
+	# HUD's owner, visibility or input priority.
+	_avatar_ui_canvas_layer = _ensure_avatar_ui_canvas_layer(runtime)
+	if _avatar_ui_canvas_layer.get_node_or_null("AvatarModeHud") == null:
 		_avatar_hud = _instantiate_control_scene(AVATAR_MODE_HUD_SCENE_PATH)
 		if _avatar_hud == null:
 			_last_result = _failure("AVATAR_MODE_HUD_LOAD_FAILED", false)
 			return
 		_avatar_hud.name = "AvatarModeHud"
-		_avatar_hud.z_index = 10
+		_avatar_hud.z_index = 0
 		var avatar_issues := _avatar_hud.call(
 			"bind_town_ui_adapter",
 			adapter,
@@ -4153,7 +4177,7 @@ func _bind_town_runtime(runtime: Node) -> void:
 			_avatar_hud.free()
 			_avatar_hud = null
 			return
-		_town_ui_canvas_layer.add_child(_avatar_hud)
+		_avatar_ui_canvas_layer.add_child(_avatar_hud)
 		_connect_once(
 			_avatar_hud,
 			"intent_requested",
@@ -4165,7 +4189,7 @@ func _bind_town_runtime(runtime: Node) -> void:
 			Callable(self, "_on_avatar_movement_input_changed"),
 		)
 	else:
-		_avatar_hud = _town_ui_canvas_layer.get_node("AvatarModeHud") as Control
+		_avatar_hud = _avatar_ui_canvas_layer.get_node("AvatarModeHud") as Control
 		var existing_avatar_issues := _avatar_hud.call(
 			"bind_town_ui_adapter",
 			adapter,
@@ -4388,6 +4412,20 @@ func _ensure_formal_ui_canvas_layer(runtime: Node) -> CanvasLayer:
 	var layer := CanvasLayer.new()
 	layer.name = "FormalUiCanvasLayer"
 	layer.layer = FORMAL_UI_CANVAS_LAYER
+	runtime.add_child(layer)
+	return layer
+
+
+func _ensure_avatar_ui_canvas_layer(runtime: Node) -> CanvasLayer:
+	var existing := runtime.get_node_or_null("AvatarUiCanvasLayer") as CanvasLayer
+	if existing != null:
+		existing.layer = AVATAR_UI_CANVAS_LAYER
+		existing.visible = true
+		return existing
+	var layer := CanvasLayer.new()
+	layer.name = "AvatarUiCanvasLayer"
+	layer.layer = AVATAR_UI_CANVAS_LAYER
+	layer.visible = true
 	runtime.add_child(layer)
 	return layer
 
@@ -5607,6 +5645,10 @@ func _sync_town_runtime_input_gates() -> void:
 			gameplay_input_enabled,
 		)
 	if _town_runtime.has_method("set_avatar_movement_input_enabled"):
+		# Avatar movement is a world character input lane, not a route-owned UI
+		# control. Pages such as chat, town log and settings may pause or cover
+		# observer controls, but they must not revoke the active avatar's input.
+		gameplay_input_enabled = true
 		_town_runtime.call(
 			"set_avatar_movement_input_enabled",
 			gameplay_input_enabled,

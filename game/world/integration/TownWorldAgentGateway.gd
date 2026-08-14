@@ -2271,14 +2271,18 @@ func _dispatch_prepared_agent_decision(request: Dictionary) -> void:
 			"wakePacket": wake.duplicate(true),
 			"startedAtMsec": Time.get_ticks_msec(),
 		})
+	var completion_callback := _on_agent_result.bind(
+		resident_id,
+		resident_name,
+		decision_id,
+		generation,
+	)
 	var accepted := _agent_system.request_decision(resident_id,
-		wake.duplicate(true),
-		_on_agent_result.bind(
-			resident_id,
-			resident_name,
-			decision_id,
-			generation,
-		),) as Dictionary
+		# AgentSystem makes the isolated wake copy immediately before handing it
+		# to the resident runtime. Avoid cloning the same full packet here too;
+		# the gateway keeps its own packet for cancellation and fallback.
+		wake,
+		_defer_agent_result.bind(completion_callback),) as Dictionary
 	if bool(accepted.get("ok", false)):
 		return
 	_inflight.erase(decision_id)
@@ -2328,6 +2332,21 @@ func _dispatch_prepared_agent_decision(request: Dictionary) -> void:
 			"wakePacket": wake.duplicate(true),
 			"agentResult": accepted.duplicate(true),
 		})
+
+
+func _defer_agent_result(
+	result: Dictionary,
+	callback: Callable,
+) -> void:
+	# A local/fake provider may call back from inside request_decision. Keep the
+	# whole result path out of the dispatch frame while leaving AgentSystem's
+	# direct callback contract unchanged for non-runtime callers and tests.
+	if not callback.is_valid():
+		return
+	if is_inside_tree():
+		callback.call_deferred(result)
+	else:
+		callback.call(result)
 
 
 func _on_agent_result(

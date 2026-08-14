@@ -235,6 +235,9 @@ var _rebuild_after_joystick_release := false
 
 
 func _ready() -> void:
+	# This is a persistent interaction surface. World pages and the pause host
+	# may change independently, but they must not pause or remove the avatar HUD.
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	_fit_root_to_viewport()
 	get_viewport().size_changed.connect(_fit_root_to_viewport)
@@ -490,21 +493,10 @@ func apply_view_model(view_model: Dictionary) -> PackedStringArray:
 		!= _render_projection(scope, render_snapshot)
 	)
 	if is_node_ready() and not _binding_batch and render_changed:
-		if (
-			scope == "conversation"
-			and bool(
-				_render_projection(scope, render_snapshot).get(
-					"open",
-					false,
-				)
-			)
-		):
-			# The chat page covers this HUD. Hiding the existing tree is enough;
-			# rebuilding it just to retire every child delays the chat's first frame.
-			visible = false
-			mouse_filter = Control.MOUSE_FILTER_IGNORE
-		else:
-			_request_rebuild_preserving_joystick()
+		# Conversation and other routes do not own this layer. Rebuild only the
+		# HUD's own children from the latest snapshot while keeping its root and
+		# input surface mounted.
+		_request_rebuild_preserving_joystick()
 	return issues
 
 
@@ -576,7 +568,7 @@ func _apply_time_hud_view_model(view_model: Dictionary) -> PackedStringArray:
 	render_snapshot["data"] = render_data
 	_view_models[TIME_HUD_SCOPE] = render_snapshot
 	_revision_by_scope[TIME_HUD_SCOPE] = incoming_revision
-	if is_node_ready() and not _binding_batch and not _conversation_open():
+	if is_node_ready() and not _binding_batch:
 		_request_rebuild_preserving_joystick()
 	return PackedStringArray()
 
@@ -722,7 +714,8 @@ func get_runtime_snapshot() -> Dictionary:
 		"nearestResidentPromptOnly": true,
 		"targetSwitcherExposed": _component_nodes.has("target_switcher"),
 		"skillbarVisible": _component_nodes.has("skillbar"),
-		"suppressedByConversation": _conversation_open(),
+		"conversationOpen": _conversation_open(),
+		"suppressedByConversation": false,
 		"focusedTargetId": str(data.get("focusedTargetId", "")),
 		"currentTargetId": str(current_target.get("targetId", "")),
 		"nextTargetId": str(next_target.get("targetId", "")),
@@ -927,12 +920,8 @@ func _rebuild() -> void:
 		if input_enabled
 		else Control.MOUSE_FILTER_IGNORE
 	)
-	var conversation_open := _conversation_open()
-	if conversation_open:
-		# 玩家对话页是当前唯一 UI owner；化身 HUD 不在其背后重复显示。
-		visible = false
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
-		return
+	# The resident conversation is an additional page. It must not unmount or
+	# suppress the avatar's movement and action controls.
 	_build_mode_panel(data)
 	if not input_enabled:
 		_movement_hint_dismissed = false
@@ -2687,12 +2676,16 @@ func _activate_focused_button() -> bool:
 func _can_accept_interaction_input() -> bool:
 	if not _configured or not visible or mouse_filter == Control.MOUSE_FILTER_IGNORE:
 		return false
+	var focus_owner := get_viewport().gui_get_focus_owner()
+	if focus_owner is LineEdit or focus_owner is TextEdit:
+		# The HUD stays mounted above conversation and settings pages, but their
+		# text fields must keep keyboard shortcuts (F/1-4/E/R) as text input.
+		return false
 	var avatar: Dictionary = _view_models.get("avatar", {})
 	var data: Dictionary = avatar.get("data", {})
 	return (
 		str(data.get("mode", "")) == "avatar_active"
 		and str(avatar.get("status", "")) != "disabled"
-		and not _conversation_open()
 	)
 
 
