@@ -836,6 +836,25 @@ func _run() -> void:
 		(runtime.get_node("Player") as Node2D).position.x > position_before_text_input.x,
 		"fresh movement input works after text input closes",
 	)
+	var long_run_avatar_start := (runtime.get_node("Player") as Node2D).position
+	Input.action_press("move_right")
+	for frame_index in 180:
+		await physics_frame
+		if frame_index % 30 == 0:
+			_expect(
+				avatar_hud.visible,
+				"long avatar run keeps AvatarModeHud visible at frame %d" % frame_index,
+			)
+			_expect_equal(
+				avatar_hud.process_mode,
+				Node.PROCESS_MODE_ALWAYS,
+				"long avatar run keeps HUD processing at frame %d" % frame_index,
+			)
+	Input.action_release("move_right")
+	_expect(
+		(runtime.get_node("Player") as Node2D).position != long_run_avatar_start,
+		"long avatar run continues moving while the resident gateway is active",
+	)
 	text_input.queue_free()
 	await _verify_conversation_first_visible_frame(
 		runtime,

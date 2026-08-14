@@ -198,6 +198,9 @@ var _touch_camera_gesture: TouchCameraGesture = TOUCH_CAMERA_GESTURE.new()
 var _agent_dispatch_hold_process_turns := 0
 var _agent_dispatch_not_before_drawn_frame := -1
 var _agent_dispatch_first_draw_deadline_msec := 0
+var _agent_gateway_pump_scheduled := false
+var _agent_gateway_watchdog_active := false
+var _agent_gateway_pending_world_advance: Dictionary = {}
 
 
 # Formal sessions mount TownEnvironmentPresentation after the world starts.
@@ -243,6 +246,9 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	_agent_gateway_pump_scheduled = false
+	_agent_gateway_watchdog_active = false
+	_agent_gateway_pending_world_advance.clear()
 	if _frame_probe != null:
 		_frame_probe.flush()
 	if _conflict_presentation_host != null:
@@ -307,14 +313,17 @@ func _process(delta: float) -> void:
 			Time.get_ticks_usec() - phase_started_usec
 		)
 		phase_started_usec = Time.get_ticks_usec()
-	_pump_agent_gateway_for_frame(world_advance)
+	# The avatar physics lane has already run before this idle phase. Do not let
+	# resident prompt preparation or model dispatch occupy the same visible frame;
+	# it is scheduled after the frame is submitted, with a headless fallback for
+	# production-entry tests and a timer fallback for a renderer that is minimized.
+	_schedule_agent_gateway_pump(world_advance)
 	if _frame_profile_enabled:
 		profile["agentDeferredCount"] = 1 if FRAME_BUDGET_RUNTIME.should_defer_agent_dispatch(
 			world_advance,
 		) else 0
-		profile["agentUsec"] = (
-			Time.get_ticks_usec() - phase_started_usec
-		)
+		profile["agentDispatchScheduled"] = 1
+		profile["agentUsec"] = 0
 		phase_started_usec = Time.get_ticks_usec()
 	var presentation_delta := (
 		0.0
@@ -1716,6 +1725,49 @@ func _pump_agent_gateway_for_frame(world_advance: Dictionary = {}) -> void:
 		_agent_dispatch_not_before_drawn_frame = -1
 		_agent_dispatch_first_draw_deadline_msec = 0
 	_agent_gateway.pump_frame_budgeted(AGENT_DISPATCH_BUDGET_PER_FRAME,)
+
+
+func _schedule_agent_gateway_pump(world_advance: Dictionary) -> void:
+	if _agent_gateway == null:
+		return
+	_agent_gateway_pending_world_advance = world_advance.duplicate(true)
+	if _agent_gateway_pump_scheduled:
+		return
+	_agent_gateway_pump_scheduled = true
+	if DisplayServer.get_name() == "headless":
+		# Headless runs have no rendered frame signal. A deferred call still runs
+		# after the current process turn, preserving physics-before-Agent order.
+		call_deferred("_pump_agent_gateway_after_avatar_frame")
+	else:
+		RenderingServer.frame_post_draw.connect(
+			_pump_agent_gateway_after_avatar_frame,
+			CONNECT_ONE_SHOT,
+		)
+		# A minimized or temporarily unavailable renderer must not starve Agent
+		# work forever. Keep only one watchdog pending while normal draw signals
+		# continue to arrive; the callback is idempotent when the draw signal wins.
+		if not _agent_gateway_watchdog_active:
+			_agent_gateway_watchdog_active = true
+			get_tree().create_timer(0.5, true, false, true).timeout.connect(
+				_on_agent_gateway_pump_watchdog,
+				CONNECT_ONE_SHOT,
+			)
+
+
+func _on_agent_gateway_pump_watchdog() -> void:
+	_agent_gateway_watchdog_active = false
+	_pump_agent_gateway_after_avatar_frame()
+
+
+func _pump_agent_gateway_after_avatar_frame() -> void:
+	if not _agent_gateway_pump_scheduled:
+		return
+	_agent_gateway_pump_scheduled = false
+	var world_advance := _agent_gateway_pending_world_advance.duplicate(true)
+	_agent_gateway_pending_world_advance.clear()
+	if not is_inside_tree() or _agent_gateway == null:
+		return
+	_pump_agent_gateway_for_frame(world_advance)
 
 
 func player_end_conversation(conversation_id: String, narration: String) -> Dictionary:

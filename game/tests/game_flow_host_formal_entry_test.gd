@@ -585,6 +585,46 @@ func _run() -> void:
 		false,
 		"formal route never enables internal playtest",
 	)
+	var formal_runtime := host.get("_town_runtime") as Node
+	var avatar_canvas := (
+		formal_runtime.get_node_or_null("AvatarUiCanvasLayer") as CanvasLayer
+		if formal_runtime != null
+		else null
+	)
+	_expect(
+		avatar_canvas != null,
+		"real formal Town mounts the independent avatar CanvasLayer",
+	)
+	if avatar_canvas != null:
+		_expect_equal(
+			avatar_canvas.layer,
+			110,
+			"avatar CanvasLayer stays above replaceable town pages and pause UI",
+		)
+		_expect(avatar_canvas.visible, "formal avatar CanvasLayer remains visible")
+	var production_avatar_hud := (
+		avatar_canvas.get_node_or_null("AvatarModeHud") as Control
+		if avatar_canvas != null
+		else null
+	)
+	_expect(
+		production_avatar_hud != null,
+		"real formal Town mounts AvatarModeHud under the independent layer",
+	)
+	if production_avatar_hud != null:
+		_expect_equal(
+			production_avatar_hud.process_mode,
+			Node.PROCESS_MODE_ALWAYS,
+			"formal AvatarModeHud keeps processing across pause and page changes",
+		)
+	var formal_audit := host.call("get_formal_runtime_audit_snapshot") as Dictionary
+	var avatar_audit := formal_audit.get("avatarCanvas", {}) as Dictionary
+	_expect(
+		bool(avatar_audit.get("mounted", false))
+			and bool(avatar_audit.get("visible", false))
+			and int(avatar_audit.get("layer", -1)) == 110,
+		"formal runtime audit records the independent avatar layer",
+	)
 	var gateway := host.get("_gateway") as Node
 	_expect(
 		gateway != null,
@@ -634,12 +674,56 @@ func _run() -> void:
 	var town_adapter := (
 		(host.get("_town_runtime") as Node).call("get_ui_adapter") as Node
 	)
+	var avatar_entry := town_adapter.call(
+		"dispatch",
+		"town_hud.select_tool",
+		{"toolId": "avatar"},
+	) as Dictionary
+	_expect_ok(
+		avatar_entry,
+		"real formal Town enters avatar mode through the selected-model route",
+	)
+	await _wait_frames(120)
+	_expect_equal(
+		formal_runtime.call("get_avatar_mode"),
+		"avatar_active",
+		"real formal Town completes avatar descent",
+	)
+	_expect(
+		production_avatar_hud != null and production_avatar_hud.visible,
+		"real formal avatar mode keeps AvatarModeHud visible",
+	)
+	var formal_town_ui_host := host.get("_town_ui_host") as Node
+	var route_open := formal_town_ui_host.call(
+		"open_page",
+		&"town_log",
+		{},
+	) as Dictionary
+	_expect_ok(route_open, "real formal Town can open a primary page over avatar mode")
+	await _wait_frames(2)
+	_expect(
+		production_avatar_hud != null and production_avatar_hud.visible,
+		"opening a real town page does not hide AvatarModeHud",
+	)
+	host.call("_open_pause_menu")
+	await _wait_frames(2)
+	_expect(
+		production_avatar_hud != null and production_avatar_hud.visible,
+		"opening the real pause menu does not hide AvatarModeHud",
+	)
+	host.call("_close_pause_menu")
+	formal_town_ui_host.call("close_page")
+	await _wait_frames(2)
 	var manual_save := town_adapter.call("dispatch", "save.create", {
 		"reason": "release_manual_save_regression",
 	}) as Dictionary
 	_expect_ok(
 		manual_save,
 		"formal Town can create a second save through the same action used by the pause menu",
+	)
+	_expect(
+		production_avatar_hud != null and production_avatar_hud.visible,
+		"saving the active formal Town does not hide AvatarModeHud",
 	)
 	var manual_listing := SAVE_STORE.new().call(
 		"list_published",
