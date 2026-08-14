@@ -1409,6 +1409,7 @@ func _build_skillbar(data: Dictionary, avatar: Dictionary) -> void:
 			14,
 		)
 		skill_art.size = SKILL_ART_SIZE
+		_set_skillbar_logical_rect(skill_art)
 		root.add_child(skill_art)
 		_add_intent_button(root, action, action_id, action_payload)
 		var button := _action_nodes.get(action_id) as Button
@@ -1419,6 +1420,7 @@ func _build_skillbar(data: Dictionary, avatar: Dictionary) -> void:
 				9,
 			)
 			button.size = SKILL_BUTTON_SIZE
+			_set_skillbar_logical_rect(button)
 			button.tooltip_text = (
 				"%s · %s" % [skill.get("key", ""), skill.get("label", "")]
 				if bool(action.get("enabled", false))
@@ -1452,8 +1454,40 @@ func _build_skillbar(data: Dictionary, avatar: Dictionary) -> void:
 		key.add_theme_constant_override("outline_size", 3)
 		key.position = Vector2(slot_center_x + 15, 56)
 		key.size = SKILL_KEY_SIZE
+		_set_skillbar_logical_rect(key)
 		key.visible = not touch_mode
 		root.add_child(key)
+
+
+func _set_skillbar_logical_rect(control: Control) -> void:
+	control.set_meta("skillbarLogicalPosition", control.position)
+	control.set_meta("skillbarLogicalSize", control.size)
+
+
+func _layout_skillbar_children(skillbar_size: Vector2) -> void:
+	var skillbar := _component_nodes.get("skillbar") as Control
+	if skillbar == null:
+		return
+	var scale_value := Vector2(
+		skillbar_size.x / SKILLBAR_LOGICAL_SIZE.x,
+		skillbar_size.y / SKILLBAR_LOGICAL_SIZE.y,
+	)
+	for child: Node in skillbar.get_children():
+		if not child is Control:
+			continue
+		var control := child as Control
+		var logical_position: Variant = control.get_meta(
+			"skillbarLogicalPosition",
+			control.position,
+		)
+		var logical_size: Variant = control.get_meta(
+			"skillbarLogicalSize",
+			control.size,
+		)
+		if logical_position is Vector2:
+			control.position = (logical_position as Vector2) * scale_value
+		if logical_size is Vector2:
+			control.size = (logical_size as Vector2) * scale_value
 
 
 func _build_mobile_context_actions(data: Dictionary, avatar: Dictionary) -> void:
@@ -1524,6 +1558,7 @@ func _skillbar_child_rects() -> Array[Dictionary]:
 	var skillbar := _component_nodes.get("skillbar") as Control
 	if skillbar == null:
 		return result
+	var shell_rect := Rect2(Vector2.ZERO, skillbar.size)
 	for child: Node in skillbar.get_children():
 		if not child is Control:
 			continue
@@ -1536,9 +1571,7 @@ func _skillbar_child_rects() -> Array[Dictionary]:
 				control.size.x,
 				control.size.y,
 			],
-			"insideShell": Rect2(Vector2.ZERO, SKILLBAR_LOGICAL_SIZE).encloses(
-				Rect2(control.position, control.size)
-			),
+			"insideShell": shell_rect.encloses(Rect2(control.position, control.size)),
 		})
 	return result
 
@@ -2110,6 +2143,7 @@ func _layout_runtime() -> void:
 		),
 		skillbar_size
 	)
+	_layout_skillbar_children(skillbar_size)
 	if _component_nodes.has("mobile_context_actions"):
 		var context_actions := _component_nodes["mobile_context_actions"] as Control
 		_place(

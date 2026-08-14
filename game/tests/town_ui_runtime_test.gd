@@ -1704,6 +1704,63 @@ func _verify_resident_directory_source_scaling() -> void:
 	await process_frame
 
 
+func _verify_avatar_skillbar_touch_scaling() -> void:
+	var original_size := _avatar_hud.size
+	var original_fixture := (_avatar_hud.get("_fixture") as Dictionary).duplicate(true)
+	_avatar_hud.set("_fixture", {
+		"inputMode": "touch",
+		"safeInsets": {"top": 0, "right": 0, "bottom": 0, "left": 0},
+		"copyScale": 1.0,
+	})
+	_avatar_hud.size = Vector2(1280.0, 720.0)
+	_avatar_hud.call("_request_rebuild_preserving_joystick")
+	await process_frame
+	await process_frame
+	var snapshot := _avatar_hud.call("get_runtime_snapshot") as Dictionary
+	var skillbar_rect := _component_rect(
+		snapshot.get("componentRects", []) as Array,
+		"skillbar",
+	)
+	_expect_equal(
+		skillbar_rect.size,
+		Vector2(496.0, 138.0),
+		"触控技能栏外框使用手机版放大尺寸",
+	)
+	var child_rects := snapshot.get("skillbarChildRects", []) as Array
+	var art_size := Vector2.ZERO
+	var button_size := Vector2.ZERO
+	var all_children_inside := true
+	for child_value: Variant in child_rects:
+		if not child_value is Dictionary:
+			continue
+		var child := child_value as Dictionary
+		var values := child.get("rect", []) as Array
+		if values.size() != 4:
+			continue
+		var child_size := Vector2(float(values[2]), float(values[3]))
+		match String(child.get("name", "")):
+			"SkillAttack1Art":
+				art_size = child_size
+			"SkillAttack1Button":
+				button_size = child_size
+		all_children_inside = all_children_inside and bool(child.get("insideShell", false))
+	_expect(
+		is_equal_approx(art_size.x, 58.0 * 496.0 / 310.0)
+			and is_equal_approx(art_size.y, 58.0 * 138.0 / 86.0),
+		"触控技能图标随技能栏外框同步放大",
+	)
+	_expect(
+		is_equal_approx(button_size.x, 68.0 * 496.0 / 310.0)
+			and is_equal_approx(button_size.y, 68.0 * 138.0 / 86.0),
+		"触控技能点击区域随技能栏外框同步放大",
+	)
+	_expect(all_children_inside, "放大后的技能图标与点击区域仍位于技能栏框内")
+	_avatar_hud.set("_fixture", original_fixture)
+	_avatar_hud.size = original_size
+	_avatar_hud.call("_request_rebuild_preserving_joystick")
+	await process_frame
+
+
 func _verify_mobile_touch_scroll_router() -> void:
 	var scroll := ScrollContainer.new()
 	scroll.position = Vector2(120.0, 100.0)
@@ -2247,6 +2304,7 @@ func _scenario_ui_runtime_host_navigation() -> void:
 		"active avatar mode enables AvatarModeHud input",
 	)
 	var active_snapshot := _avatar_hud.call("get_runtime_snapshot") as Dictionary
+	await _verify_avatar_skillbar_touch_scaling()
 	# The conversation page owns the visible interaction surface. Keep the
 	# AvatarModeHud mounted for fast restoration, but hide its skillbar and
 	# movement controls so the chat close button and input remain clickable.
