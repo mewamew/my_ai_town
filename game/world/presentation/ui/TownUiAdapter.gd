@@ -267,7 +267,14 @@ func _queue_world_scope_refresh(scope: String) -> void:
 	if WORLD_SCOPES.has(scope):
 		_dirty_world_scopes[scope] = true
 	if not _pending_world_refresh_scopes.has(scope):
-		_pending_world_refresh_scopes.append(scope)
+		# The persistent HUD owns the visible clock and resident activity layer.
+		# Put it at the front so a burst of page/model scopes cannot leave the
+		# top time label waiting several seconds on a low-FPS phone. Dependencies
+		# are still refreshed lazily by _scope_data when the HUD is built.
+		if scope == "town_hud":
+			_pending_world_refresh_scopes.push_front(scope)
+		else:
+			_pending_world_refresh_scopes.append(scope)
 	_world_refresh_wait_frames = maxi(_world_refresh_wait_frames, 1)
 
 
@@ -1055,8 +1062,23 @@ func _on_world_revision_changed(revision: int) -> void:
 func _on_player_avatar_perception_changed(change: Dictionary) -> void:
 	if String(change.get("source", "")) != "avatar_position":
 		return
+	var semantic_state_changed := bool(
+		change.get("semanticStateChanged", false)
+	)
+	var nearby_changed := bool(
+		change.get(
+			"nearbyChanged",
+			not (change.get("added", []) as Array).is_empty()
+				or not (change.get("removed", []) as Array).is_empty(),
+		)
+	)
+	# 兼容旧 World 信号，同时严格守住“纯坐标变化不进入 UI”的边界。
+	# World 仍会完成居民距离、对话范围和感知计算；这里不为相同的
+	# 地点、附近目标和行动状态构建完整 Runtime/Avatar 快照。
+	if not semantic_state_changed and not nearby_changed:
+		return
 	_refresh_scope("avatar", true)
-	if bool(change.get("semanticStateChanged", false)):
+	if semantic_state_changed:
 		return
 	_world_revision = maxi(_world_revision, _read_world_revision())
 	_avatar_perception_revision_pending = _world_revision
@@ -2786,7 +2808,12 @@ func _scope_data(scope: String) -> Dictionary:
 	if _dirty_world_scopes.has(scope):
 		_refresh_scope(scope)
 	var view_model := _view_models.get(scope, {}) as Dictionary
-	return (view_model.get("data", {}) as Dictionary).duplicate(true)
+	# Callers only read dependency data while constructing their own projection.
+	# A deep copy here multiplied the cost of every minute tick (lifecycle,
+	# environment, avatar and announcements were cloned before town_hud even
+	# started). Keep the top-level isolation boundary; public get_view_model()
+	# remains a defensive deep copy.
+	return (view_model.get("data", {}) as Dictionary).duplicate(false)
 
 
 func _hud_toolbar_item(
@@ -5040,6 +5067,10 @@ func _set_view_model(scope: String, view_model: Dictionary, force_emit: bool) ->
 		var probe_norm_started_usec := (
 			Time.get_ticks_usec() if _frame_probe != null else 0
 		)
+		var previous_hud_data := (
+			(_view_models.get(scope, {}) as Dictionary).get("data", {})
+			as Dictionary
+		)
 		_normalize_town_hud_playback_times(view_model)
 		var projection := _town_hud_stable_projection(view_model)
 		var changed_hud: bool = (
@@ -5047,8 +5078,20 @@ func _set_view_model(scope: String, view_model: Dictionary, force_emit: bool) ->
 			or not _view_models.has(scope)
 			or projection != _town_hud_last_stable_projection
 		)
+		var time_changed: bool = (
+			previous_hud_data.get("timeWeather", {})
+			!= (view_model.get("data", {}) as Dictionary).get(
+				"timeWeather",
+				{},
+			)
+		)
 		_town_hud_last_stable_projection = projection
-		_view_models[scope] = view_model.duplicate(true)
+		# The town HUD projection is rebuilt on every game-minute tick. Keep the
+		# private cache as a shallow envelope; get_view_model() still returns a
+		# defensive deep copy, and a changed projection is deep-copied once for
+		# consumers below. Avoid cloning every resident bubble/action payload when
+		# only the clock changed.
+		_view_models[scope] = view_model.duplicate(false)
 		if probe_norm_started_usec > 0:
 			_frame_probe.record(
 				Engine.get_process_frames(),
@@ -5057,6 +5100,11 @@ func _set_view_model(scope: String, view_model: Dictionary, force_emit: bool) ->
 			)
 		if changed_hud:
 			view_model_changed.emit(scope, view_model.duplicate(true))
+		elif time_changed:
+			# The clock is the only changed surface. TownHudOverlay and the far
+			# activity layer consume this immutable shallow envelope without
+			# forcing a full deep-copy/broadcast of resident payloads.
+			view_model_changed.emit(scope, view_model.duplicate(false))
 		return
 	var changed: bool = (
 		force_emit
@@ -5120,6 +5168,9 @@ func _town_hud_stable_projection(view_model: Dictionary) -> Dictionary:
 	projection.erase("revision")
 	var source_data := view_model.get("data", {}) as Dictionary
 	var data := source_data.duplicate(false)
+	# Time is delivered through a lightweight envelope when it changes; it must
+	# not force the stable-content comparison to broadcast the whole HUD.
+	data.erase("timeWeather")
 	projection["data"] = data
 	for section_key: String in [
 		"residentOverlays",

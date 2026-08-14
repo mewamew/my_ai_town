@@ -181,34 +181,46 @@ func apply_view_model(view_model: Dictionary) -> bool:
 		return false
 	_last_rejection = PackedStringArray()
 	_current_revision = incoming_revision
-	var next_data := UiViewModel.data_for_render(view_model, _data)
+	var next_data := _data_for_render_shallow(view_model, _data)
 	var next_render_input := _render_input_for_data(next_data)
 	if (
 		_render_input_initialized
 		and next_render_input == _render_input
 	):
-		_view_model = view_model.duplicate(true)
+		_view_model = view_model.duplicate(false)
 		_data = next_data
 		_refresh_live_slot_fields()
-		_apply_layout()
 		_update_root_visibility()
 		view_model_applied.emit(_current_revision)
 		return true
 	_render_input = next_render_input
 	_render_input_initialized = true
-	_view_model = view_model.duplicate(true)
+	_view_model = view_model.duplicate(false)
 	_data = next_data
 	_render()
 	view_model_applied.emit(_current_revision)
 	return true
 
 
+func _data_for_render_shallow(
+	view_model: Dictionary,
+	last_confirmed_data: Dictionary,
+) -> Dictionary:
+	var incoming := view_model.get("data", {}) as Dictionary
+	if (
+		UiViewModel.operation_status(view_model) == &"rejected"
+		and incoming.is_empty()
+	):
+		return last_confirmed_data.duplicate(false)
+	return incoming.duplicate(false)
+
+
 func _render_input_for_data(data: Dictionary) -> Dictionary:
 	return {
-		"farResidentActivity": _stable_overlay_section(
+		"farResidentActivity": _stable_overlay_section_signature(
 			data.get("farResidentActivity", {}) as Dictionary
 		),
-		"residentOverlays": _stable_overlay_section(
+		"residentOverlays": _stable_overlay_section_signature(
 			data.get("residentOverlays", {}) as Dictionary
 		),
 		"zoomBand": String(
@@ -226,12 +238,15 @@ func _render_input_for_data(data: Dictionary) -> Dictionary:
 	}
 
 
-func _stable_overlay_section(section: Dictionary) -> Dictionary:
+func _stable_overlay_section_signature(section: Dictionary) -> Dictionary:
 	var items: Array[Dictionary] = []
 	for value: Variant in section.get("items", []) as Array:
 		if typeof(value) != TYPE_DICTIONARY:
 			continue
-		var item := (value as Dictionary).duplicate(true)
+		# Preserve every visual and interaction field so a newly added bubble
+		# property cannot accidentally bypass rendering. Only copy the dictionary
+		# shell and remove the live anchor/playback fields handled in-place below.
+		var item := (value as Dictionary).duplicate(false)
 		for field: String in [
 			"screenAnchor",
 			"headScreenAnchor",
@@ -252,8 +267,6 @@ func _stable_overlay_section(section: Dictionary) -> Dictionary:
 		"aggregateCount": int(section.get("aggregateCount", 0)),
 		"items": items,
 	}
-
-
 func _refresh_live_slot_fields() -> void:
 	var latest_by_overlay_id := {}
 	var far_activity := _data.get("farResidentActivity", {}) as Dictionary
@@ -287,7 +300,9 @@ func _refresh_live_slot_fields() -> void:
 		if not latest_by_overlay_id.has(overlay_id):
 			continue
 		var latest := latest_by_overlay_id[overlay_id] as Dictionary
-		var refreshed := current.duplicate(true)
+		# Only anchor/timing fields are replaced here. Keep the immutable visual
+		# payload shared instead of deep-copying every bubble on each clock tick.
+		var refreshed := current.duplicate(false)
 		for field: String in [
 			"screenAnchor",
 			"headScreenAnchor",
