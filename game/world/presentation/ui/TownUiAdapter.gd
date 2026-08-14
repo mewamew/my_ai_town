@@ -210,6 +210,7 @@ func _process(delta: float) -> void:
 		if avatar_mode in ["avatar_descent", "avatar_active"]:
 			var avatar_signature := _current_avatar_poll_signature(
 				avatar_mode,
+				runtime_state,
 			)
 			if avatar_signature != _avatar_poll_signature:
 				_avatar_poll_signature = avatar_signature
@@ -233,7 +234,10 @@ func _process(delta: float) -> void:
 			_refresh_scope("town_hud", true)
 
 
-func _current_avatar_poll_signature(avatar_mode: String) -> Dictionary:
+func _current_avatar_poll_signature(
+	avatar_mode: String,
+	runtime_poll_state: Dictionary = {},
+) -> Dictionary:
 	var avatar: Dictionary = {}
 	if _world != null and _world.has_method("get_player_avatar_state"):
 		avatar = _world.get_player_avatar_state() as Dictionary
@@ -252,6 +256,10 @@ func _current_avatar_poll_signature(avatar_mode: String) -> Dictionary:
 		"regionId": String(avatar.get("regionId", "")),
 		"nearby": (avatar.get("nearby", []) as Array).duplicate(),
 		"conversationId": conversation_id,
+		"animalInteraction": (
+			(runtime_poll_state.get("animalInteraction", {}) as Dictionary)
+			.duplicate(true)
+		),
 	}
 
 

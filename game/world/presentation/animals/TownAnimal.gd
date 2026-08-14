@@ -200,6 +200,8 @@ func _physics_process(delta: float) -> void:
 		_visual.advance(delta, _last_direction, 0.0, true)
 		if _pet_remaining <= 0.0:
 			_set_hint_text("E  摸摸%s" % display_name)
+			if MOBILE_UI_PROFILE.is_mobile_runtime():
+				_hint.visible = false
 		return
 	if _resident_wait_remaining > 0.0:
 		_resident_wait_remaining = maxf(0.0, _resident_wait_remaining - delta)
@@ -208,6 +210,8 @@ func _physics_process(delta: float) -> void:
 		_visual.advance(delta, _last_direction, 0.0, false)
 		if _resident_wait_remaining <= 0.0:
 			_resident_reservation_id = ""
+			if MOBILE_UI_PROFILE.is_mobile_runtime() and _hint != null:
+				_hint.visible = false
 		return
 	if _idle_remaining > 0.0:
 		_idle_remaining = maxf(0.0, _idle_remaining - delta)
@@ -475,9 +479,13 @@ func set_runtime_state(
 	if _hint != null:
 		_hint.visible = (
 			world_visible
-			and interaction_focused
 			and not simulation_paused
 			and is_active_for_interaction()
+			and (
+			(_pet_remaining > 0.0 or _resident_wait_remaining > 0.0)
+			if MOBILE_UI_PROFILE.is_mobile_runtime()
+			else interaction_focused
+		)
 		)
 	set_physics_process(world_visible)
 
@@ -551,6 +559,8 @@ func begin_resident_pet(
 	_resident_reservation_id = resident_id
 	_resident_wait_remaining = PET_REACTION_SECONDS
 	_set_hint_text("♥  %s在陪%s" % [resident_name, display_name])
+	if MOBILE_UI_PROFILE.is_mobile_runtime() and _hint != null:
+		_hint.visible = true
 	resident_petted.emit(animal_id, display_name, resident_id, resident_name)
 	return {
 		"ok": true,
@@ -573,6 +583,8 @@ func begin_pet(player_position: Vector2) -> Dictionary:
 	_begin_pet_reaction(player_position)
 	_pet_count += 1
 	_set_hint_text("♥  %s很开心" % display_name)
+	if MOBILE_UI_PROFILE.is_mobile_runtime() and _hint != null:
+		_hint.visible = true
 	petted.emit(animal_id, display_name, species)
 	return {
 		"ok": true,
@@ -700,8 +712,11 @@ func _ensure_built(tint: Color, color_seed: int) -> void:
 	add_child(_visual)
 	_visual.configure(species, tint, color_seed)
 	_build_touch_area()
-	if not MOBILE_UI_PROFILE.is_mobile_runtime():
-		_build_hint()
+	# 移动端不显示桌面 E 提示，但保留同一张反馈气泡；摸到动物后
+	# 显示“很开心”，反应结束再隐藏，避免丢失原桌面版反馈。
+	_build_hint()
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		_hint.visible = false
 
 
 func _build_touch_area() -> void:
@@ -764,8 +779,14 @@ func _on_touch_area_input(viewport: Node, event: InputEvent, _shape_index: int) 
 func _build_hint() -> void:
 	_hint = PanelContainer.new()
 	_hint.name = "PetHint"
-	_hint.position = Vector2(-68.0, -106.0 if species != "bird" else -86.0)
-	_hint.custom_minimum_size = Vector2(136.0, 36.0)
+	var mobile := MOBILE_UI_PROFILE.is_mobile_runtime()
+	_hint.position = Vector2(
+		-88.0 if mobile else -68.0,
+		-132.0 if mobile and species != "bird" else (
+			-108.0 if mobile else (-86.0 if species == "bird" else -106.0)
+		),
+	)
+	_hint.custom_minimum_size = Vector2(176.0, 48.0) if mobile else Vector2(136.0, 36.0)
 	_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hint.z_index = 20
 	var panel_style := StyleBoxFlat.new()
@@ -788,7 +809,7 @@ func _build_hint() -> void:
 	_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_hint_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_hint_label.add_theme_font_override("font", FONT)
-	_hint_label.add_theme_font_size_override("font_size", 16)
+	_hint_label.add_theme_font_size_override("font_size", 20 if mobile else 16)
 	_hint_label.add_theme_color_override("font_color", Color("#4d2f1c"))
 	_hint.add_child(_hint_label)
 	_hint.visible = false

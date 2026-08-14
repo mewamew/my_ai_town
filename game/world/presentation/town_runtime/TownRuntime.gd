@@ -1229,10 +1229,21 @@ func get_runtime_state() -> Dictionary:
 
 
 func get_ui_poll_state() -> Dictionary:
+	var animal_snapshot := (
+		_animal_presentation.get_snapshot()
+		if _animal_presentation != null
+		else {}
+	)
 	return {
 		"paused": bool(_lifecycle_state.get("paused", false)),
 		"avatarMode": _avatar_mode,
 		"cameraZoomBand": _observer_camera_density_band(),
+		# 化身 HUD 的摸动物按钮依赖这个轻量状态。不要把完整动物快照
+		# 塞进每 100ms 的轮询，只同步会改变操作按钮的两个字段。
+		"animalInteraction": {
+			"canInteract": bool(animal_snapshot.get("canInteract", false)),
+			"focusedAnimalId": String(animal_snapshot.get("focusedAnimalId", "")),
+		},
 	}
 
 
