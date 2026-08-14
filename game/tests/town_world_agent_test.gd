@@ -498,7 +498,7 @@ func _initialize() -> void:
 
 
 func _run_all() -> void:
-	_scenario_agent_gateway_continuity()
+	await _scenario_agent_gateway_continuity()
 	_scenario_agent_environment_fact_contract()
 	_scenario_agent_long_run()
 	_scenario_agent_activity_action()
@@ -519,6 +519,7 @@ func _scenario_agent_gateway_continuity() -> void:
 	_test_inner_observation_accepts_newer_read_only_world_revision()
 	_test_memory_intervention_uses_world_time_and_agent_contract()
 	_test_gateway_process_pipeline_splits_refresh_and_dispatch()
+	await _test_runtime_sync_agent_completion_is_deferred()
 	_test_world_heavy_frame_defers_agent_budget()
 	_test_gateway_staged_preparation_eventually_dispatches()
 	_test_service_option_route_preflight_uses_place_connectivity()
@@ -693,6 +694,60 @@ func _test_gateway_process_pipeline_splits_refresh_and_dispatch() -> void:
 		gateway.call("get_debug_pending_count"),
 		1,
 		"dispatched work remains pending while its model call is inflight",
+	)
+	gateway.free()
+
+
+func _test_runtime_sync_agent_completion_is_deferred() -> void:
+	var agent := ImmediateDecisionAgent.new()
+	var world := PendingWorld.new()
+	var gateway: Node = GATEWAY.new()
+	gateway.set("_agent_system", agent)
+	gateway.set("_provider_service", ProviderServiceStub.new())
+	gateway.set("_world", world)
+	var connected_resident_ids: Array[String] = ["resident-a"]
+	gateway.set("_connected_resident_ids", connected_resident_ids)
+	gateway.set("_session_active", true)
+	world.add_request({
+		"residentId": "resident-a",
+		"residentName": "居民甲",
+		"wakePacket": {
+			"decision_id": "decision-deferred",
+			"snapshot": {"me": {}, "nearby": [], "place": {}},
+			"events": [],
+			"action_results": [],
+			"social_response_results": [],
+		},
+	})
+	get_root().add_child(gateway)
+
+	_expect_equal(
+		gateway.call("pump_frame_budgeted", 1),
+		1,
+		"runtime first admits the deferred-result request",
+	)
+	_make_agent_preparation_ready(gateway, "decision-deferred")
+	_expect_equal(
+		gateway.call("pump_frame_budgeted", 1),
+		1,
+		"runtime refreshes before dispatching the deferred-result request",
+	)
+	_make_agent_preparation_ready(gateway, "decision-deferred")
+	_expect_equal(
+		gateway.call("pump_frame_budgeted", 1),
+		1,
+		"runtime dispatches one deferred-result request",
+	)
+	_expect_equal(
+		world.submissions.size(),
+		0,
+		"a synchronous local model does not submit World work inside dispatch",
+	)
+	await process_frame
+	_expect_equal(
+		world.submissions.size(),
+		1,
+		"the deferred result continues on the next idle turn",
 	)
 	gateway.free()
 
