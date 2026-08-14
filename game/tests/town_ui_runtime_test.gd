@@ -2216,9 +2216,9 @@ func _scenario_ui_runtime_host_navigation() -> void:
 		"active avatar mode enables AvatarModeHud input",
 	)
 	var active_snapshot := _avatar_hud.call("get_runtime_snapshot") as Dictionary
-	# Resident conversation is a page transition, not an ownership transition.
-	# Keep the active avatar surface mounted and interactive while the page is
-	# waiting on resident/model work.
+	# The conversation page owns the visible interaction surface. Keep the
+	# AvatarModeHud mounted for fast restoration, but hide its skillbar and
+	# movement controls so the chat close button and input remain clickable.
 	_adapter.publish("conversation", {
 		"source": "runtime",
 		"capabilityMode": "formal",
@@ -2237,7 +2237,7 @@ func _scenario_ui_runtime_host_navigation() -> void:
 		&"chat",
 		"active avatar can open the real conversation page",
 	)
-	_expect(_avatar_hud.visible, "conversation page never hides the active AvatarModeHud")
+	_expect(not _avatar_hud.visible, "conversation page hides the active AvatarModeHud")
 	_expect_equal(
 		_avatar_hud.process_mode,
 		Node.PROCESS_MODE_ALWAYS,
@@ -2245,8 +2245,12 @@ func _scenario_ui_runtime_host_navigation() -> void:
 	)
 	var conversation_active_snapshot := _avatar_hud.call("get_runtime_snapshot") as Dictionary
 	_expect(
-		not bool(conversation_active_snapshot.get("suppressedByConversation", true)),
-		"conversation projection never suppresses avatar input",
+		bool(conversation_active_snapshot.get("suppressedByConversation", false)),
+		"conversation projection suppresses the avatar surface",
+	)
+	_expect(
+		not bool(conversation_active_snapshot.get("skillbarVisible", true)),
+		"conversation page hides the attack skillbar",
 	)
 	var conversation_editor := TextEdit.new()
 	conversation_editor.name = "ConversationShortcutInputProbe"
@@ -2255,7 +2259,7 @@ func _scenario_ui_runtime_host_navigation() -> void:
 	await process_frame
 	_expect(
 		not bool(_avatar_hud.call("_can_accept_interaction_input")),
-		"conversation text focus blocks avatar keyboard shortcuts while HUD stays mounted",
+		"conversation text focus blocks avatar keyboard shortcuts while HUD is hidden",
 	)
 	conversation_editor.release_focus()
 	conversation_editor.queue_free()

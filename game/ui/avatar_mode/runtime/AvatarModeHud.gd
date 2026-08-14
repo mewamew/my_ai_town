@@ -715,7 +715,7 @@ func get_runtime_snapshot() -> Dictionary:
 		"targetSwitcherExposed": _component_nodes.has("target_switcher"),
 		"skillbarVisible": _component_nodes.has("skillbar"),
 		"conversationOpen": _conversation_open(),
-		"suppressedByConversation": false,
+		"suppressedByConversation": _conversation_open(),
 		"focusedTargetId": str(data.get("focusedTargetId", "")),
 		"currentTargetId": str(current_target.get("targetId", "")),
 		"nextTargetId": str(next_target.get("targetId", "")),
@@ -910,6 +910,13 @@ func _rebuild() -> void:
 	_should_unmount = mode not in ["avatar_descent", "avatar_active"]
 	if _should_unmount:
 		_movement_hint_dismissed = false
+		visible = false
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		return
+	if _conversation_open():
+		# The conversation page owns the visible interaction surface. Keep this
+		# HUD mounted on its independent CanvasLayer for fast restoration, but do
+		# not leave the skillbar, movement controls, or exit button above chat.
 		visible = false
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		return
@@ -2676,10 +2683,12 @@ func _activate_focused_button() -> bool:
 func _can_accept_interaction_input() -> bool:
 	if not _configured or not visible or mouse_filter == Control.MOUSE_FILTER_IGNORE:
 		return false
+	if _conversation_open():
+		return false
 	var focus_owner := get_viewport().gui_get_focus_owner()
 	if focus_owner is LineEdit or focus_owner is TextEdit:
-		# The HUD stays mounted above conversation and settings pages, but their
-		# text fields must keep keyboard shortcuts (F/1-4/E/R) as text input.
+		# Text fields on chat and settings pages must keep keyboard shortcuts
+		# (F/1-4/E/R) as text input.
 		return false
 	var avatar: Dictionary = _view_models.get("avatar", {})
 	var data: Dictionary = avatar.get("data", {})
