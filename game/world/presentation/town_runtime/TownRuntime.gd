@@ -1239,7 +1239,7 @@ func get_runtime_state() -> Dictionary:
 
 func get_ui_poll_state() -> Dictionary:
 	var animal_snapshot := (
-		_animal_presentation.get_snapshot()
+		_animal_presentation.get_interaction_snapshot()
 		if _animal_presentation != null
 		else {}
 	)

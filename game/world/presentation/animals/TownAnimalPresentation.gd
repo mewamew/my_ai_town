@@ -403,6 +403,20 @@ func get_snapshot() -> Dictionary:
 	}
 
 
+func get_interaction_snapshot() -> Dictionary:
+	# TownUiAdapter polls this at 10Hz while avatar mode is active. Keep the
+	# poll independent from the full animal snapshot, which also walks every
+	# animal, dynamic prop, and visual snapshot for diagnostics and save data.
+	return {
+		"focusedAnimalId": (
+			_focused_animal.animal_id
+			if is_instance_valid(_focused_animal)
+			else ""
+		),
+		"canInteract": _can_interact,
+	}
+
+
 func _nearest_pettable_animal() -> TownAnimal:
 	var nearest: TownAnimal
 	var nearest_distance := INF
