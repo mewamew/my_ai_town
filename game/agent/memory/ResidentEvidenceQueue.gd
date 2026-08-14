@@ -14,6 +14,7 @@ var _new_items_since_organization := 0
 var _loaded := false
 var _file_expected := false
 var _synced_file_sha256 := ""
+var _directory_ready := false
 
 
 func _init(path: String) -> void:
@@ -31,6 +32,12 @@ func read() -> Dictionary:
 	}
 
 
+func ensure_ready() -> Dictionary:
+	# ResidentMemorySystem 只需要确认队列可读时，不必为了这个检查深拷贝
+	# 整份证据历史。真正需要整理记忆时仍通过 read() 取得独占副本。
+	return _ensure_loaded()
+
+
 func initialize_empty() -> Dictionary:
 	if FileAccess.file_exists(_path):
 		return _ensure_loaded()
@@ -45,10 +52,16 @@ func initialize_empty() -> Dictionary:
 	return {"ok": true}
 
 
-func append_wake(wake_packet: Variant, matched_intents: Variant) -> Dictionary:
-	var load_result := _ensure_loaded()
-	if not bool(load_result.get("ok", false)):
-		return load_result
+func append_wake(
+	wake_packet: Variant,
+	matched_intents: Variant,
+	include_items: bool = true,
+	storage_already_verified: bool = false,
+) -> Dictionary:
+	if not storage_already_verified or not _loaded:
+		var load_result := _ensure_loaded()
+		if not bool(load_result.get("ok", false)):
+			return load_result
 	var wake_errors: Array[String] = AgentContractScript.validate_wake_packet(wake_packet)
 	if not wake_errors.is_empty():
 		return {"ok": false, "errors": wake_errors}
@@ -94,12 +107,14 @@ func append_wake(wake_packet: Variant, matched_intents: Variant) -> Dictionary:
 		new_intents.append((intent_by_action_id[action_id] as Dictionary).duplicate(true))
 
 	if new_events.is_empty() and new_results.is_empty():
-		return {
+		var unchanged := {
 			"ok": true,
 			"added": false,
-			"items": _items.duplicate(true),
 			"new_items_since_organization": _new_items_since_organization,
 		}
+		if include_items:
+			unchanged["items"] = _items.duplicate(true)
+		return unchanged
 
 	wake["events"] = new_events
 	wake["action_results"] = new_results
@@ -107,7 +122,9 @@ func append_wake(wake_packet: Variant, matched_intents: Variant) -> Dictionary:
 		"wake_packet": wake,
 		"matched_intents": new_intents,
 	}
-	var candidate := _items.duplicate(true)
+	# 队列内部持有每一项，并且对外始终返回深拷贝。这里只需要复制数组容器，
+	# 无需在每次居民唤醒时再次深拷贝整份历史。
+	var candidate := _items.duplicate()
 	candidate.append(item)
 	var new_count := _new_items_since_organization + 1
 	var organized_count := maxi(0, candidate.size() - new_count)
@@ -121,12 +138,14 @@ func append_wake(wake_packet: Variant, matched_intents: Variant) -> Dictionary:
 	_known_source_hashes = staged_hashes
 	_new_items_since_organization = new_count
 	_file_expected = true
-	return {
+	var appended := {
 		"ok": true,
 		"added": true,
-		"items": _items.duplicate(true),
 		"new_items_since_organization": _new_items_since_organization,
 	}
+	if include_items:
+		appended["items"] = _items.duplicate(true)
+	return appended
 
 
 func mark_organized() -> Dictionary:
@@ -392,28 +411,51 @@ func _validate_items(value: Variant) -> Dictionary:
 
 
 func _replace_file(items: Array[Dictionary]) -> Dictionary:
-	var directory_error := DirAccess.make_dir_recursive_absolute(
-		ProjectSettings.globalize_path(_path.get_base_dir()),
-	)
+	var serialized := JSON.stringify(items)
+	var serialized_sha256 := serialized.sha256_text()
+	var directory_error := OK
+	if not _directory_ready:
+		directory_error = DirAccess.make_dir_recursive_absolute(
+			ProjectSettings.globalize_path(_path.get_base_dir()),
+		)
+		if directory_error == OK or directory_error == ERR_ALREADY_EXISTS:
+			_directory_ready = true
 	if directory_error != OK and directory_error != ERR_ALREADY_EXISTS:
 		return _failure("无法创建居民证据目录：%s" % error_string(directory_error))
 	var temporary_path := "%s.tmp" % _path
 	var backup_path := "%s.bak" % _path
 	_remove_file(temporary_path)
 	var file := FileAccess.open(temporary_path, FileAccess.WRITE)
+	if file == null and _directory_ready:
+		# 运行期间若父目录被外部移除，恢复原先每次写入都会重建目录的行为。
+		_directory_ready = false
+		directory_error = DirAccess.make_dir_recursive_absolute(
+			ProjectSettings.globalize_path(_path.get_base_dir()),
+		)
+		if directory_error == OK or directory_error == ERR_ALREADY_EXISTS:
+			_directory_ready = true
+			file = FileAccess.open(temporary_path, FileAccess.WRITE)
 	if file == null:
 		return _failure("无法写入居民证据临时文件")
 	# 内容在入队时已校验过，紧凑输出并依赖临时文件 + rename 保证原子性，
 	# 不再整包读回验证。
-	file.store_string(JSON.stringify(items))
+	file.store_string(serialized)
 	file.flush()
 	var write_error := file.get_error()
 	file = null
 	if write_error != OK:
 		_remove_file(temporary_path)
 		return _failure("无法写入居民证据：%s" % error_string(write_error))
-	_remove_file(backup_path)
-	if FileAccess.file_exists(_path):
+	var used_backup_fallback := false
+	var replace_error := DirAccess.rename_absolute(
+		ProjectSettings.globalize_path(temporary_path),
+		ProjectSettings.globalize_path(_path),
+	)
+	if replace_error != OK and FileAccess.file_exists(_path):
+		# POSIX/Android 可以直接原子覆盖旧文件；不支持覆盖的平台继续使用
+		# 原有的备份、替换和回滚流程，保留相同的恢复保证。
+		_remove_file(backup_path)
+		used_backup_fallback = true
 		var backup_error := DirAccess.rename_absolute(
 			ProjectSettings.globalize_path(_path),
 			ProjectSettings.globalize_path(backup_path),
@@ -421,10 +463,10 @@ func _replace_file(items: Array[Dictionary]) -> Dictionary:
 		if backup_error != OK:
 			_remove_file(temporary_path)
 			return _failure("无法准备居民证据原子替换")
-	var replace_error := DirAccess.rename_absolute(
-		ProjectSettings.globalize_path(temporary_path),
-		ProjectSettings.globalize_path(_path),
-	)
+		replace_error = DirAccess.rename_absolute(
+			ProjectSettings.globalize_path(temporary_path),
+			ProjectSettings.globalize_path(_path),
+		)
 	if replace_error != OK:
 		if FileAccess.file_exists(backup_path):
 			DirAccess.rename_absolute(
@@ -433,8 +475,11 @@ func _replace_file(items: Array[Dictionary]) -> Dictionary:
 			)
 		_remove_file(temporary_path)
 		return _failure("无法提交居民证据队列")
-	_remove_file(backup_path)
-	_record_synced_file_stats()
+	if used_backup_fallback:
+		_remove_file(backup_path)
+	# serialized 正是刚刚提交的字节序列。直接保存其摘要，避免提交成功后
+	# 立刻重新打开并扫描整份历史文件。
+	_synced_file_sha256 = serialized_sha256
 	return {"ok": true}
 
 

@@ -56,7 +56,7 @@ var _evidence_path: String
 var _memory_entries_path: String
 var _memory_interventions_path: String
 var _store: AgentResidentMemoryStore
-var _evidence_queue: RefCounted
+var _evidence_queue: AgentResidentEvidenceQueue
 var _memory_entry_store: RefCounted
 var _memory_intervention_store: RefCounted
 var _formal_memory_builder: RefCounted
@@ -157,6 +157,7 @@ func prepare_context(wake_packet: Dictionary) -> Dictionary:
 	var plan := _build_organization_plan(
 		wake_packet,
 		bool(ingestion.get("added", false)),
+		int(ingestion.get("new_items_since_organization", 0)),
 	)
 	if not bool(plan.get("ok", false)):
 		record_organization_failure(plan.get("errors", []))
@@ -1332,7 +1333,7 @@ func _load_current_state(initialize_missing: bool = false) -> Dictionary:
 	var memory_result := _store.call("read") as Dictionary
 	if not bool(memory_result.get("ok", false)):
 		return memory_result
-	var queue_result := _evidence_queue.call("read") as Dictionary
+	var queue_result := _evidence_queue.ensure_ready()
 	if not bool(queue_result.get("ok", false)):
 		return queue_result
 	var archive_result := _memory_entry_store.call("read") as Dictionary
@@ -1408,11 +1409,12 @@ func _ingest_wake(wake_packet: Dictionary) -> Dictionary:
 		elif not _is_continuity_action_id(action_id):
 			evidence_results.append(result.duplicate(true))
 	evidence_wake["action_results"] = evidence_results
-	var append_result := _evidence_queue.call(
-		"append_wake",
+	var append_result := _evidence_queue.append_wake(
 		evidence_wake,
 		matched_intents,
-	) as Dictionary
+		false,
+		true,
+	)
 	if not bool(append_result.get("ok", false)):
 		return append_result
 	_collect_identity_ids(wake_packet)
@@ -2029,15 +2031,11 @@ func _contains_known_person_anchor(text: String) -> bool:
 func _build_organization_plan(
 	wake_packet: Dictionary,
 	added_item: bool,
+	new_count: int,
 ) -> Dictionary:
 	if _organizer == null:
 		return {"ok": true, "triggered": false}
-	var queue_result := _evidence_queue.call("read") as Dictionary
-	if not bool(queue_result.get("ok", false)):
-		return queue_result
-	var items := queue_result["items"] as Array
-	var new_count := int(queue_result.get("new_items_since_organization", 0))
-	if items.is_empty() or new_count <= 0:
+	if new_count <= 0:
 		return {"ok": true, "triggered": false}
 	var current_day := _wake_day(wake_packet)
 	var conversation_ended := added_item and _has_conversation_end(wake_packet)
@@ -2057,6 +2055,14 @@ func _build_organization_plan(
 		and current_day > _unorganized_since_day
 	)
 	if not conversation_ended and not batch_ready and not crossed_day:
+		return {"ok": true, "triggered": false}
+	# 绝大多数唤醒尚未达到整理条件。只有真正要生成整理请求时才复制
+	# 完整证据队列，避免历史越长、普通行走帧越容易出现周期停顿。
+	var queue_result := _evidence_queue.call("read") as Dictionary
+	if not bool(queue_result.get("ok", false)):
+		return queue_result
+	var items := queue_result["items"] as Array
+	if items.is_empty():
 		return {"ok": true, "triggered": false}
 	var request := _organizer.call("build_request", _memory, items) as Dictionary
 	if not bool(request.get("ok", false)):
