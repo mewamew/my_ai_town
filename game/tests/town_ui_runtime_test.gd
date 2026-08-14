@@ -2248,6 +2248,18 @@ func _scenario_ui_runtime_host_navigation() -> void:
 		not bool(conversation_active_snapshot.get("suppressedByConversation", true)),
 		"conversation projection never suppresses avatar input",
 	)
+	var conversation_editor := TextEdit.new()
+	conversation_editor.name = "ConversationShortcutInputProbe"
+	root.add_child(conversation_editor)
+	conversation_editor.grab_focus()
+	await process_frame
+	_expect(
+		not bool(_avatar_hud.call("_can_accept_interaction_input")),
+		"conversation text focus blocks avatar keyboard shortcuts while HUD stays mounted",
+	)
+	conversation_editor.release_focus()
+	conversation_editor.queue_free()
+	await process_frame
 	_adapter.publish("conversation", {
 		"source": "runtime",
 		"capabilityMode": "formal",

@@ -2676,6 +2676,11 @@ func _activate_focused_button() -> bool:
 func _can_accept_interaction_input() -> bool:
 	if not _configured or not visible or mouse_filter == Control.MOUSE_FILTER_IGNORE:
 		return false
+	var focus_owner := get_viewport().gui_get_focus_owner()
+	if focus_owner is LineEdit or focus_owner is TextEdit:
+		# The HUD stays mounted above conversation and settings pages, but their
+		# text fields must keep keyboard shortcuts (F/1-4/E/R) as text input.
+		return false
 	var avatar: Dictionary = _view_models.get("avatar", {})
 	var data: Dictionary = avatar.get("data", {})
 	return (
