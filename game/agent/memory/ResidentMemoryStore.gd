@@ -27,6 +27,7 @@ const TARGET_TOTAL := 5000
 const HARD_TOTAL := 6000
 
 var _path: String
+var _directory_ready := false
 
 
 func _init(path: String) -> void:
@@ -47,9 +48,13 @@ func replace(value: Variant) -> Dictionary:
 	if not bool(validation.get("ok", false)):
 		return validation
 	var memory := validation["memory"] as Dictionary
-	var directory_error := DirAccess.make_dir_recursive_absolute(
-		ProjectSettings.globalize_path(_path.get_base_dir()),
-	)
+	var directory_error := OK
+	if not _directory_ready:
+		directory_error = DirAccess.make_dir_recursive_absolute(
+			ProjectSettings.globalize_path(_path.get_base_dir()),
+		)
+		if directory_error == OK or directory_error == ERR_ALREADY_EXISTS:
+			_directory_ready = true
 	if directory_error != OK and directory_error != ERR_ALREADY_EXISTS:
 		return _failure("无法创建居民记忆目录：%s" % error_string(directory_error))
 
@@ -57,6 +62,14 @@ func replace(value: Variant) -> Dictionary:
 	var backup_path := "%s.bak" % _path
 	_remove_file(temporary_path)
 	var file := FileAccess.open(temporary_path, FileAccess.WRITE)
+	if file == null and _directory_ready:
+		_directory_ready = false
+		directory_error = DirAccess.make_dir_recursive_absolute(
+			ProjectSettings.globalize_path(_path.get_base_dir()),
+		)
+		if directory_error == OK or directory_error == ERR_ALREADY_EXISTS:
+			_directory_ready = true
+			file = FileAccess.open(temporary_path, FileAccess.WRITE)
 	if file == null:
 		return _failure("无法写入居民记忆临时文件：%s" % temporary_path)
 	# 写入内容刚通过 validate，不再读回验证；原子性由临时文件 + rename 保证。
@@ -68,8 +81,14 @@ func replace(value: Variant) -> Dictionary:
 		_remove_file(temporary_path)
 		return _failure("无法写入居民记忆：%s" % error_string(write_error))
 
-	_remove_file(backup_path)
-	if FileAccess.file_exists(_path):
+	var used_backup_fallback := false
+	var replace_error := DirAccess.rename_absolute(
+		ProjectSettings.globalize_path(temporary_path),
+		ProjectSettings.globalize_path(_path),
+	)
+	if replace_error != OK and FileAccess.file_exists(_path):
+		_remove_file(backup_path)
+		used_backup_fallback = true
 		var backup_error := DirAccess.rename_absolute(
 			ProjectSettings.globalize_path(_path),
 			ProjectSettings.globalize_path(backup_path),
@@ -77,10 +96,10 @@ func replace(value: Variant) -> Dictionary:
 		if backup_error != OK:
 			_remove_file(temporary_path)
 			return _failure("无法准备居民记忆原子替换：%s" % error_string(backup_error))
-	var replace_error := DirAccess.rename_absolute(
-		ProjectSettings.globalize_path(temporary_path),
-		ProjectSettings.globalize_path(_path),
-	)
+		replace_error = DirAccess.rename_absolute(
+			ProjectSettings.globalize_path(temporary_path),
+			ProjectSettings.globalize_path(_path),
+		)
 	if replace_error != OK:
 		if FileAccess.file_exists(backup_path):
 			DirAccess.rename_absolute(
@@ -89,7 +108,8 @@ func replace(value: Variant) -> Dictionary:
 			)
 		_remove_file(temporary_path)
 		return _failure("无法提交居民记忆：%s" % error_string(replace_error))
-	_remove_file(backup_path)
+	if used_backup_fallback:
+		_remove_file(backup_path)
 	return {"ok": true, "memory": memory.duplicate(true)}
 
 
