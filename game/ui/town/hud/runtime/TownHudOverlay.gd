@@ -124,6 +124,7 @@ var _current_revision := -1
 var _view_model: Dictionary = {}
 var _data: Dictionary = {}
 var _actions: Dictionary = {}
+var _render_signature: Dictionary = {}
 var _layout: Dictionary = {}
 var _labels: Dictionary = {}
 var _buttons: Dictionary = {}
@@ -226,10 +227,24 @@ func apply_view_model(view_model: Dictionary) -> bool:
 		return false
 	_last_rejection = PackedStringArray()
 	_current_revision = incoming_revision
-	_view_model = view_model.duplicate(true)
-	_data = UiViewModel.data_for_render(_view_model, _data)
-	_actions = (_view_model.get("actions", {}) as Dictionary).duplicate(true)
-	_render()
+	var previous_data := _data
+	var previous_render_signature := _render_signature
+	# Town time advances once per real second. The incoming HUD projection is
+	# immutable from this consumer, so keep only a shallow shell here; the old
+	# deep copy duplicated every resident directory, bubble and action payload
+	# before each clock tick could be shown.
+	_view_model = view_model.duplicate(false)
+	_data = _data_for_render_shallow(view_model, _data)
+	_actions = (_view_model.get("actions", {}) as Dictionary).duplicate(false)
+	_render_signature = _hud_render_signature(_data, _actions)
+	var time_changed: bool = (
+		previous_data.get("timeWeather", {})
+		!= _data.get("timeWeather", {})
+	)
+	if previous_data.is_empty() or previous_render_signature != _render_signature:
+		_render()
+	elif time_changed:
+		_render_time_weather()
 	if is_instance_valid(_far_resident_activity_layer):
 		_far_resident_activity_layer.apply_view_model(_view_model)
 	view_model_applied.emit(
@@ -243,6 +258,123 @@ func apply_view_model(view_model: Dictionary) -> bool:
 			Time.get_ticks_usec() - probe_started_usec,
 		)
 	return true
+
+
+func _data_for_render_shallow(
+	view_model: Dictionary,
+	last_confirmed_data: Dictionary,
+) -> Dictionary:
+	var incoming := view_model.get("data", {}) as Dictionary
+	if (
+		UiViewModel.operation_status(view_model) == &"rejected"
+		and incoming.is_empty()
+	):
+		return last_confirmed_data.duplicate(false)
+	return incoming.duplicate(false)
+
+
+func _hud_render_signature(data: Dictionary, actions: Dictionary) -> Dictionary:
+	# Do not compare resident bubbles, anchors or directory payloads recursively
+	# on every game-minute tick. The far layer owns the transient overlays; the
+	# persistent HUD only needs these small semantic fields to know when a full
+	# control/layout render is required.
+	return {
+		"toolbar": _hud_items_signature(
+			data.get("toolbar", {}) as Dictionary,
+			["id", "toolId", "actionKey", "label", "badge", "enabled", "disabledReason"],
+		),
+		"camera": _hud_scalar_section_signature(
+			data.get("camera", {}) as Dictionary,
+			["mode", "focusedResidentId", "focusedResidentName", "zoomStep", "zoomRatio", "zoomStepCount", "canDrag", "canReset", "followTargetId"],
+		),
+		"pausePrompt": _hud_scalar_section_signature(
+			data.get("pausePrompt", {}) as Dictionary,
+			["visible", "reasonCodes", "label"],
+		),
+		"residentDirectory": _hud_items_signature(
+			data.get("residentDirectory", {}) as Dictionary,
+			["residentId", "residentName", "behaviorLabel", "behaviorShortLabel", "locationLabel", "portraitStatus", "portraitTexture", "portraitFallbackText", "selected"],
+		),
+		"placeDirectory": _hud_items_signature(
+			data.get("placeDirectory", {}) as Dictionary,
+			["placeName", "placeType", "residentCount", "selected"],
+		),
+		"mapInteraction": _hud_scalar_section_signature(
+			data.get("mapInteraction", {}) as Dictionary,
+			["mode", "spaceId", "hoverTargetId", "selectedTargetId", "promptCode", "promptLabel"],
+		),
+		"indoorMarkers": _hud_items_signature(
+			data.get("indoorMarkers", {}) as Dictionary,
+			["buildingId", "residentCount", "residentId", "residentName", "spaceId", "label"],
+		),
+		"eventOverlay": _hud_items_signature(
+			data.get("eventOverlay", {}) as Dictionary,
+			["eventId", "title", "label", "visible", "threadId"],
+		),
+		"density": _hud_scalar_section_signature(
+			data.get("density", {}) as Dictionary,
+			["zoomBand", "hysteresisActive", "suppressedCount"],
+		),
+		"actions": _hud_actions_signature(actions),
+	}
+
+
+func _hud_scalar_section_signature(
+	section: Dictionary,
+	keys: Array[String],
+) -> Array:
+	var result: Array = []
+	for key in keys:
+		var value: Variant = section.get(key)
+		if value is Array:
+			result.append([key, (value as Array).duplicate()])
+		else:
+			result.append([key, value])
+	return result
+
+
+func _hud_items_signature(section: Dictionary, item_keys: Array[String]) -> Array:
+	var result: Array = [
+		bool(section.get("available", true)),
+		bool(section.get("visible", false)),
+		String(section.get("selectedResidentId", "")),
+		String(section.get("selectedPlaceName", "")),
+		String(section.get("buildingId", "")),
+		int(section.get("totalCount", section.get("residentCount", 0))),
+		int(section.get("residentCount", 0)),
+		int(section.get("visibleBudget", 0)),
+	]
+	for value: Variant in section.get("items", []) as Array:
+		if not value is Dictionary:
+			continue
+		var item := value as Dictionary
+		var item_signature: Array = []
+		for key in item_keys:
+			var item_value: Variant = item.get(key)
+			if item_value is Array:
+				item_signature.append([key, (item_value as Array).duplicate()])
+			else:
+				item_signature.append([key, item_value])
+		result.append(item_signature)
+	return result
+
+
+func _hud_actions_signature(actions: Dictionary) -> Array:
+	var keys: Array[String] = []
+	for key_value: Variant in actions.keys():
+		keys.append(String(key_value))
+	keys.sort()
+	var result: Array = []
+	for key in keys:
+		var action := actions.get(key, {}) as Dictionary
+		result.append([
+			key,
+			bool(action.get("enabled", false)),
+			String(action.get("intent", "")),
+			String(action.get("disabledReason", "")),
+			(action.get("payload", {}) as Dictionary).duplicate(false),
+		])
+	return result
 
 
 func current_revision() -> int:
@@ -1076,6 +1208,24 @@ func _density_band() -> String:
 func _render() -> void:
 	if _data.is_empty():
 		return
+	_render_time_weather()
+	if is_instance_valid(_resident_directory):
+		_resident_directory.apply_directory(
+			_data.get("residentDirectory", {}) as Dictionary
+		)
+	if is_instance_valid(_place_directory):
+		_place_directory.apply_directory(
+			_data.get("placeDirectory", {}) as Dictionary
+		)
+	_apply_runtime_skin_layout()
+	_update_visibility()
+	_configure_actions()
+	_update_runtime_skin_visibility()
+
+
+func _render_time_weather() -> void:
+	if _data.is_empty():
+		return
 	var time_weather := _data.get("timeWeather", {}) as Dictionary
 	var day := int(time_weather.get("day", 0))
 	var clock := String(time_weather.get("clock", ""))
@@ -1095,18 +1245,10 @@ func _render() -> void:
 		"time_weather",
 		" ".join(status_parts) if not status_parts.is_empty() else "时间未就绪"
 	)
-	if is_instance_valid(_resident_directory):
-		_resident_directory.apply_directory(
-			_data.get("residentDirectory", {}) as Dictionary
-		)
-	if is_instance_valid(_place_directory):
-		_place_directory.apply_directory(
-			_data.get("placeDirectory", {}) as Dictionary
-		)
-	_apply_runtime_skin_layout()
-	_update_visibility()
-	_configure_actions()
-	_update_runtime_skin_visibility()
+	_configure_time_speed_buttons()
+	_update_time_control_pressed_state(
+		bool((_data.get("pausePrompt", {}) as Dictionary).get("visible", false))
+	)
 
 
 func _configure_actions() -> void:
@@ -1158,8 +1300,15 @@ func _update_time_control_pressed_state(paused: bool) -> void:
 	):
 		next_id = ""
 	var changed := next_id != _selected_time_control_id
-	_selected_time_control_id = next_id
 	var visual_rect := _time_control_panel_visual_rect()
+	var same_rect := (
+		is_instance_valid(_time_control_panel_face)
+		and _time_control_panel_face.position == visual_rect.position
+		and _time_control_panel_face.size == visual_rect.size
+	)
+	if not changed and same_rect:
+		return
+	_selected_time_control_id = next_id
 	_time_control_panel_face.texture = _time_control_panel_texture(next_id)
 	_time_control_panel_face.position = visual_rect.position
 	_time_control_panel_face.size = visual_rect.size

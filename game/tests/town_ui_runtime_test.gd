@@ -1584,19 +1584,37 @@ func _scenario_avatar_perception_only_refreshes_avatar_scope() -> void:
 	adapter.call("_on_player_avatar_perception_changed", {
 		"source": "avatar_position",
 		"semanticStateChanged": false,
+		"nearbyChanged": false,
+		"positionChanged": true,
 	})
 	_expect(
 		(adapter.get("_pending_world_refresh_scopes") as Array).is_empty(),
 		"化身纯位置感知变化不会排队整套小镇 UI",
 	)
 	_expect(
+		((adapter.get("_view_models") as Dictionary).get("avatar", {}) as Dictionary).is_empty(),
+		"化身纯位置感知变化不生成任何化身界面快照",
+	)
+	_expect(
+		(adapter.get("_pending_world_refresh_scopes") as Array).is_empty(),
+		"化身纯位置变化不留下 UI 修订抑制或待刷新队列",
+	)
+	adapter.call("_on_player_avatar_perception_changed", {
+		"source": "avatar_position",
+		"semanticStateChanged": false,
+		"nearbyChanged": true,
+		"positionChanged": true,
+		"added": ["林岚"],
+		"removed": [],
+	})
+	_expect(
 		not ((adapter.get("_view_models") as Dictionary).get("avatar", {}) as Dictionary).is_empty(),
-		"化身纯位置感知变化仍立即生成化身目标界面",
+		"附近居民集合变化时仍立即生成化身目标界面",
 	)
 	adapter.call("_on_world_revision_changed", 2)
 	_expect(
 		(adapter.get("_pending_world_refresh_scopes") as Array).is_empty(),
-		"化身纯位置修订不会在世界修订信号中重新排队 town_hud",
+		"附近居民位置修订不会在世界修订信号中重新排队 town_hud",
 	)
 	adapter.free()
 
