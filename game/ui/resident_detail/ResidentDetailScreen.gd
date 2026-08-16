@@ -1380,6 +1380,10 @@ func _open_memory_change_dialog(operation := "edit") -> void:
 	_apply_page_background("memories")
 	_refresh_memory_operation_copy()
 	_apply_responsive_layout()
+	# `_apply_responsive_layout()` rebuilds the chain before the panel is made
+	# visible. Rebuild once more after the visibility transition so the
+	# operation controls are available to keyboard and controller navigation.
+	_update_focus_chain()
 	_memory_operation_edit_tab.grab_focus.call_deferred()
 
 
