@@ -319,6 +319,7 @@ var _local_feedback := ""
 var _adapter_contract_available := false
 var _memory_operation_visible := false
 var _memory_operation_mode := "edit"
+var _semantic_focus_request_id := 0
 
 var _background: TextureRect
 var _resident_sprite: TextureRect
@@ -455,7 +456,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				var next_tab := _tab_buttons.get(
 					TAB_IDS[next_index]
 				) as Control
-				if next_tab != null and next_tab.focus_mode != Control.FOCUS_NONE:
+				if _is_focusable_control(next_tab):
 					next_tab.grab_focus()
 					break
 			get_viewport().set_input_as_handled()
@@ -538,9 +539,10 @@ func apply_view_model(snapshot: Dictionary) -> bool:
 	_local_feedback = ""
 	_update_operation_receipt()
 	if is_node_ready():
+		_cancel_semantic_focus_restore()
 		var focused_semantic := _focused_semantic()
 		_render()
-		_restore_semantic_focus.call_deferred(focused_semantic)
+		_queue_semantic_focus_restore(focused_semantic)
 	return true
 
 
@@ -594,12 +596,12 @@ func focus_default() -> void:
 		_render_data.get("selectedTab", "status")
 	)
 	var tab := _tab_buttons.get(selected_tab) as Control
-	if tab != null and tab.focus_mode != Control.FOCUS_NONE:
-		tab.grab_focus.call_deferred()
+	if _is_focusable_control(tab):
+		_queue_focus_grab(tab)
 		return
 	for control: Control in _focus_controls:
-		if control.visible and control.focus_mode != Control.FOCUS_NONE:
-			control.grab_focus.call_deferred()
+		if _is_focusable_control(control):
+			_queue_focus_grab(control)
 			return
 
 
@@ -651,7 +653,7 @@ func runtime_gate_snapshot() -> Dictionary:
 		})
 	var touch_targets: Array[Dictionary] = []
 	for control: Control in _focus_controls:
-		if not is_instance_valid(control) or not control.visible:
+		if not _is_focusable_control(control):
 			continue
 		touch_targets.append({
 			"id": str(control.name),
@@ -3093,34 +3095,39 @@ func _update_focus_chain() -> void:
 			_memory_operation_cancel,
 			_memory_operation_confirm,
 		]:
-			if control.visible and control.focus_mode != Control.FOCUS_NONE:
+			if _is_focusable_control(control):
 				_focus_controls.append(control)
-		if _close_button.focus_mode != Control.FOCUS_NONE:
+		if _is_focusable_control(_close_button):
 			_focus_controls.append(_close_button)
 		_apply_focus_neighbors()
 		return
 	for tab_id: String in TAB_IDS:
 		var tab := _tab_buttons.get(tab_id) as Control
-		if tab != null and tab.focus_mode != Control.FOCUS_NONE:
+		if _is_focusable_control(tab):
 			_focus_controls.append(tab)
 	for filter_button: Button in _section_filter_buttons:
-		if filter_button.visible and filter_button.focus_mode != Control.FOCUS_NONE:
+		if _is_focusable_control(filter_button):
 			_focus_controls.append(filter_button)
 	for row: Control in _row_controls:
-		_focus_controls.append(row)
+		if _is_focusable_control(row):
+			_focus_controls.append(row)
 	if (
-		_section_action_button.visible
-		and _section_action_button.focus_mode != Control.FOCUS_NONE
+		_is_focusable_control(_section_action_button)
 	):
 		_focus_controls.append(_section_action_button)
-	if _action_button.focus_mode != Control.FOCUS_NONE:
+	if _is_focusable_control(_action_button):
 		_focus_controls.append(_action_button)
-	if _close_button.focus_mode != Control.FOCUS_NONE:
+	if _is_focusable_control(_close_button):
 		_focus_controls.append(_close_button)
 	_apply_focus_neighbors()
 
 
 func _apply_focus_neighbors() -> void:
+	var valid_controls: Array[Control] = []
+	for control: Control in _focus_controls:
+		if _is_focusable_control(control):
+			valid_controls.append(control)
+	_focus_controls = valid_controls
 	if _focus_controls.is_empty():
 		return
 	for index: int in _focus_controls.size():
@@ -3134,22 +3141,42 @@ func _apply_focus_neighbors() -> void:
 
 
 func _move_focus(direction: int) -> void:
-	if _focus_controls.is_empty():
+	var available: Array[Control] = []
+	for control: Control in _focus_controls:
+		if _is_focusable_control(control):
+			available.append(control)
+	if available.is_empty():
 		return
 	var focused := get_viewport().gui_get_focus_owner()
-	var index := _focus_controls.find(focused)
+	if focused == null or not is_instance_valid(focused):
+		focus_default()
+		return
+	var index := available.find(focused)
 	if index < 0:
 		focus_default()
 		return
-	_focus_controls[posmod(index + direction, _focus_controls.size())].grab_focus()
+	var target := available[posmod(index + direction, available.size())]
+	if not _is_focusable_control(target):
+		focus_default()
+		return
+	target.grab_focus()
 
 
 func _focused_semantic() -> String:
 	var focused := get_viewport().gui_get_focus_owner()
+	if (
+		focused == null
+		or not is_instance_valid(focused)
+		or not focused.is_inside_tree()
+		or not is_ancestor_of(focused)
+	):
+		return ""
 	for tab_id: String in TAB_IDS:
 		if _tab_buttons.get(tab_id) == focused:
 			return "tab:%s" % tab_id
-	var filter_index := _section_filter_buttons.find(focused)
+	var filter_index := -1
+	if focused is Button:
+		filter_index = _section_filter_buttons.find(focused as Button)
 	if filter_index >= 0:
 		return "filter:%d" % filter_index
 	var row_index := _row_controls.find(focused)
@@ -3184,14 +3211,59 @@ func _restore_semantic_focus(semantic: String) -> void:
 		target = _section_action_button
 	elif semantic == "close":
 		target = _close_button
-	if (
-		target != null
-		and target.visible
-		and target.focus_mode != Control.FOCUS_NONE
-	):
+	if _is_focusable_control(target):
 		target.grab_focus()
 	else:
 		focus_default()
+
+
+func _is_focusable_control(value: Variant) -> bool:
+	if not is_instance_valid(value) or not value is Control:
+		return false
+	var control := value as Control
+	return (
+		control.is_inside_tree()
+		and is_ancestor_of(control)
+		and control.is_visible_in_tree()
+		and control.focus_mode != Control.FOCUS_NONE
+		and (
+			not control is BaseButton
+			or not (control as BaseButton).disabled
+		)
+	)
+
+
+func _queue_focus_grab(control: Control) -> void:
+	call_deferred("_grab_focus_if_valid", control)
+
+
+func _grab_focus_if_valid(control: Control) -> void:
+	if _is_focusable_control(control):
+		control.grab_focus()
+
+
+func _cancel_semantic_focus_restore() -> void:
+	_semantic_focus_request_id += 1
+
+
+func _queue_semantic_focus_restore(semantic: String) -> void:
+	if semantic.is_empty():
+		return
+	_semantic_focus_request_id += 1
+	call_deferred(
+		"_restore_semantic_focus_if_current",
+		semantic,
+		_semantic_focus_request_id,
+	)
+
+
+func _restore_semantic_focus_if_current(
+	semantic: String,
+	request_id: int,
+) -> void:
+	if request_id != _semantic_focus_request_id or not is_inside_tree():
+		return
+	_restore_semantic_focus(semantic)
 
 
 func _on_tab_activated(tab_id: String) -> void:
@@ -3323,10 +3395,11 @@ func _request_action(action_key: String, extra_payload: Dictionary) -> bool:
 
 
 func _present_local_feedback() -> void:
+	_cancel_semantic_focus_restore()
 	var focused_semantic := _focused_semantic()
 	_update_feedback_copy()
 	_render_content()
-	_restore_semantic_focus.call_deferred(focused_semantic)
+	_queue_semantic_focus_restore(focused_semantic)
 
 
 func _player_copy_for_disabled(reason: String) -> String:
