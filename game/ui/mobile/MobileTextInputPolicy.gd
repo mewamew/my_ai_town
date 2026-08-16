@@ -5,8 +5,10 @@ extends Node
 const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
 const LONG_PRESS_DURATION_MSEC := 520
 const TAP_MAX_TRAVEL := 18.0
-const ANDROID_ACTION_PASTE := 1
-const ANDROID_ACTION_SELECT_ALL := 2
+const ANDROID_ACTION_CUT := 1
+const ANDROID_ACTION_COPY := 2
+const ANDROID_ACTION_PASTE := 3
+const ANDROID_ACTION_SELECT_ALL := 4
 
 
 var _force_touch_runtime := false
@@ -28,8 +30,13 @@ class AndroidTextActionCallback:
 		policy = owner
 
 	func onCreateActionMode(_mode: Variant, menu: Variant) -> bool:
-		menu.add(0, ANDROID_ACTION_PASTE, 0, "粘贴")
-		menu.add(0, ANDROID_ACTION_SELECT_ALL, 1, "全选")
+		# This is Android's own floating ActionMode.  Godot's EditText bridge
+		# does not receive the finger coordinates of a LineEdit drawn in the
+		# canvas, so the bridge cannot open its native toolbar on its own.
+		menu.add(0, ANDROID_ACTION_CUT, 0, "剪切")
+		menu.add(0, ANDROID_ACTION_COPY, 1, "复制")
+		menu.add(0, ANDROID_ACTION_PASTE, 2, "粘贴")
+		menu.add(0, ANDROID_ACTION_SELECT_ALL, 3, "全选")
 		return true
 
 	func onPrepareActionMode(_mode: Variant, _menu: Variant) -> bool:
@@ -155,6 +162,8 @@ func _begin_long_press(control: Control) -> void:
 
 
 func _show_android_text_actions(control: Control) -> void:
+	if not _native_text_actions_enabled():
+		return
 	if OS.get_name() != "Android" or not Engine.has_singleton("AndroidRuntime"):
 		return
 	var android_runtime: Variant = Engine.get_singleton("AndroidRuntime")
@@ -168,7 +177,8 @@ func _show_android_text_actions(control: Control) -> void:
 		["android.view.ActionMode$Callback"],
 	)
 	var show_action_mode := func() -> void:
-		# Android draws the same floating toolbar used by native text fields.
+		# TYPE_FLOATING is the same system toolbar used by native Android text
+		# fields.  The app supplies no custom panel or replacement menu.
 		activity.startActionMode(_native_action_proxy, 1)
 	activity.runOnUiThread(
 		android_runtime.createRunnableFromGodotCallable(show_action_mode)
@@ -180,6 +190,16 @@ func _apply_android_text_action(action_id: int) -> void:
 		_clear_android_text_action()
 		return
 	match action_id:
+		ANDROID_ACTION_CUT:
+			if _native_action_control is LineEdit:
+				(_native_action_control as LineEdit).menu_option(0)
+			elif _native_action_control is TextEdit:
+				(_native_action_control as TextEdit).menu_option(0)
+		ANDROID_ACTION_COPY:
+			if _native_action_control is LineEdit:
+				(_native_action_control as LineEdit).menu_option(1)
+			elif _native_action_control is TextEdit:
+				(_native_action_control as TextEdit).menu_option(1)
 		ANDROID_ACTION_PASTE:
 			if _native_action_control is LineEdit:
 				(_native_action_control as LineEdit).menu_option(2)
@@ -220,16 +240,31 @@ func _configure_text_input(node: Node) -> void:
 	control.set_meta("mobile_text_input_policy", true)
 	if node is LineEdit:
 		var line := node as LineEdit
-		if _native_text_actions_enabled():
-			line.context_menu_enabled = false
+		# Keep the editor's native menu enabled, but keep the keyboard disabled
+		# until the policy has classified a real short tap.  Screens such as
+		# Provider Settings and the resident editor intentionally call
+		# grab_focus() for keyboard navigation; that must not pop the IME on entry.
+		line.context_menu_enabled = true
 		line.shortcut_keys_enabled = true
 		line.virtual_keyboard_enabled = false
+		line.focus_exited.connect(_on_text_input_focus_exited.bind(line))
 	else:
 		var edit := node as TextEdit
-		if _native_text_actions_enabled():
-			edit.context_menu_enabled = false
+		edit.context_menu_enabled = true
 		edit.shortcut_keys_enabled = true
 		edit.virtual_keyboard_enabled = false
+		edit.focus_exited.connect(_on_text_input_focus_exited.bind(edit))
+
+
+func _on_text_input_focus_exited(control: Control) -> void:
+	if not is_instance_valid(control):
+		return
+	# Reset the gate after every edit session so a later programmatic focus
+	# (opening another page, restoring a draft, or cycling a tab) stays silent.
+	if control is LineEdit:
+		(control as LineEdit).virtual_keyboard_enabled = false
+	elif control is TextEdit:
+		(control as TextEdit).virtual_keyboard_enabled = false
 
 
 func _show_system_keyboard(control: Control) -> void:
@@ -239,6 +274,10 @@ func _show_system_keyboard(control: Control) -> void:
 		or not control.has_focus()
 	):
 		return
+	if control is LineEdit:
+		(control as LineEdit).virtual_keyboard_enabled = false
+	elif control is TextEdit:
+		(control as TextEdit).virtual_keyboard_enabled = false
 	var text := ""
 	var keyboard_type := DisplayServer.KEYBOARD_TYPE_DEFAULT
 	var max_length := -1

@@ -56,6 +56,7 @@ const TIME_SPEED_CONTROLS := {
 	"time_speed_3": {"actionKey": "timeSpeed3", "multiplier": 3},
 }
 const HUD_REFERENCE_SIZE := Vector2(1672.0, 941.0)
+const DIRECTORY_DRAWER_SOURCE_SIZE := Vector2(1024.0, 1536.0)
 const MOBILE_LEFT_RAIL_RECT := Rect2(0.0, 0.0, 155.0, 941.0)
 const MOBILE_RIGHT_RAIL_RECT := Rect2(1517.0, 0.0, 155.0, 941.0)
 const MOBILE_TOP_FRAME_BAND_RECT := Rect2(155.0, 0.0, 402.0, 20.0)
@@ -913,17 +914,27 @@ func _apply_resident_directory_layout() -> void:
 	var drawer_width: float
 	var drawer_position: Vector2
 	if breakpoint_id == &"compact_portrait":
-		drawer_height = minf(720.0, safe.size.y - 24.0)
-		drawer_width = minf(safe.size.x - 24.0, drawer_height * 0.666667)
+		var scale_value := minf(
+			(safe.size.x - 24.0) / DIRECTORY_DRAWER_SOURCE_SIZE.x,
+			(safe.size.y - 24.0) / DIRECTORY_DRAWER_SOURCE_SIZE.y,
+		)
+		drawer_width = DIRECTORY_DRAWER_SOURCE_SIZE.x * maxf(scale_value, 0.1)
+		drawer_height = DIRECTORY_DRAWER_SOURCE_SIZE.y * maxf(scale_value, 0.1)
 		drawer_position = Vector2(
 			safe.get_center().x - drawer_width * 0.5,
 			safe.get_center().y - drawer_height * 0.5,
 		)
 	elif MOBILE_UI_PROFILE.is_mobile_runtime():
-		# The drawer source is 2:3. Scale the whole authored window uniformly to
-		# the phone height instead of widening only its contents.
-		drawer_height = safe.size.y - 24.0
-		drawer_width = drawer_height * 0.666667
+		# The drawer source is 2:3. Fit the complete authored window inside the
+		# remaining safe area with one uniform scale; never stretch the text layer
+		# independently on tablets or foldables.
+		var available_width := maxf(1.0, safe.end.x - nav_rect.end.x - 16.0)
+		var scale_value := minf(
+			(safe.size.y - 24.0) / DIRECTORY_DRAWER_SOURCE_SIZE.y,
+			available_width / DIRECTORY_DRAWER_SOURCE_SIZE.x,
+		)
+		drawer_width = DIRECTORY_DRAWER_SOURCE_SIZE.x * maxf(scale_value, 0.1)
+		drawer_height = DIRECTORY_DRAWER_SOURCE_SIZE.y * maxf(scale_value, 0.1)
 		drawer_position = Vector2(
 			nav_rect.end.x + 8.0,
 			safe.get_center().y - drawer_height * 0.5,
@@ -952,17 +963,26 @@ func _apply_place_directory_layout() -> void:
 	var drawer_width: float
 	var drawer_position: Vector2
 	if breakpoint_id == &"compact_portrait":
-		drawer_height = minf(720.0, safe.size.y - 24.0)
-		drawer_width = minf(safe.size.x - 24.0, drawer_height * 0.666667)
+		var scale_value := minf(
+			(safe.size.x - 24.0) / DIRECTORY_DRAWER_SOURCE_SIZE.x,
+			(safe.size.y - 24.0) / DIRECTORY_DRAWER_SOURCE_SIZE.y,
+		)
+		drawer_width = DIRECTORY_DRAWER_SOURCE_SIZE.x * maxf(scale_value, 0.1)
+		drawer_height = DIRECTORY_DRAWER_SOURCE_SIZE.y * maxf(scale_value, 0.1)
 		drawer_position = Vector2(
 			safe.get_center().x - drawer_width * 0.5,
 			safe.get_center().y - drawer_height * 0.5,
 		)
 	elif MOBILE_UI_PROFILE.is_mobile_runtime():
-		# Keep the same uniform 2:3 scale as the resident drawer so both windows
+		# Keep the same uniform 2:3 fit as the resident drawer so both windows
 		# grow together and all painted slots remain aligned with their labels.
-		drawer_height = safe.size.y - 24.0
-		drawer_width = drawer_height * 0.666667
+		var available_width := maxf(1.0, safe.end.x - nav_rect.end.x - 16.0)
+		var scale_value := minf(
+			(safe.size.y - 24.0) / DIRECTORY_DRAWER_SOURCE_SIZE.y,
+			available_width / DIRECTORY_DRAWER_SOURCE_SIZE.x,
+		)
+		drawer_width = DIRECTORY_DRAWER_SOURCE_SIZE.x * maxf(scale_value, 0.1)
+		drawer_height = DIRECTORY_DRAWER_SOURCE_SIZE.y * maxf(scale_value, 0.1)
 		drawer_position = Vector2(
 			nav_rect.end.x + 8.0,
 			safe.get_center().y - drawer_height * 0.5,

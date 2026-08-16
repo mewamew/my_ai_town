@@ -43,6 +43,15 @@ const ROW_RECTS := [
 	Rect2(174, 993, 628, 160),
 	Rect2(174, 1170, 628, 160),
 ]
+const ROW_CONTENT_SIZE := Vector2(604.0, 146.0)
+# These slots are expressed in the source artwork's coordinate system.  The
+# old HBox/VBox tree let container minimum sizes decide where the glyphs landed
+# after the drawer was scaled, which is why the names could drift or disappear
+# on a foldable/tablet.  Absolute slots keep the portrait, name and status on
+# the painted row at every aspect ratio.
+const ROW_PORTRAIT_RECT := Rect2(8.0, 10.0, 96.0, 126.0)
+const ROW_NAME_RECT := Rect2(122.0, 5.0, 462.0, 64.0)
+const ROW_STATUS_RECT := Rect2(122.0, 76.0, 462.0, 58.0)
 const TRACK_RECT := Rect2(818, 320, 42, 1012)
 const THUMB_HEIGHT := 212.0
 const INK := Color("#3B2416")
@@ -199,45 +208,40 @@ func _build_visuals() -> void:
 		add_child(button)
 		_row_buttons.append(button)
 
-		var content := MarginContainer.new()
+		var content := Control.new()
 		content.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		content.add_theme_constant_override("margin_left", 16)
-		content.add_theme_constant_override("margin_top", 6)
-		content.add_theme_constant_override("margin_right", 16)
-		content.add_theme_constant_override("margin_bottom", 6)
 		add_child(content)
-		var row := HBoxContainer.new()
-		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		row.add_theme_constant_override("separation", 24)
-		content.add_child(row)
 		var portrait := TextureRect.new()
-		portrait.custom_minimum_size = Vector2(52, 52)
+		portrait.position = ROW_PORTRAIT_RECT.position
+		portrait.size = ROW_PORTRAIT_RECT.size
 		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		portrait.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		row.add_child(portrait)
+		content.add_child(portrait)
 		_row_portraits.append(portrait)
 		var initial := _make_label(20, INK, HORIZONTAL_ALIGNMENT_CENTER)
-		initial.custom_minimum_size = Vector2(52, 52)
-		row.add_child(initial)
+		initial.position = ROW_PORTRAIT_RECT.position
+		initial.size = ROW_PORTRAIT_RECT.size
+		content.add_child(initial)
 		_row_initials.append(initial)
-		var copy := VBoxContainer.new()
-		copy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		copy.add_theme_constant_override("separation", 0)
-		copy.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		row.add_child(copy)
 		var name_label := _make_label(23, INK, HORIZONTAL_ALIGNMENT_LEFT)
-		name_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		copy.add_child(name_label)
+		name_label.position = ROW_NAME_RECT.position
+		name_label.size = ROW_NAME_RECT.size
+		name_label.add_theme_font_size_override("font_size", 26)
+		content.add_child(name_label)
 		_row_names.append(name_label)
 		var status_label := _make_label(19, MUTED_INK, HORIZONTAL_ALIGNMENT_LEFT)
-		status_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		copy.add_child(status_label)
+		status_label.position = ROW_STATUS_RECT.position
+		status_label.size = ROW_STATUS_RECT.size
+		status_label.add_theme_font_size_override("font_size", 21)
+		content.add_child(status_label)
 		_row_statuses.append(status_label)
 		var dot := _make_label(20, SELECTED_INK, HORIZONTAL_ALIGNMENT_CENTER)
+		dot.position = Rect2(570, 52, 28, 42).position
+		dot.size = Rect2(570, 52, 28, 42).size
 		dot.visible = false
-		row.add_child(dot)
+		content.add_child(dot)
 		_row_dots.append(dot)
 		button.set_meta("content", content)
 
@@ -301,15 +305,12 @@ func _layout_children() -> void:
 		_row_buttons[row_index].position = rect.position
 		_row_buttons[row_index].size = rect.size
 		var content := _row_buttons[row_index].get_meta("content") as Control
-		# Keep the row contents in the same source coordinate space as the
-		# artwork.  Previously only the outer MarginContainer was resized while
-		# its margins, spacing and fonts stayed at desktop pixels.  On a tablet or
-		# foldable that made the text baseline drift away from the portrait and
-		# selection frame.  Scaling the complete subtree preserves the source
-		# layout (including font metrics) at every drawer size.
+		# Keep every child in the authored source coordinate space, then apply one
+		# uniform transform.  This prevents container minimum sizes and non-uniform
+		# viewport scaling from moving the glyphs away from their painted slots.
 		var scale_value := _scale()
 		content.position = rect.position + Vector2(12, 7) * scale_value
-		content.size = Vector2(604, 146)
+		content.size = ROW_CONTENT_SIZE
 		content.scale = scale_value
 	_layout_thumb()
 

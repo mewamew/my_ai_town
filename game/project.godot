@@ -37,6 +37,10 @@ window/stretch/aspect="expand"
 
 timers/tooltip_delay_sec=3155760000.0
 
+[input_devices]
+
+pointing/emulate_mouse_from_touch=true
+
 [input]
 
 ui_accept={

@@ -1676,6 +1676,10 @@ func _scenario_mobile_platform_foundation() -> void:
 	_expect(project_text.contains("window/size/viewport_width.mobile=1280"), "Android 使用独立参考宽度")
 	_expect(project_text.contains("window/size/viewport_height.mobile=720"), "Android 使用独立参考高度")
 	_expect(project_text.contains("window/handheld/orientation=4"), "Android 锁定自动翻转横屏")
+	_expect(
+		project_text.contains("pointing/emulate_mouse_from_touch=true"),
+		"Android 触摸可触发桌面控件点击",
+	)
 	var export_text := FileAccess.get_file_as_string("res://export_presets.cfg")
 	_expect(export_text.contains("permissions/internet=true"), "Android 包允许连接模型服务")
 	_expect(
@@ -1813,8 +1817,11 @@ func _verify_mobile_text_input_policy() -> void:
 	line.size = Vector2(360.0, 80.0)
 	root.add_child(line)
 	await process_frame
-	_expect(not line.virtual_keyboard_enabled, "进入输入页面不能自动唤起键盘")
-	_expect(not line.context_menu_enabled, "Android 输入框交给系统文本操作栏")
+	_expect(
+		not line.virtual_keyboard_enabled,
+		"移动端输入框初始不自动唤起输入法",
+	)
+	_expect(line.context_menu_enabled, "移动端输入框保留系统长按文本菜单")
 	var point := Vector2(540.0, 130.0)
 	policy.call("_handle_screen_touch", _mobile_touch(1, true, point))
 	_expect_equal(
