@@ -455,7 +455,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				var next_tab := _tab_buttons.get(
 					TAB_IDS[next_index]
 				) as Control
-				if next_tab != null and next_tab.focus_mode != Control.FOCUS_NONE:
+				if (
+					next_tab != null
+					and is_instance_valid(next_tab)
+					and next_tab.is_inside_tree()
+					and next_tab.focus_mode != Control.FOCUS_NONE
+				):
 					next_tab.grab_focus()
 					break
 			get_viewport().set_input_as_handled()
@@ -594,11 +599,21 @@ func focus_default() -> void:
 		_render_data.get("selectedTab", "status")
 	)
 	var tab := _tab_buttons.get(selected_tab) as Control
-	if tab != null and tab.focus_mode != Control.FOCUS_NONE:
+	if (
+		tab != null
+		and is_instance_valid(tab)
+		and tab.is_inside_tree()
+		and tab.focus_mode != Control.FOCUS_NONE
+	):
 		tab.grab_focus.call_deferred()
 		return
 	for control: Control in _focus_controls:
-		if control.visible and control.focus_mode != Control.FOCUS_NONE:
+		if (
+			is_instance_valid(control)
+			and control.is_inside_tree()
+			and control.visible
+			and control.focus_mode != Control.FOCUS_NONE
+		):
 			control.grab_focus.call_deferred()
 			return
 
@@ -3125,8 +3140,17 @@ func _apply_focus_neighbors() -> void:
 		return
 	for index: int in _focus_controls.size():
 		var current := _focus_controls[index]
+		if not is_instance_valid(current) or not current.is_inside_tree():
+			continue
 		var previous := _focus_controls[posmod(index - 1, _focus_controls.size())]
 		var next := _focus_controls[(index + 1) % _focus_controls.size()]
+		if (
+			not is_instance_valid(previous)
+			or not previous.is_inside_tree()
+			or not is_instance_valid(next)
+			or not next.is_inside_tree()
+		):
+			continue
 		current.focus_neighbor_top = current.get_path_to(previous)
 		current.focus_neighbor_left = current.get_path_to(previous)
 		current.focus_neighbor_bottom = current.get_path_to(next)
@@ -3141,15 +3165,23 @@ func _move_focus(direction: int) -> void:
 	if index < 0:
 		focus_default()
 		return
-	_focus_controls[posmod(index + direction, _focus_controls.size())].grab_focus()
+	var target := _focus_controls[posmod(index + direction, _focus_controls.size())]
+	if not is_instance_valid(target) or not target.is_inside_tree():
+		focus_default()
+		return
+	target.grab_focus()
 
 
 func _focused_semantic() -> String:
 	var focused := get_viewport().gui_get_focus_owner()
+	if focused == null or not is_instance_valid(focused):
+		return ""
 	for tab_id: String in TAB_IDS:
 		if _tab_buttons.get(tab_id) == focused:
 			return "tab:%s" % tab_id
-	var filter_index := _section_filter_buttons.find(focused)
+	var filter_index := -1
+	if focused is Button:
+		filter_index = _section_filter_buttons.find(focused)
 	if filter_index >= 0:
 		return "filter:%d" % filter_index
 	var row_index := _row_controls.find(focused)
@@ -3186,6 +3218,8 @@ func _restore_semantic_focus(semantic: String) -> void:
 		target = _close_button
 	if (
 		target != null
+		and is_instance_valid(target)
+		and target.is_inside_tree()
 		and target.visible
 		and target.focus_mode != Control.FOCUS_NONE
 	):
