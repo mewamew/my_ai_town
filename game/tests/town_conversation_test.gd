@@ -675,10 +675,12 @@ func _initialize() -> void:
 
 
 func _run_all() -> void:
-	_scenario_ui_adapter_conversation_spectator()
-	_scenario_conversation_photo_contract()
+	# These scenarios yield while waiting for UI frames. Keep the suite strictly
+	# sequential so a later fixture cannot mutate or free an earlier screen.
+	await _scenario_ui_adapter_conversation_spectator()
+	await _scenario_conversation_photo_contract()
 	_scenario_conversation()
-	_scenario_ui_adapter_player_conversation_identity()
+	await _scenario_ui_adapter_player_conversation_identity()
 	_scenario_announcement_distribution_integration()
 	_scenario_player_announcement_priority()
 	_scenario_relationship_evidence_progress()
@@ -1466,11 +1468,13 @@ func _test_formal_adapter_and_screen(photo_path: String) -> void:
 	var failed := screen.call("runtime_gate_snapshot") as Dictionary
 	_expect(bool(failed.get("photoSelected", false)), "发送失败后照片预览被清空")
 	_expect_equal(runtime.photo_reply_count, 1, "照片发送没有进入正式 runtime bridge")
-	_expect_equal(
-		(runtime.last_photos[0] as Dictionary).keys(),
-		["ref", "mime_type"],
-		"World/Agent 照片合同包含了额外字段",
-	)
+	_expect_equal(runtime.last_photos.size(), 1, "照片发送没有传递照片列表")
+	if runtime.last_photos.size() == 1:
+		_expect_equal(
+			(runtime.last_photos[0] as Dictionary).keys(),
+			["ref", "mime_type"],
+			"World/Agent 照片合同包含了额外字段",
+		)
 	_expect_equal(
 		gateway.snapshot().get("stagedCount"),
 		1,

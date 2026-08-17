@@ -18,6 +18,7 @@ const DISPLAY_SIZE_TOLERANCE_PX := 4
 const SCREEN_COVERAGE_TOLERANCE_PX := 16
 const EXTERNAL_FULLSCREEN_EXIT_GRACE_MSEC := 500
 const DEFAULT_WINDOWED_SIZE := RESPONSIVE_VIEWPORT.DESIGN_SIZE
+const WEB_CANVAS_SIZE := Vector2i(1280, 720)
 const MINIMUM_WINDOW_SIZE := RESPONSIVE_VIEWPORT.MINIMUM_WINDOW_SIZE
 const FULLSCREEN_WINDOW_MODES := [
 	DisplayServer.WINDOW_MODE_FULLSCREEN,
@@ -799,7 +800,7 @@ func _adopt_runtime_display(display: Dictionary, feedback_code: String) -> void:
 
 func _apply_display_draft(display: Dictionary) -> Dictionary:
 	var mode_id := String(display.get("windowModeId", "windowed"))
-	if _display_available():
+	if _display_available() and not _is_web_runtime():
 		if _display_changes_blocked_by_embedding():
 			return _failure(
 				"DISPLAY_CHANGES_UNSUPPORTED_WHILE_EMBEDDED",
@@ -861,7 +862,7 @@ func _capture_display_state() -> Dictionary:
 func _restore_display_state(state: Dictionary) -> void:
 	if state.is_empty():
 		return
-	if _display_available():
+	if _display_available() and not _is_web_runtime():
 		var mode := int(state.get("mode", DisplayServer.WINDOW_MODE_WINDOWED))
 		_display_window_set_mode(mode)
 		var size := state.get("size", DEFAULT_WINDOWED_SIZE) as Vector2i
@@ -1024,7 +1025,11 @@ func _runtime_audio_snapshot() -> Dictionary:
 func _runtime_display_snapshot() -> Dictionary:
 	return {
 		"windowModeId": _window_mode_id() if _display_available() else "windowed",
-		"windowedResolutionId": _resolution_id(_windowed_size),
+		"windowedResolutionId": (
+			_resolution_id(WEB_CANVAS_SIZE)
+			if _is_web_runtime()
+			else _resolution_id(_windowed_size)
+		),
 		"uiScalePercent": 100,
 		"reducedFlashingEnabled": bool(ProjectSettings.get_setting(REDUCED_FLASHING_SETTING, false)),
 	}
@@ -1086,6 +1091,10 @@ func _normalize_confirmed_for_capabilities() -> void:
 	if _display_changes_blocked_by_embedding():
 		return
 	var display := _confirmed.get("display", {}) as Dictionary
+	if _is_web_runtime():
+		display["windowModeId"] = "windowed"
+		display["windowedResolutionId"] = _resolution_id(WEB_CANVAS_SIZE)
+		return
 	if not _window_mode_is_offered(String(display.get("windowModeId", "windowed"))):
 		display["windowModeId"] = "windowed"
 	if not _resolution_is_offered(String(display.get("windowedResolutionId", ""))):
@@ -1134,6 +1143,8 @@ func _window_mode_is_offered(mode_id: String) -> bool:
 
 
 func _safe_default_resolution_id() -> String:
+	if _is_web_runtime():
+		return _resolution_id(WEB_CANVAS_SIZE)
 	var options := _resolution_options(_capability_snapshot())
 	var best := _resolution_id(_windowed_size)
 	for option: Dictionary in options:
@@ -1168,7 +1179,11 @@ func _display_available() -> bool:
 
 
 func _display_changes_available() -> bool:
-	return _display_available() and not _display_changes_blocked_by_embedding()
+	return (
+		_display_available()
+		and not _is_web_runtime()
+		and not _display_changes_blocked_by_embedding()
+	)
 
 
 func _display_changes_blocked_by_embedding() -> bool:
@@ -1176,6 +1191,8 @@ func _display_changes_blocked_by_embedding() -> bool:
 
 
 func _display_change_unavailable_reason() -> String:
+	if _is_web_runtime():
+		return "DISPLAY_CHANGES_MANAGED_BY_BROWSER"
 	return (
 		"DISPLAY_CHANGES_UNSUPPORTED_WHILE_EMBEDDED"
 		if _display_changes_blocked_by_embedding()
@@ -1308,6 +1325,8 @@ func _fail_active_display_application() -> void:
 
 
 func _set_physical_window_size(size: Vector2i) -> void:
+	if _is_web_runtime():
+		return
 	if _display_backend == null:
 		var window := _root_window()
 		if window != null:
@@ -1317,7 +1336,7 @@ func _set_physical_window_size(size: Vector2i) -> void:
 
 
 func _set_logical_canvas_size(size: Vector2i) -> void:
-	if _display_backend != null or size.x <= 0 or size.y <= 0:
+	if _is_web_runtime() or _display_backend != null or size.x <= 0 or size.y <= 0:
 		return
 	var window := _root_window()
 	if window != null:
@@ -1327,6 +1346,9 @@ func _set_logical_canvas_size(size: Vector2i) -> void:
 func _enforce_window_constraints() -> void:
 	var window := _root_window()
 	if window == null:
+		return
+	if _is_web_runtime():
+		window.unresizable = false
 		return
 	window.unresizable = true
 	if (
@@ -1342,6 +1364,11 @@ func _display_server_name() -> String:
 		if _display_backend != null
 		else DisplayServer.get_name()
 	)
+
+
+func _is_web_runtime() -> bool:
+	var name := _display_server_name().to_lower()
+	return OS.has_feature("web") or name == "web"
 
 
 func _display_window_get_mode() -> int:

@@ -84,11 +84,15 @@ const GAME_BUILD_INFO_OVERLAY := preload(
 	"res://ui/common/GameBuildInfoOverlay.gd"
 )
 const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
+const MOBILE_ORIENTATION_GATE := preload("res://ui/mobile/MobileOrientationGate.gd")
 const MOBILE_TOUCH_SCROLL_ROUTER := preload(
 	"res://ui/mobile/MobileTouchScrollRouter.gd"
 )
 const MOBILE_TEXT_INPUT_POLICY := preload(
 	"res://ui/mobile/MobileTextInputPolicy.gd"
+)
+const WEB_TEXT_CLIPBOARD_BRIDGE := preload(
+	"res://ui/web/WebTextClipboardBridge.gd"
 )
 const REPLACEMENT_ARRIVAL_PANEL := preload(
 	"res://ui/resident_admission/ReplacementResidentArrivalPanel.gd"
@@ -225,6 +229,8 @@ var _town_entry_loading_overlay: CanvasLayer
 var _game_build_info_overlay: GameBuildInfoOverlay
 var _mobile_touch_scroll_router: Node
 var _mobile_text_input_policy: Node
+var _web_text_clipboard_bridge: Node
+var _mobile_orientation_gate: CanvasLayer
 var _town_entry_loading_generation := -1
 var _town_entry_loading_route_kind := ""
 var _town_entry_loading_owner := ""
@@ -295,6 +301,8 @@ func _ready() -> void:
 	_audio_display_settings_service = AUDIO_DISPLAY_SETTINGS_SERVICE.new()
 	_audio_display_settings_service.name = "TownAudioDisplaySettingsService"
 	add_child(_audio_display_settings_service)
+	_mount_mobile_orientation_gate()
+	_mount_web_text_clipboard_bridge()
 	_ensure_game_build_info_overlay()
 	if MOBILE_UI_PROFILE.is_mobile_runtime():
 		_mount_mobile_input_services()
@@ -315,6 +323,22 @@ func _mount_mobile_input_services() -> void:
 		_mobile_text_input_policy = MOBILE_TEXT_INPUT_POLICY.new()
 		_mobile_text_input_policy.name = "MobileTextInputPolicy"
 		add_child(_mobile_text_input_policy)
+
+
+func _mount_web_text_clipboard_bridge() -> void:
+	if not OS.has_feature("web") or is_instance_valid(_web_text_clipboard_bridge):
+		return
+	_web_text_clipboard_bridge = WEB_TEXT_CLIPBOARD_BRIDGE.new()
+	_web_text_clipboard_bridge.name = "WebTextClipboardBridge"
+	add_child(_web_text_clipboard_bridge)
+
+
+func _mount_mobile_orientation_gate() -> void:
+	if is_instance_valid(_mobile_orientation_gate):
+		return
+	_mobile_orientation_gate = MOBILE_ORIENTATION_GATE.new()
+	_mobile_orientation_gate.name = "MobileOrientationGate"
+	add_child(_mobile_orientation_gate)
 
 
 func _ensure_game_build_info_overlay() -> void:
@@ -3897,8 +3921,11 @@ func _resident_model_assignment_failure_message(result: Dictionary) -> String:
 	).strip_edges()
 	var player_code := UI_VIEW_MODEL.player_reason(error_code)
 	if player_code.is_empty() or player_code == "当前操作暂不可用":
+		# Storage, World, and runtime failures also reach this modal. They are
+		# not resident-model failures, so unknown startup codes must use the
+		# generic startup copy instead of being mislabeled as model setup.
 		player_code = UI_VIEW_MODEL.player_reason(
-			"RESIDENT_MODEL_ASSIGNMENT_START_FAILED"
+			"SESSION_BOOTSTRAP_FAILED"
 		)
 	var lines: Array[String] = [
 		player_code,
@@ -4971,10 +4998,11 @@ func _archive_confirmed_formal_slot() -> Dictionary:
 		# not permanently brick New Game. Recoverably isolate that unpaired slot;
 		# any World-side state makes this fail closed for explicit reconciliation.
 		var orphan_archiver: RefCounted = FORMAL_SLOT_ARCHIVER.new()
-		return orphan_archiver.call(
+		var orphan_result := orphan_archiver.call(
 			"archive_unpaired_agent_slot_for_new_game",
 			target_slot_id,
 		) as Dictionary
+		return orphan_result
 	var expected_value: Variant = _new_game_route_context.get(
 		"overwriteExpectedSave",
 	)

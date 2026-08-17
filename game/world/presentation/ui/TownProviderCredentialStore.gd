@@ -9,6 +9,7 @@ const PROVIDER_STORE_FILES := preload(
 	"res://world/presentation/ui/TownProviderStoreFiles.gd"
 )
 const DEFAULT_PATH := "user://provider_credentials.enc"
+const WEB_DEVICE_ID_PATH := "user://web_device_id"
 const SCHEMA_VERSION := 1
 const CREDENTIAL_NAMESPACE := "ai-town.provider-credentials.v1"
 
@@ -266,7 +267,7 @@ func _replace_validated_file(
 
 
 func _encryption_password() -> Dictionary:
-	var device_id := OS.get_unique_id().strip_edges()
+	var device_id := _credential_device_id()
 	if device_id.is_empty():
 		return _failure("PROVIDER_CREDENTIAL_DEVICE_ID_UNAVAILABLE")
 	var project_name := String(
@@ -276,6 +277,37 @@ func _encryption_password() -> Dictionary:
 		"%s|%s|%s" % [CREDENTIAL_NAMESPACE, project_name, device_id]
 	).sha256_text()
 	return _success({"password": password})
+
+
+func _credential_device_id() -> String:
+	if not _is_web_runtime():
+		return OS.get_unique_id().strip_edges()
+	if FileAccess.file_exists(WEB_DEVICE_ID_PATH):
+		var stored := FileAccess.open(WEB_DEVICE_ID_PATH, FileAccess.READ)
+		if stored != null:
+			var value := stored.get_as_text().strip_edges()
+			stored.close()
+			if value.length() == 64:
+				return value
+	var generator := RandomNumberGenerator.new()
+	generator.randomize()
+	var generated := (
+		"%s|%s|%s" % [
+			Time.get_unix_time_from_system(),
+			Time.get_ticks_usec(),
+			generator.randi(),
+		]
+	).sha256_text()
+	var created := FileAccess.open(WEB_DEVICE_ID_PATH, FileAccess.WRITE)
+	if created == null:
+		return ""
+	created.store_string(generated)
+	created.close()
+	return generated
+
+
+func _is_web_runtime() -> bool:
+	return OS.has_feature("web") or OS.get_name().to_lower() == "web"
 
 
 func _provider_id_is_valid(provider_id: String) -> bool:

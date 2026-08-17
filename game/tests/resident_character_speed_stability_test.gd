@@ -155,7 +155,10 @@ func _run() -> void:
 		)
 	blocker.queue_free()
 	mover.queue_free()
-	await process_frame
+	# 与 TownWorldTestCase 的统一收尾保持一致：自动加载的模型脚本需要几帧
+	# 完成 _ready 后再释放音频与退出，否则断言虽通过，Godot 仍会报告资源泄漏。
+	for _index in 5:
+		await process_frame
 	_finish()
 
 

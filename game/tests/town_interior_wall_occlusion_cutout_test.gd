@@ -485,13 +485,26 @@ func _expect_equal(
 
 
 func _finish() -> void:
+	_prepare_audio_shutdown()
 	if _failures.is_empty():
 		print(
 			"TOWN_INTERIOR_WALL_OCCLUSION_PASS: %d formal rooms"
 			% ROOMS.size()
 		)
-		quit(0)
+		call_deferred("_quit_after_cleanup", 0)
 		return
 	for failure in _failures:
 		printerr("TOWN_INTERIOR_WALL_OCCLUSION_FAIL: %s" % failure)
-	quit(1)
+	call_deferred("_quit_after_cleanup", 1)
+
+
+func _quit_after_cleanup(exit_code: int) -> void:
+	await process_frame
+	await process_frame
+	quit(exit_code)
+
+
+func _prepare_audio_shutdown() -> void:
+	var audio := root.get_node_or_null("TownAudioController")
+	if audio != null and audio.has_method("prepare_shutdown"):
+		audio.call("prepare_shutdown")

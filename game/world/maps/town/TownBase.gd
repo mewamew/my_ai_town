@@ -3,6 +3,9 @@
 extends Node2D
 
 const MAP_PATH := "res://world/maps/town/assets/town.png"
+const RUNTIME_MAP_PATH := (
+	"res://world/maps/town/assets/runtime/town_4k.png"
+)
 const MAP_SIZE := Vector2(6688.0, 3764.0)
 const OUTDOOR_MOVEMENT_CLEARANCE := preload(
 	"res://world/data/town/TownOutdoorMovementClearance.gd"
@@ -734,21 +737,30 @@ func _unhandled_input(event: InputEvent) -> void:
 func _build_map() -> void:
 	var map_sprite := Sprite2D.new()
 	map_sprite.name = "TownHdFull"
-	map_sprite.texture = _load_texture(MAP_PATH)
+	map_sprite.texture = _load_texture(RUNTIME_MAP_PATH)
 	if map_sprite.texture == null:
-		push_error("HD town map is missing: %s" % MAP_PATH)
+		# Keep the authoring image as a safe fallback when a fresh checkout has
+		# not imported the generated runtime asset yet.
+		map_sprite.texture = _load_texture(MAP_PATH)
+	if map_sprite.texture == null:
+		push_error("Town map is missing: %s" % RUNTIME_MAP_PATH)
 	map_sprite.centered = false
+	if map_sprite.texture != null:
+		map_sprite.scale = MAP_SIZE / map_sprite.texture.get_size()
 	map_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	add_child(map_sprite)
 
 
 func _build_water_animation() -> void:
 	_water_overlay.name = "WaterSheen"
-	_water_overlay.texture = _load_texture(MAP_PATH)
+	_water_overlay.texture = _load_texture(RUNTIME_MAP_PATH)
 	if _water_overlay.texture == null:
-		push_error("Water overlay could not load the town map: %s" % MAP_PATH)
+		_water_overlay.texture = _load_texture(MAP_PATH)
+	if _water_overlay.texture == null:
+		push_error("Water overlay could not load the town map: %s" % RUNTIME_MAP_PATH)
 		return
 	_water_overlay.centered = false
+	_water_overlay.scale = MAP_SIZE / _water_overlay.texture.get_size()
 	_water_overlay.z_index = 10
 	_water_overlay.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	var shader := Shader.new()

@@ -61,6 +61,7 @@ class AdapterHarness extends Node:
 			"inner_observation": _inner_observation_view_model(),
 			"resident_overview": _resident_overview_view_model(),
 			"provider_settings": _provider_settings_view_model(),
+			"audio_display_settings": _audio_display_settings_view_model(),
 			"weather_control": _weather_view_model(),
 			"town_log": _town_log_view_model(),
 			"place_focus": _place_focus_view_model(),
@@ -674,6 +675,69 @@ class AdapterHarness extends Node:
 		}, {
 			"back": _action("provider_settings.back"),
 		})
+
+	func _audio_display_settings_view_model() -> Dictionary:
+		var audio := {
+			"masterPercent": 100,
+			"musicPercent": 80,
+			"ambiencePercent": 80,
+			"sfxPercent": 80,
+			"uiPercent": 80,
+			"muted": false,
+		}
+		var display := {
+			"resolutionId": "1920x1080",
+			"windowModeId": "windowed",
+			"uiScalePercent": 100,
+			"reducedFlashingEnabled": false,
+		}
+		var settings_data := {
+			"source": "runtime",
+			"capabilityMode": "formal",
+			"formalReady": true,
+			"audio": audio.duplicate(true),
+			"display": display.duplicate(true),
+			"confirmed": {"audio": audio.duplicate(true), "display": display.duplicate(true)},
+			"defaults": {"audio": audio.duplicate(true), "display": display.duplicate(true)},
+			"dirty": false,
+			"dirtySections": [],
+			"uiScaleCapability": {
+				"formalReady": true,
+				"effectivePercent": 100,
+				"supportedPercents": [100],
+				"requiredConsumers": ["responsive_layout"],
+				"readyConsumers": ["responsive_layout"],
+				"disabledReason": "UI_SCALE_AUTOMATIC_BY_LAYOUT_POLICY",
+			},
+			"confirmation": {
+				"active": false,
+				"deadlineMsec": 0,
+				"remainingSeconds": 0,
+			},
+			"storage": {"status": "ready", "errorCode": "", "message": ""},
+			"feedback": {"kind": "", "code": "", "message": ""},
+			"options": {
+				"resolutions": [],
+				"windowModes": [],
+				"uiScalePercents": [100],
+			},
+		}
+		var actions := {}
+		for action_name: String in [
+			"setAudioValue",
+			"toggleMute",
+			"selectResolution",
+			"selectWindowMode",
+			"selectUiScale",
+			"toggleReducedFlashing",
+			"retry",
+			"back",
+		]:
+			actions[action_name] = _action(
+				"audio_display_settings.%s" % action_name,
+				true,
+			)
+		return _view_model("audio_display_settings", settings_data, actions)
 
 	func _resident_action_view_model() -> Dictionary:
 		var resident_id := "resident-lin"
@@ -1330,6 +1394,9 @@ const PROVIDER_SETTINGS_SCREEN_SCENE := preload(
 const RESIDENT_PROFILE_EDITOR_SERVICE_SCRIPT := preload(
 	"res://ui/resident_overview/ResidentProfileEditorService.gd"
 )
+const AUDIO_DISPLAY_SETTINGS_SERVICE_SCRIPT := preload(
+	"res://world/presentation/ui/TownAudioDisplaySettingsService.gd"
+)
 const UiViewModel := preload("res://ui/common/AiTownUiViewModel.gd")
 const ProviderSettingsCompositeDesktop := preload(
 	"res://ui/provider_settings/composite/ProviderSettingsCompositeDesktop.gd"
@@ -1565,9 +1632,9 @@ func _run_all() -> void:
 	await _scenario_mobile_platform_foundation()
 	await _scenario_ui_runtime_host_navigation()
 	await _scenario_formal_ui_runtime_contract()
-	_scenario_game_flow_resident_model_assignment_route()
-	_scenario_session_production_composition()
-	_scenario_hud_pause_clock()
+	await _scenario_game_flow_resident_model_assignment_route()
+	await _scenario_session_production_composition()
+	await _scenario_hud_pause_clock()
 	_scenario_avatar_perception_only_refreshes_avatar_scope()
 	_finish_suite("TOWN_UI_RUNTIME_PASS")
 
@@ -6735,9 +6802,9 @@ func _scenario_game_flow_resident_model_assignment_route() -> void:
 				{},
 			) as Dictionary,
 		) as Dictionary
-		_expect_ok(
-			assignment_projection,
-			"model assignment projects the selected custom roster",
+		_expect(
+			bool(assignment_projection.get("ok", false)),
+			"model assignment projects the selected custom roster (result=%s)" % assignment_projection,
 		)
 		var assignment_catalog_residents := (
 			(assignment_projection.get("catalog", {}) as Dictionary).get(
@@ -7306,9 +7373,48 @@ func _scenario_game_flow_resident_model_assignment_route() -> void:
 			and detailed_failure_message.contains("居民开局属性包含未允许字段"),
 			"startup failure exposes nested validation detail instead of only an error code",
 		)
+		var archive_failure_message := host.call(
+			"_resident_model_assignment_failure_message",
+			{
+				"ok": false,
+				"errorCode": "FORMAL_SLOT_ARCHIVE_STORE_FAILED",
+				"retryable": true,
+			},
+		) as String
+		_expect(
+			archive_failure_message.begins_with("存档暂时无法处理")
+			and not archive_failure_message.contains("居民模型分配尚未完成"),
+			"archive startup failure keeps storage copy instead of model-assignment copy",
+		)
+		var runtime_failure_message := host.call(
+			"_resident_model_assignment_failure_message",
+			{
+				"ok": false,
+				"errorCode": "TOWN_RUNTIME_SCENE_UNAVAILABLE",
+				"retryable": false,
+			},
+		) as String
+		_expect(
+			runtime_failure_message.begins_with("小镇场景暂不可用")
+			and not runtime_failure_message.contains("居民模型分配尚未完成"),
+			"runtime startup failure keeps scene copy instead of model-assignment copy",
+		)
+		var unknown_startup_failure_message := host.call(
+			"_resident_model_assignment_failure_message",
+			{
+				"ok": false,
+				"errorCode": "TEST_UNKNOWN_STARTUP_FAILURE",
+				"retryable": true,
+			},
+		) as String
+		_expect(
+			unknown_startup_failure_message.begins_with("小镇暂时无法启动")
+			and not unknown_startup_failure_message.contains("居民模型分配尚未完成"),
+			"unknown startup failure uses generic startup copy instead of model-assignment copy",
+		)
 		var internal_failure := {
 			"ok": false,
-			"errorCode": "SESSION_OPENING_CONFIG_INVALID",
+			"errorCode": "TEST_UNKNOWN_INTERNAL_FAILURE",
 			"message": "backend shard provider-east-03 rejected request",
 			"errors": [{
 				"message": "credential_slot=prod-secret trace=provider-9821",
@@ -7374,7 +7480,6 @@ func _scenario_game_flow_resident_model_assignment_route() -> void:
 	if is_instance_valid(selection):
 		selection.free()
 	current_scene = null
-	call_deferred("_finish")
 
 
 
@@ -7769,9 +7874,17 @@ func _scenario_session_production_composition() -> void:
 	_expect_equal(runtime.call("get_connected_agent_names").size(), 15, "one gateway connects all 15 residents")
 	_expect_equal(gateway.call("get_connected_resident_ids").size(), 15, "gateway routes the stable ID set")
 	var first_id := String((bindings[0] as Dictionary).get("residentId", ""))
+	for _frame in 60:
+		if not (gateway.call("get_last_submission", first_id) as Dictionary).is_empty():
+			break
+		await process_frame
 	_expect(
 		not (gateway.call("get_last_submission", first_id) as Dictionary).is_empty(),
-		"initial World wake triggers a real Fake AgentSystem decision and World submission",
+		"initial World wake triggers a real Fake AgentSystem decision and World submission (metrics=%s debug=%s errors=%s)" % [
+			gateway.call("get_request_metrics"),
+			gateway.call("get_resident_debug_snapshot", first_id),
+			gateway.call("get_errors"),
+		],
 	)
 	_expect_equal((gateway.call("get_errors") as Array).size(), 0, "production Gateway has no hidden per-resident errors")
 	_expect_equal(
@@ -7888,6 +8001,18 @@ func _scenario_session_production_composition() -> void:
 	)
 	var adapter: Node = runtime.call("get_ui_adapter")
 	_expect(adapter != null, "Town Runtime exposes its unique Adapter")
+	var audio_display_service: Node = AUDIO_DISPLAY_SETTINGS_SERVICE_SCRIPT.new()
+	audio_display_service.name = "TownAudioDisplaySettingsService"
+	runtime.add_child(audio_display_service)
+	var audio_display_binding := adapter.call(
+		"bind_audio_display_settings_service",
+		audio_display_service,
+	) as Dictionary
+	_expect(
+		bool(audio_display_binding.get("ok", false)),
+		"formal runtime binds the audio/display settings service",
+	)
+	await process_frame
 	var world_runtime: RefCounted = runtime.call("get_world_runtime")
 	var editor_pause_time := world_runtime.call("get_time") as Dictionary
 	var editor_pause := adapter.call(

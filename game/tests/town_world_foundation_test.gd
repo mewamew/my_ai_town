@@ -261,7 +261,7 @@ func _run_all() -> void:
 	_scenario_weather_behavior_diversity()
 	_scenario_frame_work_budget()
 	_scenario_action_type_registry()
-	_scenario_audio_controller_button_cue()
+	await _scenario_audio_controller_button_cue()
 	_finish_suite("TOWN_WORLD_FOUNDATION_PASS")
 
 

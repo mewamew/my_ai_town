@@ -2,6 +2,9 @@ extends SceneTree
 
 
 const TOWN_BASE := preload("res://world/maps/town/TownBase.gd")
+const RUNTIME_OCCLUSION_LAYER := preload(
+	"res://world/runtime/MapRuntimeOcclusionLayer.gd"
+)
 const EXPECTED_PLAYER_DISPLAY_SCALE := 1.65
 const OCCLUSION_SUBJECT_GROUP := "map_occlusion_subject"
 
@@ -74,6 +77,7 @@ func _run() -> void:
 	await _test_player_collision_contact_filter(town)
 	await _test_home_a_bedroom_corner_release(town)
 	_test_bulletin_board_occluders_use_footpoint_activation(town)
+	_test_foreground_slice_preserves_source_brightness()
 
 	town.queue_free()
 	await process_frame
@@ -191,12 +195,29 @@ func _test_bulletin_board_occluders_use_footpoint_activation(town: Node) -> void
 			"foot_inside",
 			"%s uses foot-point activation instead of global y-sort activation" % occluder_id
 		)
-		var activation_polygon: Variant = occluder.get_meta("activation_polygon", PackedVector2Array())
+		var activation_polygon: Variant = occluder.get_meta(
+			"activation_polygon",
+			PackedVector2Array(),
+		)
 		_expect(
 			activation_polygon is PackedVector2Array
 			and (activation_polygon as PackedVector2Array).size() >= 3,
 			"%s has an explicit foot-point activation polygon" % occluder_id
 		)
+
+
+func _test_foreground_slice_preserves_source_brightness() -> void:
+	var layer := RUNTIME_OCCLUSION_LAYER.new()
+	var shader := layer.call("_subject_slice_shader") as Shader
+	_expect(shader != null, "subject-scoped foreground slice builds its clipping shader")
+	if shader == null:
+		layer.free()
+		return
+	_expect(
+		not shader.code.contains("texture(TEXTURE, UV) * COLOR"),
+		"foreground slice does not multiply the map texture twice and darken it",
+	)
+	layer.free()
 
 
 func _find_descendant(root_node: Node, node_name: String) -> Node:
@@ -220,11 +241,24 @@ func _expect_equal(actual: Variant, expected: Variant, message: String) -> void:
 
 
 func _finish() -> void:
+	_prepare_audio_shutdown()
 	if _failures.is_empty():
 		print("TOWN_PLAYER_AVATAR_FOOTPOINT_OCCLUSION_PASS")
-		quit(0)
+		call_deferred("_quit_after_cleanup", 0)
 		return
 	for failure in _failures:
 		push_error(failure)
 	print("TOWN_PLAYER_AVATAR_FOOTPOINT_OCCLUSION_FAIL")
-	quit(1)
+	call_deferred("_quit_after_cleanup", 1)
+
+
+func _quit_after_cleanup(exit_code: int) -> void:
+	await process_frame
+	await process_frame
+	quit(exit_code)
+
+
+func _prepare_audio_shutdown() -> void:
+	var audio := root.get_node_or_null("TownAudioController")
+	if audio != null and audio.has_method("prepare_shutdown"):
+		audio.call("prepare_shutdown")

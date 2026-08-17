@@ -32,7 +32,7 @@ var _world_slots_root := DEFAULT_WORLD_SLOTS_ROOT
 var _agent_slots_root := DEFAULT_AGENT_SLOTS_ROOT
 var _photo_slots_root := DEFAULT_PHOTO_SLOTS_ROOT
 var _backup_root := DEFAULT_BACKUP_ROOT
-var _save_store: RefCounted = SAVE_STORE.new()
+var _save_store: TownSessionSaveStore = SAVE_STORE.new()
 
 
 func configure_test_roots(
@@ -146,6 +146,12 @@ func recover_interrupted_new_game_overwrite(slot_id: String) -> Dictionary:
 		or not _valid_slot_id(normalized_slot_id)
 	):
 		return _failure("FORMAL_SLOT_ARCHIVE_SLOT_ID_INVALID", false)
+	# Startup discovery runs before a first Web save directory exists.  A fresh
+	# profile has nothing to recover, so do not acquire a write lock just to
+	# inspect an empty slot; Web storage can reject that directory creation
+	# before its persistent filesystem has been mounted.
+	if not _slot_has_archive_recovery_evidence(normalized_slot_id):
+		return _success(false)
 	var lease := _begin_archive_lease(normalized_slot_id)
 	if lease.get("ok") != true:
 		return lease
@@ -158,6 +164,15 @@ func recover_interrupted_new_game_overwrite(slot_id: String) -> Dictionary:
 			_recover_interrupted_new_game_overwrite(normalized_slot_id),
 			recovered,
 		),
+	)
+
+
+func _slot_has_archive_recovery_evidence(slot_id: String) -> bool:
+	return (
+		DirAccess.dir_exists_absolute(_absolute(_join(_world_slots_root, slot_id)))
+		or DirAccess.dir_exists_absolute(_absolute(_join(_agent_slots_root, slot_id)))
+		or DirAccess.dir_exists_absolute(_absolute(_join(_photo_slots_root, slot_id)))
+		or DirAccess.dir_exists_absolute(_absolute(_slot_backup_root(slot_id)))
 	)
 
 
@@ -851,6 +866,31 @@ func archive_unpaired_agent_slot_for_new_game(slot_id: String) -> Dictionary:
 	if slot_id != normalized_slot_id or not _valid_slot_id(normalized_slot_id):
 		return _failure("FORMAL_SLOT_ARCHIVE_SLOT_ID_INVALID", false)
 	var lease := _begin_archive_lease(normalized_slot_id)
+	if (
+		lease.get("ok") != true
+		and OS.get_name() == "Web"
+		and lease.get("errorCode") == "FORMAL_SLOT_ARCHIVE_STORE_FAILED"
+	):
+		# A previous interrupted Web startup can leave a malformed archive claim
+		# before any World revision is published.  It is not a player-loadable
+		# save, so repair only that claim and retry the normal archive lease.  A
+		# published revision or a live owner remains fail-closed in the store.
+		var residue := _save_store.recover_unpublished_slot_lease_residue(
+			normalized_slot_id,
+		)
+		if residue.get("ok") == true:
+			# Web's persistent filesystem can reject a second directory-claim
+			# rename even after the malformed residue is removed.  There is no
+			# published World revision in this branch, so finish the isolated
+			# Agent/photo quarantine directly; a concurrent published save is
+			# still protected by the no-published-revision check above.
+			var recovered := _recover_pending_archives(normalized_slot_id)
+			if recovered.get("ok") != true:
+				return recovered
+			return _with_recovery_change(
+				_archive_unpaired_agent_slot_for_new_game(normalized_slot_id),
+				recovered,
+			)
 	if lease.get("ok") != true:
 		return lease
 	var recovered := _recover_pending_archives(normalized_slot_id)

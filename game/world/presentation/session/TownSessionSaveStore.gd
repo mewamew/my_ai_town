@@ -117,6 +117,11 @@ func begin_slot_transaction(slot_id_value: Variant) -> Dictionary:
 		return legacy_state
 	var archive_claim_path := _slot_archive_claim_path(slot_id)
 	var archive_claim_state := _recoverable_claim_activity(archive_claim_path)
+	archive_claim_state = _recover_unpublished_archive_claim_if_safe(
+		slot_id,
+		archive_claim_path,
+		archive_claim_state,
+	)
 	if archive_claim_state.get("ok") != true:
 		return archive_claim_state
 	if (
@@ -145,6 +150,11 @@ func begin_slot_transaction(slot_id_value: Variant) -> Dictionary:
 		acquired.get("claimOwner", {}) as Dictionary
 	).duplicate(true)
 	archive_claim_state = _recoverable_claim_activity(archive_claim_path)
+	archive_claim_state = _recover_unpublished_archive_claim_if_safe(
+		slot_id,
+		archive_claim_path,
+		archive_claim_state,
+	)
 	if (
 		archive_claim_state.get("ok") != true
 		or archive_claim_state.get("active") == true
@@ -197,6 +207,11 @@ func begin_slot_archive(slot_id_value: Variant) -> Dictionary:
 	if create_error != OK:
 		return _failure("SESSION_SAVE_STORE_WRITE_FAILED", true)
 	var archive_claim_state := _recoverable_claim_activity(claim_path)
+	archive_claim_state = _recover_unpublished_archive_claim_if_safe(
+		slot_id,
+		claim_path,
+		archive_claim_state,
+	)
 	if archive_claim_state.get("ok") != true:
 		return archive_claim_state
 	if archive_claim_state.get("active") == true:
@@ -283,6 +298,64 @@ func end_slot_archive(lease_token_value: Variant) -> Dictionary:
 		lease_token_value,
 		_owned_slot_archives,
 	)
+
+
+func recover_unpublished_slot_lease_residue(slot_id_value: Variant) -> Dictionary:
+	var slot_check := _validated_slot_id(slot_id_value)
+	if slot_check.get("ok") != true:
+		return slot_check
+	var slot_id := String(slot_check.get("slotId", ""))
+	var published := list_published(slot_id)
+	if published.get("ok") != true:
+		return published
+	var manifests_value: Variant = published.get("manifests", [])
+	if not manifests_value is Array:
+		return _failure("SESSION_SAVE_STORE_READ_FAILED", true)
+	if not (manifests_value as Array).is_empty():
+		return _failure("SESSION_SAVE_PUBLISHED_STATE_PRESENT", false)
+	var lease_root := _slot_lease_root(slot_id)
+	var pending_path := _slot_archive_pending_path(slot_id)
+	if DirAccess.dir_exists_absolute(_absolute(pending_path)):
+		return _failure("SESSION_SAVE_SLOT_BUSY", true)
+	if not DirAccess.dir_exists_absolute(_absolute(lease_root)):
+		return _success()
+	var claim_path := _slot_archive_claim_path(slot_id)
+	if DirAccess.dir_exists_absolute(_absolute(claim_path)):
+		var owner := _read_owned_claim_owner(claim_path)
+		if owner.get("ok") == true and _ephemeral_claim_owner_is_alive(
+			owner.get("claimOwner", {}) as Dictionary,
+		):
+			return _failure("SESSION_SAVE_SLOT_BUSY", true)
+		var remove_error := _remove_tree(claim_path)
+		if remove_error != OK:
+			return _failure("SESSION_SAVE_STORE_WRITE_FAILED", true)
+	return {
+		"ok": true,
+		"errorCode": "",
+		"retryable": false,
+		"changed": true,
+	}
+
+
+func _recover_unpublished_archive_claim_if_safe(
+	slot_id: String,
+	claim_path: String,
+	claim_state: Dictionary,
+) -> Dictionary:
+	if claim_state.get("ok") == true:
+		return claim_state
+	# A transient owner.json read is the gap between two atomic claim
+	# generations. Retrying is safe; deleting it would be able to race a live
+	# transaction. Only a structurally invalid owner record can use the guarded
+	# no-published-revision cleanup below.
+	if claim_state.get("claimReadTransient") == true:
+		return claim_state
+	if claim_state.get("errorCode") != "SESSION_SAVE_STORE_JSON_INVALID":
+		return claim_state
+	var residue := recover_unpublished_slot_lease_residue(slot_id)
+	if residue.get("ok") != true:
+		return claim_state
+	return _recoverable_claim_activity(claim_path)
 
 
 func mark_slot_archive_pending(lease_token_value: Variant) -> Dictionary:

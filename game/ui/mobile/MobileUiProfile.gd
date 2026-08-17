@@ -21,14 +21,57 @@ const ADAPTIVE_LANDSCAPE_TEST_SIZES: Array[Vector2] = [
 	LANDSCAPE_21_9,
 ]
 
+static var _web_mobile_runtime_cache := -1
+static var _web_portrait_cache := false
+static var _web_orientation_last_check_msec := -1000
+
 
 static func is_mobile_runtime() -> bool:
-	return OS.has_feature("mobile") or OS.get_name() in ["Android", "iOS"]
+	if OS.has_feature("mobile") or OS.get_name() in ["Android", "iOS"]:
+		return true
+	if not _is_web_runtime():
+		return false
+	if _web_mobile_runtime_cache >= 0:
+		return _web_mobile_runtime_cache == 1
+	var detected := false
+	if ClassDB.class_exists("JavaScriptBridge"):
+		var result: Variant = JavaScriptBridge.eval(
+			"(() => {"
+			+ "const ua = navigator.userAgent || '';"
+			+ "const touch = Number(navigator.maxTouchPoints || 0) > 0;"
+			+ "return /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua)"
+			+ " || (/Macintosh/i.test(ua) && touch);"
+			+ "})()"
+		)
+		detected = bool(result)
+	_web_mobile_runtime_cache = 1 if detected else 0
+	return detected
+
+
+static func _is_web_runtime() -> bool:
+	return OS.has_feature("web") or OS.get_name().to_lower() == "web"
 
 
 static func input_mode(_viewport_size: Vector2 = Vector2.ZERO) -> String:
 	# Window proportions must never switch a desktop build into touch mode.
 	return "touch" if is_mobile_runtime() else "keyboard_mouse"
+
+
+static func is_portrait_runtime(viewport_size: Vector2) -> bool:
+	if not is_mobile_runtime():
+		return false
+	if not _is_web_runtime():
+		return viewport_size.y > viewport_size.x
+	var now := Time.get_ticks_msec()
+	if now - _web_orientation_last_check_msec >= 250:
+		_web_orientation_last_check_msec = now
+		if ClassDB.class_exists("JavaScriptBridge"):
+			_web_portrait_cache = bool(
+				JavaScriptBridge.eval(
+					"window.innerWidth > 0 && window.innerHeight > window.innerWidth"
+				)
+			)
+	return _web_portrait_cache
 
 
 static func is_phone_landscape(viewport_size: Vector2) -> bool:

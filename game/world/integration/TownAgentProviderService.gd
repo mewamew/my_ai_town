@@ -187,8 +187,13 @@ func get_health_snapshot() -> Dictionary:
 		"capabilityMode": _capability_mode,
 		"source": _source,
 		"formalReady": _capability_mode == "formal",
+		"defaultProviderId": _catalog.default_provider_id(),
 		"providers": providers,
 	}
+
+
+func get_default_provider_id() -> String:
+	return _catalog.default_provider_id()
 
 
 func list_available_models() -> Array[Dictionary]:

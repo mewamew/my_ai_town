@@ -573,8 +573,15 @@ func _load_public_snapshot() -> Dictionary:
 	if not stored_selected.is_empty():
 		_selected_provider_id = stored_selected
 	if not available_ids.has(_selected_provider_id):
-		_selected_provider_id = available_ids[0] if not available_ids.is_empty() else (
-			String(providers[0].get("providerId", "")) if not providers.is_empty() else ""
+		var default_provider_id := String(
+			health.get("defaultProviderId", "")
+		).strip_edges()
+		_selected_provider_id = (
+			default_provider_id
+			if available_ids.has(default_provider_id)
+			else available_ids[0]
+			if not available_ids.is_empty()
+			else ""
 		)
 	return {
 		"ok": true,

@@ -35,6 +35,7 @@ func _initialize() -> void:
 func _run() -> void:
 	var suffix := "%d_%d" % [OS.get_process_id(), Time.get_ticks_usec()]
 	_test_session_store_cleanup(suffix)
+	_test_unpublished_archive_claim_recovery(suffix)
 	_test_long_restore_transaction_cleanup(suffix)
 	_test_legacy_slot_ephemeral_migration(suffix)
 	_test_photo_store_cleanup(suffix)
@@ -79,6 +80,48 @@ func _test_session_store_cleanup(suffix: String) -> void:
 			ProjectSettings.globalize_path(test_root),
 		),
 		"会话存档根目录已删除",
+	)
+
+
+func _test_unpublished_archive_claim_recovery(suffix: String) -> void:
+	var test_root := (
+		"user://tests/town_session_saves/unpublished_claim_%s" % suffix
+	)
+	var store: RefCounted = SESSION_STORE.new()
+	_expect_ok(
+		store.call("configure_test_root", test_root) as Dictionary,
+		"无正式存档的锁残留测试目录可配置",
+	)
+	var slot_id := "web-empty-slot-%s" % suffix
+	var claim_path := String(store.call("_slot_archive_claim_path", slot_id))
+	var claim_absolute := ProjectSettings.globalize_path(claim_path)
+	_expect(
+		DirAccess.make_dir_recursive_absolute(claim_absolute) in [OK, ERR_ALREADY_EXISTS],
+		"无正式存档的损坏归档锁夹具可创建",
+	)
+	var owner := FileAccess.open("%s/owner.json" % claim_absolute, FileAccess.WRITE)
+	if owner != null:
+		# Keep this syntactically valid so the test only exercises schema
+		# validation and does not add a parser error to the verified test log.
+		owner.store_string(JSON.stringify({"schema": "malformed-owner"}))
+		owner = null
+	var begun := store.call("begin_slot_transaction", slot_id) as Dictionary
+	_expect_ok(
+		begun,
+		"无正式存档时损坏归档锁会被安全清理后继续保存",
+	)
+	if begun.get("ok") == true:
+		_expect_ok(
+			store.call("end_slot_transaction", begun.get("leaseToken")) as Dictionary,
+			"恢复后的槽位事务锁可以正常释放",
+		)
+	_expect(
+		not DirAccess.dir_exists_absolute(claim_absolute),
+		"无正式存档的损坏归档锁不会残留",
+	)
+	_expect_ok(
+		store.call("cleanup_test_root") as Dictionary,
+		"无正式存档锁残留测试目录可清理",
 	)
 
 

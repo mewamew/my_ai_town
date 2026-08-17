@@ -189,10 +189,22 @@ static func player_reason(reason: Variant) -> String:
 			return "这个存档已损坏，无法直接进入"
 		"SESSION_SAVE_INCOMPLETE":
 			return "上次保存未完成，将使用最近的完整存档"
+		"SESSION_SAVE_STORE_READ_FAILED":
+			return "存档目录暂时无法读取，请稍后重试"
+		"SESSION_SAVE_STORE_WRITE_FAILED":
+			return "存档暂时无法写入，请稍后重试"
+		"SESSION_SAVE_STORE_JSON_INVALID":
+			return "存档索引损坏，请检查后重试"
+		"SESSION_SAVE_SLOT_BUSY":
+			return "存档正在使用，请稍候"
+		"SESSION_SAVE_CONTEXT_INVALID":
+			return "存档信息不完整，请重新选择"
 		"SESSION_CONTINUE_FAILED":
 			return "无法继续游戏，请稍后重试"
 		"SESSION_BOOTSTRAP_FAILED", "SESSION_TOWN_RUNTIME_MISSING":
 			return "小镇暂时无法启动，当前选择已保留"
+		"SESSION_OPENING_CONFIG_INVALID":
+			return "新游戏配置不完整，请检查后重试"
 		"SESSION_SAVE_NOT_AVAILABLE", \
 		"SESSION_SAVE_REQUIRES_ACTIVE_SESSION":
 			return "当前小镇暂时无法保存"
@@ -214,6 +226,27 @@ static func player_reason(reason: Variant) -> String:
 			return "空槽位不需要覆盖"
 		"STARTUP_OVERWRITE_SLOT_CONFIRMATION_UNAVAILABLE":
 			return "当前槽位暂不能覆盖"
+		"FORMAL_SLOT_ARCHIVE_STORE_FAILED":
+			return "存档暂时无法处理，请稍后重试"
+		"FORMAL_SLOT_ARCHIVE_BUSY":
+			return "存档正在使用，请稍候"
+		"FORMAL_SLOT_ARCHIVE_CONTEXT_INVALID":
+			return "存档信息不完整，无法继续"
+		"FORMAL_SLOT_ARCHIVE_SAVE_CHANGED":
+			return "存档已发生变化，请重新选择"
+		"FORMAL_SLOT_ARCHIVE_PENDING_MARK_FAILED", \
+		"FORMAL_SLOT_ARCHIVE_LEASE_RELEASE_FAILED":
+			return "存档处理未完成，请稍后重试"
+		"FORMAL_SLOT_ARCHIVE_RECOVERY_PENDING":
+			return "存档恢复仍在进行，请稍候"
+		"FORMAL_SLOT_OVERWRITE_COMPENSATION_REQUIRED":
+			return "上一次存档替换未完成，请先恢复后重试"
+		"WORLD_DATA_INCOMPLETE":
+			return "小镇数据尚未准备好，请稍后重试"
+		"TOWN_RUNTIME_SCENE_UNAVAILABLE":
+			return "小镇场景暂不可用，请稍后重试"
+		"TOWN_RUNTIME_STARTUP_RESULT_MISSING":
+			return "小镇启动结果缺失，请稍后重试"
 		"RESIDENT_DIRECT_SELECTION_REQUIRED":
 			return "请直接在地图中选择居民"
 		"RESIDENT_IDENTITY_UNAVAILABLE", "RESIDENT_IDENTITY_NOT_FOUND":

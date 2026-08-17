@@ -350,6 +350,10 @@ func audit_snapshot() -> Dictionary:
 				_slot_behavior_labels[index].size,
 			),
 			"semanticDisplayMode": _slot_semantic_preview_modes[index],
+			"semanticThoughtBubbleVisible": (
+				_slot_semantic_preview_modes[index] == "thought"
+				and _slot_labels[index].visible
+			),
 			"semanticThoughtPage": _slot_semantic_preview_pages[index],
 			"semanticThoughtPageCount": _semantic_thought_pages(item).size(),
 			"semanticThoughtPages": _semantic_thought_pages(item),
@@ -1131,8 +1135,14 @@ func _render_semantic_action(
 	var skin := _slot_skins[index]
 	var icon := _slot_icons[index]
 	var marker := _slot_markers[index]
+	var thought_label := _slot_labels[index]
 	var behavior_label := _slot_behavior_labels[index]
 	skin.texture = THOUGHT_SHELL
+	# The thought page and the formal action page share one shell. Clear the
+	# previous page's text as well as hiding the label so stale content cannot
+	# leak through audits, accessibility reads, or a later layout pass.
+	thought_label.text = ""
+	thought_label.visible = false
 	icon.position = Vector2(18.0, 14.0)
 	marker.position = Vector2(54.0, 8.0)
 	var action_pages := _semantic_action_pages(item)

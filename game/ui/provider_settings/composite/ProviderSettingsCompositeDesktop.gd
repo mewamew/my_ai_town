@@ -1458,6 +1458,9 @@ func _custom_connection_input(
 ) -> LineEdit:
 	var edit := LineEdit.new()
 	edit.name = node_name
+	edit.editable = true
+	edit.context_menu_enabled = true
+	edit.shortcut_keys_enabled = true
 	_place(edit, _scaled_rect(source_rect), parent_rect)
 	edit.focus_mode = Control.FOCUS_ALL
 	edit.add_theme_font_override(
@@ -3250,6 +3253,11 @@ func _line_edit_for_slot(
 	var touch_rect := _minimum_touch_rect(target_rect, parent_rect)
 	var edit := LineEdit.new()
 	edit.name = node_name
+	# Keep desktop Web text fields on the same native shortcut path as the
+	# desktop build; the browser canvas must not depend on a right-click menu.
+	edit.editable = true
+	edit.context_menu_enabled = true
+	edit.shortcut_keys_enabled = true
 	_place(edit, touch_rect, parent_rect)
 	edit.focus_mode = Control.FOCUS_ALL
 	edit.add_to_group("provider_settings_touch_target")

@@ -49,6 +49,11 @@ if [[ ! -x "$godot_bin" ]]; then
 	exit 2
 fi
 
+# 正式回归只验证本地契约，不应读取开发机上的 Provider 配置并发起真实
+# 健康检查。调用者仍可显式设为 0，专门运行需要联网的验证。
+: "${AI_TOWN_PROVIDER_TEST_NO_NETWORK:=1}"
+export AI_TOWN_PROVIDER_TEST_NO_NETWORK
+
 cleanup() {
 	rm -f "$log_file"
 }

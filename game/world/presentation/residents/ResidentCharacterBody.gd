@@ -60,9 +60,10 @@ const ACTIVE_COLLISION_MASK := (
 const LOCAL_AVOIDANCE_LOOKAHEAD := 52.0
 const LOCAL_AVOIDANCE_STEP_DISTANCE := 12.0
 const LOCAL_AVOIDANCE_MAX_SUBSTEPS := 64
-# 3 倍速正常 60 Hz 物理帧移动 7.2 像素。慢帧不能把逝去时间一次性换成
-# 更长的可见跨步；表现可以暂时落后，逻辑时钟和权威到达判定仍由 World 推进。
-const MAX_PRESENTATION_DISTANCE_PER_ADVANCE := 8.0
+# 慢帧不能把逝去时间一次性换成更长的可见跨步；表现可以暂时落后，逻辑
+# 时钟和权威到达判定仍由 World 推进。限幅按居民自己的配置速度计算，避免
+# 用默认居民的 8 像素上限误伤测试/扩展用的更高移动速度。
+const MIN_PRESENTATION_DISTANCE_PER_ADVANCE := 8.0
 const LOCAL_AVOIDANCE_ANGLES := [
 	deg_to_rad(35.0),
 	deg_to_rad(55.0),
@@ -807,7 +808,10 @@ func advance_presentation(delta: float) -> void:
 			path_distance,
 			motion_speed * speed_multiplier * delta,
 		),
-		MAX_PRESENTATION_DISTANCE_PER_ADVANCE,
+		maxf(
+			MIN_PRESENTATION_DISTANCE_PER_ADVANCE,
+			motion_speed * MAX_SIMULATION_SPEED_MULTIPLIER / 60.0,
+		),
 	)
 	if _target_arrival_seconds_remaining > 0.0:
 		_target_arrival_seconds_remaining = maxf(

@@ -53,5 +53,12 @@ func _run() -> void:
 	source = null
 	for _index in 2:
 		await process_frame
+	_prepare_audio_shutdown()
 	print("TOWN_PROVIDER_CREDENTIAL_ISOLATED_EXPORT_PASS")
 	quit(0)
+
+
+func _prepare_audio_shutdown() -> void:
+	var audio := root.get_node_or_null("TownAudioController")
+	if audio != null and audio.has_method("prepare_shutdown"):
+		audio.call("prepare_shutdown")

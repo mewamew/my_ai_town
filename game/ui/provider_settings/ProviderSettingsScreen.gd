@@ -212,6 +212,7 @@ func _build_connection_name_dialog() -> void:
 	_connection_name_dialog.canceled.connect(_clear_connection_name_dialog)
 	_connection_name_edit = LineEdit.new()
 	_connection_name_edit.name = "CompatibleConnectionNameInput"
+	_configure_desktop_text_edit(_connection_name_edit)
 	_connection_name_edit.max_length = 48
 	_connection_name_edit.placeholder_text = "例如 公司中转站"
 	_connection_name_edit.text_submitted.connect(func(_value: String) -> void:
@@ -1127,13 +1128,16 @@ func _rebuild_composite_desktop(viewport_size: Vector2) -> void:
 		viewport_size,
 		Vector2(RESPONSIVE_VIEWPORT.DESIGN_SIZE),
 	)
-	var mobile := MOBILE_UI_PROFILE.is_mobile_runtime()
-	var formal_viewport_size := design_frame.size if mobile else viewport_size
+	# Keep the composite at one uniform 16:9 scale. The background texture and
+	# its live text/controls are authored in the same source coordinate space;
+	# stretching the root to a wider viewport makes the texture use a different
+	# horizontal scale than the controls, which causes labels to drift outside
+	# their panels on ultrawide Web viewports.
+	var formal_viewport_size := design_frame.size
 	_composite_desktop = CompositeDesktop.new()
 	_composite_desktop.name = "CompositeDesktopRoot"
-	if mobile:
-		_composite_desktop.position = design_frame.position
-		_composite_desktop.size = formal_viewport_size
+	_composite_desktop.position = design_frame.position
+	_composite_desktop.size = formal_viewport_size
 	_layout_root = _composite_desktop
 	add_child(_layout_root)
 	var composite_data := _render_data.duplicate(true)
@@ -1983,6 +1987,7 @@ func _build_key_section(provider: Dictionary) -> Control:
 	var key_data := provider.get("key", {}) as Dictionary
 	_key_edit = LineEdit.new()
 	_key_edit.name = "BaseUrlInput" if local_service else "ApiKeyInput"
+	_configure_desktop_text_edit(_key_edit)
 	_key_edit.secret = false if local_service else not _show_key
 	_key_edit.secret_character = "•"
 	_key_edit.placeholder_text = (
@@ -2131,6 +2136,7 @@ func _build_base_url_section(provider: Dictionary) -> Control:
 	column.add_child(row)
 	_base_url_edit = LineEdit.new()
 	_base_url_edit.name = "BaseUrlInput"
+	_configure_desktop_text_edit(_base_url_edit)
 	_base_url_edit.text = _draft_base_url
 	_base_url_edit.placeholder_text = (
 		default_base_url if not default_base_url.is_empty() else "例如 https://host/v1"
@@ -2247,6 +2253,7 @@ func _build_api_model_editor(provider: Dictionary) -> Control:
 	row.add_theme_constant_override("separation", 10)
 	_api_model_edit = LineEdit.new()
 	_api_model_edit.name = "ApiModelInput"
+	_configure_desktop_text_edit(_api_model_edit)
 	_api_model_edit.text = _draft_api_model
 	_api_model_edit.placeholder_text = "实际模型 ID，例如 gpt-4.1-mini 或 qwen3:8b"
 	_api_model_edit.custom_minimum_size = Vector2(
@@ -3233,6 +3240,15 @@ func _is_phone_profile() -> bool:
 		"phone_landscape",
 		"short_landscape",
 	]
+
+
+func _configure_desktop_text_edit(edit: LineEdit) -> void:
+	# Web desktop uses the same keyboard workflow as the native desktop build.
+	# Keep these properties explicit so a browser export never falls back to a
+	# context-menu-only interaction for copy, paste, cut, or select-all.
+	edit.editable = true
+	edit.context_menu_enabled = true
+	edit.shortcut_keys_enabled = true
 
 
 func _body_font_size() -> int:

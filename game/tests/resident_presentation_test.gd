@@ -301,14 +301,14 @@ func _initialize() -> void:
 
 
 func _run_all() -> void:
-	_scenario_resident_character_foundation()
-	_scenario_resident_outdoor_collision_route()
+	await _scenario_resident_character_foundation()
+	await _scenario_resident_outdoor_collision_route()
 	_scenario_player_avatar()
-	_scenario_animal_presentation()
-	_scenario_environment_presentation()
-	_scenario_resident_wardrobe_runtime()
-	_scenario_resident_character_host()
-	_scenario_resident_character_world_route()
+	await _scenario_animal_presentation()
+	await _scenario_environment_presentation()
+	await _scenario_resident_wardrobe_runtime()
+	await _scenario_resident_character_host()
+	await _scenario_resident_character_world_route()
 	_scenario_resident_presentation_path_contract()
 	_finish_suite("RESIDENT_PRESENTATION_PASS")
 
