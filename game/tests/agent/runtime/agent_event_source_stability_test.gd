@@ -2,6 +2,9 @@ extends SceneTree
 
 
 const AGENT_SYSTEM := preload("res://agent/AgentSystem.gd")
+const AgentTestCaseScript := preload(
+	"res://tests/agent/support/AgentTestCase.gd"
+)
 
 var _failures: Array[String] = []
 
@@ -27,6 +30,7 @@ class MutableMemoryResident:
 
 
 func _initialize() -> void:
+	AgentTestCaseScript.shutdown_project_autoloads(self)
 	var system: RefCounted = AGENT_SYSTEM.new()
 	var resident := MutableMemoryResident.new()
 	system.set("_residents", {"resident-a": resident})
@@ -97,8 +101,6 @@ func _finish() -> void:
 		print("AGENT_EVENT_SOURCE_STABILITY_PASS")
 	else:
 		print("AGENT_EVENT_SOURCE_STABILITY_FAIL")
-	var audio_controller := root.get_node_or_null("TownAudioController")
-	if audio_controller != null and audio_controller.has_method("prepare_shutdown"):
-		audio_controller.call("prepare_shutdown")
-	await create_timer(0.3, true, false, true).timeout
+	AgentTestCaseScript.shutdown_project_autoloads(self)
+	await create_timer(0.6, true, false, true).timeout
 	quit(exit_code)

@@ -11,7 +11,7 @@ static func prepare_intent(
 ) -> Dictionary:
 	if intent.is_empty():
 		return {"ok": false, "errors": ["对话后的冲突意图为空"]}
-	var prepared := world._prepare_action(
+	var prepared := world.ACTION_PREPARATION_RUNTIME.prepare(world,
 		resident,
 		intent,
 		allow_reserved_action_id,
@@ -36,7 +36,7 @@ static func activate_after_reply(
 	var prepared := prepare_intent(world, resident, intent, wake_snapshot, true)
 	if prepared.get("ok") != true:
 		return prepared
-	world._activate_conflict_action(
+	world.CONFIRMED_ACTION_ACTIVATION_RUNTIME.activate_conflict(world,
 		resident_id,
 		resident,
 		prepared.get("action", {}) as Dictionary,

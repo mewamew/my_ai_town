@@ -91,6 +91,32 @@ static func movement_duration_for_path(world, points: Array[Vector2]) -> int:
 		return 1
 	return maxi(1, ceili(distance / distance_per_minute))
 
+
+static func reverse_polyline_to_ratio(
+	points: Array[Vector2],
+	ratio: float,
+) -> Array[Vector2]:
+	if points.is_empty():
+		return []
+	var current := point_along_polyline(points, ratio)
+	var result: Array[Vector2] = [current]
+	var target_distance := 0.0
+	for index in range(1, points.size()):
+		target_distance += points[index - 1].distance_to(points[index])
+	target_distance *= clampf(ratio, 0.0, 1.0)
+	var cursor := 0.0
+	var segment_index := 0
+	for index in range(1, points.size()):
+		var length := points[index - 1].distance_to(points[index])
+		if target_distance <= cursor + length:
+			segment_index = index - 1
+			break
+		cursor += length
+	for index in range(segment_index, -1, -1):
+		if not result[-1].is_equal_approx(points[index]):
+			result.append(points[index])
+	return result
+
 static func indoor_navigation_for_space(world, space_id: String) -> Dictionary:
 	for value: Variant in world.world_data().get("indoorNavigation", []) as Array:
 		if (
@@ -120,7 +146,7 @@ static func portal_positions_for_space(world, space_id: String) -> Array[Vector2
 				result.append(point)
 	return result
 
-static func resident_idle_occupied_positions(world, 
+static func resident_idle_occupied_positions(world,
 	resident_id: String,
 	space_id: String,
 ) -> Array[Vector2]:

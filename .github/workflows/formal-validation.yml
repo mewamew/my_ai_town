@@ -75,6 +75,8 @@ jobs:
           fi
 
       - name: Agent offline suite
+        env:
+          AI_TOWN_PROVIDER_TEST_NO_NETWORK: "1"
         run: godot --headless --path game --script res://tests/agent/run_agent_tests.gd
 
       - name: Formal release story suite

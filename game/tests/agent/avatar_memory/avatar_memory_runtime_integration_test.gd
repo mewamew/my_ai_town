@@ -5,6 +5,9 @@ const RuntimeScript := preload("res://agent/ResidentRuntime.gd")
 const AgentSystemScript := preload("res://agent/AgentSystem.gd")
 const SaveStoreScript := preload("res://agent/lifecycle/AgentSaveStore.gd")
 const CleanerScript := preload("res://tests/support/UserTestDataCleaner.gd")
+const AgentTestCaseScript := preload(
+	"res://tests/agent/support/AgentTestCase.gd"
+)
 
 const AVATAR_ID := "person_7f3a91c2d8e4"
 const TEST_ROOT_BASE := "user://tests/avatar-memory-runtime"
@@ -178,15 +181,13 @@ func _run() -> void:
 
 
 func _prepare_project_shutdown() -> void:
-	var audio_controller := root.get_node_or_null("TownAudioController")
-	if audio_controller != null and audio_controller.has_method("prepare_shutdown"):
-		audio_controller.call("prepare_shutdown")
+	AgentTestCaseScript.shutdown_project_autoloads(self)
 
 
 func _quit_after_shutdown(exit_code: int) -> void:
 	await process_frame
 	_prepare_project_shutdown()
-	await create_timer(0.3, true, false, true).timeout
+	await create_timer(0.6, true, false, true).timeout
 	quit(exit_code)
 
 

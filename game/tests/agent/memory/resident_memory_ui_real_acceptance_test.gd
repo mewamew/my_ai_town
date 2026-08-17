@@ -1,6 +1,11 @@
 extends SceneTree
 
 
+const AgentTestCaseScript := preload(
+	"res://tests/agent/support/AgentTestCase.gd"
+)
+
+
 const AGENT_SYSTEM := preload("res://agent/AgentSystem.gd")
 const GATEWAY := preload("res://world/integration/TownWorldAgentGateway.gd")
 const UI_PROJECTION_SERVICE := preload(
@@ -50,6 +55,7 @@ class DecisionCollector:
 
 
 func _initialize() -> void:
+	AgentTestCaseScript.shutdown_project_autoloads(self)
 	call_deferred("_run")
 
 
@@ -294,13 +300,23 @@ func _run() -> void:
 	gateway.free()
 	agent.call("delete_game", save_context)
 	agent.call("close_game")
+	service = null
+	model = null
+	agent = null
+	AgentTestCaseScript.shutdown_project_autoloads(self)
 	if _failures.is_empty():
 		print("RESIDENT_MEMORY_UI_REAL_ACCEPTANCE_PASS")
-		quit(0)
-		return
-	for failure in _failures:
-		push_error("RESIDENT_MEMORY_UI_REAL_ACCEPTANCE_FAIL: %s" % failure)
-	quit(1)
+	else:
+		for failure in _failures:
+			push_error("RESIDENT_MEMORY_UI_REAL_ACCEPTANCE_FAIL: %s" % failure)
+	call_deferred("_quit_after_shutdown", 0 if _failures.is_empty() else 1)
+
+
+func _quit_after_shutdown(exit_code: int) -> void:
+	await process_frame
+	AgentTestCaseScript.shutdown_project_autoloads(self)
+	await create_timer(0.6, true, false, true).timeout
+	quit(exit_code)
 
 
 func _initialization() -> Dictionary:

@@ -26,7 +26,7 @@ static func qualified_actor_ids(world, occupation_id: String) -> Array[String]:
 	var normalized_occupation_id := occupation_id.strip_edges()
 	if normalized_occupation_id.is_empty():
 		return result
-	for resident_id: String in world._resident_order:
+	for resident_id: String in world.resident_registry.order:
 		if _is_available_qualified_resident(
 			world,
 			resident_id,
@@ -50,12 +50,12 @@ static func _is_available_qualified_resident(
 	resident_id: String,
 	occupation_id: String,
 ) -> bool:
-	if resident_id.is_empty() or not world._residents.has(resident_id):
+	if resident_id.is_empty() or not world.resident_registry.records.has(resident_id):
 		return false
-	if not world._resident_can_work_occupation(resident_id, occupation_id):
+	if not world.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.can_work_occupation(world, resident_id, occupation_id):
 		return false
-	return world._resident_available_for_work(
-		world._residents.get(resident_id, {}) as Dictionary,
+	return world.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.available_for_work(world,
+		world.resident_registry.records.get(resident_id, {}) as Dictionary,
 	)
 
 

@@ -80,7 +80,8 @@ rg -n '^ERROR:|SCRIPT ERROR:|Parse Error:|Failed to load script' /tmp/my-ai-town
 ### 4. 运行与 CI 相同的正式测试
 
 ```sh
-"$GODOT_BIN" --headless --path game --script res://tests/agent/run_agent_tests.gd
+AI_TOWN_PROVIDER_TEST_NO_NETWORK=1 \
+  "$GODOT_BIN" --headless --path game --script res://tests/agent/run_agent_tests.gd
 zsh game/tests/run_formal_release_story_suite.sh
 zsh game/tests/run_isolated_formal_entry_story.sh
 ```
@@ -152,6 +153,20 @@ Godot 无头导入确认。
 
 不要只修后续的类型推断错误。缺少预加载文件时，类型推断和依赖脚本编译错误通常都是连带结果，应先修第一条缺文件错误。
 
+### 删除脚本后预加载检查读取不存在文件
+
+表现：计划内删除了已跟踪的 `.gd`，尚未暂存时运行防复发检查，
+`preload_resource_check.py` 在 `read_text()` 报 `FileNotFoundError`。
+
+直接原因：`git ls-files` 在删除尚未写入索引时仍返回旧路径，检查脚本把 Git 清单误当成当前工作树
+文件清单。
+
+处理方法：预加载检查只扫描 Git 清单中当前仍真实存在的 GDScript；删除后的旧引用继续由 Godot
+无头导入和文本搜索确认。不要为了让检查通过而提前暂存、恢复空文件或忽略真正缺失的预加载目标。
+
+最终验证：保持删除未暂存，运行 `tools/guards/run_guards.sh`，预加载检查应正常完成；随后确认
+`git diff --check`、Godot 无头导入和相关领域测试均通过。
+
 ### Windows 保存后无法继续，日志出现临时 `owner.json` 清理失败
 
 表现：存档主体已经完成并且多次读取哈希一致，但保存退出或恢复存档后，程序仍报告事务未完成；Windows 日志中的失败路径通常以 `owner.json` 结尾，旧式路径可能超过 260 个字符，macOS 不一定复现。
@@ -182,6 +197,18 @@ Godot 无头导入确认。
 含义：受控文件继续变大，超过现有行数基线。
 
 处理方式：优先拆分职责、提取独立模块或减少重复代码。不要只为了通过 CI 调高基线。
+
+### 世界运行时架构检查失败
+
+常见提示：`TownWorldRuntime 架构棘轮失败（指标只降不升）`。
+
+含义：世界总控的行数、函数、顶层状态或长函数数量增加，或者 `world/runtime` 子模块新增了
+对 `TownWorldRuntime` 私有成员的直接访问。总访问数没有增加，也不代表可以把访问转移到新的
+私有成员；检查会同时限制总数、单个成员次数和新增成员。
+
+处理方式：把状态和规则交给有明确职责的模块，并通过小型接口传入依赖。真实完成拆分且所有
+验证通过后，才运行 `world_runtime_architecture_check.py --update` 收缩基线。脚本会拒绝提高任一
+旧指标，不能手工调高 JSON 数字绕过检查。
 
 ### 零引用检查失败
 
@@ -233,6 +260,22 @@ CI 最后会检查 `git status --porcelain`。常见来源：
 处理方法：在成功、失败、超时和取消的共同结算路径中清空请求状态保存的回调；transport 返回后如果请求已经同步完成，不再创建 watchdog。watchdog 的 `timeout` 信号回调中只能使用 `queue_free()`，不能直接 `free()` 被 Godot 锁定的计时器。不要放宽 runner 对行首 `ERROR:` 或资源泄漏的检查。
 
 最终验证：provider robustness 测试必须覆盖有效宿主节点下的同步 transport，确认请求只结算一次、没有残留在途取消状态，并重新运行 Agent 离线套件和完整正式入口套件。不要把 watchdog 的具体实现（例如宿主子节点数量）写成测试契约，应断言超时、完成和取消的行为。
+
+### Agent 离线套件受本机 Provider 设置影响
+
+表现：子测试已经输出各自的 `*_PASS`，但 macOS 本地运行时大量用例退出报告同一批模型资源仍在
+使用；远端干净环境可能全部通过。本机 `user://` 中通常已经保存 Provider 和默认模型。
+
+直接原因：项目自动加载的启动流程读取玩家本机设置后发起后台健康检查。测试逻辑本身没有请求
+联网，但子进程继承了项目自动加载状态，尚未完成的请求在退出时被 runner 识别为资源占用。
+
+处理方法：Agent 离线 runner 对每个非联网子测试设置
+`AI_TOWN_PROVIDER_TEST_NO_NETWORK=1`，正式故事套件也在入口统一设置该环境变量；正式 CI 和本地完整命令
+继续显式禁止非测试网络请求。联网 Provider 用例不使用这项开关。不要删除本机玩家配置，
+也不要放宽 runner 对行首 `ERROR:` 的判断。
+
+最终验证：在已经保存 Provider 配置的本机重新运行完整离线套件，必须得到
+`AGENT_TEST_SUMMARY passed=48 failed=0 total=48`，并确认没有模型资源占用错误。
 
 ### 发行工作流拒绝运行
 
@@ -386,6 +429,7 @@ gh run view <运行编号> --log-failed \
 - [ ] 所有新增资源路径已经检查大小写，并确认文件被 Git 跟踪。
 - [ ] 修改活动源文档后已运行 `TownWorldDataBuild.gd`，并确认活动收据和来源指纹同步更新。
 - [ ] 涉及存档目录、事务或临时文件时，Windows 超长路径恢复与清理测试已经通过。
+- [ ] 世界核心改动没有增加总控规模或 `world._xxx` 私有访问；真实拆分后已收缩架构基线。
 - [ ] `tools/guards/run_guards.sh` 通过。
 - [ ] Godot 无头导入没有脚本或引擎错误。
 - [ ] 相关测试通过；发行改动完成正式测试套件。

@@ -381,6 +381,192 @@
       "func": "_defer_agent_result",
       "call": "variable:.call(result)",
       "reason": "生产 Gateway 需要把本地模型的同步完成回调移出当前派发帧；未挂入场景树的单元测试仍保留同步 Callable 契约。"
+    },
+    {
+      "path": "game/world/runtime/TownWorldRuntime.gd",
+      "func": "_agent_places",
+      "call": "string:Callable(self, \"_person_name_for_id\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+    },
+    {
+      "path": "game/world/runtime/TownWorldRuntime.gd",
+      "func": "_complete_private_message_delivery",
+      "call": "string:Callable(self, \"_resident_can_accept_work_task\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+    },
+    {
+      "path": "game/world/runtime/TownWorldRuntime.gd",
+      "func": "_complete_private_message_delivery",
+      "call": "string:Callable(self, \"_task_acceptance_occupation_id\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+    },
+    {
+      "path": "game/world/runtime/TownWorldRuntime.gd",
+      "func": "_prepare_postal_talk_approach",
+      "call": "string:Callable(self, \"_perception_membership_for_position\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+    },
+    {
+      "path": "game/world/runtime/TownWorldRuntime.gd",
+      "func": "_private_message_delivery_task_for_talk",
+      "call": "string:Callable(self, \"_resident_can_accept_work_task\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+    },
+    {
+      "path": "game/world/runtime/TownWorldRuntime.gd",
+      "func": "_public_private_message",
+      "call": "string:Callable(self, \"_resident_display_name\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+    },
+    {
+      "path": "game/world/runtime/TownWorldRuntime.gd",
+      "func": "get_all_place_details",
+      "call": "string:Callable(self, \"_person_name_for_id\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+    },
+    {
+      "path": "game/world/runtime/TownWorldRuntime.gd",
+      "func": "get_all_place_details",
+      "call": "string:Callable(self, \"_resident_display_name\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+    },
+    {
+      "path": "game/world/runtime/TownWorldRuntime.gd",
+      "func": "get_all_place_details",
+      "call": "string:Callable(self, \"_resident_is_present\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+    },
+    {
+      "path": "game/world/runtime/TownWorldRuntime.gd",
+      "func": "get_place_detail",
+      "call": "string:Callable(self, \"_person_name_for_id\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+    },
+    {
+      "path": "game/world/runtime/TownWorldRuntime.gd",
+      "func": "get_place_detail",
+      "call": "string:Callable(self, \"_resident_display_name\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+    },
+    {
+      "path": "game/world/runtime/TownWorldRuntime.gd",
+      "func": "get_place_detail",
+      "call": "string:Callable(self, \"_resident_is_present\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+    },
+    {
+      "path": "game/world/runtime/TownWorldRuntime.gd",
+      "func": "get_player_avatar_state",
+      "call": "string:Callable(self, \"_resident_display_name\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+    },
+    {
+      "path": "game/world/runtime/TownWorldRuntime.gd",
+      "func": "get_private_messages_for_resident",
+      "call": "string:Callable(self, \"_resident_display_name\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+    },
+    {
+      "path": "game/world/runtime/TownWorldRuntime.gd",
+      "func": "update_resident_profile",
+      "call": "string:Callable(self, \"get_place_detail\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+    },
+    {
+      "path": "game/world/runtime/TownWorldRuntime.gd",
+      "func": "update_resident_social_profile",
+      "call": "string:Callable(self, \"get_place_detail\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+    },
+    {
+      "path": "game/world/runtime/TownWorldRuntime.gd",
+      "func": "upsert_animal_presence",
+      "call": "string:Callable(self, \"_animal_place_for_position\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+    },
+    {
+      "path": "game/world/runtime/animals/TownAnimalFactRuntime.gd",
+      "func": "prepare_upsert",
+      "call": "variable:.call(position)",
+      "reason": "专用模块调用由总控固定注入的 Callable 依赖；不根据运行时字符串选择业务方法。"
+    },
+    {
+      "path": "game/world/runtime/presentation/TownPlacePresentationQuery.gd",
+      "func": "agent_places",
+      "call": "variable:.call(String(owner))",
+      "reason": "专用模块调用由总控固定注入的 Callable 依赖；不根据运行时字符串选择业务方法。"
+    },
+    {
+      "path": "game/world/runtime/presentation/TownPlacePresentationQuery.gd",
+      "func": "detail",
+      "call": "variable:.call(String(owner_resident_id))",
+      "reason": "专用模块调用由总控固定注入的 Callable 依赖；不根据运行时字符串选择业务方法。"
+    },
+    {
+      "path": "game/world/runtime/presentation/TownPlacePresentationQuery.gd",
+      "func": "detail",
+      "call": "variable:.call(resident)",
+      "reason": "专用模块调用由总控固定注入的 Callable 依赖；不根据运行时字符串选择业务方法。"
+    },
+    {
+      "path": "game/world/runtime/presentation/TownPlacePresentationQuery.gd",
+      "func": "detail",
+      "call": "variable:.call(resident_id)",
+      "reason": "专用模块调用由总控固定注入的 Callable 依赖；不根据运行时字符串选择业务方法。"
+    },
+    {
+      "path": "game/world/runtime/presentation/TownResidentProfileEditor.gd",
+      "func": "validate_social_profile",
+      "call": "variable:.call(home)",
+      "reason": "专用模块调用由总控固定注入的 Callable 依赖；不根据运行时字符串选择业务方法。"
+    },
+    {
+      "path": "game/world/runtime/presentation/TownResidentProfileEditor.gd",
+      "func": "validate_social_profile",
+      "call": "variable:.call(workplace)",
+      "reason": "专用模块调用由总控固定注入的 Callable 依赖；不根据运行时字符串选择业务方法。"
+    },
+    {
+      "path": "game/world/runtime/presentation/TownResidentStateProjection.gd",
+      "func": "project_player_avatar",
+      "call": "variable:.call(String(resident_id_value))",
+      "reason": "专用模块调用由总控固定注入的 Callable 依赖；不根据运行时字符串选择业务方法。"
+    },
+    {
+      "path": "game/world/runtime/social/TownPostalDeliveryActionPreparer.gd",
+      "func": "prepare",
+      "call": "variable:.call( resident_space, trimmed[-1], )",
+      "reason": "专用模块调用由总控固定注入的 Callable 依赖；不根据运行时字符串选择业务方法。"
+    },
+    {
+      "path": "game/world/runtime/social/TownPrivateMessageRuntime.gd",
+      "func": "_delivery_tasks_for_talk",
+      "call": "variable:.call( postal_resident_id, task, )",
+      "reason": "专用模块调用由总控固定注入的 Callable 依赖；不根据运行时字符串选择业务方法。"
+    },
+    {
+      "path": "game/world/runtime/social/TownPrivateMessageRuntime.gd",
+      "func": "complete_delivery",
+      "call": "variable:.call( postal_resident_id, task, )",
+      "reason": "专用模块调用由总控固定注入的 Callable 依赖；不根据运行时字符串选择业务方法。"
+    },
+    {
+      "path": "game/world/runtime/social/TownPrivateMessageRuntime.gd",
+      "func": "public_message",
+      "call": "variable:.call(recipient_id)",
+      "reason": "专用模块调用由总控固定注入的 Callable 依赖；不根据运行时字符串选择业务方法。"
+    },
+    {
+      "path": "game/world/runtime/social/TownPrivateMessageRuntime.gd",
+      "func": "public_message",
+      "call": "variable:.call(sender_id)",
+      "reason": "专用模块调用由总控固定注入的 Callable 依赖；不根据运行时字符串选择业务方法。"
+    },
+    {
+      "path": "game/world/runtime/social/TownResidentMessagePolicy.gd",
+      "func": "send",
+      "call": "string:Callable(world, \"resident_display_name\")",
+      "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
     }
   ]
 }

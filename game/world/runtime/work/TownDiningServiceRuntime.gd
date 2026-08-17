@@ -1,9 +1,22 @@
 class_name TownDiningServiceRuntime
 extends RefCounted
 
+const ACTIVITY_ROUTINE_ACTIVATION_RUNTIME := preload(
+	"res://world/runtime/activity/TownActivityRoutineActivationRuntime.gd"
+)
+const ROUTINE_SETTLEMENT_RUNTIME := preload(
+	"res://world/runtime/activity/TownActivityRoutineSettlementRuntime.gd"
+)
+const OCCUPATION_RESIDENT_CONTEXT_RUNTIME := preload(
+	"res://world/runtime/work/TownOccupationResidentContextRuntime.gd"
+)
+
 
 const CONTENT_CATALOG := preload(
 	"res://world/data/town/TownWorkContentCatalog.gd"
+)
+const RESIDENT_EVENT_QUEUE_RUNTIME := preload(
+	"res://world/runtime/event/TownResidentEventQueueRuntime.gd"
 )
 const MEAL_MENU_PATH := "res://world/data/town/source/meal_menus.json"
 const BATCH_SIZE := 4
@@ -48,8 +61,8 @@ static func capacity_status(
 	resident_id: String,
 	absolute_minute: int,
 ) -> Dictionary:
-	var period := world._meal_period_for_minute(absolute_minute) as Dictionary
-	var period_ref: String = String(world._meal_period_source_ref(absolute_minute))
+	var period := world.work_domain.meal_period_for_minute(absolute_minute) as Dictionary
+	var period_ref: String = String(world.work_domain.meal_period_source_ref(absolute_minute))
 	var occupied := _meal_admission_count(world, period_ref)
 	var admitted := _resident_has_meal_admission(
 		world,
@@ -61,10 +74,10 @@ static func capacity_status(
 	if period.is_empty():
 		state = "closed"
 		state_label = "当前不在供餐时段"
-	elif not world._meal_service_is_open(absolute_minute):
+	elif not world.work_domain.meal_service_is_open(absolute_minute):
 		state = "preparing"
 		state_label = "食堂正在统一备餐，开餐后再来"
-	elif not world._meal_period_is_prepared(absolute_minute):
+	elif not world.work_domain.meal_period_is_prepared(absolute_minute):
 		state = "not_ready"
 		state_label = "本餐次还没有备好"
 	elif admitted:
@@ -105,11 +118,11 @@ static func collect_is_full(
 	absolute_minute: int,
 ) -> bool:
 	if (
-		not world._dining_collect_can_finish_in_current_period(absolute_minute)
-		or not world._meal_period_is_prepared(absolute_minute)
+		not world.work_domain.dining_collect_can_finish_in_current_period(absolute_minute)
+		or not world.work_domain.meal_period_is_prepared(absolute_minute)
 	):
 		return false
-	var period_ref: String = String(world._meal_period_source_ref(absolute_minute))
+	var period_ref: String = String(world.work_domain.meal_period_source_ref(absolute_minute))
 	return _meal_admission_count(world, period_ref, resident_id) >= DINING_CAPACITY
 
 
@@ -179,7 +192,8 @@ static func activate_agent_meal_routine(
 	)
 	if routine.is_empty():
 		return {}
-	return world._activate_activity_routine(
+	return ACTIVITY_ROUTINE_ACTIVATION_RUNTIME.activate(
+		world,
 		resident_id,
 		resident,
 		decision_id,
@@ -200,7 +214,7 @@ static func attach_capacity_status(
 ) -> void:
 	if (
 		place_id == CONTENT_CATALOG.PLACE_DINING_HALL
-		or not world._meal_period_for_minute(absolute_minute).is_empty()
+		or not world.work_domain.meal_period_for_minute(absolute_minute).is_empty()
 	):
 		place_snapshot["dining"] = capacity_status(
 			world,
@@ -233,8 +247,8 @@ static func can_admit_without_worker(
 ) -> bool:
 	return (
 		place_id == CONTENT_CATALOG.PLACE_DINING_HALL
-		and world._meal_service_is_open(absolute_minute)
-		and world._meal_period_is_prepared(absolute_minute)
+		and world.work_domain.meal_service_is_open(absolute_minute)
+		and world.work_domain.meal_period_is_prepared(absolute_minute)
 	)
 
 
@@ -283,9 +297,9 @@ static func prioritize_dining_worker_arrival(
 
 static func reserve_meal_preparation_task(world, source_ref: String) -> void:
 	var resident_id := "resident_su_tang_01"
-	if not world._residents.has(resident_id):
+	if not world.resident_registry.records.has(resident_id):
 		return
-	var task := world._work_tasks.task(
+	var task := world.work_domain.tasks.task(
 		"meal-preparation:%s" % source_ref,
 	) as Dictionary
 	if (
@@ -294,7 +308,7 @@ static func reserve_meal_preparation_task(world, source_ref: String) -> void:
 		or not world._resident_can_accept_work_task(resident_id, task)
 	):
 		return
-	var accepted := world._work_tasks.accept_task(
+	var accepted := world.work_domain.tasks.accept_task(
 		String(task.get("taskId", "")),
 		resident_id,
 		"occupation_dining_operator",
@@ -390,7 +404,7 @@ static func meal_period_ref_for_routine(
 	group: String,
 	absolute_minute: int,
 ) -> String:
-	return world._meal_period_source_ref(absolute_minute) if group == "meal" else ""
+	return world.work_domain.meal_period_source_ref(absolute_minute) if group == "meal" else ""
 
 
 static func backfill_meal_period_refs(
@@ -411,7 +425,7 @@ static func backfill_meal_period_refs(
 		var started_minute := int(
 			action.get("startedAbsoluteMinute", world._environment.get_absolute_minute())
 		)
-		routine["mealPeriodRef"] = world._meal_period_source_ref(started_minute)
+		routine["mealPeriodRef"] = world.work_domain.meal_period_source_ref(started_minute)
 		routines[resident_id] = routine
 
 
@@ -442,10 +456,10 @@ static func keep_meal_routine_running(
 ) -> bool:
 	if current_action.is_empty():
 		return false
-	var routine := world._activity_routines.get(resident_id, {}) as Dictionary
+	var routine := world.activity_routine_state.records.get(resident_id, {}) as Dictionary
 	if String(routine.get("group", "")) != "meal":
 		return false
-	var resident := world._residents.get(resident_id, {}) as Dictionary
+	var resident := world.resident_registry.records.get(resident_id, {}) as Dictionary
 	return not resident.get("conversation") is Dictionary
 
 
@@ -457,11 +471,11 @@ static func _meal_admission_count(
 	if period_ref.is_empty():
 		return 0
 	var admitted: Dictionary = {}
-	for resident_id_value: Variant in world._activity_routines:
+	for resident_id_value: Variant in world.activity_routine_state.records:
 		var resident_id := String(resident_id_value)
 		if resident_id == excluded_resident_id:
 			continue
-		var routine := world._activity_routines[resident_id] as Dictionary
+		var routine := world.activity_routine_state.records[resident_id] as Dictionary
 		if (
 			String(routine.get("group", "")) == "meal"
 			and String(routine.get("placeId", ""))
@@ -469,11 +483,11 @@ static func _meal_admission_count(
 			and String(routine.get("mealPeriodRef", "")) == period_ref
 		):
 			admitted[resident_id] = true
-	for resident_id_value: Variant in world._residents:
+	for resident_id_value: Variant in world.resident_registry.records:
 		var resident_id := String(resident_id_value)
 		if resident_id == excluded_resident_id:
 			continue
-		var resident := world._residents[resident_id] as Dictionary
+		var resident := world.resident_registry.records[resident_id] as Dictionary
 		if _resident_is_dining_worker(resident):
 			continue
 		if (
@@ -490,8 +504,8 @@ static func _resident_has_meal_admission(
 	resident_id: String,
 	period_ref: String,
 ) -> bool:
-	if world._activity_routines.has(resident_id):
-		var routine := world._activity_routines[resident_id] as Dictionary
+	if world.activity_routine_state.records.has(resident_id):
+		var routine := world.activity_routine_state.records[resident_id] as Dictionary
 		if (
 			String(routine.get("group", "")) == "meal"
 			and String(routine.get("placeId", ""))
@@ -499,7 +513,7 @@ static func _resident_has_meal_admission(
 			and String(routine.get("mealPeriodRef", "")) == period_ref
 		):
 			return true
-	var resident := world._residents.get(resident_id, {}) as Dictionary
+	var resident := world.resident_registry.records.get(resident_id, {}) as Dictionary
 	if resident.is_empty() or _resident_is_dining_worker(resident):
 		return false
 	return (
@@ -541,7 +555,7 @@ static func settle_closed_meal_routine(
 	var period_ref := String(routine.get("mealPeriodRef", "")).strip_edges()
 	if period_ref.is_empty():
 		return
-	world._occupation_services.mark_dining_order_completed_for_resident_meal_period(
+	world.work_domain.services.mark_dining_order_completed_for_resident_meal_period(
 		resident_id,
 		period_ref,
 	)
@@ -553,8 +567,8 @@ static func _next_admission_retry_minute(
 	absolute_minute: int,
 ) -> int:
 	var retry_after := absolute_minute + 1
-	for resident_id_value: Variant in world._activity_routines:
-		var routine := world._activity_routines[String(resident_id_value)] as Dictionary
+	for resident_id_value: Variant in world.activity_routine_state.records:
+		var routine := world.activity_routine_state.records[String(resident_id_value)] as Dictionary
 		if (
 			String(routine.get("group", "")) != "meal"
 			or String(routine.get("placeId", ""))
@@ -573,17 +587,17 @@ static func collect_disabled_reason(
 	resident_id: String,
 	absolute_minute: int,
 ) -> String:
-	if not world._dining_collect_can_finish_in_current_period(absolute_minute):
+	if not world.work_domain.dining_collect_can_finish_in_current_period(absolute_minute):
 		return "DINING_SERVICE_CLOSED"
-	if not world._meal_period_is_prepared(absolute_minute):
+	if not world.work_domain.meal_period_is_prepared(absolute_minute):
 		return "DINING_MEAL_NOT_READY"
-	var period_ref: String = String(world._meal_period_source_ref(absolute_minute))
+	var period_ref: String = String(world.work_domain.meal_period_source_ref(absolute_minute))
 	if (
-		world._occupation_services.has_dining_order_completed_for_resident_meal_period(
+		world.work_domain.services.has_dining_order_completed_for_resident_meal_period(
 			resident_id,
 			period_ref,
 		)
-		or not world._dining_order_for_resident_meal_period(
+		or not world.work_domain.dining_order_for_resident_meal_period(
 			resident_id,
 			absolute_minute,
 			["completed"],
@@ -623,8 +637,8 @@ static func publish_meal_menu_announcement(
 			return
 	var publisher_id: String = String(
 		"resident_su_tang_01"
-		if world._residents.has("resident_su_tang_01")
-		else world._first_resident_for_occupation(
+		if world.resident_registry.records.has("resident_su_tang_01")
+		else world.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.first_resident(world,
 			"occupation_dining_operator",
 		)
 	)
@@ -640,9 +654,9 @@ static func publish_meal_menu_announcement(
 
 
 static func wait_deadline(world, absolute_minute: int) -> int:
-	var period := world._meal_period_for_minute(absolute_minute) as Dictionary
+	var period := world.work_domain.meal_period_for_minute(absolute_minute) as Dictionary
 	if period.is_empty():
-		return absolute_minute + world._onsite_service_wait_minutes(
+		return absolute_minute + world.work_domain.onsite_service_wait_minutes(
 			"dining_order",
 		)
 	var day_start := absolute_minute - posmod(absolute_minute, 1440)
@@ -652,7 +666,7 @@ static func wait_deadline(world, absolute_minute: int) -> int:
 	var period_end := day_start + int(period.get("end", 0))
 	return mini(
 		maxi(absolute_minute, service_start)
-		+ world._onsite_service_wait_minutes("dining_order"),
+		+ world.work_domain.onsite_service_wait_minutes("dining_order"),
 		period_end,
 	)
 
@@ -663,7 +677,7 @@ static func complete_additional_orders(
 	primary_request_id: String,
 	absolute_minute: int,
 ) -> int:
-	var primary := world._occupation_services.request(
+	var primary := world.work_domain.services.request(
 		primary_request_id,
 	) as Dictionary
 	if (
@@ -674,7 +688,7 @@ static func complete_additional_orders(
 	var meal_period_ref := _request_meal_period_ref(world, primary)
 	var candidates: Array[Dictionary] = []
 	for request_value: Variant in (
-		world._occupation_services.snapshot() as Dictionary
+		world.work_domain.services.snapshot() as Dictionary
 	).get("requests", []) as Array:
 		var request := request_value as Dictionary
 		if (
@@ -682,10 +696,10 @@ static func complete_additional_orders(
 			or String(request.get("kind", "")) != "dining_order"
 			or String(request.get("state", "")) not in ["pending", "waiting"]
 			or _request_meal_period_ref(world, request) != meal_period_ref
-			or not world._dining_request_meal_is_ready(request)
+			or not world.work_domain.dining_request_meal_is_ready(request)
 		):
 			continue
-		var requester := world._residents.get(
+		var requester := world.resident_registry.records.get(
 			String(request.get("requesterResidentId", "")),
 			{},
 		) as Dictionary
@@ -693,7 +707,7 @@ static func complete_additional_orders(
 			CONTENT_CATALOG.PLACE_DINING_HALL
 		):
 			continue
-		var task := world._work_tasks.task(
+		var task := world.work_domain.tasks.task(
 			String(request.get("taskId", "")),
 		) as Dictionary
 		if String(task.get("state", "")) == "in_progress":
@@ -713,7 +727,7 @@ static func complete_additional_orders(
 		if completed_count >= BATCH_SIZE - 1:
 			break
 		var outcome := _handoff_outcome(request, "counter_batch")
-		var task := world._work_tasks.task(
+		var task := world.work_domain.tasks.task(
 			String(request.get("taskId", "")),
 		) as Dictionary
 		if not _complete_batch_work_task(
@@ -746,7 +760,7 @@ static func complete_as_takeaway(
 		"pending", "waiting", "in_progress",
 	]:
 		return false
-	var task := world._work_tasks.task(
+	var task := world.work_domain.tasks.task(
 		String(request.get("taskId", "")),
 	) as Dictionary
 	if not task.is_empty() and String(task.get("state", "")) not in [
@@ -755,13 +769,13 @@ static func complete_as_takeaway(
 		var assigned_id := String(task.get("assignedResidentId", ""))
 		if (
 			not assigned_id.is_empty()
-			and world._resident_is_actively_processing_work_task(
+			and world.WORK_TASK_PUBLIC_RUNTIME.resident_is_actively_processing(world,
 				assigned_id,
 				String(task.get("taskId", "")),
 			)
 		):
-			world._interrupt_action(assigned_id, "顾客已经领取打包餐")
-		world._work_tasks.cancel_task(
+			world.ACTION_SETTLEMENT_RUNTIME.interrupt(world, assigned_id, "顾客已经领取打包餐")
+		world.work_domain.tasks.cancel_task(
 			String(task.get("taskId", "")),
 			"订单已由关餐打包兜底完成",
 		)
@@ -785,10 +799,10 @@ static func settle_period_close(world, absolute_minute: int) -> void:
 	if ending_period.is_empty():
 		return
 	var period_ref: String = String(
-		world._meal_period_source_ref(absolute_minute - 1),
+		world.work_domain.meal_period_source_ref(absolute_minute - 1),
 	)
 	for request_value: Variant in (
-		world._occupation_services.snapshot() as Dictionary
+		world.work_domain.services.snapshot() as Dictionary
 	).get("requests", []) as Array:
 		var request := request_value as Dictionary
 		if (
@@ -800,7 +814,7 @@ static func settle_period_close(world, absolute_minute: int) -> void:
 		):
 			continue
 		var requester_id := String(request.get("requesterResidentId", ""))
-		var requester := world._residents.get(requester_id, {}) as Dictionary
+		var requester := world.resident_registry.records.get(requester_id, {}) as Dictionary
 		if String(requester.get("currentPlace", "")) == (
 			CONTENT_CATALOG.PLACE_DINING_HALL
 		):
@@ -811,27 +825,27 @@ static func settle_period_close(world, absolute_minute: int) -> void:
 				"本餐次结束前已经领取打包餐",
 			)
 		else:
-			world._cancel_occupation_service_request(
+			world.OCCUPATION_SERVICE_CANCELLATION_RUNTIME.cancel(world,
 				request,
 				"本餐次已经结束，居民也已离开食堂",
 			)
 	if String(ending_period.get("id", "")) != "dinner":
 		return
-	for resident_id: String in world._resident_order:
-		var resident := world._residents.get(resident_id, {}) as Dictionary
+	for resident_id: String in world.resident_registry.order:
+		var resident := world.resident_registry.records.get(resident_id, {}) as Dictionary
 		if String(resident.get("currentPlace", "")) != (
 			CONTENT_CATALOG.PLACE_DINING_HALL
 		):
 			continue
 		var completed_meal: bool = bool(
-			world._occupation_services.has_dining_order_completed_for_resident_meal_period(
+			world.work_domain.services.has_dining_order_completed_for_resident_meal_period(
 				resident_id,
 				period_ref,
 			)
 		)
 		if not completed_meal:
-			world._apply_consumed_service_item(resident_id, "meal")
-			world._occupation_services.mark_dining_order_completed_for_resident_meal_period(
+			world.PLACE_SERVICE_COMMAND_RUNTIME.apply_consumed_item(world, resident_id, "meal")
+			world.work_domain.services.mark_dining_order_completed_for_resident_meal_period(
 				resident_id,
 				period_ref,
 			)
@@ -852,7 +866,7 @@ static func _request_meal_period_ref(world, request: Dictionary) -> String:
 		),
 	).strip_edges()
 	if period_ref.is_empty():
-		period_ref = world._meal_period_source_ref(
+		period_ref = world.work_domain.meal_period_source_ref(
 			int(request.get("createdAtMinute", -1)),
 		)
 	return period_ref
@@ -894,7 +908,7 @@ static func _complete_batch_work_task(
 	if state == "in_progress":
 		return false
 	if state == "accepted" and assigned_id != worker_resident_id:
-		var released := world._work_tasks.release_task(
+		var released := world.work_domain.tasks.release_task(
 			task_id,
 			assigned_id,
 			int(task.get("revision", 0)),
@@ -909,7 +923,7 @@ static func _complete_batch_work_task(
 			worker_resident_id,
 			task,
 		))
-		var accepted := world._work_tasks.accept_task(
+		var accepted := world.work_domain.tasks.accept_task(
 			task_id,
 			worker_resident_id,
 			occupation_id,
@@ -920,7 +934,7 @@ static func _complete_batch_work_task(
 		task = accepted.get("task", {}) as Dictionary
 		state = "accepted"
 	if state == "accepted":
-		var started := world._work_tasks.start_task(
+		var started := world.work_domain.tasks.start_task(
 			task_id,
 			worker_resident_id,
 			int(task.get("revision", 0)),
@@ -930,7 +944,7 @@ static func _complete_batch_work_task(
 		task = started.get("task", {}) as Dictionary
 	if String(task.get("state", "")) != "in_progress":
 		return false
-	var completed := world._work_tasks.complete_task(
+	var completed := world.work_domain.tasks.complete_task(
 		task_id,
 		worker_resident_id,
 		int(task.get("revision", 0)),
@@ -956,7 +970,7 @@ static func _complete_order_record(
 ) -> bool:
 	var request_id := String(request.get("requestId", ""))
 	var requester_id := String(request.get("requesterResidentId", ""))
-	var completed := world._occupation_services.complete_request(
+	var completed := world.work_domain.services.complete_request(
 		request_id,
 		worker_resident_id,
 		absolute_minute,
@@ -964,10 +978,10 @@ static func _complete_order_record(
 	) as Dictionary
 	if completed.get("ok") != true:
 		return false
-	world._apply_consumed_service_item(requester_id, "meal")
+	world.PLACE_SERVICE_COMMAND_RUNTIME.apply_consumed_item(world, requester_id, "meal")
 	var meal_period_ref := _request_meal_period_ref(world, request)
 	if not meal_period_ref.is_empty():
-		world._occupation_services.mark_dining_order_completed_for_resident_meal_period(
+		world.work_domain.services.mark_dining_order_completed_for_resident_meal_period(
 			requester_id,
 			meal_period_ref,
 		)
@@ -976,7 +990,7 @@ static func _complete_order_record(
 		request_id,
 		false,
 	)
-	world._finish_customer_service_wait(
+	world.CUSTOMER_SERVICE_WAIT_RUNTIME.finish(world,
 		requester_id,
 		request_id,
 		reason,
@@ -986,14 +1000,16 @@ static func _complete_order_record(
 
 
 static func _send_home(world, resident_id: String, reason: String) -> bool:
-	var resident := world._residents.get(resident_id, {}) as Dictionary
+	var resident := world.resident_registry.records.get(resident_id, {}) as Dictionary
 	if (
 		resident.is_empty()
 		or String(resident.get("currentPlace", ""))
 		!= CONTENT_CATALOG.PLACE_DINING_HALL
 	):
 		return false
-	var home_place: String = String(world._home_place_for_resident(resident_id))
+	var home_place: String = OCCUPATION_RESIDENT_CONTEXT_RUNTIME.home_place(
+		world, resident_id,
+	)
 	if home_place.is_empty():
 		world._schedule_decision(resident_id, true)
 		return false
@@ -1004,12 +1020,14 @@ static func _send_home(world, resident_id: String, reason: String) -> bool:
 	):
 		return true
 	if not current_action.is_empty():
-		world._interrupt_action(resident_id, reason, true)
-		resident = world._residents.get(resident_id, {}) as Dictionary
-	if world._activity_routines.has(resident_id):
-		world._close_activity_routine(resident_id, "completed", reason)
+		world.ACTION_SETTLEMENT_RUNTIME.interrupt(world, resident_id, reason, true)
+		resident = world.resident_registry.records.get(resident_id, {}) as Dictionary
+	if world.activity_routine_state.records.has(resident_id):
+		ROUTINE_SETTLEMENT_RUNTIME.close_routine(
+			world, resident_id, "completed", reason,
+		)
 	if bool(resident.get("decisionPending", false)):
-		world._restore_inflight_facts(resident)
+		RESIDENT_EVENT_QUEUE_RUNTIME.restore_inflight_facts(resident)
 		resident["decisionPending"] = false
 		resident["validDecisionId"] = ""
 		resident["pendingWake"] = {}
@@ -1018,7 +1036,7 @@ static func _send_home(world, resident_id: String, reason: String) -> bool:
 	# 路线必须从本次结算分钟开始计时；直接读取环境时钟会拿到这次
 	# advance 的最终分钟，让已经领餐的居民在食堂原地停留到未来时刻。
 	var settlement_minute := int(world._authoritative_absolute_minute())
-	var prepared := world._prepare_go_action(
+	var prepared := world.ACTION_PREPARATION_RUNTIME.prepare_go_action(world,
 		resident,
 		{
 			"action_id": "dining-close-home:%s:%d" % [
@@ -1051,7 +1069,7 @@ static func _meal_period_ending_at(world, absolute_minute: int) -> Dictionary:
 	if absolute_minute <= 0:
 		return {}
 	var previous_minute := absolute_minute - 1
-	var period := world._meal_period_for_minute(previous_minute) as Dictionary
+	var period := world.work_domain.meal_period_for_minute(previous_minute) as Dictionary
 	if period.is_empty():
 		return {}
 	var day_start := previous_minute - posmod(previous_minute, 1440)

@@ -112,12 +112,43 @@ func _scenario_save_restore() -> void:
 	_expect(not first_saved_resident.has("validDecisionId"), "waiting decision id is not persisted")
 	_expect(not first_saved_resident.has("pendingWake"), "waiting network request is not persisted")
 	var saved_environment := ((snapshot.get("state", {}) as Dictionary).get("environment", {}) as Dictionary).duplicate(true)
+	var activity_reachability_cache := world.get(
+		"activity_reachability_state",
+	) as TownActivityReachabilityCache
+	var cache_resident := {
+		"residentId": "restore-cache-resident",
+		"position": Vector2.ZERO,
+	}
+	var cache_candidate := {
+		"targetPropName": "restore-cache-prop",
+		"targetActionVerb": "测试",
+		"memberPosition": [1.0, 1.0],
+	}
+	activity_reachability_cache.ensure_minute(123)
+	activity_reachability_cache.remember_reachability(
+		cache_resident,
+		cache_candidate,
+		{},
+		true,
+		{"targetPosition": Vector2.ONE},
+	)
+	_expect_equal(
+		activity_reachability_cache.reachability_count(),
+		1,
+		"transient activity route cache exists before restore",
+	)
 
 	world.call("resume", "manual")
 	world.call("set_weather", "下雪")
 	world.call("advance", 5.0)
 	var restore_result := world.call("restore_from_snapshot", data, opening, parsed as Dictionary) as Dictionary
 	_expect_equal(restore_result.get("ok"), true, "JSON-round-tripped snapshot restores (%s)" % str(restore_result.get("errors", [])))
+	_expect(
+		activity_reachability_cache.reachability_count() == 0
+			and activity_reachability_cache.prepared_action_count() == 0
+			and activity_reachability_cache.cached_minute() == -1,
+		"restore clears transient activity route and prepared-action caches",
+	)
 	_expect_equal(world.call("get_time"), saved_time, "restore preserves world time")
 	_expect_equal(world.call("get_weather"), saved_weather, "restore preserves weather")
 	var restored_lin := world.call("get_resident_state", "林岚") as Dictionary

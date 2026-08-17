@@ -1,4 +1,13 @@
 extends "res://tests/support/TownWorldTestCase.gd"
+const OCCUPATION_RESIDENT_CONTEXT_RUNTIME := preload(
+	"res://world/runtime/work/TownOccupationResidentContextRuntime.gd"
+)
+const PRIVATE_MESSAGE_DELIVERY_RUNTIME := preload(
+	"res://world/runtime/social/TownPrivateMessageDeliveryRuntime.gd"
+)
+const PERFORMANCE_SERVICE_RUNTIME := preload(
+	"res://world/runtime/work/TownPerformanceServiceRuntime.gd"
+)
 ## 职业与用工 合并套件。
 ##
 ## 由以下测试合并而来，断言逐条保留：
@@ -213,11 +222,11 @@ func _test_clinic_follow_up_is_natural(world: RefCounted) -> void:
 			== "clinic-follow-up:%s" % follow_up_id
 			and String(message.get("recipient_resident_id", "")) == PATIENT_ID
 			and String(message.get("content", "")).begins_with("复诊时间到了")
-			and bool(world.call(
-				"_resident_can_work_occupation",
+			and OCCUPATION_RESIDENT_CONTEXT_RUNTIME.can_work_occupation(
+				world,
 				String(message.get("sender_resident_id", "")),
 				"occupation_clinic_practitioner",
-			))
+			)
 		):
 			follow_up_message_found = true
 			break
@@ -783,7 +792,7 @@ func _scenario_dining_peak_regression() -> void:
 			"等不及柜台服务的居民会领取打包餐",
 		)
 		var task := (
-			closing_world.get("_work_tasks") as RefCounted
+			(closing_world.get("work_domain") as TownWorkDomainRuntime).tasks as RefCounted
 		).call("task", String(request.get("taskId", ""))) as Dictionary
 		_expect(
 			task.is_empty()
@@ -1545,11 +1554,11 @@ func _test_library_due_request_is_natural(world: RefCounted) -> void:
 			and String(message.get("recipient_resident_id", "")) == BORROWER_ID
 			and String(message.get("content", ""))
 			== "你借的书到归还时间了，有空请带回图书馆。"
-			and bool(world.call(
-				"_resident_can_work_occupation",
+			and OCCUPATION_RESIDENT_CONTEXT_RUNTIME.can_work_occupation(
+				world,
 				String(message.get("sender_resident_id", "")),
 				"occupation_librarian",
-			))
+			)
 		):
 			due_message_found = true
 			break
@@ -1789,15 +1798,12 @@ func _activate_one_performance_listener(
 	if day_index < 0:
 		return ""
 	var source_ref := "performance-event:%d" % day_index
-	var private_messages := world.get("_private_messages") as Dictionary
-	var message_ids: Array[String] = []
-	for message_id_value: Variant in private_messages:
-		message_ids.append(String(message_id_value))
-	message_ids.sort()
+	var private_message_runtime := (
+		world.private_message_runtime as TownPrivateMessageRuntime
+	)
+	var message_ids := private_message_runtime.sorted_message_ids()
 	for message_id: String in message_ids:
-		var message := (
-			private_messages.get(message_id, {}) as Dictionary
-		).duplicate(true)
+		var message := private_message_runtime.message(message_id)
 		if (
 			String(message.get("state", "")) != "pending"
 			or String(message.get("sourceRef", "")) != source_ref
@@ -1814,15 +1820,14 @@ func _activate_one_performance_listener(
 		message["state"] = "delivered"
 		message["deliveredAtMinute"] = now
 		message["deliveredByResidentId"] = DINING_CUSTOMER_ID
-		private_messages[message_id] = message
-		world.set("_private_messages", private_messages)
-		world.call(
-			"_activate_delivered_private_message_follow_up",
+		private_message_runtime.set_message(message_id, message)
+		PRIVATE_MESSAGE_DELIVERY_RUNTIME.activate_follow_up(
+			world,
 			message_id,
 			message,
 			now,
 		)
-		var residents := world.get("_residents") as Dictionary
+		var residents := (world.get("resident_registry") as TownResidentRegistry).records as Dictionary
 		var listener := residents.get(recipient_id, {}) as Dictionary
 		listener["currentPlace"] = "中心广场"
 		listener["spaceId"] = "town_outdoor"
@@ -1830,9 +1835,9 @@ func _activate_one_performance_listener(
 		listener["position"] = Vector2(3260, 2020)
 		listener["currentAction"] = {}
 		residents[recipient_id] = listener
-		world.set("_residents", residents)
-		world.call(
-			"_begin_performance_listener_wait",
+		(world.get("resident_registry") as TownResidentRegistry).records = residents
+		PERFORMANCE_SERVICE_RUNTIME.begin_listener_wait(
+			world,
 			recipient_id,
 			day_index,
 		)

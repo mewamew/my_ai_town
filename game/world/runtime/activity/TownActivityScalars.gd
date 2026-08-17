@@ -1,6 +1,37 @@
 extends RefCounted
 
 
+static func apply_body_effects(
+	resident: Dictionary,
+	effects: Dictionary,
+	body_levels: Dictionary,
+) -> void:
+	var body := resident.get("body", {}) as Dictionary
+	for state_name_value: Variant in effects:
+		var state_name := String(state_name_value)
+		if not body_levels.has(state_name):
+			continue
+		var levels := body_levels[state_name] as Array
+		var current_index := levels.find(String(body.get(state_name, levels[0])))
+		body[state_name] = levels[clampi(
+			current_index + int(effects[state_name_value]),
+			0,
+			levels.size() - 1,
+		)]
+	var activity_state := (
+		resident.get("activityState", empty_activity_state()) as Dictionary
+	).duplicate(true)
+	if effects.has("饿"):
+		activity_state["satiety"] = need_value_for_body_level(
+			String(body.get("饿", "不饿")),
+		)
+	if effects.has("累"):
+		activity_state["energy"] = need_value_for_body_level(
+			String(body.get("累", "不累")),
+		)
+	resident["activityState"] = activity_state
+
+
 const SLEEP_ACTIVITY_ID := "activity_home_sleep"
 const SLEEP_ENERGY_THRESHOLD := 35
 

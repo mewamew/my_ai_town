@@ -113,7 +113,7 @@ def tracked_gdscript_paths() -> list[Path]:
     return [
         REPO_ROOT / line
         for line in result.stdout.splitlines()
-        if line.endswith(".gd")
+        if line.endswith(".gd") and (REPO_ROOT / line).is_file()
     ]
 
 

@@ -246,7 +246,7 @@ static func absolute_minute(time: Dictionary) -> int:
 	return (int(time.get("day", 1)) - 1) * 1440 + int(parts[0]) * 60 + int(parts[1])
 
 
-static func conversation_requested_place_ids(world, 
+static func conversation_requested_place_ids(world,
 	conversation: Dictionary,
 	responding_resident_id: String,
 ) -> Array[String]:
@@ -296,7 +296,7 @@ static func occupation_service_request_requires_presence(
 		OCCUPATION_SERVICE_PRESENCE_REQUIRED_KINDS
 	)
 
-static func direct_prop_action_available(world, 
+static func direct_prop_action_available(world,
 	resident_id: String,
 	resident: Dictionary,
 	action: Dictionary,
@@ -323,7 +323,7 @@ static func direct_prop_action_available(world,
 			return false
 	return true
 
-static func region_activity_position_occupied(world, 
+static func region_activity_position_occupied(world,
 	resident_id: String,
 	position_value: Array,
 ) -> bool:
@@ -357,7 +357,7 @@ static func region_activity_position_occupied(world,
 			return true
 	return false
 
-static func validate_layout_occupants(world, 
+static func validate_layout_occupants(world,
 	space_id: String,
 	projection: Dictionary,
 	errors: PackedStringArray,
@@ -453,7 +453,7 @@ static func public_work_task_targets(world, targets: Array) -> Array[Dictionary]
 		result.append(target)
 	return result
 
-static func resident_is_heading_to_service_request(world, 
+static func resident_is_heading_to_service_request(world,
 	resident_id: String,
 	request: Dictionary,
 ) -> bool:
@@ -466,7 +466,7 @@ static func resident_is_heading_to_service_request(world,
 		== String(request.get("placeId", ""))
 	)
 
-static func resident_is_on_leave(world, 
+static func resident_is_on_leave(world,
 	resident: Dictionary,
 	absolute_minute := -1,
 ) -> bool:
@@ -478,7 +478,7 @@ static func resident_is_on_leave(world,
 		resolved_minute = int(world.environment().get_absolute_minute())
 	return int(attendance.get("untilMinute", -1)) > resolved_minute
 
-static func world_data_has_activity_at_place(world, 
+static func world_data_has_activity_at_place(
 	world_data: Dictionary,
 	activity_id: String,
 	place_id: String,

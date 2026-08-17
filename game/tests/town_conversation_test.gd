@@ -1,4 +1,7 @@
 extends "res://tests/support/TownWorldTestCase.gd"
+const ANNOUNCEMENT_RESIDENT_RUNTIME := preload(
+	"res://world/runtime/social/TownAnnouncementResidentRuntime.gd"
+)
 ## 对话与公告 合并套件。
 ##
 ## 由以下测试合并而来，断言逐条保留：
@@ -1645,7 +1648,7 @@ func _test_accept_multi_turn_overhear_and_end() -> void:
 		"player announcement exposes the traveler publisher type",
 	)
 	var lin_during_conversation := (
-		world.get("_residents") as Dictionary
+		(world.get("resident_registry") as TownResidentRegistry).records as Dictionary
 	).get(POSTAL_ID, {}) as Dictionary
 	_expect_equal(
 		lin_during_conversation.get("decisionPending"),
@@ -1815,13 +1818,21 @@ func _test_resident_conversation_idle_timeout_releases_both_residents() -> void:
 		if not active.is_empty()
 		else ""
 	)
-	CONVERSATION_RUNTIME._advance_autonomous_conversation_timeouts(world, 40.0)
+	CONVERSATION_RUNTIME._advance_autonomous_conversation_timeouts(
+		world,
+		world.get("_traveler_relationship_state") as TownTravelerRelationshipState,
+		40.0,
+	)
 	_expect_equal(
 		(world.call("get_active_conversations") as Array).size(),
 		1,
 		"resident conversation remains active before its idle deadline",
 	)
-	CONVERSATION_RUNTIME._advance_autonomous_conversation_timeouts(world, 5.0)
+	CONVERSATION_RUNTIME._advance_autonomous_conversation_timeouts(
+		world,
+		world.get("_traveler_relationship_state") as TownTravelerRelationshipState,
+		5.0,
+	)
 	_expect_equal(
 		(world.call("get_active_conversations") as Array).size(),
 		0,
@@ -1979,7 +1990,7 @@ func _test_leaving_range_ends_conversation() -> void:
 		"moving nearby target can receive a talk invitation (%s)" % moving_talk_result,
 	)
 	_expire_confirmed_preview(world)
-	var held_target := (world.get("_residents") as Dictionary).get("resident_tang_xiaoman_01", {}) as Dictionary
+	var held_target := ((world.get("resident_registry") as TownResidentRegistry).records as Dictionary).get("resident_tang_xiaoman_01", {}) as Dictionary
 	_expect_equal((held_target.get("currentAction", {}) as Dictionary).get("type"), "去", "target keeps the original movement internally while answering is pending")
 	_expect(int(held_target.get("actionSuspendedAbsoluteMinute", -1)) >= 0, "target movement is paused while the invitation is pending")
 	for _minute in 120:
@@ -2625,7 +2636,7 @@ func _scenario_player_announcement_priority() -> void:
 			String(request.get("residentName", "")),
 			_wait_announcement_long_history(wake),
 		)
-	var residents := world.get("_residents") as Dictionary
+	var residents := (world.get("resident_registry") as TownResidentRegistry).records as Dictionary
 	var target := residents.get(SPEAKER_ID, {}) as Dictionary
 	_expect(
 		not (target.get("currentAction", {}) as Dictionary).is_empty(),
@@ -2734,7 +2745,9 @@ func _scenario_player_announcement_priority() -> void:
 		),
 	)
 	_expect(due_minute >= 0, "玩家时间公告识别出到点时刻")
-	world.call("_advance_announcement_schedules", due_minute)
+	ANNOUNCEMENT_RESIDENT_RUNTIME.advance_schedules(
+		world, world.get("_community_bulletin"), due_minute,
+	)
 	_expect_equal(
 		target.get("decisionPending"),
 		true,
@@ -2931,7 +2944,7 @@ func _test_resident_notice_is_global(world: RefCounted) -> void:
 			"关联事项立即进入 %s 的已知事项" % resident_id,
 		)
 	var manager_state := (
-		(world.get("_residents") as Dictionary).get(MANAGER_ID, {}) as Dictionary
+		((world.get("resident_registry") as TownResidentRegistry).records as Dictionary).get(MANAGER_ID, {}) as Dictionary
 	)
 	var manager_announcement_events: Array = []
 	manager_announcement_events.append_array(
@@ -3067,8 +3080,8 @@ func _test_timed_announcement_due(world: RefCounted) -> void:
 			due_event_id = String(record.get("eventId", ""))
 			break
 	_expect(not due_event_id.is_empty(), "约定时间到达后形成一次公告到点事件")
-	world.call(
-		"_emit_resident_reaction",
+	ANNOUNCEMENT_RESIDENT_RUNTIME.emit_reactions(
+		world,
 		BYSTANDER_ID,
 		"timed-announcement-response",
 		{},
@@ -3082,6 +3095,7 @@ func _test_timed_announcement_due(world: RefCounted) -> void:
 			"announcement_id": "announcement-1",
 			"text": "今晚广场有露天电影。",
 		}],
+		[],
 	)
 	var detail := world.call(
 		"get_world_log_thread_detail",

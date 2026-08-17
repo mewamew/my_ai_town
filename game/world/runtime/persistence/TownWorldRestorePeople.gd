@@ -22,6 +22,9 @@ const RESIDENT_SLEEP_RUNTIME := preload(
 const RESIDENT_LIFECYCLE_RUNTIME := preload(
 	"res://world/runtime/lifecycle/TownResidentLifecycleRuntime.gd"
 )
+const RESIDENT_RUNTIME_FACTORY := preload(
+	"res://world/runtime/lifecycle/TownResidentRuntimeFactory.gd"
+)
 const BODY_LEVELS := {
 	"困": ["不困", "有点困", "很困"],
 	"饿": ["不饿", "有点饿", "很饿"],
@@ -2011,10 +2014,8 @@ static func prepare_resident_conditions(
 	}
 
 
-# world 只用于取居民家宅锚点（TownWorldRuntime._resident_home_anchor），
-# 该逻辑同时服务开局初始化与恢复应用，保留在世界运行时里。
 static func prepare_resident_lifecycle(
-	world: RefCounted,
+	_world: RefCounted,
 	world_data: Dictionary,
 	residents: Dictionary,
 	snapshot_value: Variant,
@@ -2033,7 +2034,7 @@ static func prepare_resident_lifecycle(
 		).strip_edges()
 		var initialized := lifecycle.initialize_resident(resident_id,
 			resident_name,
-			world.call("_resident_home_anchor", world_data, resident),) as Dictionary
+			RESIDENT_RUNTIME_FACTORY.home_anchor(world_data, resident),) as Dictionary
 		if initialized.get("ok") != true:
 			return {"ok": false, "errors": initialized.get("errors", ["居民生命状态初始化失败"])}
 	if snapshot_value is Dictionary:

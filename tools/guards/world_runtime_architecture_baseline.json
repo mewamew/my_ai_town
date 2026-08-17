@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "world_runtime": {
+    "line_count": 2412,
+    "function_count": 211,
+    "public_function_count": 170,
+    "top_level_state_count": 44,
+    "signal_count": 29,
+    "long_function_count": 0
+  },
+  "private_world_access": {
+    "total": 130,
+    "unique_members": 26,
+    "members": {
+      "_action_option_sources": 1,
+      "_action_options": 1,
+      "_activity_runtime": 9,
+      "_authoritative_absolute_minute": 2,
+      "_bump_world_revision": 13,
+      "_clinic_interviews": 3,
+      "_command_failure": 5,
+      "_complete_private_message_delivery": 1,
+      "_decorate_command_result": 6,
+      "_emit_resident_state_changed": 9,
+      "_environment": 37,
+      "_notify_world_revision": 4,
+      "_person_state": 6,
+      "_resident_can_accept_work_task": 1,
+      "_resident_can_work_occupation": 1,
+      "_resident_conditions": 5,
+      "_resident_is_alive": 1,
+      "_resident_key": 2,
+      "_resident_lifecycle": 4,
+      "_resident_sleep": 1,
+      "_running": 3,
+      "_schedule_decision": 6,
+      "_social_agent_adapter": 2,
+      "_social_matters": 1,
+      "_task_acceptance_occupation_id": 1,
+      "_world_revision": 5
+    }
+  }
+}

@@ -54,10 +54,6 @@
    "file": "game/agent/avatar_memory/ResidentAvatarMemoryStore.gd"
   },
   {
-   "id": "class:AgentResidentEvidenceQueue",
-   "file": "game/agent/memory/ResidentEvidenceQueue.gd"
-  },
-  {
    "id": "class:AgentResidentFormalMemoryBuilder",
    "file": "game/agent/memory/ResidentFormalMemoryBuilder.gd"
   },
@@ -84,10 +80,6 @@
   {
    "id": "class:AgentResidentMemoryReappraiser",
    "file": "game/agent/memory/ResidentMemoryReappraiser.gd"
-  },
-  {
-   "id": "class:AgentResidentMemoryStore",
-   "file": "game/agent/memory/ResidentMemoryStore.gd"
   },
   {
    "id": "class:AgentResidentMemorySummaryProjector",

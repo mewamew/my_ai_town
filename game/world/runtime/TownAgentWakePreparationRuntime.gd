@@ -15,6 +15,18 @@ const DINING_SERVICE := preload(
 const ACTION_PRESENTATION := preload(
 	"res://world/runtime/presentation/TownActionPresentationSemantics.gd"
 )
+const ACTION_VALIDATION := preload(
+	"res://world/runtime/action/TownActionValidation.gd"
+)
+const AGENT_WORLD_QUERY_RUNTIME := preload(
+	"res://world/runtime/agent/TownAgentWorldQueryRuntime.gd"
+)
+const GO_ACTION_PREFETCH_RUNTIME := preload(
+	"res://world/runtime/movement/TownGoActionPrefetchRuntime.gd"
+)
+const AGENT_WAKE_CONTEXT_RUNTIME := preload(
+	"res://world/runtime/agent/TownAgentWakeContextRuntime.gd"
+)
 
 var _preparations: Dictionary = {}
 var _visible_props_cache: Dictionary = {}
@@ -39,18 +51,23 @@ func clear_resident(resident_id: String, decision_id: String = "") -> void:
 			_preparations.erase(key)
 
 
-func advance(world, resident_ref: String, decision_id: String) -> Dictionary:
+func advance(
+	world,
+	dynamic_prop_runtime: TownDynamicPropRuntime,
+	resident_ref: String,
+	decision_id: String,
+) -> Dictionary:
 	var resident_id: String = world._resident_key(resident_ref)
 	if (
 		resident_id.is_empty()
 		or not world._running
-		or not world._residents.has(resident_id)
+		or not world.resident_registry.records.has(resident_id)
 	):
 		clear_resident(resident_id, decision_id)
 		return {"ok": false, "stale": true}
-	var resident := world._residents[resident_id] as Dictionary
+	var resident := world.resident_registry.records[resident_id] as Dictionary
 	if (
-		not world._resident_is_present(resident)
+		not world.resident_is_present(resident)
 		or not bool(resident.get("decisionPending", false))
 		or String(resident.get("validDecisionId", "")) != decision_id
 	):
@@ -68,7 +85,11 @@ func advance(world, resident_ref: String, decision_id: String) -> Dictionary:
 	):
 		preparation = _new_preparation(world, resident_id, resident, decision_id)
 		_preparations[preparation_key] = preparation
-	var step_result := _advance_preparation(world, preparation)
+	var step_result := _advance_preparation(
+		world,
+		dynamic_prop_runtime,
+		preparation,
+	)
 	if not bool(step_result.get("ready", false)):
 		_preparations[preparation_key] = preparation
 		return {
@@ -106,11 +127,11 @@ func _new_preparation(
 	var perception_resident := resident_snapshot
 	var prefetch_arrival_context: bool = bool(
 		resident_snapshot.get("decisionPrefetch", false)
-	) and bool(world._go_action_can_prefetch_decision(
+	) and bool(GO_ACTION_PREFETCH_RUNTIME.can_prefetch(
 		resident_snapshot.get("currentAction", {}) as Dictionary,
 	))
 	if prefetch_arrival_context:
-		var arrival_projection: Dictionary = world._go_action_arrival_projection(resident_snapshot) as Dictionary
+		var arrival_projection: Dictionary = GO_ACTION_PREFETCH_RUNTIME.arrival_projection(world, resident_snapshot) as Dictionary
 		if not arrival_projection.is_empty():
 			perception_resident = resident_snapshot.duplicate(true)
 			perception_resident["spaceId"] = arrival_projection.get("spaceId", "")
@@ -167,7 +188,11 @@ func _new_preparation(
 	}
 
 
-func _advance_preparation(world, preparation: Dictionary) -> Dictionary:
+func _advance_preparation(
+	world,
+	dynamic_prop_runtime: TownDynamicPropRuntime,
+	preparation: Dictionary,
+) -> Dictionary:
 	var resident_id := String(preparation.get("residentId", ""))
 	var resident := preparation.get("resident", {}) as Dictionary
 	var perception_resident := preparation.get("perceptionResident", {}) as Dictionary
@@ -181,14 +206,14 @@ func _advance_preparation(world, preparation: Dictionary) -> Dictionary:
 				var other_name := String(other_name_value)
 				var other: Dictionary = world._person_state(other_name) as Dictionary
 				nearby.append({
-					"resident_id": world._person_id_for_name(other_name),
-					"name": world._person_name_for_id(world._person_id_for_name(other_name)),
+					"resident_id": world.person_id_for_name(other_name),
+					"name": world.person_name_for_id(world.person_id_for_name(other_name)),
 					"doing": String(other.get("doing", "")),
 					"available_for_conversation": CONVERSATION_RUNTIME._active_conversation_for_person(world, other_name).is_empty(),
 				})
 			preparation["nearby"] = nearby
-			preparation["publicEvents"] = world._agent_fact_payloads(events)
-			preparation["publicResults"] = world._agent_fact_payloads(
+			preparation["publicEvents"] = AGENT_WORLD_QUERY_RUNTIME.fact_payloads(events)
+			preparation["publicResults"] = AGENT_WORLD_QUERY_RUNTIME.fact_payloads(
 				preparation.get("results", []) as Array,
 			)
 			var social_results_value: Variant = preparation.get("socialResults")
@@ -200,22 +225,31 @@ func _advance_preparation(world, preparation: Dictionary) -> Dictionary:
 				) as Array[Dictionary]
 			preparation["stage"] = "travel"
 		"travel":
-			preparation["travelDestinations"] = world._agent_travel_destinations(perception_resident)
+			preparation["travelDestinations"] = AGENT_WORLD_QUERY_RUNTIME.travel_destinations(
+				world, perception_resident,
+			)
 			preparation["stage"] = "life"
 		"life":
-			preparation["lifeDestinationOptions"] = world._agent_life_destination_options(
+			preparation["lifeDestinationOptions"] = AGENT_WORLD_QUERY_RUNTIME.life_destination_options(
+				world,
 				perception_resident,
 				preparation.get("travelDestinations", []) as Array[String],
 			)
 			preparation["stage"] = "visible_props"
 		"visible_props":
-			preparation["visibleProps"] = visible_props(world, perception_resident)
+			preparation["visibleProps"] = visible_props(
+				world.world_data(),
+				dynamic_prop_runtime,
+				perception_resident,
+			)
 			preparation["stage"] = "available_props"
 		"available_props":
-			preparation["availableProps"] = world._agent_available_props(perception_resident)
+			preparation["availableProps"] = AGENT_WAKE_CONTEXT_RUNTIME.available_props(
+				world, perception_resident,
+			)
 			preparation["stage"] = "activities"
 		"activities":
-			preparation["activities"] = world._agent_available_activities(
+			preparation["activities"] = world.AGENT_WAKE_CONTEXT_RUNTIME.available_activities(world,
 				perception_resident,
 				true,
 			)
@@ -227,8 +261,8 @@ func _advance_preparation(world, preparation: Dictionary) -> Dictionary:
 				"visible_props": preparation.get("visibleProps", []) as Array,
 				"props": preparation.get("availableProps", []) as Array,
 				"activities": preparation.get("activities", []) as Array,
-				"service_control": world._service_control_for_resident(perception_resident),
-				"message_recipients": world._ordinary_private_message_recipients(resident_id),
+				"service_control": world.PLACE_SERVICE_COMMAND_RUNTIME.service_control(world, perception_resident),
+				"message_recipients": world.PRIVATE_MESSAGE_DELIVERY_RUNTIME.ordinary_recipients(world, resident_id),
 			}
 			DINING_SERVICE.attach_capacity_status(
 				world,
@@ -237,11 +271,15 @@ func _advance_preparation(world, preparation: Dictionary) -> Dictionary:
 				String(perception_resident.get("currentPlace", "")),
 				int(preparation.get("absoluteMinute", 0)),
 			)
-			var priority_service_task: Dictionary = world._priority_onsite_service_task_for_resident(
-				String(resident.get("residentId", "")),
+			var priority_resident_id := String(resident.get("residentId", ""))
+			var priority_service_task: Dictionary = (
+				world.work_domain.priority_onsite_service_task(
+					priority_resident_id,
+					world.get_work_tasks_for_resident(priority_resident_id),
+				)
 			)
 			if not priority_service_task.is_empty():
-				world._focus_agent_place_snapshot_on_service_task(
+				world.ACTION_SUPPORT.focus_agent_place_snapshot_on_service_task(
 					perception_resident,
 					place_snapshot,
 					priority_service_task,
@@ -250,8 +288,10 @@ func _advance_preparation(world, preparation: Dictionary) -> Dictionary:
 			preparation["stage"] = "conversation_context"
 		"conversation_context":
 			if bool(preparation.get("prefetchArrivalContext", false)):
-				preparation["conversationTravelDestinations"] = world._agent_travel_destinations(resident)
-				preparation["conversationActivities"] = world._agent_available_activities(
+				preparation["conversationTravelDestinations"] = AGENT_WORLD_QUERY_RUNTIME.travel_destinations(
+					world, resident,
+				)
+				preparation["conversationActivities"] = world.AGENT_WAKE_CONTEXT_RUNTIME.available_activities(world,
 					resident,
 					true,
 				)
@@ -270,7 +310,7 @@ func _advance_preparation(world, preparation: Dictionary) -> Dictionary:
 				world,
 				resident_id,
 			)
-			preparation["conversationFollowUpOptions"] = world._conversation_follow_up_options(
+			preparation["conversationFollowUpOptions"] = world.CONVERSATION_FOLLOW_UP_OPTION_RUNTIME.options(world,
 				resident_id,
 				resident,
 				preparation.get("publicEvents", []) as Array,
@@ -289,7 +329,7 @@ func _advance_preparation(world, preparation: Dictionary) -> Dictionary:
 				preparation.get("conversationSnapshot", {}) as Dictionary,
 				resident_id,
 			)
-			if world._person_id_for_name(partner_ref).is_empty():
+			if world.person_id_for_name(partner_ref).is_empty():
 				preparation["stage"] = (
 					"social"
 					if (preparation.get("conversationFollowUpOptions", []) as Array).is_empty()
@@ -297,7 +337,9 @@ func _advance_preparation(world, preparation: Dictionary) -> Dictionary:
 				)
 				return {"ready": false, "stage": String(preparation.get("stage", "social"))}
 			if not bool(preparation.get("conversationServiceStatesInitialized", false)):
-				preparation["conversationServiceStates"] = world._place_service_states.values()
+				preparation["conversationServiceStates"] = (
+					world.work_domain.place_services.values_snapshot()
+				)
 				preparation["conversationServiceStatesInitialized"] = true
 			var service_states := preparation.get("conversationServiceStates", []) as Array
 			var service_index := int(preparation.get("conversationServiceIndex", 0))
@@ -371,7 +413,8 @@ func _advance_preparation(world, preparation: Dictionary) -> Dictionary:
 				if not nearby_id.is_empty():
 					nearby_ids.append(nearby_id)
 			preparation["nearbyIds"] = nearby_ids
-			preparation["conflictSnapshot"] = world._agent_conflict_snapshot(
+			preparation["conflictSnapshot"] = AGENT_WORLD_QUERY_RUNTIME.conflict_snapshot(
+				world,
 				resident_id,
 				resident,
 				nearby_ids,
@@ -381,10 +424,10 @@ func _advance_preparation(world, preparation: Dictionary) -> Dictionary:
 				int(preparation.get("absoluteMinute", 0)),
 			) as Array[Dictionary]
 			preparation["socialExposures"] = (
-				[] if world._inflight_requires_reply(events)
+				[] if ACTION_VALIDATION.inflight_requires_reply(events)
 				else world.get_agent_social_exposures(resident_id)
 			)
-			preparation["postInjuryReaction"] = world._post_injury_reaction_for_events(
+			preparation["postInjuryReaction"] = world.WORLD_EVENT_DELIVERY_PROJECTION.post_injury_reaction_for_host(world,
 				resident_id,
 				events,
 			)
@@ -407,17 +450,19 @@ func _advance_preparation(world, preparation: Dictionary) -> Dictionary:
 							perception_resident.get("currentAction", {}) as Dictionary,
 						),
 						"body": (perception_resident.get("body", {}) as Dictionary).duplicate(true),
-						"activityNeeds": (perception_resident.get("activityState", world._empty_activity_state()) as Dictionary).duplicate(true),
+						"activityNeeds": (perception_resident.get("activityState", world.ACTIVITY_SCALARS.empty_activity_state()) as Dictionary).duplicate(true),
 						"conditions": world._resident_conditions.get_conditions(resident_id,) as Array,
 						"activeNeeds": world._resident_conditions.get_active_needs(resident_id,) as Array,
 					},
 					"nearby": preparation.get("nearby", []) as Array,
 					"place": preparation.get("placeSnapshot", {}) as Dictionary,
-					"rhythm": world._life_rhythm_snapshot(resident),
+					"rhythm": AGENT_WORLD_QUERY_RUNTIME.life_rhythm(world, resident),
 					"work_tasks": world.get_work_tasks_for_resident(resident_id),
 					"life_destination_options": preparation.get("lifeDestinationOptions", []) as Array,
-					"known_announcements": world._agent_known_announcements(resident_id),
-					"conversation": world._duplicate_optional_dictionary(resident.get("conversation")),
+					"known_announcements": AGENT_WORLD_QUERY_RUNTIME.known_announcements(
+						world, resident_id,
+					),
+					"conversation": world.ACTIVITY_SCALARS.duplicate_optional_dictionary(resident.get("conversation")),
 					"conversation_follow_up_options": preparation.get("conversationFollowUpOptions", []) as Array,
 					"social_matters": preparation.get("socialMatters", []) as Array,
 					"social_exposures": preparation.get("socialExposures", []) as Array,
@@ -437,14 +482,18 @@ func _advance_preparation(world, preparation: Dictionary) -> Dictionary:
 	return {"ready": false, "stage": stage}
 
 
-func visible_props(world, resident: Dictionary) -> Array[String]:
+func visible_props(
+	world_data: Dictionary,
+	dynamic_prop_runtime: TownDynamicPropRuntime,
+	resident: Dictionary,
+) -> Array[String]:
 	var place := String(resident.get("currentPlace", ""))
-	var cache_key := "%s|%s" % [place, str(world._dynamic_props)]
+	var cache_key := "%s|%s" % [place, dynamic_prop_runtime.cache_signature()]
 	if _visible_props_cache.has(cache_key):
 		return (_visible_props_cache[cache_key] as Array[String]).duplicate()
 	var result: Array[String] = []
 	for prop_value: Variant in PROP_QUERY.agent_props_at_place(
-		world._prop_query_data(),
+		dynamic_prop_runtime.query_data(world_data),
 		place,
 	):
 		var prop_name := String((prop_value as Dictionary).get("name", "")).strip_edges()
@@ -496,10 +545,10 @@ func conversation_service_options_from_offerings(
 		conversation,
 		resident_id,
 	)
-	var partner_id: String = world._person_id_for_name(partner_ref)
+	var partner_id: String = world.person_id_for_name(partner_ref)
 	if partner_id.is_empty():
 		return []
-	var requested_place_ids: Array[String] = world._conversation_requested_place_ids(
+	var requested_place_ids: Array[String] = world.ACTION_SUPPORT.conversation_requested_place_ids(world,
 		conversation,
 		resident_id,
 	)
@@ -515,7 +564,7 @@ func conversation_service_options_from_offerings(
 		var service_label := String(offering.get("service_label", ""))
 		result.append({
 			"option_id": "fetch-service:%s:%s:%s" % [partner_id, service_place, service_activity],
-			"meaning": "请%s等候，前往%s取得%s后返回对方身边" % [world._person_name_for_id(partner_id), service_place, service_label],
+			"meaning": "请%s等候，前往%s取得%s后返回对方身边" % [world.person_name_for_id(partner_id), service_place, service_label],
 			"capability_id": "world.fetch_service_for_person",
 			"target_refs": {
 				"person_id": partner_id,
@@ -537,7 +586,7 @@ func conversation_service_candidate(
 	if not bool(state.get("open", false)):
 		return {}
 	var place_id := String(state.get("place_id", ""))
-	if place_id.is_empty() or world._closed_service_place_for_visitor(
+	if place_id.is_empty() or world.PLACE_SERVICE_COMMAND_RUNTIME.closed_for_visitor(world,
 		resident,
 		place_id,
 	):
@@ -552,8 +601,8 @@ func conversation_service_candidate(
 			[],
 		) as Array:
 			var request_id := String(request_value)
-			if world._world_data_has_activity_at_place(
-				world._world_data,
+			if world.ACTION_SUPPORT.world_data_has_activity_at_place(
+				world.world_definition.world_data,
 				request_id,
 				place_id,
 			):
@@ -562,8 +611,8 @@ func conversation_service_candidate(
 		service_label = "一份饭菜"
 	elif (
 		bool(capabilities.get("drink.prepare", false))
-		and world._world_data_has_activity_at_place(
-			world._world_data,
+		and world.ACTION_SUPPORT.world_data_has_activity_at_place(
+			world.world_definition.world_data,
 			"activity_cafe_eat_pastry",
 			place_id,
 		)
@@ -600,7 +649,7 @@ func conversation_service_route_available(
 	if not dining_failure.is_empty():
 		return {"ok": false, "action": {}, "errors": dining_failure.get("errors", [])}
 	var connector := resident.get("routeConnector", []) as Array
-	var data := world._world_data as Dictionary
+	var data := world.world_definition.world_data as Dictionary
 	# 唤醒阶段只需要决定服务选项是否值得提供。无运行时连接器时，使用
 	# 已建好的地点级路网判断，避免在 Agent 准备阶段冷启动室外落点寻路。
 	# 真正执行“去”动作时仍由 World._prepare_go_action 使用居民当前位置
@@ -684,7 +733,7 @@ func travel_destinations(world, resident: Dictionary) -> Array[String]:
 		if (
 			place_name.is_empty()
 			or place_name == current_place
-			or world._closed_service_place_for_visitor(resident, place_name)
+			or world.PLACE_SERVICE_COMMAND_RUNTIME.closed_for_visitor(world, resident, place_name)
 			or not DINING_SERVICE.travel_destination_available(
 				world,
 				resident,

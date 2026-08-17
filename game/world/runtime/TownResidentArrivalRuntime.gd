@@ -2,10 +2,18 @@ class_name TownResidentArrivalRuntime
 extends RefCounted
 
 
+const PRODUCTION_TASK_COORDINATION_RUNTIME := preload(
+	"res://world/runtime/work/TownProductionTaskCoordinationRuntime.gd"
+)
+
+
 const CHARACTER_MOVEMENT_QUERY := preload(
 	"res://world/data/town/TownWorldCharacterMovementQuery.gd"
 )
 const ROUTE_QUERY := preload("res://world/data/town/TownWorldRouteQuery.gd")
+const PLACE_SERVICE_COMMAND_RUNTIME := preload(
+	"res://world/runtime/work/TownPlaceServiceCommandRuntime.gd"
+)
 const SOUTH_ENTRY_PLACE := "南入口"
 const ENTRY_CONTINUITY_DURATION_MINUTES := 1
 const ENTRY_CONTINUITY_LINES: Array[String] = [
@@ -27,8 +35,8 @@ static func clear_cache() -> void:
 
 static func advance(world, absolute_minute: int, clearance_px: float) -> void:
 	var arrived_resident_ids: Array[String] = []
-	for resident_id: String in world._resident_order:
-		var resident := world._residents.get(resident_id, {}) as Dictionary
+	for resident_id: String in world.resident_registry.order:
+		var resident := world.resident_registry.records.get(resident_id, {}) as Dictionary
 		var arrival := resident.get("arrivalState", {}) as Dictionary
 		if (
 			String(arrival.get("status", "arrived")) != "pending"
@@ -62,11 +70,11 @@ static func advance(world, absolute_minute: int, clearance_px: float) -> void:
 			resident.get("movementRevision", 1),
 		) + 1
 		arrived_resident_ids.append(resident_id)
-		world._append_world_log_event(
-			world._next_world_event_id(),
+		world.WORLD_LOG_COMMIT_RUNTIME.append_event(world,
+			world.world_log_domain.journal.next_world_event_id(),
 			"resident_lifecycle",
 			resident_id,
-			world._resident_display_name(resident_id),
+			world.resident_display_name(resident_id),
 			String(resident.get("currentPlace", "")),
 			{
 				"type": "居民抵达",
@@ -80,8 +88,8 @@ static func advance(world, absolute_minute: int, clearance_px: float) -> void:
 		world._schedule_decision(resident_id, false, false, false, false, true)
 	if arrived_resident_ids.is_empty():
 		return
-	world._refresh_place_service_staffing()
-	world._sync_production_tasks(absolute_minute)
+	PLACE_SERVICE_COMMAND_RUNTIME.refresh_staffing(world)
+	PRODUCTION_TASK_COORDINATION_RUNTIME.sync(world, absolute_minute)
 
 
 static func activate_entry_continuity(
@@ -206,7 +214,9 @@ static func entry_state_for(
 		if (
 			not cached_entry.is_empty()
 			and cached_position.is_finite()
-			and not world._point_near_any(cached_position, occupied_cached, clearance_px)
+			and not world.ACTION_GEOMETRY.point_near_any(
+				cached_position, occupied_cached, clearance_px,
+			)
 		):
 			return cached_entry.duplicate(true)
 		_arrival_entry_state_cache.erase(entry_cache_key)
@@ -277,7 +287,7 @@ static func entry_state_for(
 			)
 		if (
 			bool(reach_cache[reach_key])
-			and not world._point_near_any(position, occupied, clearance_px)
+			and not world.ACTION_GEOMETRY.point_near_any(position, occupied, clearance_px)
 		):
 			_arrival_entry_state_cache[entry_cache_key] = resolved.duplicate(true)
 			return resolved

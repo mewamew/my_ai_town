@@ -2651,7 +2651,7 @@ func _assert_hud_projection_differential(world: RefCounted, label: String) -> vo
 		)
 	# C2 差分验收(docs/居民状态通知链减负方案.md):发射轻载荷必须恒等于
 	# 对完整投影输出做 EMIT_KEYS 键裁剪;对照用完整投影只在本测试路径生成。
-	var residents := world.get("_residents") as Dictionary
+	var residents := (world.get("resident_registry") as TownResidentRegistry).records as Dictionary
 	for index in range(full_states.size()):
 		var full := full_states[index] as Dictionary
 		var resident_id := String(full.get("residentId", ""))

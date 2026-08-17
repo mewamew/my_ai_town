@@ -1,6 +1,36 @@
 class_name TownActionPresentationSemantics
 extends RefCounted
 
+
+static func public_action(host, action: Dictionary) -> Dictionary:
+	var result := {
+		"action_id": String(action.get("action_id", "")),
+		"type": String(action.get("type", "")),
+		"line": String(action.get("line", host.ACTION_PROJECTION_MODULE.default_doing(host, action))),
+		"startedAt": host.get_time(),
+	}
+	for key in [
+		"target_resident_id",
+		"recipient_resident_id",
+		"content",
+		"conversation_id",
+		"say",
+		"narration",
+		"photos",
+		"end",
+		"prop",
+		"verb",
+		"dynamicPropId",
+	]:
+		if action.has(key):
+			var value: Variant = action[key]
+			result[key] = (
+				value.duplicate(true)
+				if value is Array or value is Dictionary
+				else value
+			)
+	return result
+
 # Stable World-owned semantic keys. UI assets are resolved separately by key.
 const ACTIVITY_ICON_KEYS := {
 	"activity_baker_bake_bread": "bake_bread",
@@ -190,12 +220,12 @@ static func system_label(action_type: String, action: Dictionary = {}) -> String
 
 
 # ---- 以下为居民动作/活动的表现投影(自 TownWorldRuntime 下沉) ----
-# UI 文案与提示计算属于表现层;world 为世界运行时实例,活动执行态、
-# 环境时间与提示缓存(world._presentation_cue_cache)经 world 访问。
+# UI 文案与提示计算属于表现层;world 为世界运行时实例,活动执行态与
+# 环境时间经 world 访问，提示缓存由地点表现查询组件持有。
 
 static func _resident_public_current_action(world, resident: Dictionary) -> Variant:
 	if world.CONVERSATION_RUNTIME._resident_has_suspended_conversation(world, resident):
-		var conversation : Variant = world.CONVERSATION_RUNTIME._active_conversation_for_person(world, 
+		var conversation : Variant = world.CONVERSATION_RUNTIME._active_conversation_for_person(world,
 			String(resident.get("residentId", "")),
 		)
 		var conversation_action_prefix := (
@@ -209,7 +239,7 @@ static func _resident_public_current_action(world, resident: Dictionary) -> Vari
 			)],
 			"type": "答话",
 		}
-	return world._public_current_action(
+	return world.ACTION_PROJECTION_MODULE.public_current_action(
 		resident.get("currentAction", {}) as Dictionary,
 	)
 
@@ -217,7 +247,7 @@ static func _resident_public_current_action(world, resident: Dictionary) -> Vari
 static func _agent_current_action(world, action: Dictionary) -> Variant:
 	if bool(action.get("decisionBridge", false)):
 		return null
-	var projected: Variant = world._public_current_action(action)
+	var projected: Variant = world.ACTION_PROJECTION_MODULE.public_current_action(action)
 	if (
 		projected is Dictionary
 		and String((projected as Dictionary).get("type", ""))
@@ -233,28 +263,24 @@ static func _cached_presentation_cue(
 	prop_name: String,
 	verb: String,
 ) -> Dictionary:
-	var key := "%s|%s|%s" % [place_name, prop_name, verb]
-	if not world._presentation_cue_cache.has(key):
-		world._presentation_cue_cache[key] = world.PROP_QUERY.presentation_cue(
-			world._prop_query_data(),
-			place_name,
-			prop_name,
-			verb,
-		) as Dictionary
-	# 调用方会往结果里补字段，返回浅拷贝避免污染缓存。
-	return (world._presentation_cue_cache[key] as Dictionary).duplicate()
+	return world.place_presentation_query.presentation_cue(
+		world.PROP_ACTION_PREPARER.query_data(world),
+		place_name,
+		prop_name,
+		verb,
+	)
 
 
 static func _resident_activity_cue(world, resident: Dictionary) -> Variant:
 	if world.CONVERSATION_RUNTIME._resident_has_suspended_conversation(world, resident):
-		return _resident_conversation_activity_cue(world, 
+		return _resident_conversation_activity_cue(world,
 			resident,
 			"答话",
 		)
 	var action := resident.get("currentAction", {}) as Dictionary
 	var action_type := String(action.get("type", ""))
 	if action_type in ["搭话", "答话"]:
-		return _resident_conversation_activity_cue(world, 
+		return _resident_conversation_activity_cue(world,
 			resident,
 			action_type,
 		)
@@ -277,7 +303,7 @@ static func _resident_activity_cue(world, resident: Dictionary) -> Variant:
 				)
 			),
 		)
-		var activity_cue := _cached_presentation_cue(world, 
+		var activity_cue := _cached_presentation_cue(world,
 			String(execution.get("placeId", "")),
 			String(execution.get("targetPropName", "")),
 			String(execution.get("targetActionVerb", "")),
@@ -303,11 +329,11 @@ static func _resident_activity_cue(world, resident: Dictionary) -> Variant:
 		activity_cue["phase"] = (
 			"performing"
 				if activity_elapsed
-				>= world._prop_approach_duration_minutes(action)
+				>= world.ACTION_SUPPORT.prop_approach_duration_minutes(world, action)
 				else "approaching"
 		)
 		return activity_cue
-	var cue := _cached_presentation_cue(world, 
+	var cue := _cached_presentation_cue(world,
 		String(action.get("sourcePlace", resident.get("currentPlace", ""))),
 		String(action.get("prop", "")),
 		String(action.get("verb", "")),
@@ -327,7 +353,7 @@ static func _resident_activity_cue(world, resident: Dictionary) -> Variant:
 	)
 	cue["phase"] = (
 		"performing"
-		if elapsed >= world._prop_approach_duration_minutes(action)
+		if elapsed >= world.ACTION_SUPPORT.prop_approach_duration_minutes(world, action)
 		else "approaching"
 	)
 	return cue
@@ -490,7 +516,7 @@ static func _resident_action_phase_projection(world, resident: Dictionary) -> Di
 		result["publicThought"] = String(
 			preview.get(
 				"publicThought",
-				_public_surface_thought(world, 
+				_public_surface_thought(world,
 					preview.get("action", {}) as Dictionary
 				),
 			)
@@ -515,7 +541,7 @@ static func _resident_action_phase_projection(world, resident: Dictionary) -> Di
 			0.0,
 			float(preview.get("remainingSeconds", 0.0)),
 		)
-		var preview_presentation := _preview_action_presentation(world, 
+		var preview_presentation := _preview_action_presentation(world,
 			resident,
 			preview,
 		)
@@ -598,7 +624,7 @@ static func _preview_action_presentation(
 
 
 static func _action_preview_summary(world, action: Dictionary, continuing: bool) -> String:
-	var summary : Variant = world._default_doing(action)
+	var summary : Variant = world.ACTION_PROJECTION_MODULE.default_doing(world, action)
 	if continuing:
 		summary = "继续%s" % summary
 	if summary.length() > 48:

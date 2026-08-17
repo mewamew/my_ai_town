@@ -9,6 +9,26 @@ const ACTION_TYPES := ["争执", "攻击", "回应冲突", "介入冲突", "离�
 
 var _controller: RefCounted
 var _name_for_id: Callable
+var _pending_knowledge_wakes: Dictionary = {}
+
+
+func reset_pending_knowledge_wakes() -> void:
+	_pending_knowledge_wakes.clear()
+
+
+func record_pending_knowledge_wake(
+	resident_id: String,
+	urgent: bool,
+) -> void:
+	_pending_knowledge_wakes[resident_id] = (
+		bool(_pending_knowledge_wakes.get(resident_id, false)) or urgent
+	)
+
+
+func take_pending_knowledge_wakes() -> Dictionary:
+	var result := _pending_knowledge_wakes.duplicate()
+	_pending_knowledge_wakes.clear()
+	return result
 
 
 func configure(controller: RefCounted, name_for_id: Callable) -> Dictionary:

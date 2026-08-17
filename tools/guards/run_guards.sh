@@ -5,6 +5,7 @@ set -eu
 guards_dir="$(cd "$(dirname "$0")" && pwd)"
 status=0
 python3 "$guards_dir/line_ratchet.py" --check || status=1
+python3 "$guards_dir/world_runtime_architecture_check.py" --check || status=1
 python3 "$guards_dir/dynamic_call_scan.py" --check || status=1
 python3 "$guards_dir/zero_reference_scan.py" --check || status=1
 python3 "$guards_dir/required_tests_check.py" || status=1

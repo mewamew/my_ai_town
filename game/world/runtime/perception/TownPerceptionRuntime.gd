@@ -19,7 +19,11 @@ class SpatialState:
 		full_scan_count = 0
 
 
-static func _refresh_perception(world, emit_events: bool) -> void:
+static func _refresh_perception(
+	world,
+	emit_events: bool,
+	traveler_relationship_state: TownTravelerRelationshipState = null,
+) -> void:
 	var spatial_state := _perception_spatial_state(world)
 	if (
 		emit_events
@@ -215,11 +219,16 @@ static func _refresh_perception(world, emit_events: bool) -> void:
 		})
 		world.player_avatar_state_changed.emit(world.get_player_avatar_state())
 	if emit_events:
-		world.CONVERSATION_RUNTIME._end_conversations_out_of_range(world)
+		assert(traveler_relationship_state != null)
+		world.CONVERSATION_RUNTIME._end_conversations_out_of_range(
+			world,
+			traveler_relationship_state,
+		)
 
 
 static func _refresh_player_avatar_perception(
 	world,
+	traveler_relationship_state: TownTravelerRelationshipState,
 	emit_events: bool,
 	bump_revision_on_change: bool,
 	semantic_state_changed := false,
@@ -241,7 +250,7 @@ static func _refresh_player_avatar_perception(
 				previous.has(player_id)
 				or previous_player.has(resident_name)
 			)
-			if _are_nearby_with_hysteresis(world, 
+			if _are_nearby_with_hysteresis(world,
 				resident,
 				world.player_avatar(),
 				was_nearby,
@@ -323,7 +332,10 @@ static func _refresh_player_avatar_perception(
 				"nearby": nearby_names,
 				"time": world.get_time(),
 			})
-		world.CONVERSATION_RUNTIME._end_conversations_out_of_range(world)
+		world.CONVERSATION_RUNTIME._end_conversations_out_of_range(
+			world,
+			traveler_relationship_state,
+		)
 	return perception_changed
 
 
@@ -370,7 +382,7 @@ static func _perception_spatial_state(world) -> Array:
 
 
 static func _are_nearby(world, left: Dictionary, right: Dictionary) -> bool:
-	return _are_nearby_with_limit(world, 
+	return _are_nearby_with_limit(world,
 		left,
 		right,
 		float(world.world_data().get("perceptionRange", 0.0)),
@@ -431,6 +443,23 @@ static func _are_currently_perceived(
 		(left.get("nearby", []) as Array).has(right_id)
 		and (right.get("nearby", []) as Array).has(left_id)
 	)
+
+
+static func dynamic_prop_placement(world, position: Vector2) -> Dictionary:
+	var membership := _membership(world, "town_outdoor", position)
+	if membership.is_empty():
+		membership = _nearest_outdoor_membership(world, position)
+		if membership.is_empty():
+			return {}
+	var approach_position := position + Vector2(0.0, 72.0)
+	if _membership(world, "town_outdoor", approach_position).is_empty():
+		approach_position = position + Vector2(72.0, 0.0)
+		if _membership(world, "town_outdoor", approach_position).is_empty():
+			approach_position = position
+	return {
+		"membership": membership,
+		"approachPosition": approach_position,
+	}
 
 
 static func _membership(world, space_id: String, position: Vector2) -> Dictionary:

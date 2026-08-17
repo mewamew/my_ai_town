@@ -1,4 +1,34 @@
 extends "res://tests/support/TownWorldTestCase.gd"
+const RESIDENT_RUNTIME_FACTORY := preload(
+	"res://world/runtime/lifecycle/TownResidentRuntimeFactory.gd"
+)
+const AGENT_WORLD_QUERY_RUNTIME := preload(
+	"res://world/runtime/agent/TownAgentWorldQueryRuntime.gd"
+)
+const AGENT_WAKE_CONTEXT_RUNTIME := preload(
+	"res://world/runtime/agent/TownAgentWakeContextRuntime.gd"
+)
+const ACTIVITY_STEP_EXECUTION_RUNTIME := preload(
+	"res://world/runtime/activity/TownActivityStepExecutionRuntime.gd"
+)
+const ACTION_SETTLEMENT_RUNTIME := preload(
+	"res://world/runtime/action/TownActionSettlementRuntime.gd"
+)
+const ACTIVITY_ACTION_SETTLEMENT_RUNTIME := preload(
+	"res://world/runtime/activity/TownActivityActionSettlementRuntime.gd"
+)
+const PASSIVE_NEED_ADVANCEMENT_RUNTIME := preload(
+	"res://world/runtime/activity/TownPassiveNeedAdvancementRuntime.gd"
+)
+const ACTIVITY_SCALARS := preload(
+	"res://world/runtime/activity/TownActivityScalars.gd"
+)
+const ACTION_SUPPORT := preload(
+	"res://world/runtime/action/TownActionSupport.gd"
+)
+const GO_ACTION_ADVANCEMENT_RUNTIME := preload(
+	"res://world/runtime/movement/TownGoActionAdvancementRuntime.gd"
+)
 ## 活动系统 合并套件。
 ##
 ## 由以下测试合并而来，断言逐条保留：
@@ -40,6 +70,9 @@ class AnchorProvider:
 
 const ACTIVITY_RUNTIME := preload(
 	"res://world/runtime/activity/TownWorldActivityRuntime.gd"
+)
+const ACTIVITY_REACHABILITY_CACHE := preload(
+	"res://world/runtime/activity/TownActivityReachabilityCache.gd"
 )
 const SAVE_SCHEMA_REGISTRY := preload(
 	"res://world/presentation/session/TownSaveSchemaRegistry.gd"
@@ -255,6 +288,7 @@ func _initialize() -> void:
 
 
 func _run_all() -> void:
+	_scenario_activity_reachability_cache()
 	_scenario_activity_runtime()
 	_scenario_activity_routine()
 	_scenario_activity_catalog_contract()
@@ -268,6 +302,67 @@ func _run_all() -> void:
 	_scenario_activity_physical_occupancy()
 	_scenario_weather_activity_policy()
 	_finish_suite("TOWN_ACTIVITY_PASS")
+
+
+func _scenario_activity_reachability_cache() -> void:
+	var cache: TownActivityReachabilityCache = ACTIVITY_REACHABILITY_CACHE.new()
+	var resident := {
+		"residentId": "resident-cache-test",
+		"spaceId": "town_outdoor",
+		"currentPlace": "测试地点",
+		"position": Vector2(10.0, 20.0),
+		"routeConnector": [],
+	}
+	var candidate := {
+		"targetType": "prop",
+		"targetRegionId": "",
+		"targetPropName": "测试道具",
+		"targetActionVerb": "测试动作",
+		"memberPosition": [30.0, 40.0],
+	}
+	_expect_equal(
+		cache.cached_reachability(100, resident, candidate, {}),
+		null,
+		"uncached activity candidate has no reachability result",
+	)
+	cache.remember_reachability(
+		resident,
+		candidate,
+		{},
+		true,
+		{
+			"targetPosition": Vector2(30.0, 40.0),
+			"path": [Vector2(10.0, 20.0), Vector2(30.0, 40.0)],
+		},
+	)
+	_expect_equal(cache.reachability_count(), 1, "reachability result is cached")
+	_expect_equal(cache.prepared_action_count(), 1, "prepared action is cached")
+	var first_copy := cache.cached_prepared_action(100, resident, candidate)
+	first_copy["targetPosition"] = Vector2.ZERO
+	_expect_equal(
+		cache.cached_prepared_action(100, resident, candidate).get("targetPosition"),
+		Vector2(30.0, 40.0),
+		"prepared action cache returns a deep copy",
+	)
+	_expect_equal(
+		cache.cached_reachability(100, resident, candidate, {}),
+		true,
+		"same-minute reachability query reuses the cached result",
+	)
+	cache.ensure_minute(101)
+	_expect(
+		cache.reachability_count() == 0
+			and cache.prepared_action_count() == 0
+			and cache.cached_minute() == 101,
+		"minute change invalidates both activity route caches",
+	)
+	_expect_equal(
+		cache.cached_prepared_action(100, resident, candidate),
+		{},
+		"stale-minute prepared action cannot be reused",
+	)
+	cache.clear()
+	_expect_equal(cache.cached_minute(), -1, "explicit cache clear resets the minute")
 
 
 func _scenario_activity_runtime() -> void:
@@ -380,7 +475,7 @@ func _verify_sleep_energy_and_leave_policy(
 		"sleep policy fixture gives the resident real work",
 	)
 	var resident := (
-		(world.get("_residents") as Dictionary).get(resident_id, {})
+		((world.get("resident_registry") as TownResidentRegistry).records as Dictionary).get(resident_id, {})
 		as Dictionary
 	)
 	var activity_state := (
@@ -388,14 +483,13 @@ func _verify_sleep_energy_and_leave_policy(
 	).duplicate(true)
 	activity_state["energy"] = 35
 	resident["activityState"] = activity_state
-	world.call("_sync_body_from_activity_needs", resident, activity_state)
+	ACTIVITY_SCALARS.sync_body_from_activity_needs(resident, activity_state)
 	_expect(
 		not (world.call("get_work_tasks_for_resident", resident_id) as Array).is_empty(),
 		"low-energy resident still has work before taking leave",
 	)
-	var life_options := world.call(
-		"_agent_life_destination_options",
-		resident,
+	var life_options := AGENT_WORLD_QUERY_RUNTIME.life_destination_options(
+		world, resident,
 	) as Array
 	var sleep_destination_found := false
 	for destination_value: Variant in life_options:
@@ -411,7 +505,7 @@ func _verify_sleep_energy_and_leave_policy(
 		sleep_destination_found,
 		"low energy exposes the resident's own bed even while work is waiting",
 	)
-	var rhythm := world.call("_life_rhythm_snapshot", resident) as Dictionary
+	var rhythm := AGENT_WORLD_QUERY_RUNTIME.life_rhythm(world, resident) as Dictionary
 	_expect_equal(
 		rhythm.get("sleep_needed"),
 		true,
@@ -422,8 +516,7 @@ func _verify_sleep_energy_and_leave_policy(
 		"work-period wake explains that sleep may require leave",
 	)
 
-	var home_anchor := world.call(
-		"_resident_home_anchor",
+	var home_anchor := RESIDENT_RUNTIME_FACTORY.home_anchor(
 		data,
 		resident,
 	) as Dictionary
@@ -434,7 +527,7 @@ func _verify_sleep_energy_and_leave_policy(
 	resident["routeConnector"] = []
 	activity_state["energy"] = 50
 	resident["activityState"] = activity_state
-	world.call("_sync_body_from_activity_needs", resident, activity_state)
+	ACTIVITY_SCALARS.sync_body_from_activity_needs(resident, activity_state)
 	var rested_query := world.call(
 		"query_activity_options",
 		resident_id,
@@ -455,7 +548,7 @@ func _verify_sleep_energy_and_leave_policy(
 	)
 	_expect(
 		not JSON.stringify(
-			world.call("_agent_available_props", resident),
+			AGENT_WAKE_CONTEXT_RUNTIME.available_props(world, resident),
 		).contains("睡觉"),
 		"the legacy bed verb is hidden while energy is high",
 	)
@@ -480,7 +573,7 @@ func _verify_sleep_energy_and_leave_policy(
 
 	activity_state["energy"] = 35
 	resident["activityState"] = activity_state
-	world.call("_sync_body_from_activity_needs", resident, activity_state)
+	ACTIVITY_SCALARS.sync_body_from_activity_needs(resident, activity_state)
 	_expect_equal(
 		_activity_option(
 			(
@@ -494,7 +587,7 @@ func _verify_sleep_energy_and_leave_policy(
 	)
 	_expect(
 		JSON.stringify(
-			world.call("_agent_available_props", resident),
+			AGENT_WAKE_CONTEXT_RUNTIME.available_props(world, resident),
 		).contains("睡觉"),
 		"the legacy bed verb remains available when sleep is needed",
 	)
@@ -512,7 +605,7 @@ func _verify_sleep_energy_and_leave_policy(
 		"low-energy resident can start sleeping during work hours",
 	)
 	resident = (
-		(world.get("_residents") as Dictionary).get(resident_id, {})
+		((world.get("resident_registry") as TownResidentRegistry).records as Dictionary).get(resident_id, {})
 		as Dictionary
 	)
 	_expect_equal(
@@ -547,7 +640,7 @@ func _verify_sleep_energy_and_leave_policy(
 		"active sleep leave survives save and restore",
 	)
 	var restored_resident := (
-		(restored.get("_residents") as Dictionary).get(resident_id, {})
+		((restored.get("resident_registry") as TownResidentRegistry).records as Dictionary).get(resident_id, {})
 		as Dictionary
 	)
 	_expect_equal(
@@ -562,12 +655,13 @@ func _verify_sleep_energy_and_leave_policy(
 	)
 	var restored_action := restored_resident.get("currentAction", {}) as Dictionary
 	var sleep_minutes := int(restored_action.get("durationMinutes", 0))
-	sleep_minutes += int(
-		restored.call("_prop_approach_duration_minutes", restored_action),
+	sleep_minutes += ACTION_SUPPORT.prop_approach_duration_minutes(
+		restored,
+		restored_action,
 	)
 	restored.call("advance", float(sleep_minutes + 1))
 	restored_resident = (
-		(restored.get("_residents") as Dictionary).get(resident_id, {})
+		((restored.get("resident_registry") as TownResidentRegistry).records as Dictionary).get(resident_id, {})
 		as Dictionary
 	)
 	_expect_equal(
@@ -1021,8 +1115,8 @@ func _verify_passive_needs_tick_is_presentation_silent(
 	var resident_id := "resident_su_he_01"
 	var before := world.call("get_resident_state", resident_id) as Dictionary
 	var before_needs := before.get("activityNeeds", {}) as Dictionary
-	world.call(
-		"_advance_passive_activity_needs",
+	PASSIVE_NEED_ADVANCEMENT_RUNTIME.advance(
+		world,
 		WORLD.PASSIVE_NEED_TICK_MINUTES,
 	)
 	_expect_equal(
@@ -1063,7 +1157,7 @@ func _verify_hunger_wakes_idle_agent(
 		true,
 		"饥饿唤醒用例能启动 World",
 	)
-	var resident := (world.get("_residents") as Dictionary).get(resident_id, {}) as Dictionary
+	var resident := ((world.get("resident_registry") as TownResidentRegistry).records as Dictionary).get(resident_id, {}) as Dictionary
 	resident["decisionPending"] = false
 	resident["pendingWake"] = {}
 	resident["wakeDispatchQueued"] = false
@@ -1072,9 +1166,11 @@ func _verify_hunger_wakes_idle_agent(
 	var activity_state := (resident.get("activityState", {}) as Dictionary).duplicate(true)
 	activity_state["satiety"] = 38
 	resident["activityState"] = activity_state
-	(world.get("_residents") as Dictionary)[resident_id] = resident
-	world.call("_advance_passive_activity_needs", WORLD.PASSIVE_NEED_TICK_MINUTES)
-	var after := (world.get("_residents") as Dictionary).get(resident_id, {}) as Dictionary
+	((world.get("resident_registry") as TownResidentRegistry).records as Dictionary)[resident_id] = resident
+	PASSIVE_NEED_ADVANCEMENT_RUNTIME.advance(
+		world, WORLD.PASSIVE_NEED_TICK_MINUTES,
+	)
+	var after := ((world.get("resident_registry") as TownResidentRegistry).records as Dictionary).get(resident_id, {}) as Dictionary
 	_expect_equal(
 		(after.get("activityState", {}) as Dictionary).get("satiety"),
 		35,
@@ -1146,10 +1242,11 @@ func _verify_stationary_activity_minutes_are_presentation_silent(
 		true,
 		"C1 silence case starts the stationary activity",
 	)
-	var resident := (world.get("_residents") as Dictionary)[resident_id] as Dictionary
+	var resident := ((world.get("resident_registry") as TownResidentRegistry).records as Dictionary)[resident_id] as Dictionary
 	var action := resident.get("currentAction", {}) as Dictionary
-	var approach_minutes := int(
-		world.call("_prop_approach_duration_minutes", action),
+	var approach_minutes := ACTION_SUPPORT.prop_approach_duration_minutes(
+		world,
+		action,
 	)
 	var duration_minutes := int(action.get("durationMinutes", 0))
 	# 静默窗口取 performing 第 2..(duration-1) 分钟:跨过 doing 的 5 分钟轮换点,
@@ -1367,8 +1464,8 @@ func _verify_world_query_and_execution(
 		step,
 	) as Dictionary
 	_expect_equal(perform.get("ok"), true, "same-place activity starts")
-	var source_collision := world.call(
-		"_perform_activity_step_internal",
+	var source_collision := ACTIVITY_STEP_EXECUTION_RUNTIME.perform(
+		world,
 		resident_id,
 		"plan_library_work",
 		1,
@@ -1504,8 +1601,7 @@ func _verify_world_query_and_execution(
 		45,
 		"public settled needs also remain exactly-once",
 	)
-	var clamped := world.call(
-		"_next_activity_state",
+	var clamped := ACTIVITY_SCALARS.next_activity_state(
 		{
 			"activityState": {
 				"energy": 99,
@@ -1522,6 +1618,7 @@ func _verify_world_query_and_execution(
 			"socialNeed": -1,
 			"solitudeNeed": 70,
 		},
+		WORLD.ACTIVITY_STATE_KEYS,
 	) as Dictionary
 	_expect_equal(
 		clamped,
@@ -1894,8 +1991,8 @@ func _verify_legacy_prop_activity_adapter(
 		"图书馆借还书柜台",
 		"借还书",
 	)
-	legacy_failure_world.call(
-		"_fail_activity_action",
+	ACTIVITY_ACTION_SETTLEMENT_RUNTIME.fail(
+		legacy_failure_world,
 		"resident_su_he_01",
 		"ACTIVITY_STATE_CHANGED",
 		"静态失败夹具",
@@ -3616,10 +3713,8 @@ func _verify_dining_departure_awareness(
 		true,
 		"食堂出发前状态检查 World 可启动",
 	)
-	var first_day_breakfast := world.call(
-		"_meal_period_for_minute",
-		570,
-	) as Dictionary
+	var work_domain := world.get("work_domain") as TownWorkDomainRuntime
+	var first_day_breakfast := work_domain.meal_period_for_minute(570)
 	_expect_equal(
 		first_day_breakfast.get("id"),
 		"breakfast",
@@ -3630,7 +3725,7 @@ func _verify_dining_departure_awareness(
 		"首日早餐不会在备好的一刻立即被午餐备餐覆盖",
 	)
 	_expect_equal(
-		(world.call("_meal_period_for_minute", 600) as Dictionary).get("id"),
+		work_domain.meal_period_for_minute(600).get("id"),
 		"lunch",
 		"早餐发放结束后会及时进入午餐备餐",
 	)
@@ -3681,16 +3776,18 @@ func _verify_dining_departure_awareness(
 		_prepare_meal_for_activity_test(world),
 		"出发前状态检查会完成当前餐次备餐",
 	)
-	var service_state := (
-		world.get("_place_service_states") as Dictionary
-	).get("公共食堂", {}) as Dictionary
+	var place_services := (
+		world.work_domain.place_services as TownPlaceServiceRuntime
+	)
+	var service_state := place_services.state("公共食堂")
 	service_state["open"] = false
 	service_state["owner_id"] = ""
+	place_services.set_state("公共食堂", service_state)
 	var resident := (
-		(world.get("_residents") as Dictionary).get(resident_id, {}) as Dictionary
+		((world.get("resident_registry") as TownResidentRegistry).records as Dictionary).get(resident_id, {}) as Dictionary
 	)
 	_expect(
-		(world.call("_agent_travel_destinations", resident) as Array).has(
+		(AGENT_WORLD_QUERY_RUNTIME.travel_destinations(world, resident) as Array).has(
 			"公共食堂",
 		),
 		"统一备餐完成后即使厨师离岗，食堂也会重新成为可前往地点",
@@ -3755,10 +3852,10 @@ func _verify_meal_sequence(data: Dictionary, opening: Dictionary) -> void:
 		):
 			menu_announced = true
 		break
-	var menu_period := world.call(
-		"_meal_period_for_minute",
+	var work_domain := world.get("work_domain") as TownWorkDomainRuntime
+	var menu_period := work_domain.meal_period_for_minute(
 		int((world.get("_environment") as RefCounted).call("get_absolute_minute")),
-	) as Dictionary
+	)
 	var menu_document := JSON.parse_string(FileAccess.get_file_as_string(
 		"res://world/data/town/source/meal_menus.json",
 	)) as Dictionary
@@ -3874,10 +3971,10 @@ func _verify_meal_sequence(data: Dictionary, opening: Dictionary) -> void:
 			"get_absolute_minute",
 		)
 	)
-	var meal_period_ref := String(
-		world.call("_meal_period_source_ref", meal_finished_at),
-	)
-	var occupation_services := world.get("_occupation_services") as RefCounted
+	var meal_period_ref := work_domain.meal_period_source_ref(meal_finished_at)
+	var occupation_services := (
+		world.get("work_domain") as TownWorkDomainRuntime
+	).services as RefCounted
 	_expect(
 		bool(occupation_services.call(
 			"has_dining_order_completed_for_resident_meal_period",
@@ -3913,7 +4010,7 @@ func _verify_meal_sequence(data: Dictionary, opening: Dictionary) -> void:
 		"吃完后居民能立刻离开食堂并恢复外部生活",
 	)
 	var leaving_action := (
-		(world.get("_residents") as Dictionary).get(resident_id, {})
+		((world.get("resident_registry") as TownResidentRegistry).records as Dictionary).get(resident_id, {})
 		as Dictionary
 	).get("currentAction", {}) as Dictionary
 	_expect_equal(leaving_action.get("type"), "去", "吃完后的外出行动已经接入")
@@ -3934,9 +4031,11 @@ func _verify_meal_period_boundary_consumption(
 		"跨餐次边界用餐检查 World 可启动",
 	)
 	var resident_id := "resident_tang_xiaoman_01"
-	var breakfast_ref := String(world.call("_meal_period_source_ref", 595))
-	var lunch_ref := String(world.call("_meal_period_source_ref", 600))
-	(world.get("_activity_routines") as Dictionary)[resident_id] = {
+	var work_domain := world.get("work_domain") as TownWorkDomainRuntime
+	var breakfast_ref := work_domain.meal_period_source_ref(595)
+	var lunch_ref := work_domain.meal_period_source_ref(600)
+	var activity_routine_state := world.get("activity_routine_state") as TownActivityRoutineState
+	activity_routine_state.records[resident_id] = {
 		"group": "meal",
 		"mealPeriodRef": breakfast_ref,
 	}
@@ -3948,7 +4047,9 @@ func _verify_meal_period_boundary_consumption(
 			"activityId": "activity_dining_eat_meal",
 		},
 	)
-	var occupation_services := world.get("_occupation_services") as RefCounted
+	var occupation_services := (
+		world.get("work_domain") as TownWorkDomainRuntime
+	).services as RefCounted
 	_expect(
 		bool(occupation_services.call(
 			"has_dining_order_completed_for_resident_meal_period",
@@ -4091,7 +4192,7 @@ func _verify_dining_capacity_agent_reaction(
 	) as Dictionary
 	_expect_accepted(reaction_result, "Agent 能回应食堂满员结果")
 	var wait_action := (
-		(world.get("_residents") as Dictionary).get(resident_id, {}) as Dictionary
+		((world.get("resident_registry") as TownResidentRegistry).records as Dictionary).get(resident_id, {}) as Dictionary
 	).get("currentAction", {}) as Dictionary
 	_expect(
 		int(wait_action.get("completeAbsoluteMinute", 0))
@@ -4102,12 +4203,12 @@ func _verify_dining_capacity_agent_reaction(
 	var first_name := String(first_visitor.get("name", ""))
 	var first_id := String(first_visitor.get("id", ""))
 	var first_resident := (
-		(world.get("_residents") as Dictionary).get(first_id, {})
+		((world.get("resident_registry") as TownResidentRegistry).records as Dictionary).get(first_id, {})
 		as Dictionary
 	)
 	var arrival_action := first_resident.get("currentAction", {}) as Dictionary
-	world.call(
-		"_advance_go_action",
+	GO_ACTION_ADVANCEMENT_RUNTIME.advance(
+		world,
 		first_id,
 		first_resident,
 		arrival_action,
@@ -4133,8 +4234,8 @@ func _verify_dining_capacity_agent_reaction(
 		"食堂中的居民可以离开并恢复外部生活",
 	)
 	var departure_action := first_resident.get("currentAction", {}) as Dictionary
-	world.call(
-		"_advance_go_action",
+	GO_ACTION_ADVANCEMENT_RUNTIME.advance(
+		world,
 		first_id,
 		first_resident,
 		departure_action,
@@ -4154,7 +4255,9 @@ func _verify_dining_capacity_agent_reaction(
 	var freed_capacity := DINING_SERVICE.capacity_status(world, resident_id, now)
 	_expect_equal(freed_capacity.get("occupied"), 3, "有人离开后名额会释放")
 	_expect_equal(freed_capacity.get("available"), 1, "有人离开后新居民可以进入")
-	world.call("_interrupt_action", resident_id, "看到有位置，结束短暂等待")
+	ACTION_SETTLEMENT_RUNTIME.interrupt(
+		world, resident_id, "看到有位置，结束短暂等待",
+	)
 	var retry_wake := _take_wake_activity_routine(world, resident_name)
 	_expect_accepted(
 		world.call(
@@ -4607,7 +4710,7 @@ func _service_wait_request_id(
 ) -> String:
 	var resident_id := String(world.call("_resident_key", resident_ref))
 	var resident := (
-		(world.get("_residents") as Dictionary).get(resident_id, {})
+		((world.get("resident_registry") as TownResidentRegistry).records as Dictionary).get(resident_id, {})
 		as Dictionary
 	)
 	var action := resident.get("currentAction", {}) as Dictionary
@@ -4648,17 +4751,18 @@ func _complete_pending_dining_service(
 
 
 func _prepare_meal_for_activity_test(world: RefCounted) -> bool:
+	var work_domain := world.get("work_domain") as TownWorkDomainRuntime
 	for _minute in 1440:
 		var now := int(
 			(world.get("_environment") as RefCounted).call(
 				"get_absolute_minute",
 			)
 		)
-		var period := world.call("_meal_period_for_minute", now) as Dictionary
+		var period := work_domain.meal_period_for_minute(now)
 		if (
 			not period.is_empty()
-			and bool(world.call("_meal_period_is_prepared", now))
-			and bool(world.call("_meal_service_is_open", now))
+			and work_domain.meal_period_is_prepared(now)
+			and work_domain.meal_service_is_open(now)
 			and posmod(now, 1440) + 30 <= int(period.get("end", 0))
 		):
 			return true

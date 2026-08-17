@@ -5,6 +5,10 @@ set -euo pipefail
 script_dir="${0:A:h}"
 runner="$script_dir/run_verified_godot_test.sh"
 export AI_TOWN_FORMAL_UI_FULL_CLOSURE=1
+# Formal stories use deterministic local providers. Keep a developer's saved
+# production provider configuration from starting an unrelated health probe in
+# the project autoload and being reported as a resource leak at process exit.
+export AI_TOWN_PROVIDER_TEST_NO_NETWORK=1
 start_at="${AI_TOWN_FORMAL_RELEASE_START_AT:-1}"
 end_at="${AI_TOWN_FORMAL_RELEASE_END_AT:-0}"
 skip_indices=",${AI_TOWN_FORMAL_RELEASE_SKIP_INDICES:-},"

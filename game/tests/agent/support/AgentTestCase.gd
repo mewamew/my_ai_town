@@ -106,16 +106,28 @@ func _finish_suite(pass_label: String, cleanup_paths: Array[String] = []) -> voi
 
 
 func _prepare_project_shutdown() -> void:
-	var scene_root := get_root()
+	shutdown_project_autoloads(self)
+
+
+static func shutdown_project_autoloads(tree: SceneTree) -> void:
+	var scene_root := tree.get_root()
 	if scene_root == null:
 		return
+	var game_flow_host := scene_root.get_node_or_null("GameFlowHost")
+	if game_flow_host != null:
+		if game_flow_host.has_method("prepare_shutdown"):
+			game_flow_host.call("prepare_shutdown")
+		game_flow_host.free()
 	var audio_controller := scene_root.get_node_or_null("TownAudioController")
 	if audio_controller != null and audio_controller.has_method("prepare_shutdown"):
 		audio_controller.call("prepare_shutdown")
+	if audio_controller != null and is_instance_valid(audio_controller):
+		audio_controller.free()
 
 
 func _quit_after_shutdown(exit_code: int) -> void:
 	await process_frame
 	_prepare_project_shutdown()
-	await create_timer(0.2).timeout
+	# 音频线程需要与正式退出流程相同的释放窗口，避免只剩播放对象的假通过。
+	await create_timer(0.6, true, false, true).timeout
 	quit(exit_code)

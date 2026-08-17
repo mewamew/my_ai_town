@@ -19,15 +19,15 @@ static func project(
 
 static func _publisher(world, publisher_id: String) -> Dictionary:
 	var normalized := publisher_id.strip_edges()
-	if normalized == world._player_avatar_id():
+	if normalized == world.player_avatar_id():
 		return {
-			"name": String(world._player_avatar.get("name", "旅行者")),
+			"name": String(world.actor_presentation_state.player_avatar.get("name", "旅行者")),
 			"role": "旅行者",
 			"type": "traveler",
 		}
-	if world._residents.has(normalized):
+	if world.resident_registry.records.has(normalized):
 		return {
-			"name": world._resident_display_name(normalized),
+			"name": world.resident_display_name(normalized),
 			"role": "居民",
 			"type": "resident",
 		}

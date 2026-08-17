@@ -13,7 +13,7 @@ static func priority_for_publisher(
 ) -> String:
 	return (
 		"player"
-		if publisher_id.strip_edges() == host._player_avatar_id()
+		if publisher_id.strip_edges() == host.player_avatar_id()
 		else "ordinary"
 	)
 
@@ -104,7 +104,7 @@ static func emit_reactions(
 		}
 		host.emit_signal(
 			"resident_reaction_created",
-			host._resident_display_name(resident_id),
+			host.resident_display_name(resident_id),
 			payload.duplicate(true),
 		)
 	_emit_announcement_reactions(
@@ -157,12 +157,12 @@ static func known_announcements(
 
 static func publisher_name(host: TownWorldRuntime, publisher_id: String) -> String:
 	var normalized := publisher_id.strip_edges()
-	if normalized == host._player_avatar_id():
+	if normalized == host.player_avatar_id():
 		return String(
-			host._player_avatar.get("name", "旅行者"),
+			host.actor_presentation_state.player_avatar.get("name", "旅行者"),
 		).strip_edges()
-	if host._residents.has(normalized):
-		return host._resident_display_name(normalized)
+	if host.resident_registry.records.has(normalized):
+		return host.resident_display_name(normalized)
 	return (
 		"小镇"
 		if normalized == SYSTEM_BULLETIN_PUBLISHER_ID
@@ -192,7 +192,7 @@ static func advance_schedules(
 		var publisher_id := String(
 			announcement.get("publisher_id", ""),
 		).strip_edges()
-		var due_event := host._materialize_world_event({
+		var due_event := host.WORLD_EVENT_DELIVERY_RUNTIME.materialize(host, {
 			"type": "公告到点",
 			"announcement_priority": priority_for_publisher(host, publisher_id),
 			"announcement_id": announcement_id,
@@ -208,15 +208,15 @@ static func advance_schedules(
 			),
 			"status": "due",
 		}) as Dictionary
-		for resident_value: Variant in host._resident_order:
+		for resident_value: Variant in host.resident_registry.order:
 			var resident_id := String(resident_value)
 			if (
 				resident_id == publisher_id
-				or not host._residents.has(resident_id)
+				or not host.resident_registry.records.has(resident_id)
 				or not host._resident_is_alive(resident_id)
 			):
 				continue
-			host._enqueue_world_event(resident_id, due_event)
+			host.WORLD_EVENT_DELIVERY_RUNTIME.enqueue(host, resident_id, due_event)
 
 
 static func _emit_announcement_reactions(
@@ -293,12 +293,12 @@ static func _emit_announcement_reaction(
 		"announcementPhase": phase,
 		"fallback": used_fallback,
 	}
-	var resident_name := host._resident_display_name(resident_id)
-	var resident := host._residents.get(
+	var resident_name := host.resident_display_name(resident_id)
+	var resident := host.resident_registry.records.get(
 		resident_id,
 		{},
 	) as Dictionary
-	host._append_world_log_event(
+	host.WORLD_LOG_COMMIT_RUNTIME.append_event(host,
 		reaction_id,
 		"world_event",
 		resident_id,

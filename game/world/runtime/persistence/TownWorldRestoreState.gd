@@ -17,6 +17,9 @@ const SAVE_SCHEMA_REGISTRY := preload(
 const ACTIVITY_RUNTIME := preload(
 	"res://world/runtime/activity/TownWorldActivityRuntime.gd"
 )
+const PLACE_SERVICE_COMMAND_RUNTIME := preload(
+	"res://world/runtime/work/TownPlaceServiceCommandRuntime.gd"
+)
 const PROP_QUERY := preload("res://world/data/town/TownWorldPropQuery.gd")
 const WORK_TASK_RUNTIME := preload(
 	"res://world/runtime/work/TownWorkTaskRuntime.gd"
@@ -690,14 +693,13 @@ static func prepare_full(
 	prepared["livingResidentsPrepared"] = (
 		lifecycle_restore.get("livingResidents", {}) as Dictionary
 	)
-	var place_service_defaults := world.call(
-		"_build_default_place_service_states",
+	var place_service_defaults := PLACE_SERVICE_COMMAND_RUNTIME.build_default_states(
+		world,
 		world_data,
-		prepared.get("owners", {}) as Dictionary,
 		prepared.get("livingResidentsPrepared", {}) as Dictionary,
 		{},
 		true,
-	) as Dictionary
+	)
 	var place_service_restore := RESTORE_LAYOUT.prepare_place_service_states(
 		prepared.get("placeServiceStates"),
 		place_service_defaults,

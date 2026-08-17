@@ -12,6 +12,10 @@ extends "res://tests/support/TownWorldTestCase.gd"
 ## - resident_character_world_route_test.gd
 ## - resident_presentation_path_contract_test.gd
 
+const RESIDENT_MOVEMENT_PROJECTION := preload(
+	"res://world/runtime/presentation/TownResidentMovementProjection.gd"
+)
+
 class FakeWorld:
 	extends RefCounted
 
@@ -211,6 +215,9 @@ const CONVERSATION_RUNTIME := preload(
 )
 const TRAVELER_RELATIONSHIP_RUNTIME := preload(
 	"res://world/runtime/relationship/TownTravelerRelationshipRuntime.gd"
+)
+const TRAVELER_RELATIONSHIP_STATE := preload(
+	"res://world/runtime/relationship/TownTravelerRelationshipState.gd"
 )
 const CLINIC_AVATAR_SAFE_RETURN := Vector2(4225.0, 1260.0)
 const ANIMAL_PRESENTATION := preload(
@@ -3210,7 +3217,7 @@ func _test_descent_relocates_avatar_to_a_valid_outdoor_point() -> void:
 
 
 func _test_traveler_familiarity_requires_a_two_way_conversation() -> void:
-	var snapshot := TRAVELER_RELATIONSHIP_RUNTIME.empty_snapshot()
+	var state: RefCounted = TRAVELER_RELATIONSHIP_STATE.new()
 	var one_sided := {
 		"conversationId": "traveler-one-sided",
 		"status": "ended",
@@ -3223,21 +3230,21 @@ func _test_traveler_familiarity_requires_a_two_way_conversation() -> void:
 		"endedAt": {"day": 1, "clock": "08:00", "period": "上午"},
 	}
 	_expect(
-		not TRAVELER_RELATIONSHIP_RUNTIME.record_ended_conversation(
-			snapshot,
+		not state.call(
+			"record_ended_conversation",
 			"player-avatar",
 			RESIDENT_ID,
 			one_sided,
 		),
 		"a greeting without a resident reply does not increase familiarity",
 	)
-	var untouched := TRAVELER_RELATIONSHIP_RUNTIME.projection_for_resident(
-		snapshot,
+	var untouched: Dictionary = state.call(
+		"projection_for_resident",
 		"player-avatar",
 		"旅行者",
 		RESIDENT_ID,
 		true,
-	)
+	) as Dictionary
 	_expect_equal(
 		untouched.get("conversationCount"),
 		0,
@@ -3261,21 +3268,21 @@ func _test_traveler_familiarity_requires_a_two_way_conversation() -> void:
 			},
 		]
 		_expect(
-			TRAVELER_RELATIONSHIP_RUNTIME.record_ended_conversation(
-				snapshot,
+			state.call(
+				"record_ended_conversation",
 				"player-avatar",
 				RESIDENT_ID,
 				two_way,
 			),
 			"a completed two-way conversation increases familiarity once",
 		)
-	var familiar := TRAVELER_RELATIONSHIP_RUNTIME.projection_for_resident(
-		snapshot,
+	var familiar: Dictionary = state.call(
+		"projection_for_resident",
 		"player-avatar",
 		"旅行者",
 		RESIDENT_ID,
 		true,
-	)
+	) as Dictionary
 	_expect_equal(
 		familiar.get("conversationCount"),
 		6,
@@ -3287,7 +3294,9 @@ func _test_traveler_familiarity_requires_a_two_way_conversation() -> void:
 		"six conversations reach familiar instead of close or intimate",
 	)
 
-	var restored := TRAVELER_RELATIONSHIP_RUNTIME.normalize_snapshot(
+	var restored_state: RefCounted = TRAVELER_RELATIONSHIP_STATE.new()
+	restored_state.call(
+		"restore",
 		{
 			"schema": "traveler-relationship",
 			"schemaVersion": 1,
@@ -3302,14 +3311,14 @@ func _test_traveler_familiarity_requires_a_two_way_conversation() -> void:
 		"player-avatar",
 		[RESIDENT_ID],
 	)
-	var restored_projection := (
-		TRAVELER_RELATIONSHIP_RUNTIME.projection_for_resident(
-			restored,
+	var restored_projection: Dictionary = (
+		restored_state.call(
+			"projection_for_resident",
 			"player-avatar",
 			"旅行者",
 			RESIDENT_ID,
 			true,
-		)
+		) as Dictionary
 	)
 	_expect_equal(
 		(restored_projection.get("familiarity", {}) as Dictionary).get("label"),
@@ -3320,6 +3329,21 @@ func _test_traveler_familiarity_requires_a_two_way_conversation() -> void:
 		(restored_projection.get("affinity", {}) as Dictionary).get("value"),
 		58,
 		"recomputing familiarity preserves existing saved affinity",
+	)
+	var detached_snapshot := restored_state.call("snapshot") as Dictionary
+	(detached_snapshot.get("items", {}) as Dictionary).clear()
+	_expect_equal(
+		(
+			(restored_state.call(
+				"projection_for_resident",
+				"player-avatar",
+				"旅行者",
+				RESIDENT_ID,
+				true,
+			) as Dictionary).get("affinity", {}) as Dictionary
+		).get("value"),
+		58,
+		"state snapshots are detached from the authoritative relationship state",
 	)
 	_expect_equal(
 		(restored_projection.get("affinity", {}) as Dictionary).get("label"),
@@ -3449,7 +3473,7 @@ func _test_player_starts_and_ends_conversation() -> void:
 		},
 		"accepting the player presents the active conversation while preserving the ordinary action internally",
 	)
-	var residents_during_talk := world.get("_residents") as Dictionary
+	var residents_during_talk := (world.get("resident_registry") as TownResidentRegistry).records as Dictionary
 	_expect(
 		int(
 			(
@@ -3529,7 +3553,7 @@ func _test_player_starts_and_ends_conversation() -> void:
 		action_before,
 		"ending the player conversation restores the same ordinary action",
 	)
-	var residents_after_talk := world.get("_residents") as Dictionary
+	var residents_after_talk := (world.get("resident_registry") as TownResidentRegistry).records as Dictionary
 	_expect_equal(
 		int(
 			(
@@ -3722,13 +3746,21 @@ func _test_player_conversation_idle_timeout_only_on_resident_turn() -> void:
 		(started.get("conversation", {}) as Dictionary).get("conversationId", ""),
 	)
 	# 等待居民答话（Provider 静默失败场景）：45 秒闲置兜底必须收尾。
-	CONVERSATION_RUNTIME._advance_autonomous_conversation_timeouts(world, 44.0)
+	CONVERSATION_RUNTIME._advance_autonomous_conversation_timeouts(
+		world,
+		world.get("_traveler_relationship_state") as TownTravelerRelationshipState,
+		44.0,
+	)
 	_expect_equal(
 		(world.call("get_active_conversations") as Array).size(),
 		1,
 		"player conversation remains active before the resident-turn deadline",
 	)
-	CONVERSATION_RUNTIME._advance_autonomous_conversation_timeouts(world, 2.0)
+	CONVERSATION_RUNTIME._advance_autonomous_conversation_timeouts(
+		world,
+		world.get("_traveler_relationship_state") as TownTravelerRelationshipState,
+		2.0,
+	)
 	_expect_equal(
 		(world.call("get_active_conversations") as Array).size(),
 		0,
@@ -3760,7 +3792,11 @@ func _test_player_conversation_idle_timeout_only_on_resident_turn() -> void:
 	) as Dictionary
 	_expect_equal(replied.get("status"), "accepted", "resident replies and waits for the player")
 	_expire_confirmed_preview(world)
-	CONVERSATION_RUNTIME._advance_autonomous_conversation_timeouts(world, 90.0)
+	CONVERSATION_RUNTIME._advance_autonomous_conversation_timeouts(
+		world,
+		world.get("_traveler_relationship_state") as TownTravelerRelationshipState,
+		90.0,
+	)
 	_expect_equal(
 		(world.call("get_active_conversations") as Array).size(),
 		1,
@@ -6139,14 +6175,12 @@ func _run_route(world: RefCounted, body: CharacterBody2D) -> void:
 
 
 func _scenario_resident_presentation_path_contract() -> void:
-	var world: RefCounted = WORLD.new()
 	var expected: Array[Vector2] = [
 		Vector2(12.0, 24.0),
 		Vector2(48.0, 24.0),
 		Vector2(48.0, 72.0),
 	]
-	var prop_path := world.call(
-		"_resident_presentation_path",
+	var prop_path := RESIDENT_MOVEMENT_PROJECTION.presentation_path(
 		{
 			"position": expected[0],
 			"currentAction": {
@@ -6154,14 +6188,14 @@ func _scenario_resident_presentation_path_contract() -> void:
 				"pathPoints": expected,
 			},
 		},
-	) as Array[Vector2]
+		0,
+	)
 	_expect_equal(
 		prop_path,
 		expected,
 		"prop approach exposes the authored polyline to presentation",
 	)
-	var malformed_path := world.call(
-		"_resident_presentation_path",
+	var malformed_path := RESIDENT_MOVEMENT_PROJECTION.presentation_path(
 		{
 			"position": Vector2.ZERO,
 			"currentAction": {
@@ -6169,7 +6203,8 @@ func _scenario_resident_presentation_path_contract() -> void:
 				"pathPoints": [Vector2.ZERO, {"x": 10, "y": 20}],
 			},
 		},
-	) as Array[Vector2]
+		0,
+	)
 	_expect_equal(
 		malformed_path,
 		[],

@@ -6,6 +6,7 @@ const OPENING_PATH := "res://tests/fixtures/town_world_opening.json"
 const BUILDER := preload("res://world/data/town/TownWorldDataBuilder.gd")
 const OPENING := preload("res://world/runtime/TownWorldOpeningConfig.gd")
 const WORLD := preload("res://world/runtime/TownWorldRuntime.gd")
+const AGENT_TEST_CASE := preload("res://tests/agent/support/AgentTestCase.gd")
 const RESIDENT_ID := "resident_su_he_01"
 
 var _failures: Array[String] = []
@@ -96,7 +97,7 @@ func _initialize() -> void:
 			},
 		}) as Dictionary
 		_expect_equal(replacement.get("status"), "accepted", "priority action is accepted")
-		var resident := (world.get("_residents") as Dictionary).get(RESIDENT_ID, {}) as Dictionary
+		var resident := ((world.get("resident_registry") as TownResidentRegistry).records as Dictionary).get(RESIDENT_ID, {}) as Dictionary
 		var results := resident.get("resultQueue", []) as Array
 		_expect(
 			_results_include_completed_settlement(results, "queue-current-wait"),
@@ -139,10 +140,18 @@ func _expect_equal(actual: Variant, expected: Variant, message: String) -> void:
 
 
 func _finish() -> void:
+	AGENT_TEST_CASE.shutdown_project_autoloads(self)
 	if _failures.is_empty():
 		print("TOWN_WORLD_DECISION_PRIORITY_QUEUE_PASS")
-		quit(0)
+		call_deferred("_quit_after_shutdown", 0)
 		return
 	for failure in _failures:
 		printerr("TOWN_WORLD_DECISION_PRIORITY_QUEUE_FAIL: %s" % failure)
-	quit(1)
+	call_deferred("_quit_after_shutdown", 1)
+
+
+func _quit_after_shutdown(exit_code: int) -> void:
+	await process_frame
+	AGENT_TEST_CASE.shutdown_project_autoloads(self)
+	await create_timer(0.6, true, false, true).timeout
+	quit(exit_code)

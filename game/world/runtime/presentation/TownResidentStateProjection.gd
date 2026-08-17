@@ -53,6 +53,41 @@ static func project_emit(world, resident: Dictionary) -> Dictionary:
 	return project_fields(world, resident, EMIT_KEYS)
 
 
+static func project_player_avatar(
+	avatar: Dictionary,
+	present: bool,
+	resident_display_name: Callable,
+) -> Dictionary:
+	var state := avatar.duplicate(true)
+	state["present"] = present
+	var nearby_ids := (avatar.get("nearby", []) as Array).duplicate()
+	var nearby_names: Array[String] = []
+	for resident_id_value: Variant in nearby_ids:
+		nearby_names.append(
+			String(resident_display_name.call(String(resident_id_value))),
+		)
+	state["nearbyResidentIds"] = nearby_ids
+	state["nearby"] = nearby_names
+	return state
+
+
+static func avatar_runtime(record: Dictionary, default_avatar_id: String) -> Dictionary:
+	var state := record.get("worldState", {}) as Dictionary
+	var pair := state.get("position", []) as Array
+	return {
+		"residentId": String(record.get("residentId", default_avatar_id)),
+		"name": String(record.get("name", "")),
+		"position": Vector2(float(pair[0]), float(pair[1])),
+		"spaceId": String(state.get("spaceId", "")),
+		"regionId": String(state.get("regionId", "")),
+		"currentPlace": String(state.get("place", "")),
+		"doing": String(state.get("doing", "")),
+		"nearby": [],
+		"conversationId": "",
+		"conversation": null,
+	}
+
+
 # keys 为空表示全字段。字段的派生逻辑只写这一遍,轻量路径靠跳过不生成;
 # 字段写入顺序与拆分前的完整投影一致。
 static func project_fields(
@@ -71,7 +106,7 @@ static func project_fields(
 	if all_fields or keys.has("worldRevision"):
 		projection["worldRevision"] = world._world_revision
 	if all_fields or keys.has("isPresent"):
-		projection["isPresent"] = world._resident_is_present(resident)
+		projection["isPresent"] = world.resident_is_present(resident)
 	if all_fields or keys.has("arrivalState"):
 		projection["arrivalState"] = (
 			resident.get(
@@ -103,7 +138,7 @@ static func project_fields(
 		projection["activityNeeds"] = (
 			resident.get(
 				"activityState",
-				world._empty_activity_state(),
+				world.ACTIVITY_SCALARS.empty_activity_state(),
 			) as Dictionary
 		).duplicate(true)
 	if all_fields or keys.has("conditions"):
@@ -115,10 +150,10 @@ static func project_fields(
 		var nearby_names: Array[String] = []
 		for person_ref_value: Variant in resident.get("nearby", []) as Array:
 			var person_id := String(
-				world._person_id_for_name(String(person_ref_value)),
+				world.person_id_for_name(String(person_ref_value)),
 			)
 			nearby_ids.append(person_id)
-			nearby_names.append(String(world._person_name_for_id(person_id)))
+			nearby_names.append(String(world.person_name_for_id(person_id)))
 		if all_fields or keys.has("nearbyResidentIds"):
 			projection["nearbyResidentIds"] = nearby_ids
 		if all_fields or keys.has("nearby"):
@@ -134,7 +169,7 @@ static func project_fields(
 			resident,
 		)
 	if all_fields or keys.has("conversation"):
-		projection["conversation"] = world._duplicate_optional_dictionary(
+		projection["conversation"] = world.ACTIVITY_SCALARS.duplicate_optional_dictionary(
 			resident.get("conversation"),
 		)
 	if all_fields or keys.has("lifecycle"):

@@ -11,6 +11,9 @@ const EvidenceScript := preload(
 	"res://agent/avatar_memory/ResidentAvatarEvidenceQueue.gd"
 )
 const CleanerScript := preload("res://tests/support/UserTestDataCleaner.gd")
+const AgentTestCaseScript := preload(
+	"res://tests/agent/support/AgentTestCase.gd"
+)
 
 const AVATAR_ID := "person_7f3a91c2d8e4"
 const TEST_ROOT_BASE := "user://tests/avatar-memory-module"
@@ -24,12 +27,14 @@ var _failures: Array[String] = []
 
 
 func _initialize() -> void:
+	AgentTestCaseScript.shutdown_project_autoloads(self)
 	_test_store_and_evidence_boundaries()
 	_test_organization_retrieval_message_and_restore()
 	_test_active_avatar_conversation_defers_organization()
 	_test_departure_forces_organization_and_filters_resident_narration()
 	_test_resident_identity_isolation_and_social_propagation()
 	CleanerScript.remove_tree(_test_root)
+	AgentTestCaseScript.shutdown_project_autoloads(self)
 	if _failures.is_empty():
 		print("RESIDENT_AVATAR_MEMORY_MODULE_PASS")
 		quit(0)

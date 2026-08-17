@@ -530,6 +530,27 @@ func create_save_snapshot() -> Dictionary:
 	}
 
 
+func legacy_broadcast_snapshot(maximum_count: int) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var start_index := maxi(0, _announcements.size() - maximum_count)
+	for index in range(start_index, _announcements.size()):
+		var announcement := _announcements[index]
+		result.append({
+			"announcement_id": String(
+				announcement.get("announcement_id", ""),
+			),
+			"text": String(announcement.get("text", "")),
+			"time": (
+				announcement.get("time", {}) as Dictionary
+			).duplicate(true),
+		})
+	return result
+
+
+func announcement_sequence() -> int:
+	return _announcement_sequence
+
+
 func restore_save_snapshot(snapshot: Dictionary) -> Dictionary:
 	var validation := _validate_save_snapshot(snapshot)
 	if not bool(validation.get("ok", false)):

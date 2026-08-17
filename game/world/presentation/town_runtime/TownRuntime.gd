@@ -247,6 +247,7 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	_disconnect_agent_gateway_frame_callback()
 	_agent_gateway_pump_scheduled = false
 	_agent_gateway_watchdog_active = false
 	_agent_gateway_pending_world_advance.clear()
@@ -1751,6 +1752,11 @@ func _schedule_agent_gateway_pump(world_advance: Dictionary) -> void:
 		# after the current process turn, preserving physics-before-Agent order.
 		call_deferred("_pump_agent_gateway_after_avatar_frame")
 	else:
+		# The watchdog may have completed a previous pump before the renderer
+		# emitted frame_post_draw. Always remove that stale one-shot connection
+		# before scheduling the next frame, otherwise Godot rejects the duplicate
+		# connection and floods the main loop with errors.
+		_disconnect_agent_gateway_frame_callback()
 		RenderingServer.frame_post_draw.connect(
 			_pump_agent_gateway_after_avatar_frame,
 			CONNECT_ONE_SHOT,
@@ -1768,7 +1774,20 @@ func _schedule_agent_gateway_pump(world_advance: Dictionary) -> void:
 
 func _on_agent_gateway_pump_watchdog() -> void:
 	_agent_gateway_watchdog_active = false
+	# When the watchdog wins the race, the one-shot draw callback is still
+	# connected. Disconnect it before completing the pump so the next frame can
+	# schedule a fresh callback safely.
+	_disconnect_agent_gateway_frame_callback()
 	_pump_agent_gateway_after_avatar_frame()
+
+
+func _disconnect_agent_gateway_frame_callback() -> void:
+	if RenderingServer.frame_post_draw.is_connected(
+		_pump_agent_gateway_after_avatar_frame,
+	):
+		RenderingServer.frame_post_draw.disconnect(
+			_pump_agent_gateway_after_avatar_frame,
+		)
 
 
 func _pump_agent_gateway_after_avatar_frame() -> void:

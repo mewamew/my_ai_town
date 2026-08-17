@@ -2,8 +2,10 @@ extends SceneTree
 
 
 const TestCli := preload("res://tests/agent/support/AgentTestCli.gd")
+const AgentTestCaseScript := preload("res://tests/agent/support/AgentTestCase.gd")
 const TEST_ROOT := "res://tests/agent"
 const LIVE_ROOT := "res://tests/agent/provider/live"
+const PROVIDER_TEST_NO_NETWORK_ENV := "AI_TOWN_PROVIDER_TEST_NO_NETWORK"
 const FORWARDED_LIVE_OPTIONS := [
 	"model",
 	"connectivity-only",
@@ -37,7 +39,7 @@ func _run() -> void:
 	var option_error := _option_error()
 	if not option_error.is_empty():
 		printerr("AGENT_TEST_RUNNER_CONFIG_FAIL: %s" % option_error)
-		quit(2)
+		await _quit_after_project_shutdown(2)
 		return
 	var suites: Array[String] = []
 	_collect_suites(TEST_ROOT, suites)
@@ -46,11 +48,11 @@ func _run() -> void:
 	if _options.has("list"):
 		for suite: String in suites:
 			print(suite.trim_prefix("%s/" % TEST_ROOT))
-		quit(0)
+		await _quit_after_project_shutdown(0)
 		return
 	if suites.is_empty():
 		printerr("AGENT_TEST_RUNNER_CONFIG_FAIL: 没有找到符合条件的测试")
-		quit(2)
+		await _quit_after_project_shutdown(2)
 		return
 
 	var started_at := Time.get_ticks_msec()
@@ -83,7 +85,15 @@ func _run() -> void:
 		elapsed_ms,
 		str(_options.has("online-llm")).to_lower(),
 	])
-	quit(0 if failed == 0 else 1)
+	await _quit_after_project_shutdown(0 if failed == 0 else 1)
+
+
+func _quit_after_project_shutdown(exit_code: int) -> void:
+	AgentTestCaseScript.shutdown_project_autoloads(self)
+	await process_frame
+	AgentTestCaseScript.shutdown_project_autoloads(self)
+	await create_timer(0.6, true, false, true).timeout
+	quit(exit_code)
 
 
 func _run_suite(suite: String) -> Dictionary:
@@ -102,17 +112,26 @@ func _run_suite(suite: String) -> Dictionary:
 			var value: Variant = _options[option_name]
 			arguments.append(
 				"--%s" % option_name
-				if value == true
+				if value is bool and bool(value)
 				else "--%s=%s" % [option_name, value]
 			)
 	var output: Array = []
 	var started_at := Time.get_ticks_msec()
+	var previous_no_network := OS.get_environment(PROVIDER_TEST_NO_NETWORK_ENV)
+	if not suite.begins_with(LIVE_ROOT):
+		# 离线子测试不得继承玩家本机已保存的 Provider 连接状态并发起健康检查。
+		# 生产设置服务已经提供这项测试开关；runner 负责在子进程范围内启用。
+		OS.set_environment(PROVIDER_TEST_NO_NETWORK_ENV, "1")
 	var exit_code := OS.execute(
 		OS.get_executable_path(),
 		arguments,
 		output,
 		true,
 	)
+	if previous_no_network.is_empty():
+		OS.unset_environment(PROVIDER_TEST_NO_NETWORK_ENV)
+	else:
+		OS.set_environment(PROVIDER_TEST_NO_NETWORK_ENV, previous_no_network)
 	var text_output := "\n".join(output)
 	var script_error := (
 		text_output.contains("SCRIPT ERROR:")

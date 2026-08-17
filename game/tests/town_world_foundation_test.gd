@@ -1,4 +1,11 @@
 extends "res://tests/support/TownWorldTestCase.gd"
+
+const ACTIVITY_SCALARS := preload(
+	"res://world/runtime/activity/TownActivityScalars.gd"
+)
+const AGENT_WAKE_CONTEXT_RUNTIME := preload(
+	"res://world/runtime/agent/TownAgentWakeContextRuntime.gd"
+)
 ## 世界基础与日志 合并套件。
 ##
 ## 由以下测试合并而来，断言逐条保留：
@@ -25,6 +32,9 @@ class _MessagePolicyWorld:
 		"postal-a", "postal-b", "postal-c", "recipient",
 	]
 
+	func resident_order() -> Array[String]:
+		return _resident_order.duplicate()
+
 	func _resident_can_work_occupation(
 		resident_id: String,
 		occupation_id: String,
@@ -34,6 +44,46 @@ class _MessagePolicyWorld:
 			and resident_id.begins_with("postal-")
 		)
 
+
+class _StaffingAssignmentCommitStub:
+	extends TownStaffingRuntime
+
+	var arrangement_result := {"ok": true, "arrangement": {"arrangementId": "arrangement-1"}}
+	var create_args: Array = []
+	var rebuild_args: Array = []
+	var end_args: Array = []
+
+	func create_arrangement(
+		resident_id: String,
+		occupation_id: String,
+		mode: String,
+		absolute_minute: int,
+		shift_start_minute := 0,
+		shift_end_minute := 1440,
+	) -> Dictionary:
+		create_args = [
+			resident_id,
+			occupation_id,
+			mode,
+			absolute_minute,
+			shift_start_minute,
+			shift_end_minute,
+		]
+		return arrangement_result.duplicate(true)
+
+	func rebuild(residents: Dictionary, absolute_minute := 0) -> Dictionary:
+		rebuild_args = [residents, absolute_minute]
+		return {"ok": true}
+
+	func end_active_arrangements_for_occupation(
+		occupation_id: String,
+		absolute_minute: int,
+		reason: String,
+		_created_not_before := -1,
+	) -> Dictionary:
+		end_args = [occupation_id, absolute_minute, reason]
+		return {"ok": true}
+
 const ROOMS_ROOT := "res://world/maps/town/interiors/redesign_v2/rooms"
 const PROP_VALIDATOR := preload("res://world/data/town/TownWorldPropValidator.gd")
 const PROP_QUERY := preload("res://world/data/town/TownWorldPropQuery.gd")
@@ -42,6 +92,24 @@ const FORMAL_OPENING := preload(
 	"res://tests/support/TownWorldFormalOpeningTestHelper.gd"
 )
 const LAYOUT_PROJECTION := preload("res://world/runtime/TownIndoorLayoutProjection.gd")
+const DYNAMIC_PROP_RUNTIME := preload(
+	"res://world/runtime/prop/TownDynamicPropRuntime.gd"
+)
+const ANIMAL_FACT_RUNTIME := preload(
+	"res://world/runtime/animals/TownAnimalFactRuntime.gd"
+)
+const PLACE_SERVICE_RUNTIME := preload(
+	"res://world/runtime/work/TownPlaceServiceRuntime.gd"
+)
+const OCCUPATION_SERVICE_PRESENCE_POLICY := preload(
+	"res://world/runtime/work/TownOccupationServicePresencePolicy.gd"
+)
+const CLINIC_SERVICE_REQUEST_POLICY := preload(
+	"res://world/runtime/work/TownClinicServiceRequestPolicy.gd"
+)
+const PRODUCTION_TASK_SYNC_RUNTIME := preload(
+	"res://world/runtime/work/TownProductionTaskSyncRuntime.gd"
+)
 const SAVE_CODEC := preload("res://world/runtime/persistence/TownWorldSaveCodec.gd")
 const GEOMETRY := preload(
 	"res://world/maps/town/interiors/redesign_v2/common/InteriorAssetGeometry.gd"
@@ -55,6 +123,93 @@ const MOVEMENT_CLEARANCE := preload(
 const LAYOUT_CELL_SIZE := 32
 const INVALID_CELL := Vector2i(2147483647, 2147483647)
 const STORE := preload("res://world/runtime/log/TownWorldLogStore.gd")
+const EVENT_JOURNAL_RUNTIME := preload(
+	"res://world/runtime/log/TownWorldEventJournalRuntime.gd"
+)
+const DOMAIN_LOG_PROJECTION := preload(
+	"res://world/runtime/log/TownWorldDomainLogProjection.gd"
+)
+const STORY_EVENT_PROJECTION := preload(
+	"res://world/runtime/log/TownStoryEventProjection.gd"
+)
+const ACTIVITY_LIFECYCLE_EVENT_PROJECTION := preload(
+	"res://world/runtime/log/TownActivityLifecycleEventProjection.gd"
+)
+const RESIDENT_EVENT_QUEUE_RUNTIME := preload(
+	"res://world/runtime/event/TownResidentEventQueueRuntime.gd"
+)
+const WORLD_EVENT_DELIVERY_PROJECTION := preload(
+	"res://world/runtime/event/TownWorldEventDeliveryProjection.gd"
+)
+const AGENT_DECISION_ACCEPTANCE_POLICY := preload(
+	"res://world/runtime/agent/TownAgentDecisionAcceptancePolicy.gd"
+)
+const AGENT_DECISION_ENVELOPE_RUNTIME := preload(
+	"res://world/runtime/agent/TownAgentDecisionEnvelopeRuntime.gd"
+)
+const AGENT_DECISION_CONFIRMATION_PROJECTION := preload(
+	"res://world/runtime/agent/TownAgentDecisionConfirmationProjection.gd"
+)
+const CONFIRMED_ACTION_ACTIVATION_POLICY := preload(
+	"res://world/runtime/agent/TownConfirmedActionActivationPolicy.gd"
+)
+const ACTIVITY_CANDIDATE_PREFLIGHT_POLICY := preload(
+	"res://world/runtime/activity/TownActivityCandidatePreflightPolicy.gd"
+)
+const ACTIVITY_ROUTINE_POLICY := preload(
+	"res://world/runtime/activity/TownActivityRoutinePolicy.gd"
+)
+const RESTORE_COMMIT_PROJECTION := preload(
+	"res://world/runtime/persistence/TownWorldRestoreCommitProjection.gd"
+)
+const AGENT_WAKE_PACKET_PROJECTION := preload(
+	"res://world/runtime/agent/TownAgentWakePacketProjection.gd"
+)
+const ACTION_PREPARATION_POLICY := preload(
+	"res://world/runtime/action/TownActionPreparationPolicy.gd"
+)
+const STAFFING_ASSIGNMENT_POLICY := preload(
+	"res://world/runtime/work/TownStaffingAssignmentPolicy.gd"
+)
+const STAFFING_ASSIGNMENT_COMMIT := preload(
+	"res://world/runtime/work/TownStaffingAssignmentCommit.gd"
+)
+const OCCUPATION_SERVICE_REQUEST_RUNTIME := preload(
+	"res://world/runtime/work/TownOccupationServiceRequestRuntime.gd"
+)
+const OCCUPATION_SERVICE_REQUEST_COMMIT := preload(
+	"res://world/runtime/work/TownOccupationServiceRequestCommit.gd"
+)
+const INITIAL_SOCIAL_CONTACT_POLICY := preload(
+	"res://world/runtime/social/TownInitialSocialContactPolicy.gd"
+)
+const WORK_DOMAIN_RUNTIME := preload(
+	"res://world/runtime/work/TownWorkDomainRuntime.gd"
+)
+const STAFFING_MATTER_PROJECTION := preload(
+	"res://world/runtime/work/TownStaffingMatterProjection.gd"
+)
+const CARGO_LOGISTICS_RUNTIME := preload(
+	"res://world/runtime/work/TownCargoLogisticsRuntime.gd"
+)
+const CONVERSATION_FOLLOW_UP_OPTION_PROJECTION := preload(
+	"res://world/runtime/conversation/TownConversationFollowUpOptionProjection.gd"
+)
+const ANNOUNCEMENT_PUBLICATION_PROJECTION := preload(
+	"res://world/runtime/social/TownAnnouncementPublicationProjection.gd"
+)
+const ACTIVITY_WORK_TASK_BINDING_RUNTIME := preload(
+	"res://world/runtime/activity/TownActivityWorkTaskBindingRuntime.gd"
+)
+const BULLETIN_ACTIVITY_EFFECT_PLANNER := preload(
+	"res://world/runtime/activity/TownBulletinActivityEffectPlanner.gd"
+)
+const ACTIVITY_COMPLETION_PROJECTION := preload(
+	"res://world/runtime/activity/TownActivityCompletionProjection.gd"
+)
+const ACTIVITY_EXECUTION_PROJECTION := preload(
+	"res://world/runtime/activity/TownActivityExecutionProjection.gd"
+)
 const RESIDENT_MESSAGE_POLICY := preload(
 	"res://world/runtime/social/TownResidentMessagePolicy.gd"
 )
@@ -82,6 +237,22 @@ func _initialize() -> void:
 
 
 func _run_all() -> void:
+	_scenario_world_event_journal_runtime()
+	_scenario_world_log_event_projections()
+	_scenario_resident_event_queue_runtime()
+	_scenario_agent_decision_acceptance_policy()
+	_scenario_e12_world_orchestration_policies()
+	_scenario_e13_agent_social_projections()
+	_scenario_e14_activity_routine_policy()
+	_scenario_e15_action_and_staffing_policies()
+	_scenario_e16_occupation_service_and_social_contact_policies()
+	_scenario_f1_work_domain_ownership()
+	_scenario_activity_work_task_binding_runtime()
+	_scenario_occupation_service_request_policies()
+	_scenario_production_task_sync_runtime()
+	_scenario_place_service_runtime_state()
+	_scenario_animal_fact_runtime_state()
+	_scenario_dynamic_prop_runtime_state()
 	_scenario_indoor_props()
 	_scenario_daily_life_chain()
 	_scenario_log_causal_query()
@@ -92,6 +263,2347 @@ func _run_all() -> void:
 	_scenario_action_type_registry()
 	_scenario_audio_controller_button_cue()
 	_finish_suite("TOWN_WORLD_FOUNDATION_PASS")
+
+
+func _scenario_world_event_journal_runtime() -> void:
+	var journal := EVENT_JOURNAL_RUNTIME.new()
+	var source_payload := {
+		"storyRootEventIds": ["root-1"],
+		"nested": {"value": 1},
+	}
+	var appended := journal.append_public_event(
+		" event-1 ",
+		" world_event ",
+		{"day": 2, "hour": 9, "minute": 5},
+		7,
+		" resident-a ",
+		"居民甲",
+		" 广场 ",
+		source_payload,
+	) as Dictionary
+	_expect(appended.get("changed") == true, "事件日志模块应接收合法公开事件")
+	source_payload["nested"]["value"] = 9
+	var events := journal.public_events()
+	_expect_equal(events.size(), 1, "事件日志模块应保存一条公开事件")
+	_expect_equal(
+		int(((events[0].get("payload", {}) as Dictionary).get("nested", {}) as Dictionary).get("value", 0)),
+		1,
+		"公开事件必须与调用方后续修改隔离",
+	)
+	_expect_equal(
+		String(events[0].get("eventId", "")),
+		"event-1",
+		"公开事件编号必须标准化",
+	)
+	_expect(
+		journal.append_public_event(
+			"event-1", "world_event", {}, 8, "", "", "", {}
+		).get("changed") == false,
+		"重复事件编号必须保持幂等",
+	)
+	_expect_equal(
+		journal.story_root_ids_for_world_event("event-1"),
+		["root-1"],
+		"事件日志模块应返回世界事件的故事根因",
+	)
+	journal.set_event_sequence(4)
+	_expect_equal(journal.next_world_event_id(), "world-event-5", "事件序号应延续恢复值")
+	_expect_equal(journal.next_sequence(), 6, "匿名事件序号应共用同一条序列")
+	journal.set_action_story_context("action-1", {
+		"sourceEventIds": ["event-1"],
+		"rootEventIds": ["root-1"],
+	})
+	var provenance := journal.decision_story_provenance(
+		[],
+		[{"action_id": "action-1"}],
+	) as Dictionary
+	_expect_equal(
+		provenance.get("sourceEventIds", []),
+		["event-1"],
+		"行动结果应继承直接故事来源",
+	)
+	_expect_equal(
+		provenance.get("rootEventIds", []),
+		["root-1"],
+		"行动结果应继承故事根因",
+	)
+	journal.set_conversation_story_context("conversation-1", {
+		"lastEventId": "event-1",
+	})
+	var conversation_context := journal.conversation_story_context("conversation-1")
+	conversation_context["lastEventId"] = "mutated"
+	_expect_equal(
+		String(journal.conversation_story_context("conversation-1").get("lastEventId", "")),
+		"event-1",
+		"对话故事上下文读取必须返回隔离副本",
+	)
+	journal.set_consistency_error(" WORLD_LOG_INVALID ")
+	_expect_equal(
+		journal.consistency_error(),
+		"WORLD_LOG_INVALID",
+		"事件日志一致性错误应标准化",
+	)
+	journal.clear_consistency_error()
+	_expect(journal.consistency_error().is_empty(), "一致性错误应可清除")
+	var story_append := journal.append_story_event(
+		"story-action:resident-a:action-1",
+		"action_started",
+		{"day": 2, "hour": 9, "minute": 6},
+		8,
+		"resident-a",
+		"居民甲",
+		"广场",
+		{
+			"actionId": "action-1",
+			"storyRootEventIds": ["root-1"],
+		},
+	) as Dictionary
+	_expect(story_append.get("changed") == true, "故事事件必须写入事件日志")
+	var external_events := journal.external_public_events()
+	var external_story_payload := (
+		external_events[external_events.size() - 1].get("payload", {}) as Dictionary
+	)
+	_expect(not external_story_payload.has("storyEventId"), "公开事件不得泄露内部故事编号")
+	_expect(not external_story_payload.has("storyType"), "公开事件不得泄露内部故事类型")
+	_expect(not external_story_payload.has("storyRootEventIds"), "公开事件不得泄露内部故事根因")
+	var sequence_after_story := journal.event_sequence()
+	_expect(
+		journal.append_story_event(
+			"story-action:resident-a:action-1",
+			"action_started", {}, 8, "resident-a", "居民甲", "广场", {}
+		).get("changed") == false,
+		"重复故事事件必须保持幂等",
+	)
+	_expect_equal(
+		journal.event_sequence(),
+		sequence_after_story,
+		"重复故事事件不能消耗新的世界事件序号",
+	)
+
+
+func _scenario_world_log_event_projections() -> void:
+	var work_event := DOMAIN_LOG_PROJECTION.work_task_event({
+		"taskId": "task-1",
+		"revision": 2,
+		"state": "waiting",
+		"assignedResidentId": "worker-1",
+		"targets": [
+			{"kind": "resident", "ref": "resident-2"},
+			{"kind": "service_request", "ref": "request-1"},
+			{"kind": "place", "ref": "clinic"},
+		],
+	}, "工人甲") as Dictionary
+	var work_payload := work_event.get("payload", {}) as Dictionary
+	_expect_equal(
+		String(work_event.get("eventId", "")),
+		"work-task:task-1:revision:2",
+		"工作任务日志编号必须由任务和修订组成",
+	)
+	_expect_equal(
+		work_payload.get("participantIds", []),
+		["worker-1", "resident-2"],
+		"工作任务日志必须保留完整参与者",
+	)
+	_expect_equal(
+		String(work_payload.get("requestId", "")),
+		"request-1",
+		"工作任务日志必须关联服务请求",
+	)
+	var cargo_event := DOMAIN_LOG_PROJECTION.cargo_event(
+		"货批到货",
+		{
+			"lotId": "lot-1",
+			"carrierResidentId": "carrier-1",
+			"sourcePlaceId": "warehouse",
+			"destinationPlaceId": "clinic",
+		},
+		"worker-1", "工人甲", "运送员", "completed",
+	) as Dictionary
+	_expect_equal(
+		String(cargo_event.get("placeName", "")),
+		"clinic",
+		"到货日志地点必须使用目的地",
+	)
+	var service_event := DOMAIN_LOG_PROJECTION.service_event(
+		{
+			"requestId": "request-1",
+			"kind": "clinic_treatment",
+			"requesterResidentId": "resident-2",
+			"placeId": "clinic",
+		},
+		{"taskId": "task-1"},
+		"worker-1", "医生甲", "患者甲", "completed",
+		{"audienceResidentIds": ["resident-3"]},
+	) as Dictionary
+	_expect_equal(
+		(service_event.get("payload", {}) as Dictionary).get("participantIds", []),
+		["resident-2", "worker-1", "resident-3"],
+		"服务结果日志必须合并请求者、工作人员与受众",
+	)
+	var private_event := DOMAIN_LOG_PROJECTION.private_message_event(
+		"私信送达",
+		{
+			"messageId": "message-1",
+			"senderResidentId": "resident-1",
+			"recipientResidentId": "resident-2",
+		},
+		"delivered", "worker-1", "甲", "乙", "邮差",
+	) as Dictionary
+	_expect_equal(
+		(private_event.get("payload", {}) as Dictionary).get("participantIds", []),
+		["resident-1", "resident-2", "worker-1"],
+		"私信日志必须保留发送、接收与送达人",
+	)
+	var animal_event := DOMAIN_LOG_PROJECTION.animal_event(
+		"抚摸动物",
+		{
+			"animal_id": "cat-1",
+			"display_name": "小橘",
+			"exists": true,
+			"place_id": "square",
+		},
+		"resident-1", "甲",
+	) as Dictionary
+	_expect_equal(
+		String((animal_event.get("payload", {}) as Dictionary).get("animalName", "")),
+		"小橘",
+		"动物日志必须保留公开名称",
+	)
+	var snapshotted := DOMAIN_LOG_PROJECTION.payload_with_participant_snapshots(
+		{"participantIds": ["resident-2", "player-1"]},
+		"resident-1", "甲",
+		{"resident-1": "甲", "resident-2": "乙"},
+		"player-1", "玩家",
+	) as Dictionary
+	_expect_equal(
+		(snapshotted.get("participantSnapshots", []) as Array).size(),
+		3,
+		"日志参与者快照必须合并主体与附加参与者",
+	)
+	var started := STORY_EVENT_PROJECTION.action_started(
+		"resident-1", "甲", "square",
+		{"action_id": "action-1", "type": "工作", "prop": "desk"},
+		{"rootEventIds": ["root-1"], "sourceEventIds": ["event-1"]},
+		"正在工作",
+	) as Dictionary
+	_expect_equal(
+		String(started.get("storyEventId", "")),
+		"story-action:resident-1:action-1",
+		"故事行动开始事件必须使用稳定编号",
+	)
+	_expect(
+		STORY_EVENT_PROJECTION.action_outcome(
+			"resident-1", "甲", "square", "action-1", "completed", "",
+			{"actionType": "去"},
+		).is_empty(),
+		"移动类行动结果不应生成重复故事事件",
+	)
+	var lifecycle_event := ACTIVITY_LIFECYCLE_EVENT_PROJECTION.event(
+		"failed",
+		{"activityId": "activity-1", "label": "看诊", "placeId": "clinic"},
+		"医生离开",
+		{"day": 1, "hour": 10, "minute": 0},
+	) as Dictionary
+	_expect_equal(
+		String(lifecycle_event.get("result", "")),
+		"看诊未能完成：医生离开",
+		"活动失败日志必须保留原因文案",
+	)
+	var social_event := DOMAIN_LOG_PROJECTION.social_matter_event({
+		"matter_id": "matter-1",
+		"revision": 3,
+		"state": "collecting",
+		"creator_id": "resident-1",
+		"subject_ids": ["resident-2"],
+		"participants": {"resident-3": {}},
+		"fixed_candidates": [{"resident_id": "resident-4"}],
+	}, "甲") as Dictionary
+	_expect_equal(
+		(social_event.get("payload", {}) as Dictionary).get("participantIds", []),
+		["resident-1", "resident-2", "resident-3", "resident-4"],
+		"社会事项日志必须按原顺序汇总全部参与者",
+	)
+	_expect_equal(
+		String((social_event.get("payload", {}) as Dictionary).get("status", "")),
+		"waiting",
+		"征集中的社会事项日志必须保持等待状态",
+	)
+	var conflict_event := DOMAIN_LOG_PROJECTION.conflict_event({
+		"eventId": "conflict-event-1",
+		"rootConflictId": "conflict-1",
+		"type": "conflict_ended",
+		"sourceActorId": "resident-1",
+		"subjectId": "resident-2",
+		"actorIds": ["resident-1", "resident-2"],
+	}, "甲") as Dictionary
+	_expect_equal(
+		String((conflict_event.get("payload", {}) as Dictionary).get("status", "")),
+		"completed",
+		"已结束的冲突日志必须保持完成状态",
+	)
+
+
+func _scenario_resident_event_queue_runtime() -> void:
+	var deduplicated := RESIDENT_EVENT_QUEUE_RUNTIME.deduplicated_world_events([
+		{"event_id": "event-1", "type": "公告发布", "announcement_id": "a-1", "value": 1},
+		{"event_id": "event-1", "type": "公告发布", "announcement_id": "a-1", "value": 2},
+		{"event_id": "event-2", "type": "公告发布", "announcement_id": "a-1", "value": 3},
+	])
+	_expect_equal(deduplicated.size(), 1, "事件队列必须同时按编号和事实键去重")
+	_expect_equal(
+		int(deduplicated[0].get("value", 0)),
+		3,
+		"同一件待处理事实必须保留最新版本",
+	)
+	var resident := {
+		"eventQueue": [],
+		"resultQueue": [],
+		"inflightEvents": [{
+			"event_id": "event-old",
+			"type": "天气变了",
+			"weather": "rain",
+		}],
+		"inflightResults": [],
+		"decisionSequence": 2,
+	}
+	RESIDENT_EVENT_QUEUE_RUNTIME.append_pending_world_event(resident, {
+		"event_id": "event-new",
+		"type": "天气变了",
+		"weather": "rain",
+	})
+	_expect_equal(
+		(resident.get("eventQueue", []) as Array).size(),
+		1,
+		"飞行中已有旧事实时，新版本必须进入下一次事件队列",
+	)
+	RESIDENT_EVENT_QUEUE_RUNTIME.restore_inflight_facts(resident)
+	_expect_equal(
+		(resident.get("eventQueue", []) as Array).size(),
+		1,
+		"回收飞行中事实后同类事件仍只保留最新版本",
+	)
+	var decision := RESIDENT_EVENT_QUEUE_RUNTIME.begin_decision(
+		resident,
+		"resident-1",
+		4,
+		false,
+		true,
+	) as Dictionary
+	_expect_equal(
+		String(decision.get("decisionId", "")),
+		"resident-1-g4-3",
+		"事件队列必须使用原有世代与居民序号生成决定编号",
+	)
+	_expect(bool(resident.get("decisionPending", false)), "建立决定后必须进入等待状态")
+	_expect(bool(resident.get("decisionMayInterruptCurrent", false)), "紧急决定必须保留中断许可")
+	_expect_equal(
+		(resident.get("eventQueue", []) as Array).size(),
+		0,
+		"进入决定信封的事件必须从待办队列移出",
+	)
+	var source := {
+		"type": "公告发布",
+		"placeName": "广场",
+		"participant_resident_ids": ["resident-1"],
+		"storyRootEventIds": ["root-1"],
+	}
+	var materialized := WORLD_EVENT_DELIVERY_PROJECTION.materialized_event(
+		source,
+		"world-event-8",
+		{"day": 1, "hour": 8, "minute": 0},
+	) as Dictionary
+	_expect_equal(
+		String(materialized.get("event_id", "")),
+		"world-event-8",
+		"世界事件物化必须使用预留编号",
+	)
+	var views := WORLD_EVENT_DELIVERY_PROJECTION.delivery_views(
+		materialized,
+		"resident-1",
+	) as Dictionary
+	var identified := views.get("identifiedEvent", {}) as Dictionary
+	var agent_event := views.get("agentEvent", {}) as Dictionary
+	_expect(identified.has("storyRootEventIds"), "公开投递事件必须保留故事根因")
+	_expect(not agent_event.has("storyRootEventIds"), "Agent 事件必须移除系统故事字段")
+	_expect(not agent_event.has("placeName"), "Agent 事件必须移除系统地点字段")
+	_expect(
+		not WORLD_EVENT_DELIVERY_PROJECTION.should_schedule_broadcast(
+			{"type": "天气变了"}, "clinic",
+		),
+		"室内居民收到天气事实但不应立即唤醒",
+	)
+	var wake := WORLD_EVENT_DELIVERY_PROJECTION.wake_policy(
+		{"type": "公告到点"},
+		["公告到点"],
+	) as Dictionary
+	_expect(bool(wake.get("invalidate", false)), "紧急事件必须使旧决定失效")
+	_expect(bool(wake.get("wakeWhileCurrentAction", false)), "到点公告必须允许行动中唤醒")
+	var injury := WORLD_EVENT_DELIVERY_PROJECTION.post_injury_reaction(
+		"resident-1",
+		[{
+			"type": "冲突见闻",
+			"knowledge_kind": "participant",
+			"conflict_event_type": "injury_applied",
+			"subject_id": "resident-1",
+			"actor_ids": ["resident-1", "resident-2"],
+			"source_actor_id": "resident-2",
+			"conflict_event_id": "injury-1",
+		}],
+		{"resident-2": "乙"},
+		"player-1",
+		"玩家",
+	) as Dictionary
+	_expect_equal(
+		String(injury.get("attacker_name", "")),
+		"乙",
+		"受伤反应必须保留攻击者公开名称",
+	)
+
+
+func _scenario_activity_work_task_binding_runtime() -> void:
+	var bindings := ACTIVITY_WORK_TASK_BINDING_RUNTIME.new()
+	bindings.bind("resident-1", "action-1", "task-1")
+	_expect_equal(
+		bindings.task_id_for("resident-1", "action-1"),
+		"task-1",
+		"活动任务绑定必须支持精确动作查询",
+	)
+	_expect_equal(
+		bindings.task_id_for("resident-1", "missing-action"),
+		"task-1",
+		"居民只有一条绑定时必须兼容旧存档中的动作编号偏差",
+	)
+	bindings.bind("resident-1", "action-2", "task-2")
+	_expect(
+		bindings.task_id_for("resident-1", "missing-action").is_empty(),
+		"居民存在多条绑定时不能猜测工作任务",
+	)
+	var snapshot := bindings.snapshot()
+	snapshot["resident-1:action-1"] = "mutated"
+	_expect_equal(
+		bindings.task_id_for("resident-1", "action-1"),
+		"task-1",
+		"活动任务绑定快照必须与内部状态隔离",
+	)
+	bindings.erase_key("resident-1:action-2")
+	bindings.restore({"resident-2:action-1": "task-3"})
+	_expect_equal(
+		bindings.task_id_for("resident-2", "action-1"),
+		"task-3",
+		"活动任务绑定必须恢复存档快照",
+	)
+	bindings.reset()
+	_expect(bindings.snapshot().is_empty(), "活动任务绑定重置后必须清空")
+	var read_plan := BULLETIN_ACTIVITY_EFFECT_PLANNER.plan(
+		"resident-1",
+		{
+			"placeId": "中心广场",
+			"activityId": "activity_bulletin_read",
+		},
+		[{
+			"action_goal": {
+				"capability_id": "bulletin.read",
+				"target_refs": {"announcement_id": "announcement-1"},
+			},
+		}],
+		"announcement-fallback",
+	) as Dictionary
+	_expect_equal(
+		String(read_plan.get("announcementId", "")),
+		"announcement-1",
+		"公告阅读活动必须优先使用社会任务指定公告",
+	)
+	var publish_plan := BULLETIN_ACTIVITY_EFFECT_PLANNER.plan(
+		"resident-1",
+		{
+			"placeId": "中心广场",
+			"activityId": "activity_bulletin_publish",
+		},
+		[{
+			"matter_id": "matter-1",
+			"action_goal": {
+				"capability_id": "bulletin.publish",
+				"target_refs": {"text": "今晚广场集合"},
+			},
+		}],
+		"",
+	) as Dictionary
+	_expect_equal(
+		String(publish_plan.get("text", "")),
+		"今晚广场集合",
+		"公告发布活动必须保留已确认文本",
+	)
+	_expect_equal(
+		String(publish_plan.get("matterId", "")),
+		"matter-1",
+		"公告发布活动必须继承社会事项编号",
+	)
+	_expect(
+		BULLETIN_ACTIVITY_EFFECT_PLANNER.plan(
+			"resident-1",
+			{
+				"placeId": "中心广场",
+				"activityId": "activity_bulletin_publish",
+			},
+			[],
+			"",
+		).get("ok") == false,
+		"没有确认内容时公告发布活动必须失败",
+	)
+	_expect(
+		ACTIVITY_COMPLETION_PROJECTION.resident_effects(
+			{"energy": -5},
+			{"group": "work", "sequence": 1},
+		).is_empty(),
+		"连续工作活动的后续步骤不能重复结算完整效果",
+	)
+	var completed_execution := ACTIVITY_COMPLETION_PROJECTION.completed_execution(
+		{"activityId": "activity-1", "slotId": "slot-1"},
+		{"status": "completed"},
+		0,
+	) as Dictionary
+	_expect_equal(
+		int(completed_execution.get("performedDurationMinutes", 0)),
+		1,
+		"活动完成时真实发生时长至少为一分钟",
+	)
+	_expect_equal(
+		ACTIVITY_COMPLETION_PROJECTION.completion_text({"label": "看诊"}),
+		"已完成看诊",
+		"活动完成公开文案必须保持原格式",
+	)
+	_expect(
+		ACTIVITY_EXECUTION_PROJECTION.valid_source("activity.perform", ""),
+		"直接活动来源不能携带来源动作编号",
+	)
+	_expect(
+		not ACTIVITY_EXECUTION_PROJECTION.valid_source(
+			"activity.perform",
+			"action-1",
+		),
+		"直接活动来源携带动作编号时必须拒绝",
+	)
+	_expect_equal(
+		ACTIVITY_EXECUTION_PROJECTION.requested_activity_id({
+			"target": {"activityId": "activity-1"},
+		}),
+		"activity-1",
+		"活动执行投影必须从稳定目标读取活动编号",
+	)
+	_expect_equal(
+		String((ACTIVITY_EXECUTION_PROJECTION.bulletin_unavailable_failure(
+			"activity_bulletin_read",
+		).get("errors", []) as Array)[0]),
+		"公告栏当前没有可阅读的新公告",
+		"公告阅读不可用时必须保持原错误文案",
+	)
+	_expect(
+		ACTIVITY_EXECUTION_PROJECTION.first_candidate_is_visitor({
+			"candidates": [{"role": "visitor"}],
+		}),
+		"活动执行投影必须识别访客候选",
+	)
+	var activation_action := ACTIVITY_EXECUTION_PROJECTION.activation_action(
+		{
+			"action_id": "activity-action-1",
+			"line": "原始想法",
+			"effects": {"energy": 4},
+			"consumeRouteConnector": true,
+		},
+		{
+			"reason": "公开想法",
+			"remainingTicks": 20,
+			"sourceContract": "agent_activity",
+			"sourceActionId": "source-1",
+			"activityLabel": "看书",
+		},
+		12,
+	) as Dictionary
+	_expect_equal(
+		int(activation_action.get("durationMinutes", 0)),
+		12,
+		"活动动作时长必须继续受单步上限约束",
+	)
+	_expect_equal(
+		String(activation_action.get("line", "")),
+		"公开想法",
+		"活动执行原因必须覆盖兼容动作台词",
+	)
+	_expect(
+		(activation_action.get("effects", {}) as Dictionary).is_empty(),
+		"活动动作不能重复应用兼容道具效果",
+	)
+	var activation_resident := {
+		"usedActionIds": {},
+		"routeConnector": [Vector2.ZERO],
+	}
+	ACTIVITY_EXECUTION_PROJECTION.activate_resident(
+		activation_resident,
+		activation_action,
+		{"activityLabel": "看书"},
+	)
+	_expect_equal(
+		String(activation_resident.get("doing", "")),
+		"正在看书",
+		"活动激活必须保持居民公开状态文案",
+	)
+	_expect(
+		(activation_resident.get("routeConnector", []) as Array).is_empty(),
+		"活动动作要求消费返程连接时必须清空旧连接",
+	)
+	var execution_work_tasks := TownWorkTaskRuntime.new()
+	_expect(
+		execution_work_tasks.configure().get("ok") == true,
+		"活动工作任务要求测试必须成功配置任务运行时",
+	)
+	_expect_equal(
+		String(ACTIVITY_EXECUTION_PROJECTION.work_task_requirement(
+			{"candidates": []},
+			"occupation-1",
+			"resident-1",
+			execution_work_tasks,
+		).get("errorCode", "")),
+		"ACTIVITY_NOT_ELIGIBLE",
+		"没有合法候选的活动必须保持原错误码",
+	)
+	_expect(
+		ACTIVITY_EXECUTION_PROJECTION.work_task_requirement(
+			{"activityId": "activity-1", "candidates": [{"role": "visitor"}]},
+			"occupation-1",
+			"resident-1",
+			execution_work_tasks,
+		).get("ok") == true,
+		"访客活动不能被工作任务要求拦截",
+	)
+
+
+func _scenario_e15_action_and_staffing_policies() -> void:
+	var missing_action := ACTION_PREPARATION_POLICY.entry_failure({}, {}, false)
+	_expect(not missing_action.is_empty(), "动作准备入口必须拒绝缺少正式字段的动作")
+	var reused_action := ACTION_PREPARATION_POLICY.entry_failure(
+		{"action_id": "action-1", "type": "搭话", "target_resident_id": "resident-b"},
+		{"action-1": true},
+		false,
+	) as Dictionary
+	_expect_equal(String((reused_action.get("errors", []) as Array)[0]), "动作 action_id 已被该居民使用：action-1", "动作编号重复必须保持原错误")
+	_expect(
+		ACTION_PREPARATION_POLICY.entry_failure(
+			{"action_id": "action-1", "type": "待着", "line": ""},
+			{},
+			false,
+		).get("ok") == false,
+		"要求说明的动作必须拒绝空 line",
+	)
+	_expect_equal(
+		String((ACTION_PREPARATION_POLICY.delegated_action_failure("用道具").get("errors", []) as Array)[0]),
+		"旧用道具动作必须经唯一 activity.perform 映射，不能直达 prop 路径",
+		"旧道具动作必须保持唯一活动入口错误",
+	)
+	var service_action := {
+		"action_id": "service-1",
+		"type": "调整营业",
+		"line": "开门",
+		"place_id": "shop",
+		"open": true,
+	}
+	var prepared_service := ACTION_PREPARATION_POLICY.service_adjustment(
+		service_action,
+		{"place_id": "shop", "open": false},
+		60,
+	) as Dictionary
+	var prepared_service_action := prepared_service.get("action", {}) as Dictionary
+	_expect(bool(prepared_service.get("ok", false)), "本人控制且状态变化的营业调整必须通过")
+	_expect_equal(int(prepared_service_action.get("startedAbsoluteMinute", 0)), 60, "营业调整必须从当前分钟开始")
+	_expect_equal(int(prepared_service_action.get("completeAbsoluteMinute", 0)), 61, "营业调整必须保持一分钟完成")
+	_expect(not service_action.has("startedAbsoluteMinute"), "营业调整准备不能修改 Agent 原动作")
+	_expect(
+		ACTION_PREPARATION_POLICY.service_adjustment(
+			service_action,
+			{"place_id": "shop", "open": true},
+			60,
+		).get("ok") == false,
+		"营业状态没有变化时必须拒绝调整",
+	)
+	var message_action := {
+		"action_id": "message-1",
+		"type": "托人传话",
+		"line": "请帮我转告",
+		"recipient_resident_id": "resident-b",
+		"content": "晚上见",
+	}
+	var prepared_message := ACTION_PREPARATION_POLICY.private_message(
+		message_action,
+		"resident-a",
+		true,
+		0,
+		80,
+	) as Dictionary
+	_expect(bool(prepared_message.get("ok", false)), "指定另一位真实居民的有效口信必须通过")
+	_expect_equal(int((prepared_message.get("action", {}) as Dictionary).get("completeAbsoluteMinute", 0)), 81, "传话准备必须保持一分钟完成")
+	_expect(
+		ACTION_PREPARATION_POLICY.private_message(
+			message_action,
+			"resident-a",
+			true,
+			2,
+			80,
+		).get("ok") == false,
+		"已有两条待投递口信时必须拒绝重复托付",
+	)
+	var regular_wait := ACTION_PREPARATION_POLICY.wait_action(
+		{"action_id": "wait-1", "type": "待着", "line": "等等"},
+		100,
+		90,
+		5,
+		30,
+	) as Dictionary
+	_expect_equal(int((regular_wait.get("action", {}) as Dictionary).get("completeAbsoluteMinute", 0)), 130, "普通等待必须受最大等待分钟限制")
+	var continuity_wait := ACTION_PREPARATION_POLICY.wait_action(
+		{"action_id": "wait-continuity", "type": "待着", "line": "稍等"},
+		100,
+		90,
+		5,
+		30,
+	) as Dictionary
+	_expect_equal(int((continuity_wait.get("action", {}) as Dictionary).get("completeAbsoluteMinute", 0)), 105, "连续性占位等待必须使用更短上限")
+	_expect_equal(
+		String((ACTION_PREPARATION_POLICY.unknown_action_failure("未知").get("errors", []) as Array)[0]),
+		"当前运行层尚未接入动作类型：未知",
+		"未知动作类型必须保持原错误文案",
+	)
+
+	var target := STAFFING_ASSIGNMENT_POLICY.target({
+		"target_refs": {
+			"occupation_id": "occupation-baker",
+			"assignment_kind": "trial",
+			"from_occupation_id": "occupation-farmer",
+			"shift_start_minute": 120,
+			"shift_end_minute": 240,
+		},
+	}) as Dictionary
+	_expect_equal(String(target.get("occupationId", "")), "occupation-baker", "岗位目标必须保留职业编号")
+	_expect_equal(String(target.get("assignmentKind", "")), "trial", "岗位目标必须保留安排类型")
+	var vacant_post := {"assignedResidentIds": []}
+	var occupation := {"label": "面包师", "primaryWorkplacePlace": "烘焙坊"}
+	_expect_equal(
+		STAFFING_ASSIGNMENT_POLICY.failure_reason(target, "occupation-farmer", vacant_post, occupation, ["trial"]),
+		"",
+		"空缺岗位和允许的试岗模式必须通过资格检查",
+	)
+	_expect_equal(
+		STAFFING_ASSIGNMENT_POLICY.failure_reason(target, "occupation-farmer", vacant_post, occupation, []),
+		"居民当前没有以这种方式接手该岗位的资格",
+		"不允许的岗位接手方式必须保持原错误",
+	)
+	var changed_job_target := target.duplicate(true)
+	changed_job_target["fromOccupationId"] = "occupation-clinic"
+	_expect_equal(
+		STAFFING_ASSIGNMENT_POLICY.failure_reason(changed_job_target, "occupation-farmer", vacant_post, occupation, ["trial"]),
+		"居民职业已经发生变化，本次申请失效",
+		"协商期间职业变化必须使申请失效",
+	)
+	var transfer_target := target.duplicate(true)
+	transfer_target["assignmentKind"] = "transfer"
+	_expect_equal(
+		STAFFING_ASSIGNMENT_POLICY.failure_reason(transfer_target, "occupation-farmer", {"assignedResidentIds": ["resident-b"]}, occupation, ["transfer"]),
+		"岗位已经有正式负责人",
+		"已有正式负责人的岗位不能转岗占用",
+	)
+	var assignment_result := STAFFING_ASSIGNMENT_POLICY.arrangement_result(
+		{"arrangementId": "arrangement-7", "coversPost": true},
+		"occupation-baker",
+		"trial",
+	) as Dictionary
+	_expect_equal(String(assignment_result.get("result_id", "")), "staffing-arrangement:arrangement-7", "临时岗位安排结果编号必须保持稳定")
+	_expect(bool(assignment_result.get("covers_post", false)), "岗位安排结果必须保留是否覆盖岗位")
+	var original_social_state := {"job": "农夫", "workplace": "农场", "nested": {"value": 1}}
+	var transferred_social_state := STAFFING_ASSIGNMENT_POLICY.transfer_social_state(
+		original_social_state,
+		occupation,
+	) as Dictionary
+	_expect_equal(String(transferred_social_state.get("job", "")), "面包师", "正式转岗必须更新职业标签")
+	_expect_equal(String(transferred_social_state.get("workplace", "")), "烘焙坊", "正式转岗必须更新主要工作地点")
+	(transferred_social_state.get("nested", {}) as Dictionary)["value"] = 2
+	_expect_equal(int((original_social_state.get("nested", {}) as Dictionary).get("value", 0)), 1, "转岗社会状态必须深复制")
+
+	var commit_stub := _StaffingAssignmentCommitStub.new()
+	var residents := {"resident-a": {"socialState": original_social_state.duplicate(true)}}
+	var committed_arrangement := STAFFING_ASSIGNMENT_COMMIT.create_arrangement(
+		commit_stub,
+		residents,
+		"resident-a",
+		target,
+		90,
+	) as Dictionary
+	_expect(bool(committed_arrangement.get("ok", false)), "岗位安排提交必须返回运行时结果")
+	_expect_equal(commit_stub.create_args, ["resident-a", "occupation-baker", "trial", 90, 120, 240], "岗位安排提交必须保持参数顺序")
+	_expect_equal(commit_stub.rebuild_args.size(), 2, "成功岗位安排后必须立即重建岗位快照")
+	var resident_state := residents.get("resident-a", {}) as Dictionary
+	STAFFING_ASSIGNMENT_COMMIT.transfer(
+		commit_stub,
+		residents,
+		resident_state,
+		transfer_target,
+		occupation,
+		100,
+	)
+	_expect_equal(commit_stub.end_args, ["occupation-baker", 100, "岗位已有正式负责人"], "正式转岗必须结束目标岗位的临时安排")
+	_expect_equal(String((resident_state.get("socialState", {}) as Dictionary).get("job", "")), "面包师", "正式转岗提交必须安装新的社会职业状态")
+
+
+func _scenario_e16_occupation_service_and_social_contact_policies() -> void:
+	_expect_equal(
+		String(OCCUPATION_SERVICE_REQUEST_RUNTIME.entry_failure(
+			false, "", "", {},
+		).get("errorCode", "")),
+		"WORLD_NOT_RUNNING",
+		"职业服务请求入口必须优先保持世界未运行错误",
+	)
+	_expect_equal(
+		String(OCCUPATION_SERVICE_REQUEST_RUNTIME.entry_failure(
+			true, "civic_request", "", {"placeId": "市政厅"},
+		).get("errorCode", "")),
+		"OCCUPATION_SERVICE_REQUESTER_UNKNOWN",
+		"职业服务请求入口必须拒绝未知居民",
+	)
+	_expect_equal(
+		String(OCCUPATION_SERVICE_REQUEST_RUNTIME.entry_failure(
+			true, "unknown", "resident-a", {},
+		).get("errorCode", "")),
+		"OCCUPATION_SERVICE_KIND_UNKNOWN",
+		"职业服务请求入口必须拒绝未知服务类型",
+	)
+	_expect(
+		OCCUPATION_SERVICE_REQUEST_RUNTIME.entry_failure(
+			true, "civic_request", "resident-a", {"placeId": "市政厅"},
+		).is_empty(),
+		"真实居民和已知服务类型必须通过入口检查",
+	)
+
+	var occupation_services := TownOccupationServiceRuntime.new()
+	_expect(occupation_services.configure().get("ok") == true, "职业服务提交测试必须配置服务运行时")
+	_expect(occupation_services.initialize().get("ok") == true, "职业服务提交测试必须初始化服务运行时")
+	var work_tasks := TownWorkTaskRuntime.new()
+	_expect(work_tasks.configure().get("ok") == true, "职业服务提交测试必须配置工作任务运行时")
+	var request_commit := OCCUPATION_SERVICE_REQUEST_COMMIT.new(
+		occupation_services,
+		work_tasks,
+		TownClinicInterviewPolicy.new(),
+	)
+	var created_request := occupation_services.create_request({
+		"kind": "civic_request",
+		"requesterResidentId": "resident-a",
+		"subjectRef": "",
+		"itemId": "",
+		"placeId": "市政厅",
+		"context": {},
+		"createdAtMinute": 100,
+	}) as Dictionary
+	_expect(created_request.get("ok") == true, "职业服务提交测试必须建立真实服务请求")
+	var request := created_request.get("request", {}) as Dictionary
+	var prepared := {
+		"kind": "civic_request",
+		"requesterResidentId": "resident-a",
+		"definition": {
+			"capability": "civic.service",
+			"sourceKind": "resident_request",
+			"resultKind": "civic_case_update",
+			"occupationId": "occupation_town_manager",
+			"targetKind": "service_request",
+		},
+	}
+	var task_result := request_commit.create_task(prepared, request, {}, 100) as Dictionary
+	_expect(task_result.get("ok") == true, "非地点职业服务必须建立真实工作任务")
+	_expect(bool(task_result.get("createdNonPlaceTask", false)), "新建非地点任务必须要求总控推进世界版本")
+	var task := task_result.get("task", {}) as Dictionary
+	_expect_equal(String(task.get("sourceRef", "")), String(request.get("requestId", "")), "职业任务必须引用原服务请求")
+	var configured := request_commit.configure_task(
+		prepared,
+		task,
+		String(request.get("requestId", "")),
+	) as Dictionary
+	_expect(configured.get("ok") == true, "职业任务配置与请求关联必须作为同一提交步骤成功")
+	_expect_equal(
+		String((configured.get("request", {}) as Dictionary).get("taskId", "")),
+		String(task.get("taskId", "")),
+		"职业服务请求必须关联刚建立的任务",
+	)
+	var existing_task := {"taskId": "place-task"}
+	var reused_task := request_commit.create_task(prepared, request, existing_task, 101) as Dictionary
+	_expect(not bool(reused_task.get("createdNonPlaceTask", true)), "地点服务已有任务时不能重复创建非地点任务")
+	_expect_equal(reused_task.get("task", {}), existing_task, "地点服务已有任务必须原样传入配置阶段")
+
+	var failed_request_result := occupation_services.create_request({
+		"kind": "civic_request",
+		"requesterResidentId": "resident-b",
+		"subjectRef": "",
+		"itemId": "",
+		"placeId": "市政厅",
+		"context": {},
+		"createdAtMinute": 101,
+	}) as Dictionary
+	var failed_request := failed_request_result.get("request", {}) as Dictionary
+	var invalid_prepared := prepared.duplicate(true)
+	(invalid_prepared.get("definition", {}) as Dictionary)["capability"] = "unknown.capability"
+	var failed_task := request_commit.create_task(invalid_prepared, failed_request, {}, 101) as Dictionary
+	_expect(failed_task.get("ok") != true, "未知能力的职业任务必须提交失败")
+	_expect_equal(
+		String(occupation_services.request(
+			String(failed_request.get("requestId", "")),
+		).get("state", "")),
+		"cancelled",
+		"职业任务创建失败后必须取消原服务请求",
+	)
+	var success_source := {"requestId": "request-source", "nested": {"value": 1}}
+	var success_task_source := {"taskId": "task-source", "nested": {"value": 1}}
+	var success := OCCUPATION_SERVICE_REQUEST_RUNTIME.success(success_source, success_task_source)
+	(success.get("request", {}) as Dictionary)["requestId"] = "changed"
+	(success.get("task", {}) as Dictionary)["taskId"] = "changed"
+	_expect_equal(String(success_source.get("requestId", "")), "request-source", "职业服务成功结果必须隔离原请求")
+	_expect_equal(String(success_task_source.get("taskId", "")), "task-source", "职业服务成功结果必须隔离原任务")
+
+	_expect_equal(
+		INITIAL_SOCIAL_CONTACT_POLICY.source_id(
+			"sync_resident_request",
+			{"source_event_ids": ["", " event-2 "], "request_id": "request-1"},
+		),
+		"event-2",
+		"初始社会关系必须优先使用第一个真实来源事件",
+	)
+	_expect_equal(
+		INITIAL_SOCIAL_CONTACT_POLICY.source_id(
+			"sync_job_vacancy",
+			{"vacancy_id": "vacancy-1"},
+		),
+		"vacancy-1",
+		"岗位空缺必须回退到稳定空缺编号",
+	)
+	var request_operations := INITIAL_SOCIAL_CONTACT_POLICY.operations(
+		"sync_resident_request",
+		{"request_id": "request-1"},
+		120,
+		["resident-a", "resident-b"],
+		"resident-a",
+		"",
+		"",
+		"",
+		"",
+	)
+	_expect_equal(request_operations.size(), 3, "居民请求必须先登记创建者再记录全部直接知情者")
+	_expect_equal(String(request_operations[0].get("role", "")), "creator", "居民请求第一项操作必须登记创建者")
+	_expect_equal(String(request_operations[1].get("acquiredVia", "")), "direct_request", "居民请求知情来源必须保持直接请求")
+	var conversation_operations := INITIAL_SOCIAL_CONTACT_POLICY.operations(
+		"sync_conversation_commitment",
+		{"request_id": "promise-1"},
+		121,
+		[],
+		"",
+		"resident-promisor",
+		"resident-beneficiary",
+		"",
+		"",
+	)
+	_expect_equal(conversation_operations.size(), 4, "对话承诺必须为承诺者和受益者各生成关系与知情操作")
+	_expect_equal(String(conversation_operations[0].get("role", "")), "participant", "承诺者必须保持参与者身份")
+	_expect_equal(String(conversation_operations[2].get("role", "")), "affected", "受益者必须保持受影响者身份")
+	var vacancy_operations := INITIAL_SOCIAL_CONTACT_POLICY.operations(
+		"sync_job_vacancy",
+		{"vacancy_id": "vacancy-1"},
+		122,
+		["resident-a", "resident-b"],
+		"",
+		"",
+		"",
+		"",
+		"",
+	)
+	_expect_equal(vacancy_operations.size(), 4, "岗位空缺必须为每位候选人生成关系与知情操作")
+	_expect_equal(String(vacancy_operations[0].get("kind", "")), "involvement", "岗位候选人必须先登记受影响关系")
+	var pressure_operations := INITIAL_SOCIAL_CONTACT_POLICY.operations(
+		"sync_place_service_pressure",
+		{"pressure_id": "pressure-1", "expires_at": 180},
+		123,
+		["resident-helper", "resident-owner"],
+		"",
+		"",
+		"",
+		"resident-owner",
+		"市政厅里似乎忙不过来。",
+	)
+	_expect_equal(pressure_operations.size(), 4, "地点压力必须登记负责人并只向其他居民提供接触机会")
+	_expect_equal(String(pressure_operations[1].get("acquiredVia", "")), "witnessed", "地点负责人必须保持目击知情来源")
+	_expect_equal(String(pressure_operations[2].get("residentId", "")), "resident-helper", "地点负责人不能收到重复接触机会")
+	_expect_equal(int(pressure_operations[2].get("expiresAt", 0)), 180, "接触机会必须保持来源过期时间")
+	_expect_equal(String(pressure_operations[3].get("kind", "")), "schedule_decision", "每次接触机会后必须紧接居民决定调度")
+
+
+func _scenario_f1_work_domain_ownership() -> void:
+	var domain := WORK_DOMAIN_RUNTIME.new()
+	_expect(domain.tasks is TownWorkTaskRuntime, "工作域必须拥有工作任务运行时")
+	_expect(domain.staffing is TownStaffingRuntime, "工作域必须拥有岗位运行时")
+	_expect(domain.cargo is TownCargoInventoryRuntime, "工作域必须拥有货运库存运行时")
+	_expect(domain.production is TownProductionRuntime, "工作域必须拥有生产运行时")
+	_expect(domain.services is TownOccupationServiceRuntime, "工作域必须拥有职业服务运行时")
+	_expect(domain.place_services is TownPlaceServiceRuntime, "工作域必须拥有地点服务运行时")
+	_expect_equal(
+		(domain.staffing_snapshot(false).get("posts", []) as Array).size(),
+		0,
+		"世界停止时工作域必须返回稳定空岗位快照",
+	)
+	_expect_equal(
+		(domain.cargo_snapshot(false).get("cargoLots", []) as Array).size(),
+		0,
+		"世界停止时工作域必须返回稳定空货运快照",
+	)
+	_expect_equal(
+		(domain.service_snapshot(false).get("requests", []) as Array).size(),
+		0,
+		"世界停止时工作域必须返回稳定空职业服务快照",
+	)
+	_expect(domain.production_snapshot(false).is_empty(), "世界停止时生产快照必须保持空对象合同")
+
+	var tasks := TownWorkTaskRuntime.new()
+	var staffing := TownStaffingRuntime.new()
+	var cargo := TownCargoInventoryRuntime.new()
+	var production := TownProductionRuntime.new()
+	var services := TownOccupationServiceRuntime.new()
+	domain.install(tasks, staffing, cargo, production, services)
+	_expect(
+		domain.tasks == tasks
+		and domain.staffing == staffing
+		and domain.cargo == cargo
+		and domain.production == production
+		and domain.services == services,
+		"世界启动提交必须一次安装同一批工作域组件",
+	)
+	domain.place_services.set_state("foundation-place", {"open": true})
+	domain.reset_after_stop()
+	_expect(domain.tasks == tasks, "世界停止必须保持原工作任务历史兼容语义")
+	_expect(
+		domain.staffing != staffing
+		and domain.cargo != cargo
+		and domain.production != production
+		and domain.services != services,
+		"世界停止必须由工作域统一重置岗位、货运、生产和服务状态",
+	)
+	_expect(
+		domain.place_services.state("foundation-place").is_empty(),
+		"世界停止必须同时清空工作域拥有的地点服务状态",
+	)
+	var occupation_world_data := {
+		"occupations": [
+			{
+				"occupationId": "occupation-foundation",
+				"label": "基础岗位",
+				"aliases": ["岗位别名"],
+			},
+		],
+	}
+	_expect_equal(
+		domain.primary_occupation_id(
+			{"socialState": {"job": "基础岗位"}},
+			occupation_world_data,
+		),
+		"occupation-foundation",
+		"工作域必须根据岗位正式名称解析主职业",
+	)
+	_expect_equal(
+		domain.primary_occupation_id(
+			{"socialState": {"job": "岗位别名"}},
+			occupation_world_data,
+		),
+		"occupation-foundation",
+		"工作域必须保持岗位别名解析兼容性",
+	)
+	_expect_equal(
+		String(domain.pickup_cargo_lot(
+			"lot-1", "未知居民", "", "", 100, false, "",
+		).get("errorCode", "")),
+		"WORLD_RESIDENT_UNKNOWN",
+		"货运命令必须在工作域保持未知居民错误合同",
+	)
+	var private_cargo_result := {
+		"ok": true,
+		"cargoCommand": {"logLabel": "货批生成"},
+		"scheduleResidentIds": ["resident-a"],
+		"scheduleOccupationIds": ["occupation-delivery"],
+		"logStatus": "ongoing",
+	}
+	var public_cargo_result := CARGO_LOGISTICS_RUNTIME.public_result(private_cargo_result)
+	_expect(
+		not public_cargo_result.has("cargoCommand")
+		and not public_cargo_result.has("scheduleResidentIds")
+		and not public_cargo_result.has("scheduleOccupationIds")
+		and not public_cargo_result.has("logStatus"),
+		"货运公开结果不能泄漏内部提交和调度信息",
+	)
+	_expect_equal(
+		String(domain.meal_period_for_minute(570).get("id", "")),
+		"breakfast",
+		"工作域必须保持早餐时段查询合同",
+	)
+	_expect_equal(
+		domain.meal_period_source_ref(570),
+		"meal-period:0:breakfast",
+		"工作域必须保持餐次来源编号合同",
+	)
+	_expect(domain.meal_service_is_open(570), "工作域必须保持早餐发放时间判断")
+	_expect(
+		domain.dining_collect_can_finish_in_current_period(595),
+		"餐次结束前五分钟仍必须允许完成取餐",
+	)
+	_expect(
+		not domain.dining_collect_can_finish_in_current_period(596),
+		"餐次剩余不足五分钟时必须拒绝开始取餐",
+	)
+	_expect(
+		not domain.meal_period_is_prepared(570),
+		"没有完成备餐工单时工作域不能误报餐次已备好",
+	)
+	_expect(
+		domain.active_clinic_request_for_resident("resident-a").is_empty(),
+		"空职业服务状态不能产生诊所请求",
+	)
+	var staffing_plan := STAFFING_MATTER_PROJECTION.plan(
+		{
+			"posts": [
+				{
+					"occupationId": "occupation-target",
+					"label": "目标岗位",
+					"status": "vacant",
+				},
+				{
+					"occupationId": "occupation-duplicate",
+					"status": "duplicate",
+					"assignedResidentIds": ["resident-duplicate"],
+				},
+			],
+			"unassignedResidentIds": ["resident-unassigned"],
+		},
+		[
+			"resident-duplicate",
+			"resident-unassigned",
+			"resident-current",
+			"resident-candidate",
+			"resident-on-leave",
+		],
+		{
+			"resident-current": "occupation-target",
+			"resident-candidate": "occupation-other",
+			"resident-on-leave": "occupation-other",
+		},
+		["resident-unassigned", "resident-current", "resident-candidate"],
+		3,
+		7,
+		120,
+	)
+	var vacancy_source := (
+		staffing_plan.get("sources", []) as Array
+	)[0] as Dictionary
+	_expect_equal(
+		vacancy_source.get("candidate_resident_ids", []),
+		["resident-duplicate", "resident-unassigned", "resident-candidate"],
+		"岗位事项必须保持重复岗位、未分配居民和普通候选的稳定顺序",
+	)
+	_expect_equal(
+		int(vacancy_source.get("expires_at", 0)),
+		10200,
+		"岗位事项必须保持七天刷新期限",
+	)
+	_expect_equal(
+		int(vacancy_source.get("source_revision", 0)),
+		7,
+		"岗位事项必须保留世界来源版本",
+	)
+
+	_expect_equal(
+		(domain.tasks.configure() as Dictionary).get("ok"),
+		true,
+		"工作域生产任务测试必须先配置真实工作链目录",
+	)
+	var production_events: Array[Dictionary] = []
+	domain.production_task_created.connect(
+		func(task: Dictionary) -> void:
+			production_events.append(task.duplicate(true))
+	)
+	var production_spec := {
+		"taskId": "foundation-production-task",
+		"capability": "food.production",
+		"sourceKind": "daily_baking_plan",
+		"sourceRef": "foundation-production-source",
+		"targets": [{"kind": "prop", "ref": "公共食堂备餐柜"}],
+		"requestedResultKind": "food_batch",
+		"createdAtMinute": 120,
+		"priority": 50,
+		"processStage": "planned",
+		"processFacts": {
+			"productItemId": "pastry",
+			"destinationPlaceId": "花房咖啡馆",
+			"nextActivityId": "activity_baker_prepare_dough",
+		},
+	}
+	var ensured_production := domain.ensure_production_task(production_spec)
+	_expect(bool(ensured_production.get("created", false)), "工作域必须建立新的生产任务")
+	_expect_equal(production_events.size(), 1, "新生产任务必须只发出一次调度事件")
+	_expect_equal(
+		String((ensured_production.get("task", {}) as Dictionary).get("processStage", "")),
+		"planned",
+		"工作域必须在调度前完成生产阶段初始化",
+	)
+	_expect(
+		not bool(domain.ensure_production_task(production_spec).get("created", true)),
+		"同一来源的生产任务必须保持幂等",
+	)
+	_expect_equal(production_events.size(), 1, "幂等生产任务不能重复唤醒居民")
+	_expect_equal(domain.active_presence_requests(), [], "空工作域不能产生在场服务计划")
+
+
+func _scenario_e14_activity_routine_policy() -> void:
+	_expect(
+		ACTIVITY_ROUTINE_POLICY.legacy_activation(
+			{"activityId": "eat"},
+			{},
+			[],
+		).is_empty(),
+		"没有例程描述时旧道具活动必须保持单步执行",
+	)
+	_expect(
+		ACTIVITY_ROUTINE_POLICY.legacy_activation(
+			{"activityId": "eat"},
+			{"group": "meal", "phase": "consume"},
+			[{"activityId": "eat", "available": true}],
+		).is_empty(),
+		"没有下一项不同活动时不能错误启动例程",
+	)
+	var meal_activation := ACTIVITY_ROUTINE_POLICY.legacy_activation(
+		{"activityId": "eat", "preferredSlotId": "seat-1", "placeId": "餐厅"},
+		{"group": "meal", "phase": "consume"},
+		[
+			{"activityId": "eat", "phase": "consume", "available": true},
+			{"activityId": "collect", "phase": "collect", "available": true},
+			{"activityId": "cleanup", "phase": "cleanup", "available": true},
+		],
+	) as Dictionary
+	var meal_mapping := meal_activation.get("mapping", {}) as Dictionary
+	var meal_descriptor := meal_activation.get("descriptor", {}) as Dictionary
+	_expect_equal(String(meal_mapping.get("activityId", "")), "collect", "餐次从中间动作进入时必须先回到领取阶段")
+	_expect(not meal_mapping.has("preferredSlotId"), "餐次改从领取阶段开始时不能沿用原座位偏好")
+	_expect_equal(String(meal_descriptor.get("phase", "")), "collect", "餐次例程描述必须同步为领取阶段")
+	_expect_equal(String(meal_descriptor.get("group", "")), "meal", "餐次例程描述必须保留餐次分组")
+	var work_activation := ACTIVITY_ROUTINE_POLICY.legacy_activation(
+		{"activityId": "work-a", "placeId": "工坊"},
+		{"group": "work", "phase": ""},
+		[
+			{"activityId": "work-a", "available": true},
+			{"activityId": "work-b", "available": true},
+		],
+	) as Dictionary
+	_expect_equal(String((work_activation.get("mapping", {}) as Dictionary).get("activityId", "")), "work-a", "普通例程启动不能改写首个活动")
+
+	var base_routine := {
+		"routineId": "routine-1",
+		"placeId": "餐厅",
+		"group": "meal",
+		"endAbsoluteMinute": 100,
+		"sequence": 0,
+		"lastActivityId": "collect",
+		"lastPhase": "collect",
+		"visitedActivityIds": ["collect"],
+		"choiceSeed": 7,
+	}
+	var interrupted := ACTIVITY_ROUTINE_POLICY.continuation_entry(
+		base_routine,
+		{"type": "去"},
+		"餐厅",
+		20,
+		3,
+		"用餐结束",
+	) as Dictionary
+	_expect_equal(String(interrupted.get("status", "")), "interrupted", "同步回调安装新动作后必须中断旧例程")
+	_expect_equal(String(interrupted.get("reason", "")), "居民改做另一件事，刚才的活动安排先收尾了", "新动作中断例程必须保留原提示")
+	var departed := ACTIVITY_ROUTINE_POLICY.continuation_entry(
+		base_routine,
+		{},
+		"广场",
+		20,
+		3,
+		"用餐结束",
+	) as Dictionary
+	_expect_equal(String(departed.get("status", "")), "interrupted", "居民离开地点后必须中断例程")
+	var expired := ACTIVITY_ROUTINE_POLICY.continuation_entry(
+		base_routine,
+		{},
+		"餐厅",
+		100,
+		3,
+		"用餐结束",
+	) as Dictionary
+	_expect_equal(String(expired.get("status", "")), "completed", "达到例程截止时间必须正常完成")
+	_expect_equal(String(expired.get("reason", "")), "用餐结束", "正常结束必须使用分组完成文案")
+	var maxed_routine := base_routine.duplicate(true)
+	maxed_routine["sequence"] = 2
+	var maxed := ACTIVITY_ROUTINE_POLICY.continuation_entry(
+		maxed_routine,
+		{},
+		"餐厅",
+		20,
+		3,
+		"用餐结束",
+	) as Dictionary
+	_expect_equal(String(maxed.get("kind", "")), "close", "达到最大步骤数必须关闭例程")
+	var select_meal := ACTIVITY_ROUTINE_POLICY.continuation_entry(
+		base_routine,
+		{},
+		"餐厅",
+		20,
+		3,
+		"用餐结束",
+	) as Dictionary
+	_expect_equal(String(select_meal.get("expectedPhase", "")), "consume", "领取餐食后只能继续进食阶段")
+	var invalid_phase_routine := base_routine.duplicate(true)
+	invalid_phase_routine["lastPhase"] = "unknown"
+	var invalid_phase := ACTIVITY_ROUTINE_POLICY.continuation_entry(
+		invalid_phase_routine,
+		{},
+		"餐厅",
+		20,
+		3,
+		"用餐结束",
+	) as Dictionary
+	_expect_equal(String(invalid_phase.get("kind", "")), "close", "未知餐次阶段不能猜测下一步")
+
+	var meal_candidates := ACTIVITY_ROUTINE_POLICY.candidate_plan(
+		base_routine,
+		[
+			{"activityId": "collect", "phase": "collect", "available": true},
+			{"activityId": "eat", "phase": "consume", "label": "吃饭", "available": true},
+			{"activityId": "cleanup", "phase": "cleanup", "available": true},
+			{"activityId": "unavailable", "phase": "consume", "available": false},
+		],
+		"consume",
+	) as Dictionary
+	var ordered_meal_candidates := meal_candidates.get("candidates", []) as Array
+	_expect_equal(ordered_meal_candidates.size(), 1, "餐次候选必须只保留预期阶段的可用新活动")
+	_expect_equal(String((ordered_meal_candidates[0] as Dictionary).get("activityId", "")), "eat", "餐次领取后的候选必须是进食")
+	_expect_equal(int(meal_candidates.get("nextSequence", 0)), 1, "下一例程步骤序号必须递增一次")
+	var work_routine := {
+		"routineId": "routine-work",
+		"placeId": "工坊",
+		"group": "work",
+		"sequence": 1,
+		"lastActivityId": "work-b",
+		"visitedActivityIds": ["work-a", "work-b"],
+		"choiceSeed": 0,
+	}
+	var work_candidates := ACTIVITY_ROUTINE_POLICY.candidate_plan(
+		work_routine,
+		[
+			{"activityId": "work-a", "available": true},
+			{"activityId": "work-c", "label": "制作", "available": true},
+		],
+		"",
+	) as Dictionary
+	_expect_equal((work_candidates.get("candidates", []) as Array).size(), 1, "工作例程不能重复访问过的活动")
+	var work_candidate := (work_candidates.get("candidates", []) as Array)[0] as Dictionary
+	var step := ACTIVITY_ROUTINE_POLICY.continuation_step(
+		work_routine,
+		work_candidate,
+		2,
+	) as Dictionary
+	_expect_equal(String(step.get("stepId", "")), "step-2-work-c", "例程步骤编号必须保持稳定")
+	_expect_equal(String((step.get("target", {}) as Dictionary).get("placeId", "")), "工坊", "例程步骤必须留在原地点")
+	var advanced := ACTIVITY_ROUTINE_POLICY.advanced_routine(
+		work_routine,
+		work_candidate,
+		2,
+	) as Dictionary
+	_expect_equal(int(advanced.get("sequence", 0)), 2, "成功活动必须推进例程序号")
+	_expect_equal(String(advanced.get("lastActivityId", "")), "work-c", "成功活动必须记录最后活动")
+	_expect((advanced.get("visitedActivityIds", []) as Array).has("work-c"), "成功工作活动必须加入已访问集合")
+	_expect(not (work_routine.get("visitedActivityIds", []) as Array).has("work-c"), "例程推进不能提前修改原运行态")
+
+
+func _scenario_e13_agent_social_projections() -> void:
+	var source_resident := {
+		"spaceId": "road",
+		"regionId": "region-old",
+		"currentPlace": "旧地点",
+		"position": Vector2(1, 2),
+		"currentAction": {"type": "去"},
+	}
+	var perception_resident := AGENT_WAKE_PACKET_PROJECTION.perception_resident(
+		source_resident,
+		{
+			"spaceId": "town_outdoor",
+			"regionId": "region-new",
+			"currentPlace": "广场",
+			"position": Vector2(10, 20),
+		},
+	) as Dictionary
+	_expect_equal(String(perception_resident.get("currentPlace", "")), "广场", "抵达预取唤醒必须使用抵达后的地点")
+	_expect((perception_resident.get("currentAction", {}) as Dictionary).is_empty(), "抵达预取唤醒不能暴露仍在路上的动作")
+	_expect_equal(String(source_resident.get("currentPlace", "")), "旧地点", "抵达投影不能修改真实居民状态")
+	var nearby_ids := AGENT_WAKE_PACKET_PROJECTION.resident_ids([
+		{"resident_id": " resident-a "},
+		{"resident_id": ""},
+		{"resident_id": "resident-b"},
+	])
+	_expect_equal(nearby_ids, ["resident-a", "resident-b"], "唤醒冲突视图必须只保留有效附近居民编号")
+	var social_source := {"result_id": "result-1", "nested": {"value": 1}}
+	var social_results := AGENT_WAKE_PACKET_PROJECTION.public_social_results([
+		social_source,
+		"invalid",
+	])
+	_expect_equal(social_results.size(), 1, "唤醒包必须过滤非字典社会回应")
+	(social_results[0].get("nested", {}) as Dictionary)["value"] = 2
+	_expect_equal(int((social_source.get("nested", {}) as Dictionary).get("value", 0)), 1, "社会回应投影必须深复制")
+	var conflict_source := {"conflicts": [{"conflict_id": "conflict-1"}]}
+	var packet := AGENT_WAKE_PACKET_PROJECTION.packet(
+		"decision-1",
+		{
+			"resident": {"doing": "思考中", "body": {}, "activityState": {}},
+			"currentAction": null,
+			"conflictSnapshot": conflict_source,
+		},
+		[{"event_id": "event-1"}],
+		[{"result_id": "result-1"}],
+		social_results,
+	) as Dictionary
+	var packet_snapshot := packet.get("snapshot", {}) as Dictionary
+	var packet_me := packet_snapshot.get("me", {}) as Dictionary
+	_expect(packet_me.has("current_action") and packet_me.get("current_action") == null, "唤醒合同必须保留可选的空当前动作")
+	_expect_equal(String(packet.get("decision_id", "")), "decision-1", "唤醒包必须保留决定编号")
+	((packet_snapshot.get("conflicts", []) as Array)[0] as Dictionary)["conflict_id"] = "changed"
+	_expect_equal(String(((conflict_source.get("conflicts", []) as Array)[0] as Dictionary).get("conflict_id", "")), "conflict-1", "冲突投影必须与运行时状态隔离")
+
+	var options := CONVERSATION_FOLLOW_UP_OPTION_PROJECTION.legacy_options({
+		"residentId": "resident-a",
+		"partnerId": "resident-b",
+		"partnerRef": "居民乙",
+		"partnerName": "居民乙",
+		"currentPlace": "广场",
+		"requestedPlaceIds": [],
+		"destinations": ["诊所"],
+		"activities": [{"activity_id": "rest", "label": "休息"}],
+		"nearby": [{"residentId": "resident-c", "displayName": "居民丙"}],
+		"serviceOfferings": [{
+			"place_id": "餐厅",
+			"activity_id": "collect-meal",
+			"service_label": "餐食",
+		}],
+	})
+	_expect_equal(options.size(), 5, "完整对话后续投影必须包含前往、同行、活动、交谈和代取服务")
+	_expect_equal(String(options[0].get("capability_id", "")), "world.go_to_place", "前往选项顺序必须保持不变")
+	_expect_equal(String(options[1].get("capability_id", "")), "world.escort_person_to_place", "同行选项必须紧跟对应地点")
+	_expect_equal(String(options[4].get("capability_id", "")), "world.fetch_service_for_person", "代取服务选项必须保留原能力编号")
+	var filtered_options := CONVERSATION_FOLLOW_UP_OPTION_PROJECTION.legacy_options({
+		"residentId": "resident-a",
+		"partnerId": "resident-b",
+		"partnerName": "居民乙",
+		"currentPlace": "广场",
+		"requestedPlaceIds": ["诊所"],
+		"destinations": ["诊所", "餐厅"],
+		"activities": [{"activity_id": "rest", "label": "休息"}],
+		"nearby": [{"residentId": "resident-c", "displayName": "居民丙"}],
+		"serviceOfferings": [{"place_id": "餐厅", "activity_id": "meal", "service_label": "餐食"}],
+	})
+	_expect_equal(filtered_options.size(), 2, "指定地点的对话承诺只能保留该地点的前往与同行选项")
+	_expect_equal(String(filtered_options[0].get("place_id", "")), "诊所", "指定地点筛选必须保留目标地点")
+
+	var no_time_schedule := ANNOUNCEMENT_PUBLICATION_PROJECTION.schedule_context(
+		"大家记得查看公告",
+		480,
+	) as Dictionary
+	_expect((no_time_schedule.get("schedule", {}) as Dictionary).is_empty(), "无时间表达的公告不能产生定时计划")
+	_expect(not bool(no_time_schedule.get("timeExpressionDetected", true)), "无时间表达公告不能产生计划警告前提")
+	var announcement_source := {
+		"announcement_id": "announcement-1",
+		"publisher_id": "resident-a",
+		"text": "今晚集合",
+		"matter_id": "",
+		"time": {"day": 2, "clock": "08:00"},
+	}
+	var published := ANNOUNCEMENT_PUBLICATION_PROJECTION.published_announcement({
+		"value": {"announcement": announcement_source},
+	})
+	(published.get("time", {}) as Dictionary)["day"] = 9
+	_expect_equal(int((announcement_source.get("time", {}) as Dictionary).get("day", 0)), 2, "公告提交结果必须深复制")
+	var event_spec := ANNOUNCEMENT_PUBLICATION_PROJECTION.event_spec(
+		announcement_source,
+		"resident-a",
+		"居民甲",
+		"ordinary",
+		{"day": 1},
+	) as Dictionary
+	_expect(event_spec.has("matter_id") and event_spec.get("matter_id") == null, "无社会事项公告必须保留空 matter_id 合同")
+	_expect_equal(String(event_spec.get("announcement_priority", "")), "ordinary", "公告事件必须保留发布者优先级")
+	var invalid_announcement := ANNOUNCEMENT_PUBLICATION_PROJECTION.invalid_publish_failure({
+		"error_code": "BULLETIN_ANNOUNCEMENT_INVALID",
+		"reason": "公告内容无效",
+	})
+	_expect_equal(String(invalid_announcement.get("errorCode", "")), "ANNOUNCEMENT_INVALID", "公告校验失败必须映射原世界错误码")
+	var capability := ANNOUNCEMENT_PUBLICATION_PROJECTION.capability_completion(announcement_source)
+	_expect_equal(String(capability.get("resultId", "")), "bulletin-publish:announcement-1", "公告社会能力结果编号必须保持稳定")
+	var success := ANNOUNCEMENT_PUBLICATION_PROJECTION.success_result(
+		announcement_source,
+		"world-event-1",
+		"",
+		{},
+		true,
+	)
+	_expect(bool(success.get("scheduleWarning", false)), "检测到时间表达但无法解析时必须保留计划警告")
+
+
+func _scenario_e12_world_orchestration_policies() -> void:
+	_expect_equal(
+		CONFIRMED_ACTION_ACTIVATION_POLICY.route_kind(
+			{"type": "用道具", "dynamicPropId": ""},
+		),
+		"legacy_prop_activity",
+		"静态道具确认动作必须继续走旧活动兼容入口",
+	)
+	_expect_equal(
+		CONFIRMED_ACTION_ACTIVATION_POLICY.route_kind(
+			{"type": "用道具", "dynamicPropId": "dynamic-1"},
+		),
+		"regular",
+		"动态道具确认动作必须继续走常规入口",
+	)
+	_expect_equal(
+		CONFIRMED_ACTION_ACTIVATION_POLICY.route_kind({"type": "做活动"}),
+		"agent_activity",
+		"活动确认动作必须继续走 Agent 活动入口",
+	)
+	_expect_equal(
+		CONFIRMED_ACTION_ACTIVATION_POLICY.route_kind({"type": "攻击"}),
+		"conflict",
+		"冲突动作必须继续走冲突入口",
+	)
+	var submitted_source := {"type": "观察", "nested": {"value": 1}}
+	var submitted := CONFIRMED_ACTION_ACTIVATION_POLICY.submitted_action(
+		{"submittedAction": submitted_source},
+		{},
+	) as Dictionary
+	(submitted.get("nested", {}) as Dictionary)["value"] = 2
+	_expect_equal(
+		int((submitted_source.get("nested", {}) as Dictionary).get("value", 0)),
+		1,
+		"确认动作的原始提交内容必须深复制",
+	)
+	var resident := {
+		"currentAction": {},
+		"routeConnector": [Vector2(1, 2)],
+		"actionSuspendedAbsoluteMinute": 30,
+		"doing": "旧状态",
+	}
+	var activated_action := {"type": "观察", "consumeRouteConnector": true}
+	CONFIRMED_ACTION_ACTIVATION_POLICY.activate_resident(
+		resident,
+		activated_action,
+		"正在观察",
+	)
+	_expect(resident.get("currentAction") == activated_action, "确认动作必须成为当前动作")
+	_expect_equal((resident.get("routeConnector", []) as Array).size(), 0, "动作声明消费连接线时必须清空旧连接线")
+	_expect_equal(int(resident.get("actionSuspendedAbsoluteMinute", 0)), -1, "确认新动作必须清除暂停时间")
+	_expect_equal(String(resident.get("doing", "")), "正在观察", "确认新动作必须同步居民状态文案")
+
+	var region_candidates := [
+		{"slotId": "slot-a", "targetType": "region", "memberAvailable": true},
+		{"slotId": "slot-b", "targetType": "region", "memberAvailable": true},
+		{"slotId": "slot-c", "targetType": "region", "memberAvailable": true},
+	]
+	var ordered := ACTIVITY_CANDIDATE_PREFLIGHT_POLICY.ordered_candidates({
+		"residentId": "resident-1",
+		"actionId": "action-1",
+		"candidates": region_candidates,
+	}) as Array
+	_expect_equal(ordered.size(), 3, "区域活动候选排序不能丢失成员")
+	var ordered_ids: Array[String] = []
+	for candidate_value: Variant in ordered:
+		ordered_ids.append(String((candidate_value as Dictionary).get("slotId", "")))
+	ordered_ids.sort()
+	_expect_equal(ordered_ids, ["slot-a", "slot-b", "slot-c"], "区域活动候选轮转后必须保持原候选集合")
+	var preferred := ACTIVITY_CANDIDATE_PREFLIGHT_POLICY.ordered_candidates({
+		"preferredRequested": true,
+		"candidates": [
+			{"slotId": "slot-a", "memberAvailable": false},
+			{"slotId": "slot-b", "memberAvailable": true},
+			{"slotId": "slot-c", "memberAvailable": true},
+		],
+	}) as Array
+	_expect_equal(preferred.size(), 2, "明确指定活动候选时最多保留前两个确定性候选")
+	_expect_equal(String((preferred[0] as Dictionary).get("slotId", "")), "slot-a", "明确指定候选不能因占用被提前改序")
+	var available := ACTIVITY_CANDIDATE_PREFLIGHT_POLICY.ordered_candidates({
+		"candidates": [
+			{"slotId": "slot-a", "memberAvailable": false},
+			{"slotId": "slot-b", "memberAvailable": true},
+		],
+	}) as Array
+	_expect_equal(String((available[0] as Dictionary).get("slotId", "")), "slot-b", "普通活动必须选取首个可用候选")
+	var conflict := ACTIVITY_CANDIDATE_PREFLIGHT_POLICY.reservation_conflict([])
+	_expect_equal(String(conflict.get("errorCode", "")), "ACTIVITY_RESERVATION_CONFLICT", "无活动候选时必须保持预约冲突错误")
+	_expect(bool(conflict.get("retryable", false)), "活动预约冲突必须保持可重试")
+	var candidate := {
+		"slotId": "slot-1",
+		"memberAnchorId": "member-1",
+		"targetPropName": "长椅",
+		"targetActionVerb": "坐下",
+		"memberPosition": [10.0, 20.0],
+	}
+	var action := ACTIVITY_CANDIDATE_PREFLIGHT_POLICY.candidate_action(
+		{"actionId": "action-1", "activityLabel": "休息"},
+		candidate,
+	) as Dictionary
+	_expect_equal(action, {
+		"action_id": "action-1",
+		"type": "用道具",
+		"prop": "长椅",
+		"verb": "坐下",
+		"line": "休息",
+	}, "活动候选必须投影为原有道具动作字段")
+	var prepared := ACTIVITY_CANDIDATE_PREFLIGHT_POLICY.prepared_from_cache(
+		{"targetPosition": Vector2(10, 20), "path": [Vector2.ZERO]},
+		action,
+	) as Dictionary
+	var prepared_action := prepared.get("action", {}) as Dictionary
+	_expect_equal(String(prepared_action.get("action_id", "")), "action-1", "缓存动作必须刷新本次动作编号")
+	var candidate_result := ACTIVITY_CANDIDATE_PREFLIGHT_POLICY.candidate_result(
+		candidate,
+		prepared_action,
+		false,
+	) as Dictionary
+	_expect(bool(candidate_result.get("ok", false)), "权威锚点一致时活动候选必须通过")
+	_expect_equal(String(candidate_result.get("memberAnchorId", "")), "member-1", "活动候选结果必须保留成员锚点")
+	_expect(
+		ACTIVITY_CANDIDATE_PREFLIGHT_POLICY.candidate_result(
+			candidate,
+			{"targetPosition": Vector2(99, 99)},
+			false,
+		).is_empty(),
+		"非布局覆盖动作的目标位置不一致时必须拒绝候选",
+	)
+	var unreachable := ACTIVITY_CANDIDATE_PREFLIGHT_POLICY.target_failure(true)
+	_expect_equal(String(unreachable.get("errorCode", "")), "ACTIVITY_TARGET_UNREACHABLE", "不可达候选必须保持原错误码")
+	_expect(bool(unreachable.get("retryable", false)), "活动目标不可达必须保持可重试")
+	var invalid_reference := ACTIVITY_CANDIDATE_PREFLIGHT_POLICY.target_failure(false)
+	_expect_equal(String(invalid_reference.get("errorCode", "")), "ACTIVITY_SLOT_REFERENCE_INVALID", "锚点不一致必须保持原错误码")
+	_expect(not bool(invalid_reference.get("retryable", true)), "活动锚点引用错误不能标记为可重试")
+
+	var identity_status := "confirmed"
+	var time := {"day": 3, "hour": 8, "minute": 15}
+	var lifecycle := {"running": true, "paused": false}
+	var restore_summary := RESTORE_COMMIT_PROJECTION.summary(
+		5,
+		4,
+		2,
+		identity_status,
+		time,
+		"晴",
+		lifecycle,
+		19,
+	) as Dictionary
+	_expect_equal(String(restore_summary.get("identityStatus", "")), identity_status, "恢复摘要必须保留居民身份状态")
+	_expect(bool(restore_summary.get("residentRelocationRequired", false)), "恢复摘要必须继续要求表现层重新放置居民")
+	(time as Dictionary)["day"] = 99
+	(lifecycle as Dictionary)["running"] = false
+	_expect_equal(int((restore_summary.get("time", {}) as Dictionary).get("day", 0)), 3, "恢复摘要时间必须与可变运行态隔离")
+	_expect(bool((restore_summary.get("lifecycle", {}) as Dictionary).get("running", false)), "恢复摘要生命周期必须与可变运行态隔离")
+
+
+func _scenario_agent_decision_acceptance_policy() -> void:
+	var stopped_entry := AGENT_DECISION_ENVELOPE_RUNTIME.by_id_entry_error(
+		false,
+		"resident-1",
+		"居民甲",
+		true,
+		true,
+		8,
+	) as Dictionary
+	_expect_equal(
+		String(stopped_entry.get("errorCode", "")),
+		"WORLD_NOT_RUNNING",
+		"按编号提交决定时必须优先保持世界未运行错误",
+	)
+	_expect_equal(
+		int(stopped_entry.get("worldRevision", 0)),
+		8,
+		"决定入口错误必须保留当前世界版本",
+	)
+	var paused_resident := {
+		"decisionPending": true,
+		"validDecisionId": "decision-1",
+		"wakeDispatchQueued": false,
+	}
+	var paused_entry := AGENT_DECISION_ENVELOPE_RUNTIME.submission_entry_error(
+		true,
+		"居民甲",
+		"resident-1",
+		true,
+		true,
+		paused_resident,
+		"decision-1",
+	) as Dictionary
+	_expect_equal(
+		String(paused_entry.get("errorCode", "")),
+		"WORLD_PAUSED",
+		"暂停期间必须保持可重试的决定入口错误",
+	)
+	_expect(
+		bool(paused_resident.get("wakeDispatchQueued", false)),
+		"暂停期间收到仍有效决定时必须重新排队唤醒",
+	)
+	var stale_entry := AGENT_DECISION_ENVELOPE_RUNTIME.submission_entry_error(
+		true,
+		"居民甲",
+		"resident-1",
+		true,
+		false,
+		paused_resident,
+		"decision-old",
+	) as Dictionary
+	_expect(bool(stale_entry.get("stale", false)), "旧决定编号必须继续判为失效")
+	var context_resident := {
+		"inflightEvents": [{"event_id": "event-1"}],
+		"inflightResults": [{"action_id": "action-1"}],
+		"pendingWake": {"snapshot": {"value": 1}},
+		"decisionPrefetch": true,
+		"decisionMayInterruptCurrent": true,
+	}
+	var captured_context := AGENT_DECISION_ENVELOPE_RUNTIME.submission_context(
+		context_resident,
+		{"rootEventIds": ["root-1"]},
+	) as Dictionary
+	(context_resident.get("inflightEvents", []) as Array).clear()
+	_expect_equal(
+		(captured_context.get("inflightEvents", []) as Array).size(),
+		1,
+		"决定受理上下文必须与居民飞行中事实后续修改隔离",
+	)
+	_expect(bool(captured_context.get("wasPrefetched", false)), "决定上下文必须保留预取标记")
+	_expect(bool(captured_context.get("mayInterruptCurrent", false)), "决定上下文必须保留中断许可")
+	var reply_required := AGENT_DECISION_ACCEPTANCE_POLICY.invitation_reply_error({
+		"handling": "continue_current",
+	}) as Dictionary
+	_expect_equal(
+		String(reply_required.get("errorCode", "")),
+		"CONVERSATION_REPLY_REQUIRED",
+		"初次搭话必须提交答话动作",
+	)
+	var refusal_reason := AGENT_DECISION_ACCEPTANCE_POLICY.invitation_reply_error({
+		"handling": "replace_current",
+		"action": {"type": "答话", "end": true, "say": ""},
+	}) as Dictionary
+	_expect_equal(
+		String(refusal_reason.get("errorCode", "")),
+		"CONVERSATION_REFUSAL_REASON_REQUIRED",
+		"拒绝搭话时必须保留明确理由检查",
+	)
+	_expect(
+		AGENT_DECISION_ACCEPTANCE_POLICY.invitation_reply_error({
+			"handling": "replace_current",
+			"action": {"type": "答话", "end": true, "say": "现在不方便"},
+		}).is_empty(),
+		"带明确理由的拒绝答话必须通过前置检查",
+	)
+	var injury := {
+		"attacker_resident_id": "resident-2",
+	}
+	_expect_equal(
+		AGENT_DECISION_ACCEPTANCE_POLICY.post_injury_action_error(
+			{},
+			{
+				"handling": "replace_current",
+				"action": {
+					"type": "搭话",
+					"target_resident_id": "resident-2",
+				},
+			},
+			injury,
+			"诊所",
+		),
+		"",
+		"受伤后当面质问攻击者必须允许继续",
+	)
+	_expect(
+		not AGENT_DECISION_ACCEPTANCE_POLICY.post_injury_action_error(
+			{},
+			{
+				"handling": "replace_current",
+				"action": {"type": "搭话", "target_resident_id": "resident-3"},
+			},
+			injury,
+			"诊所",
+		).is_empty(),
+		"受伤后不能先与无关居民搭话",
+	)
+	_expect_equal(
+		AGENT_DECISION_ACCEPTANCE_POLICY.waiting_conversation_reply_error(
+			{"waitingFor": "resident-1"},
+			"resident-1",
+			"去",
+			false,
+		),
+		"当前对话正在等待本居民提交答话动作",
+		"进行中的对话必须保持强制答话错误",
+	)
+	_expect_equal(
+		AGENT_DECISION_ACCEPTANCE_POLICY.conversation_end_reason(
+			{"conversationId": "conversation-1"},
+			"去",
+			true,
+		),
+		"拒绝接话",
+		"初次搭话改做其他动作时必须保持拒绝结束原因",
+	)
+	var prefetched_resident := {}
+	var prefetched_decision := {"decision_id": "decision-1", "nested": {"value": 1}}
+	var prefetched_result := AGENT_DECISION_ENVELOPE_RUNTIME.store_prefetched_decision(
+		prefetched_resident,
+		"resident-1",
+		"decision-1",
+		prefetched_decision,
+		{"snapshot": {"value": 1}},
+		[{"event_id": "event-1"}],
+		[{"action_id": "action-1"}],
+	) as Dictionary
+	prefetched_decision["nested"]["value"] = 2
+	_expect_equal(
+		String(prefetched_result.get("status", "")),
+		"prefetched",
+		"行动中的预取决定必须保持原状态返回值",
+	)
+	_expect_equal(
+		int((((prefetched_resident.get("prefetchedDecision", {}) as Dictionary).get(
+			"nested", {}
+		) as Dictionary).get("value", 0))),
+		1,
+		"暂存的预取决定必须与调用方后续修改隔离",
+	)
+	var reconsidered := AGENT_DECISION_ACCEPTANCE_POLICY.apply_wait_reconsideration(
+		{"type": "待着", "completeAbsoluteMinute": 150},
+		{
+			"action_id": "resume-1",
+			"followUpPausedForReconsideration": true,
+			"followUpReconsiderationReason": "目标暂不可达",
+			"followUpReconsiderationSinceMinute": 80,
+		},
+		true,
+		100,
+		20,
+	) as Dictionary
+	_expect_equal(
+		int(reconsidered.get("completeAbsoluteMinute", 0)),
+		120,
+		"重新考虑时的等待动作必须继续受最长等待时长约束",
+	)
+	var resume_action := reconsidered.get("followUpResumeAction", {}) as Dictionary
+	_expect(
+		not resume_action.has("followUpPausedForReconsideration"),
+		"恢复动作必须移除重新考虑暂停标记",
+	)
+	var preview_action := {"action_id": "action-1", "type": "待着"}
+	var preview := AGENT_DECISION_CONFIRMATION_PROJECTION.preview(
+		"decision-1",
+		"replace_current",
+		preview_action,
+		"待在原地",
+		"先等等",
+		7,
+		{"day": 1, "hour": 8, "minute": 0},
+		0.8,
+		preview_action,
+	) as Dictionary
+	preview_action["type"] = "去"
+	_expect_equal(
+		String((preview.get("action", {}) as Dictionary).get("type", "")),
+		"待着",
+		"确认预览必须与提交动作后续修改隔离",
+	)
+	_expect_equal(
+		String(AGENT_DECISION_CONFIRMATION_PROJECTION.accepted_result(
+			"replace_current", {}, {}
+		).get("status", "")),
+		"accepted",
+		"替换动作的确认结果必须保持 accepted 状态",
+	)
+
+
+func _scenario_production_task_sync_runtime() -> void:
+	var work_tasks := TownWorkTaskRuntime.new()
+	_expect(
+		work_tasks.configure().get("ok") == true,
+		"生产任务同步模块测试必须成功配置任务运行时",
+	)
+	var created := work_tasks.create_task({
+		"taskId": "e8-active-food-task",
+		"capability": "food.production",
+		"sourceKind": "daily_baking_plan",
+		"sourceRef": "dining-pastry-plan-day:1",
+		"targets": [{"kind": "prop", "ref": "公共食堂灶台"}],
+		"requestedResultKind": "food_batch",
+		"createdAtMinute": 600,
+		"priority": 60,
+	}) as Dictionary
+	_expect(created.get("ok") == true, "生产任务查询测试必须建立真实任务")
+	var task := created.get("task", {}) as Dictionary
+	var configured := work_tasks.configure_initial_process(
+		String(task.get("taskId", "")),
+		int(task.get("revision", 0)),
+		"planned",
+		{
+			"productItemId": "pastry",
+			"destinationPlaceId": "花房咖啡馆",
+		},
+	) as Dictionary
+	_expect(configured.get("ok") == true, "生产任务必须保留初始加工事实")
+	_expect(
+		PRODUCTION_TASK_SYNC_RUNTIME.has_active_work_task_capability(
+			work_tasks,
+			"food.production",
+		),
+		"生产任务同步模块必须识别仍在进行的能力任务",
+	)
+	_expect(
+		PRODUCTION_TASK_SYNC_RUNTIME.has_active_specialty_production(
+			work_tasks,
+			"pastry",
+			"花房咖啡馆",
+		),
+		"生产任务同步模块必须按产品和目的地识别在途生产",
+	)
+	_expect(
+		not PRODUCTION_TASK_SYNC_RUNTIME.retire_stale_period_work_tasks(
+			work_tasks,
+			"food.production",
+			"daily_baking_plan",
+			"dining-pastry-plan-day:2",
+			"新的烘焙周期已经开始",
+		),
+		"未接取的旧周期任务应被取消，不能误判为结转任务",
+	)
+	_expect_equal(
+		String(work_tasks.task("e8-active-food-task").get("state", "")),
+		"cancelled",
+		"旧周期生产任务必须由迁出后的模块取消",
+	)
+	var stage_result := (
+		PRODUCTION_TASK_SYNC_RUNTIME.plant_research_stage_task_spec(
+			{"projectId": "research-e8", "sourceKind": "abnormal_plant"},
+			"verify",
+			[],
+		) as Dictionary
+	)
+	var stage_spec := stage_result.get("spec", {}) as Dictionary
+	_expect_equal(
+		String(stage_spec.get("capability", "")),
+		"research.verify",
+		"研究验证阶段必须保留原能力标识",
+	)
+	_expect_equal(
+		int(stage_spec.get("priority", 0)),
+		62,
+		"异常植物研究必须保留原任务优先级",
+	)
+	var invalid_stage := (
+		PRODUCTION_TASK_SYNC_RUNTIME.plant_research_stage_task_spec(
+			{"projectId": "research-e8"},
+			"unknown",
+			[],
+		) as Dictionary
+	)
+	_expect_equal(
+		String(invalid_stage.get("errorCode", "")),
+		"PLANT_RESEARCH_STAGE_INVALID",
+		"迁出后的研究阶段校验必须继续拒绝未知阶段",
+	)
+
+
+func _scenario_occupation_service_request_policies() -> void:
+	var request := {
+		"kind": "cafe_order",
+		"requesterResidentId": "resident-customer",
+		"placeId": "花房咖啡馆",
+		"createdAtMinute": 100,
+		"context": {},
+	}
+	var mode := OCCUPATION_SERVICE_PRESENCE_POLICY.resolve_mode(
+		request,
+		110,
+		false,
+		30,
+	)
+	_expect_equal(mode.get("mode"), "onsite_wait",
+		"occupation service policy defaults staffed requests to onsite wait",)
+	_expect_equal(
+		(mode.get("patch", {}) as Dictionary).get("onsiteWaitUntilMinute"),
+		130,
+		"occupation service policy derives the original wait deadline",
+	)
+	var absent := OCCUPATION_SERVICE_PRESENCE_POLICY.evaluate(
+		request,
+		{"residentId": "resident-customer", "currentPlace": "中央广场"},
+		110,
+		mode,
+		true,
+		true,
+		false,
+		true,
+		30,
+	)
+	_expect_equal(absent.get("action"), "pause",
+		"occupation service policy pauses work when the customer is absent",)
+	_expect_equal(
+		((absent.get("contextPatches", []) as Array)[1] as Dictionary).get(
+			"customerAbsentSinceMinute",
+		),
+		110,
+		"occupation service policy records the first absent minute",
+	)
+	var clinic_context := CLINIC_SERVICE_REQUEST_POLICY.build_condition_context(
+		[{
+			"conditionId": "condition-fatigue",
+			"label": "疲劳",
+		}],
+		{
+			"conflict_injuries": [{
+				"injury_id": "injury-heavy",
+				"severity": "heavy",
+				"source_actor_name": "测试居民",
+			}],
+		},
+	)
+	var context := clinic_context.get("context", {}) as Dictionary
+	_expect_equal(
+		(context.get("conditionIds", []) as Array).has("condition-fatigue"),
+		true,
+		"clinic request policy preserves resident condition ids",
+	)
+	_expect_equal(
+		(context.get("conditionIds", []) as Array).has("injury-heavy"),
+		true,
+		"clinic request policy merges conflict injury ids",
+	)
+	_expect_equal(bool(context.get("conflictInjuryRequiresTreatment", false)), true,
+		"clinic request policy marks heavy conflict injuries for treatment",)
+
+
+func _scenario_place_service_runtime_state() -> void:
+	var runtime: TownPlaceServiceRuntime = PLACE_SERVICE_RUNTIME.new()
+	runtime.restore_prepared({
+		"测试服务点": {
+			"pressure_id": "service-pressure:测试服务点",
+			"place_id": "测试服务点",
+			"owner_id": "resident-owner",
+			"open": true,
+			"service_capacity": 2,
+			"helper_activity_id": "activity_help",
+			"request_activity_ids": ["activity_request"],
+			"pending_request_ids": [],
+			"source_revision": 0,
+			"expires_at": -1,
+			"updated_at": -1,
+		},
+	})
+	_expect_equal(
+		runtime.update_request("未知地点", "request-a", true, -1, 100).get("errorCode"),
+		"PLACE_SERVICE_REQUEST_INVALID",
+		"place service runtime rejects requests for an unknown place",
+	)
+	var added := runtime.update_request(
+		"测试服务点",
+		"request-b",
+		true,
+		-1,
+		100,
+	)
+	_expect_equal(added.get("changed"), true, "place service request is added once")
+	_expect_equal(
+		runtime.update_request("测试服务点", "request-b", true, -1, 101).get("changed"),
+		false,
+		"repeating the same place service request is idempotent",
+	)
+	runtime.update_request("测试服务点", "request-a", true, 250, 102)
+	_expect_equal(
+		(runtime.state("测试服务点").get("pending_request_ids", []) as Array),
+		["request-a", "request-b"],
+		"place service requests are stable-sorted",
+	)
+	var opened_state := runtime.state("测试服务点")
+	opened_state["open"] = false
+	_expect_equal(
+		runtime.state("测试服务点").get("open"),
+		true,
+		"place service state queries return deep copies",
+	)
+	var closed := runtime.update_open("测试服务点", false, 110)
+	_expect_equal(closed.get("changed"), true, "place service open state changes")
+	_expect_equal(
+		runtime.service_control({
+			"residentId": "resident-owner",
+			"currentPlace": "测试服务点",
+		}).get("open"),
+		false,
+		"service owner control projects the authoritative open state",
+	)
+	_expect_equal(
+		runtime.is_closed_for_visitor({
+			"residentId": "resident-visitor",
+			"socialState": {"workplace": "其他地点"},
+		}, "测试服务点"),
+		true,
+		"closed service blocks an unrelated visitor",
+	)
+	var pressure := runtime.pressure_payload("测试服务点", 1)
+	_expect_equal(
+		(pressure.get("payload", {}) as Dictionary).get("waiting_requests"),
+		2,
+		"service pressure derives waiting request count from owned state",
+	)
+	var snapshot := runtime.save_snapshot()
+	runtime.reset()
+	_expect(runtime.values_snapshot().is_empty(), "place service reset clears owned state")
+	runtime.restore_prepared(snapshot)
+	_expect_equal(
+		runtime.first_pending_request("测试服务点"),
+		"request-a",
+		"place service snapshot restores pending request order",
+	)
+
+
+func _scenario_animal_fact_runtime_state() -> void:
+	var runtime: TownAnimalFactRuntime = ANIMAL_FACT_RUNTIME.new()
+	_expect_equal(
+		runtime.prepare_upsert(
+			{"animal_id": "cat-test"},
+			100,
+			Callable(self, "_animal_test_place_for_position"),
+		).get("errorCode"),
+		"ANIMAL_FACT_INVALID",
+		"animal fact runtime rejects incomplete source state",
+	)
+	var created := runtime.prepare_upsert(
+		{
+			"animal_id": "cat-test",
+			"display_name": "测试猫",
+			"species": "cat",
+			"exists": true,
+			"position": Vector2(12.0, 24.0),
+			"generation": 1,
+		},
+		100,
+		Callable(self, "_animal_test_place_for_position"),
+	)
+	_expect_equal(created.get("changed"), true, "animal fact creation is meaningful")
+	_expect_equal(
+		(created.get("animal", {}) as Dictionary).get("place_id"),
+		"测试地点",
+		"animal fact runtime stores resolved world membership",
+	)
+	(created.get("animal", {}) as Dictionary)["display_name"] = "外部篡改"
+	_expect_equal(
+		runtime.fact("cat-test").get("display_name"),
+		"测试猫",
+		"animal fact query returns a deep copy",
+	)
+	var attention := runtime.prepare_public_attention(
+		"cat-test",
+		true,
+		160,
+		["event-b", "event-a", "event-b"],
+		100,
+	)
+	_expect_equal(attention.get("changed"), true, "animal attention becomes active")
+	_expect_equal(
+		(runtime.fact("cat-test").get("source_event_ids", []) as Array),
+		["event-a", "event-b"],
+		"animal attention source ids are unique and stable-sorted",
+	)
+	_expect_equal(
+		runtime.expire_public_attention(159),
+		false,
+		"animal attention remains active before its expiry minute",
+	)
+	_expect_equal(
+		runtime.expire_public_attention(160),
+		true,
+		"animal attention expires at its authoritative minute",
+	)
+	_expect_equal(
+		runtime.fact("cat-test").get("public_attention"),
+		false,
+		"expired animal attention is persisted in runtime state",
+	)
+	var restored: TownAnimalFactRuntime = ANIMAL_FACT_RUNTIME.new()
+	restored.restore_prepared(runtime.save_snapshot())
+	runtime.reset()
+	_expect_equal(
+		restored.public_snapshot().size(),
+		1,
+		"animal fact save snapshot restores independently of the source runtime",
+	)
+
+
+func _animal_test_place_for_position(_position: Vector2) -> String:
+	return "测试地点"
+
+
+func _scenario_dynamic_prop_runtime_state() -> void:
+	var runtime: TownDynamicPropRuntime = DYNAMIC_PROP_RUNTIME.new()
+	_expect_equal(
+		runtime.normalize_identity("", "流浪猫").get("errorCode"),
+		"DYNAMIC_PROP_IDENTITY_INVALID",
+		"dynamic prop runtime rejects an empty identity",
+	)
+	var first_identity := runtime.normalize_identity(" prop-z ", " 流浪猫·乙 ")
+	var second_identity := runtime.normalize_identity("prop-a", "流浪猫·甲")
+	var placement := {
+		"membership": {"placeName": "社区花园", "regionId": "garden"},
+		"approachPosition": Vector2(10.0, 20.0),
+	}
+	_expect_equal(
+		runtime.upsert_normalized(
+			first_identity,
+			Vector2(10.0, 10.0),
+			true,
+			true,
+			placement,
+		).get("status"),
+		"registered",
+		"dynamic prop runtime registers a normalized prop",
+	)
+	runtime.upsert_normalized(
+		second_identity,
+		Vector2(20.0, 20.0),
+		true,
+		true,
+		placement,
+	)
+	var snapshot := runtime.snapshot()
+	_expect_equal(
+		(snapshot[0] as Dictionary).get("id"),
+		"prop-a",
+		"dynamic prop snapshot is sorted by stable identity",
+	)
+	(snapshot[0] as Dictionary)["name"] = "被调用方修改"
+	_expect_equal(
+		(runtime.snapshot()[0] as Dictionary).get("name"),
+		"流浪猫·甲",
+		"dynamic prop snapshot returns a deep copy",
+	)
+	_expect_equal(
+		runtime.is_dynamic_action(
+			{"currentPlace": "社区花园"},
+			{"prop": "流浪猫·甲", "verb": "摸摸"},
+		),
+		true,
+		"dynamic prop action matches place, name and verb",
+	)
+	var base_query_data := {"props": [{"id": "static-prop"}]}
+	var merged_query_data := runtime.query_data(base_query_data)
+	_expect_equal(
+		(base_query_data.get("props", []) as Array).size(),
+		1,
+		"dynamic prop query merge does not mutate base World data",
+	)
+	_expect_equal(
+		(merged_query_data.get("props", []) as Array).size(),
+		3,
+		"dynamic props are appended to the authoritative prop query view",
+	)
+	runtime.restore_layout_overrides([
+		{"spaceId": "space-z", "value": 2},
+		{"spaceId": "space-a", "value": 1},
+	])
+	var layout_snapshots := runtime.layout_override_snapshots()
+	_expect_equal(
+		(layout_snapshots[0] as Dictionary).get("spaceId"),
+		"space-a",
+		"layout override snapshots are sorted by space identity",
+	)
+	(layout_snapshots[0] as Dictionary)["value"] = 99
+	_expect_equal(
+		(runtime.layout_override_snapshots()[0] as Dictionary).get("value"),
+		1,
+		"layout override snapshots return deep copies",
+	)
+	runtime.reject_outside_world("prop-a", Vector2(999999.0, 999999.0))
+	_expect_equal(
+		runtime.snapshot().size(),
+		1,
+		"outside-world registration removes the previous prop identity",
+	)
+	runtime.reset()
+	_expect(
+		runtime.snapshot().is_empty()
+			and runtime.layout_override_snapshots().is_empty(),
+		"dynamic prop runtime reset clears transient props and layout overrides",
+	)
+	var data := _build_data()
+	var opening := _load_opening(data)
+	var world: RefCounted = WORLD.new()
+	_expect_equal(
+		world.call("start", data, opening).get("ok"),
+		true,
+		"World starts before dynamic prop integration checks",
+	)
+	var residents := (world.get("resident_registry") as TownResidentRegistry).records as Dictionary
+	var outdoor_position := Vector2.ZERO
+	for resident_value: Variant in residents.values():
+		var resident := resident_value as Dictionary
+		if String(resident.get("spaceId", "")) == "town_outdoor":
+			outdoor_position = resident.get("position", Vector2.ZERO) as Vector2
+			break
+	var registered := world.call(
+		"upsert_dynamic_prop",
+		"dynamic-test-cat",
+		"流浪猫·测试",
+		outdoor_position,
+		true,
+	) as Dictionary
+	_expect_equal(
+		registered.get("status"),
+		"registered",
+		"World delegates valid dynamic prop placement to its runtime",
+	)
+	_expect_equal(
+		(world.call("get_dynamic_prop_snapshot") as Array).size(),
+		1,
+		"World exposes the registered dynamic prop snapshot",
+	)
+	var outside := world.call(
+		"upsert_dynamic_prop",
+		"dynamic-test-cat",
+		"流浪猫·测试",
+		Vector2(999999.0, 999999.0),
+		true,
+	) as Dictionary
+	_expect_equal(
+		outside.get("errorCode"),
+		"DYNAMIC_PROP_OUTSIDE_WORLD",
+		"World rejects a dynamic prop outside every perception region",
+	)
+	_expect_equal(
+		(world.call("get_dynamic_prop_snapshot") as Array).size(),
+		0,
+		"rejected outside placement removes the previous dynamic prop identity",
+	)
+	world.call("stop")
+	_expect_equal(
+		world.call(
+			"upsert_dynamic_prop",
+			"dynamic-test-cat",
+			"流浪猫·测试",
+			outdoor_position,
+			true,
+		).get("errorCode"),
+		"WORLD_NOT_RUNNING",
+		"stopped World rejects active dynamic prop registration",
+	)
+	_expect_equal(
+		world.call("remove_dynamic_prop", "dynamic-test-cat").get("status"),
+		"already_absent",
+		"dynamic prop removal remains idempotent while World is stopped",
+	)
 
 
 func _scenario_frame_work_budget() -> void:
@@ -106,17 +2618,18 @@ func _scenario_frame_work_budget() -> void:
 	var resident_ids: Array = (
 		world.call("get_resident_ids") as Array
 	).slice(0, 8)
-	var residents := world.get("_residents") as Dictionary
-	world.set("_activity_reachability_cache_minute", -1)
-	(world.get("_activity_reachability_cache") as Dictionary).clear()
-	(world.get("_activity_prepared_action_cache") as Dictionary).clear()
-	world.call(
-		"_agent_available_activities",
+	var residents := (world.get("resident_registry") as TownResidentRegistry).records as Dictionary
+	var activity_reachability_cache := world.get(
+		"activity_reachability_state",
+	) as TownActivityReachabilityCache
+	activity_reachability_cache.clear()
+	AGENT_WAKE_CONTEXT_RUNTIME.available_activities(
+		world,
 		residents[String(resident_ids[0])] as Dictionary,
 		true,
 	)
 	_expect(
-		(world.get("_activity_reachability_cache") as Dictionary).size() <= 1,
+		activity_reachability_cache.reachability_count() <= 1,
 		"one Agent wake performs at most one new activity route check",
 	)
 	for index in resident_ids.size():
@@ -139,7 +2652,7 @@ func _scenario_frame_work_budget() -> void:
 		"all actions finish in their authoritative game minute",
 	)
 	for resident_value: Variant in resident_ids:
-		world.call("_queue_resident_state_refresh", String(resident_value))
+		world.frame_budget_runtime.queue_resident_state_refresh(String(resident_value))
 	var first_presentation_batch := world.call("advance", 0.1) as Dictionary
 	_expect_equal(
 		first_presentation_batch.get("deferredPresentationRefreshesProcessed"),
@@ -158,11 +2671,11 @@ func _scenario_frame_work_budget() -> void:
 	_expect_equal(third_presentation_batch.get("deferredPresentationRefreshCount"), 0, "presentation refresh queue becomes empty")
 	var presentation_perception_frame := world.call("advance", 0.1) as Dictionary
 	_expect_equal(presentation_perception_frame.get("deferredPerceptionProcessed"), true, "perception follows all queued presentation refreshes")
-	world.call("_defer_perception_refresh")
+	(world.get("frame_budget_runtime") as TownWorldFrameBudgetRuntime).defer_perception_refresh()
 	var forced_perception_refresh := false
 	for _frame_index in 12:
 		for resident_value: Variant in resident_ids:
-			world.call("_queue_resident_state_refresh", String(resident_value))
+			world.frame_budget_runtime.queue_resident_state_refresh(String(resident_value))
 		var starvation_result := world.call("advance", 0.01) as Dictionary
 		forced_perception_refresh = (
 			forced_perception_refresh
@@ -174,30 +2687,30 @@ func _scenario_frame_work_budget() -> void:
 		"continuous presentation work cannot starve perception beyond twelve advances",
 	)
 	_expect(
-		(world.get("_deferred_resident_state_refreshes") as Array).size()
-		<= resident_ids.size(),
+		(world.get("frame_budget_runtime") as TownWorldFrameBudgetRuntime)
+		.presentation_refresh_count() <= resident_ids.size(),
 		"continuous presentation refreshes remain coalesced per resident",
 	)
 	# 清掉压力场景留下的表现工作，后面的地点通知断言只测自己的队列。
-	(world.get("_deferred_resident_state_refreshes") as Array).clear()
-	(world.get("_deferred_resident_state_refresh_keys") as Dictionary).clear()
+	(world.get("frame_budget_runtime") as TownWorldFrameBudgetRuntime).clear_presentation_refreshes()
 	for index in 3:
-		world.call("_queue_resident_place_change_signal", String(resident_ids[index]), {
+		world.frame_budget_runtime.queue_resident_place_change_signal(String(resident_ids[index]), {
 			"residentId": String(resident_ids[index]),
 			"from": "测试旧地点",
 			"to": "测试新地点",
 			"time": world.call("get_time"),
 			"worldRevision": world.call("get_world_revision"),
-		})
-	world.call("_queue_resident_place_change_signal", String(resident_ids[0]), {
+		}, int(world.call("get_world_revision")))
+	world.frame_budget_runtime.queue_resident_place_change_signal(String(resident_ids[0]), {
 		"residentId": String(resident_ids[0]),
 		"from": "测试旧地点",
 		"to": "测试最新地点",
 		"time": world.call("get_time"),
 		"worldRevision": world.call("get_world_revision"),
-	})
+	}, int(world.call("get_world_revision")))
 	_expect_equal(
-		(world.get("_deferred_resident_place_change_signals") as Array).size(),
+		(world.get("frame_budget_runtime") as TownWorldFrameBudgetRuntime)
+		.place_change_signal_count(),
 		3,
 		"repeated place changes coalesce per resident instead of growing forever",
 	)
@@ -638,12 +3151,12 @@ func _validate_formal_indoor_action(data: Dictionary) -> void:
 	if start_result.get("ok") != true:
 		return
 	var formal_resident := (
-		(world.get("_residents") as Dictionary).get("resident_lin_lan_01", {})
+		((world.get("resident_registry") as TownResidentRegistry).records as Dictionary).get("resident_lin_lan_01", {})
 		as Dictionary
 	)
 	var formal_activity := formal_resident.get("activityState", {}) as Dictionary
 	formal_activity["energy"] = 35
-	world.call("_sync_body_from_activity_needs", formal_resident, formal_activity)
+	ACTIVITY_SCALARS.sync_body_from_activity_needs(formal_resident, formal_activity)
 	world.call("cycle_time_period_for_test")
 	world.call("cycle_time_period_for_test")
 	var requests := world.call("take_pending_decision_requests", ["林岚"]) as Array[Dictionary]
@@ -742,18 +3255,21 @@ func _validate_dynamic_world_projection(data: Dictionary) -> void:
 	var start := _cell_center(start_cell, cell_size)
 	var world: RefCounted = WORLD.new()
 	var dynamic_start_result := world.call("start_formal", data, opening, _resident_identities(opening)) as Dictionary
+	var activity_reachability_cache := world.get(
+		"activity_reachability_state",
+	) as TownActivityReachabilityCache
 	_expect_equal(
 		dynamic_start_result.get("ok"),
 		true,
 		"formal World starts before a dynamic furniture edit",
 	)
 	var dynamic_resident := (
-		(world.get("_residents") as Dictionary).get("resident_lin_lan_01", {})
+		((world.get("resident_registry") as TownResidentRegistry).records as Dictionary).get("resident_lin_lan_01", {})
 		as Dictionary
 	)
 	var dynamic_activity := dynamic_resident.get("activityState", {}) as Dictionary
 	dynamic_activity["energy"] = 35
-	world.call("_sync_body_from_activity_needs", dynamic_resident, dynamic_activity)
+	ACTIVITY_SCALARS.sync_body_from_activity_needs(dynamic_resident, dynamic_activity)
 	world.call("cycle_time_period_for_test")
 	world.call("cycle_time_period_for_test")
 	var entry_wake := _take_request(world, "林岚")
@@ -823,9 +3339,9 @@ func _validate_dynamic_world_projection(data: Dictionary) -> void:
 		% str(move_result),
 	)
 	_expect(
-		(world.get("_activity_reachability_cache") as Dictionary).is_empty()
-			and (world.get("_activity_prepared_action_cache") as Dictionary).is_empty()
-			and int(world.get("_activity_reachability_cache_minute")) == -1,
+		activity_reachability_cache.reachability_count() == 0
+			and activity_reachability_cache.prepared_action_count() == 0
+			and activity_reachability_cache.cached_minute() == -1,
 		"layout edits invalidate same-minute activity route cache",
 	)
 	var dynamic_data := LAYOUT_PROJECTION.apply(data, moved) as Dictionary
@@ -1506,12 +4022,12 @@ func _scenario_daily_life_chain() -> void:
 	)
 	lin_wake = _take_wake_daily_life_chain(world, "林岚")
 	var lin_resident := (
-		(world.get("_residents") as Dictionary).get("resident_lin_lan_01", {})
+		((world.get("resident_registry") as TownResidentRegistry).records as Dictionary).get("resident_lin_lan_01", {})
 		as Dictionary
 	)
 	var lin_activity := lin_resident.get("activityState", {}) as Dictionary
 	lin_activity["energy"] = 35
-	world.call("_sync_body_from_activity_needs", lin_resident, lin_activity)
+	ACTIVITY_SCALARS.sync_body_from_activity_needs(lin_resident, lin_activity)
 	_expect_accepted(
 		world.call(
 			"submit_agent_decision",
@@ -2068,8 +4584,8 @@ func _test_thread_detail_stores_no_story_fields() -> void:
 
 func _test_runtime_public_log_hides_story_fields() -> void:
 	var world: RefCounted = WORLD.new()
-	world.call(
-		"_append_public_event_log",
+	world.WORLD_LOG_COMMIT_RUNTIME.append_public(
+		world,
 		"evt-public-story",
 		"story_event",
 		"",

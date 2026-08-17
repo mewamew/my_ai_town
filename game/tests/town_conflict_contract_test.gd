@@ -9,6 +9,12 @@ const WORLD_RUNTIME := preload("res://world/runtime/TownWorldRuntime.gd")
 const CONFLICT_PRESENTATION := preload(
 	"res://world/presentation/conflict/TownConflictPresentation.gd"
 )
+const WORLD_EVENT_DELIVERY_PROJECTION := preload(
+	"res://world/runtime/event/TownWorldEventDeliveryProjection.gd"
+)
+const AGENT_DECISION_ACCEPTANCE_POLICY := preload(
+	"res://world/runtime/agent/TownAgentDecisionAcceptancePolicy.gd"
+)
 
 
 class FakeCharacterSprite:
@@ -263,8 +269,8 @@ func _test_attacker_direction_and_flip() -> void:
 
 func _test_post_injury_reaction_gate() -> void:
 	var runtime := WORLD_RUNTIME.new()
-	var reaction := runtime.call(
-		"_post_injury_reaction_for_events",
+	var reaction := WORLD_EVENT_DELIVERY_PROJECTION.post_injury_reaction_for_host(
+		runtime,
 		"resident-b",
 		[{
 			"type": "冲突见闻",
@@ -288,8 +294,8 @@ func _test_post_injury_reaction_gate() -> void:
 		"resident-a",
 		"explicit attacker is kept in post-injury reaction",
 	)
-	var attacker_reaction := runtime.call(
-		"_post_injury_reaction_for_events",
+	var attacker_reaction := WORLD_EVENT_DELIVERY_PROJECTION.post_injury_reaction_for_host(
+		runtime,
 		"resident-a",
 		[{
 			"type": "冲突见闻",
@@ -309,8 +315,7 @@ func _test_post_injury_reaction_gate() -> void:
 		"attacker is not mistaken for the injured participant",
 	)
 
-	var invalid_reply := runtime.call(
-		"_post_injury_reaction_action_error",
+	var invalid_reply := AGENT_DECISION_ACCEPTANCE_POLICY.post_injury_action_error(
 		{"currentPlace": "广场"},
 		{
 			"handling": "replace_current",
@@ -324,8 +329,7 @@ func _test_post_injury_reaction_gate() -> void:
 		"post-injury reaction rejects waiting outside clinic",
 	)
 
-	var stay_error_free := runtime.call(
-		"_post_injury_reaction_action_error",
+	var stay_error_free := AGENT_DECISION_ACCEPTANCE_POLICY.post_injury_action_error(
 		{"currentPlace": "诊所"},
 		{
 			"handling": "replace_current",
@@ -339,8 +343,7 @@ func _test_post_injury_reaction_gate() -> void:
 		"post-injury reaction allows waiting in clinic",
 	)
 
-	var talk_wrong_target_error := runtime.call(
-		"_post_injury_reaction_action_error",
+	var talk_wrong_target_error := AGENT_DECISION_ACCEPTANCE_POLICY.post_injury_action_error(
 		{"currentPlace": "广场"},
 		{
 			"handling": "replace_current",
@@ -358,8 +361,7 @@ func _test_post_injury_reaction_gate() -> void:
 		"post-injury reaction only allows talking to attacker",
 	)
 
-	var talk_attacker_ok := runtime.call(
-		"_post_injury_reaction_action_error",
+	var talk_attacker_ok := AGENT_DECISION_ACCEPTANCE_POLICY.post_injury_action_error(
 		{"currentPlace": "广场"},
 		{
 			"handling": "replace_current",
@@ -377,8 +379,7 @@ func _test_post_injury_reaction_gate() -> void:
 		"post-injury reaction allows direct talk to attacker",
 	)
 
-	var go_error := runtime.call(
-		"_post_injury_reaction_action_error",
+	var go_error := AGENT_DECISION_ACCEPTANCE_POLICY.post_injury_action_error(
 		{"currentPlace": "广场"},
 		{
 			"handling": "replace_current",
@@ -392,8 +393,7 @@ func _test_post_injury_reaction_gate() -> void:
 		"post-injury reaction only allows go clinic",
 	)
 
-	var go_clinic_ok := runtime.call(
-		"_post_injury_reaction_action_error",
+	var go_clinic_ok := AGENT_DECISION_ACCEPTANCE_POLICY.post_injury_action_error(
 		{"currentPlace": "广场"},
 		{
 			"handling": "replace_current",
@@ -407,8 +407,7 @@ func _test_post_injury_reaction_gate() -> void:
 		"post-injury reaction allows go clinic",
 	)
 
-	var continue_non_replace_error := runtime.call(
-		"_post_injury_reaction_action_error",
+	var continue_non_replace_error := AGENT_DECISION_ACCEPTANCE_POLICY.post_injury_action_error(
 		{"currentPlace": "广场"},
 		{
 			"handling": "continue_current",

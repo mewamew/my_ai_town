@@ -3,6 +3,7 @@ extends RefCounted
 
 static func query(
 	world,
+	reachability_cache: TownActivityReachabilityCache,
 	resident_id: String,
 	resident_override: Dictionary = {},
 	max_uncached_reachability_checks := -1,
@@ -11,12 +12,12 @@ static func query(
 	if not world._running:
 		return world._command_failure("WORLD_NOT_RUNNING", ["世界尚未运行"])
 	var normalized_id := resident_id.strip_edges()
-	if normalized_id.is_empty() or not world._residents.has(normalized_id):
+	if normalized_id.is_empty() or not world.resident_registry.records.has(normalized_id):
 		return world._command_failure(
 			"ACTIVITY_STATE_CHANGED",
 			["activity query 必须使用稳定 residentId"],
 		)
-	var resident := world._residents[normalized_id] as Dictionary
+	var resident := world.resident_registry.records[normalized_id] as Dictionary
 	if not resident_override.is_empty():
 		resident = resident_override.duplicate(true)
 	var absolute_minute := int(world._environment.get_absolute_minute())
@@ -26,7 +27,7 @@ static func query(
 		"errorCode": "",
 		"options": [],
 	}
-	var query_occupation_ids: Array = world._work_occupation_ids_for_resident(
+	var query_occupation_ids: Array = world.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.ids_for_resident(world,
 		normalized_id,
 	)
 	if query_occupation_ids.is_empty():
@@ -77,22 +78,22 @@ static func query(
 		# 本帧唯一一次新路线检查。
 		for option_value: Variant in result.get("options", []) as Array:
 			var option := option_value as Dictionary
-			world._apply_sleep_activity_availability(resident, option)
-			world._apply_bulletin_activity_availability(normalized_id, option)
-			world._apply_work_task_activity_availability(
+			world.ACTIVITY_AVAILABILITY_RUNTIME.apply_sleep(resident, option)
+			world.ACTIVITY_AVAILABILITY_RUNTIME.apply_bulletin(world, normalized_id, option)
+			world.ACTIVITY_AVAILABILITY_RUNTIME.apply_work_task(world,
 				normalized_id,
 				resident,
 				option,
 			)
-			world._apply_occupation_service_activity_availability(
+			world.ACTIVITY_AVAILABILITY_RUNTIME.apply_occupation_service(world,
 				normalized_id,
 				option,
 			)
-			world._apply_clinic_visitor_activity_availability(
+			world.CLINIC_SERVICE_COORDINATION_RUNTIME.apply_visitor_activity_availability(world,
 				normalized_id,
 				option,
 			)
-			world._apply_clinic_practitioner_request_priority(
+			world.CLINIC_SERVICE_COORDINATION_RUNTIME.apply_practitioner_request_priority(world,
 				normalized_id,
 				option,
 			)
@@ -100,7 +101,7 @@ static func query(
 		# 可达性寻路按目标去重，避免重复的整张路网 A*。
 		var reachability_memo := {}
 		var uncached_reachability_checks := 0
-		world._ensure_activity_reachability_cache_minute()
+		reachability_cache.ensure_minute(absolute_minute)
 		if max_uncached_reachability_checks >= 0:
 			(result.get("options", []) as Array).sort_custom(
 				func(left: Dictionary, right: Dictionary) -> bool:
@@ -128,7 +129,7 @@ static func query(
 			if not bool(option.get("available", false)):
 				continue
 			var candidates := world._activity_runtime.query_preflight_candidates(
-				world._activity_social_state_for(
+				world.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.activity_social_state(world,
 					normalized_id,
 					String(option.get("activityId", "")),
 				),
@@ -166,12 +167,10 @@ static func query(
 				if not bool(candidate.get("memberAvailable", false)):
 					continue
 				has_unreserved = true
-				var candidate_cache_key: String = world._activity_candidate_cache_key(
+				var cached_reachability := reachability_cache.has_reachability(
+					absolute_minute,
 					resident,
 					candidate,
-				)
-				var cached_reachability: bool = (
-					world._activity_reachability_cache.has(candidate_cache_key)
 				)
 				if (
 					not cached_reachability
@@ -183,7 +182,7 @@ static func query(
 					continue
 				if not cached_reachability:
 					uncached_reachability_checks += 1
-				if world._activity_query_candidate_reachable(
+				if world.ACTIVITY_CANDIDATE_PREFLIGHT_RUNTIME.candidate_reachable(world,
 					resident,
 					candidate,
 					String(option.get("label", "")),

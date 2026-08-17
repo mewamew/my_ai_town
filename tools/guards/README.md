@@ -8,11 +8,12 @@
 tools/guards/run_guards.sh
 ```
 
-## 九项固定检查
+## 十项固定检查
 
 | 脚本 | 判定 | 基线/清单 |
 |---|---|---|
 | `line_ratchet.py` | 受控文件行数只降不升 | `line_ratchet.json` |
+| `world_runtime_architecture_check.py` | 世界总控规模与子模块私有访问只降不升 | `world_runtime_architecture_baseline.json` |
 | `dynamic_call_scan.py` | 白名单外新增动态调用即失败 | `dynamic_call_baseline.json` + `dynamic_call_whitelist.json` |
 | `zero_reference_scan.py` | 白名单/基线外新零引用候选即失败 | `zero_reference_baseline.json` + `zero_reference_whitelist.json` |
 | `required_tests_check.py` | 必须存在的测试缺失、重复注册、checks=N 未钉住即失败 | `required_tests.json` |
@@ -21,6 +22,11 @@ tools/guards/run_guards.sh
 | `foreground_shader_check.py` | 前景局部遮挡保留裁切，并禁止重复乘算地图纹理造成画面变暗 | `MapRuntimeOcclusionLayer.gd` |
 | `sync_readme_updates.py --check` | 仓库首页的最近更新摘要与玩家更新日志一致 | `更新日志.md` |
 | `release/test_release_tool.py` + `release_tool.py source-check` | 版本号格式、双平台打包结构、构建信息和校验和符合发行约定 | `VERSION` + `更新日志.md` |
+
+状态字段迁入专用状态对象、私有成员名因此改变时，使用
+`world_runtime_architecture_check.py --update --rename-private-access _旧成员=_新成员`。
+只有旧访问已经清零、且新访问次数不高于旧基线时才允许迁移；普通拆分仍直接使用 `--update`
+收缩基线。
 
 ## 动态调用清单制要点
 

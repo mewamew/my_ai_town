@@ -157,9 +157,8 @@ func is_configured() -> bool:
 func reconcile_activity_routines_before_save(
 	activity_routines: Dictionary,
 	residents: Dictionary,
-	append_action_result: Callable,
 	direct_source_contract: String,
-) -> void:
+) -> Array[Dictionary]:
 	# Save only routines whose current World action still owns the execution.
 	# Any orphan is closed at the save boundary; the resident's newer action is
 	# left untouched and can continue on its next wake.
@@ -187,17 +186,19 @@ func reconcile_activity_routines_before_save(
 		)
 		if not direct_activity_is_active and not onsite_service_wait_is_active:
 			orphaned.append(resident_id)
+	var interrupted_results: Array[Dictionary] = []
 	for resident_id in orphaned:
 		var routine := activity_routines.get(resident_id, {}) as Dictionary
 		activity_routines.erase(resident_id)
 		var source_action_id := String(routine.get("sourceActionId", "")).strip_edges()
-		if not source_action_id.is_empty() and append_action_result.is_valid():
-			append_action_result.call(
-				resident_id,
-				source_action_id,
-				"interrupted",
-				"活动安排已经结束，居民继续当前的事情",
-			)
+		if not source_action_id.is_empty():
+			interrupted_results.append({
+				"residentId": resident_id,
+				"actionId": source_action_id,
+				"status": "interrupted",
+				"reason": "活动安排已经结束，居民继续当前的事情",
+			})
+	return interrupted_results
 
 
 func presentation_semantic_for_activity(activity_id: String) -> Dictionary:

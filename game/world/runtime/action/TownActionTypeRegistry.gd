@@ -14,7 +14,7 @@ extends RefCounted
 #   T3 invalid_action_fingerprint TownActionValidation 拒绝去重指纹
 #   T4 validate_action_shape    TownActionValidation  形状校验
 #   T5 _advance_actions         TownWorldRuntime      分钟推进
-#   T6 _action_still_valid      TownWorldRuntime      推进期有效性
+#   T6 _action_still_valid      TownActionValidityPolicy  推进期有效性
 #   T7 default_doing            TownActionProjection  UI 文案
 
 const ALL_TYPES: Array[String] = [

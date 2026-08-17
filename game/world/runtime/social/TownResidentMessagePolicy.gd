@@ -1,7 +1,6 @@
 class_name TownResidentMessagePolicy
 extends RefCounted
 
-
 ## 居民口信的发送策略。
 ##
 ## 消息正文由 TownResidentMessageContent 生成；这里负责选择真实职业居民
@@ -15,7 +14,7 @@ static func sender_for_source(
 	distribution_token := "",
 ) -> String:
 	var candidates: Array[String] = []
-	for resident_id: String in world._resident_order:
+	for resident_id: String in world.resident_order():
 		if (
 			resident_id != excluded_resident_id
 			and world._resident_can_work_occupation(resident_id, occupation_id)
@@ -46,8 +45,8 @@ static func send(world, spec: Dictionary) -> Dictionary:
 			"errorCode": "RESIDENT_MESSAGE_SPEC_INVALID",
 			"errors": ["居民口信缺少发送人、收件人或正文"],
 		}
-	var existing_message := _find_existing_private_message(
-		world,
+	var message_runtime = world.private_message_runtime
+	var existing_message: Dictionary = message_runtime.find_existing_pending(
 		sender_id,
 		recipient_id,
 		content,
@@ -59,7 +58,10 @@ static func send(world, spec: Dictionary) -> Dictionary:
 			"errorCode": "",
 			"retryable": false,
 			"changed": false,
-			"message": world._public_private_message(existing_message),
+			"message": message_runtime.public_message(
+				existing_message,
+				world.resident_registry.name_by_id,
+			),
 		}
 	return world.create_private_message(
 		sender_id,
@@ -70,33 +72,3 @@ static func send(world, spec: Dictionary) -> Dictionary:
 		int(spec.get("expiresAtMinute", -1)),
 		source_ref,
 	)
-
-
-static func _find_existing_private_message(
-	world,
-	sender_id: String,
-	recipient_id: String,
-	content: String,
-	source_ref: String,
-) -> Dictionary:
-	var message_ids: Array[String] = []
-	for message_id_value: Variant in world._private_messages:
-		message_ids.append(String(message_id_value))
-	message_ids.sort()
-	for message_id: String in message_ids:
-		var message := world._private_messages.get(message_id, {}) as Dictionary
-		if String(message.get("senderResidentId", "")).strip_edges() != sender_id:
-			continue
-		if String(message.get("recipientResidentId", "")).strip_edges() != recipient_id:
-			continue
-		if String(message.get("content", "")).strip_edges() != content:
-			continue
-		if String(message.get("state", "")) != "pending":
-			continue
-		if (
-			not source_ref.is_empty()
-			and String(message.get("sourceRef", "")).strip_edges() != source_ref
-		):
-			continue
-		return message
-	return {}

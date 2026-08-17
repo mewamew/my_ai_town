@@ -2,6 +2,16 @@ class_name TownWorkSettlement
 extends RefCounted
 
 
+const WORLD_LOG_COMMIT_RUNTIME := preload(
+	"res://world/runtime/log/TownWorldLogCommitRuntime.gd"
+)
+
+
+const PRODUCTION_TASK_COORDINATION_RUNTIME := preload(
+	"res://world/runtime/work/TownProductionTaskCoordinationRuntime.gd"
+)
+
+
 const CONTENT_CATALOG := preload(
 	"res://world/data/town/TownWorkContentCatalog.gd"
 )
@@ -14,21 +24,39 @@ const RESIDENT_MESSAGE_CONTENT := preload(
 const DINING_SERVICE := preload(
 	"res://world/runtime/work/TownDiningServiceRuntime.gd"
 )
+const ACTION_SUPPORT := preload(
+	"res://world/runtime/action/TownActionSupport.gd"
+)
+const OCCUPATION_SERVICE_DEFINITION := preload(
+	"res://world/runtime/work/TownOccupationServiceDefinition.gd"
+)
+const PERFORMANCE_AUDIENCE_POLICY := preload(
+	"res://world/runtime/work/TownPerformanceAudiencePolicy.gd"
+)
+const PLACE_SERVICE_COMMAND_RUNTIME := preload(
+	"res://world/runtime/work/TownPlaceServiceCommandRuntime.gd"
+)
+const SOCIAL_MATTER_COMMAND_RUNTIME := preload(
+	"res://world/runtime/social/TownSocialMatterCommandRuntime.gd"
+)
+const POSTAL_MESSAGE_RUNTIME := preload(
+	"res://world/runtime/social/TownPostalMessageRuntime.gd"
+)
 
 # 活动完成后的工单结算域(自 TownWorldRuntime 下沉)。world 为世界运行时实例;
 # 结算是冷路径(每次活动完成一回),子 runtime 与目录 helper 统一经 world 动态访问,
 # 恢复/重开局替换子 runtime 后无需重新绑定。
 
 static func refresh_staffing_after_attendance_change(world) -> void:
-	var staffing: Variant = world.get("_staffing")
+	var staffing: Variant = world.work_domain.staffing
 	if staffing == null or world.environment() == null:
 		return
 	staffing.rebuild(
 		world.residents(),
 		int(world.environment().get_absolute_minute()),
 	)
-	world._refresh_place_service_staffing()
-	world._sync_staffing_matters()
+	PLACE_SERVICE_COMMAND_RUNTIME.refresh_staffing(world)
+	world.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.sync_staffing_matters(world)
 
 # 工单结算分派:一次解析绑定任务,按旧 16 连调的顺序做首配规则分派。
 # 规则与各 handler 自身门槛完全一致,handler 内部检查全部保留;不依赖绑定的
@@ -47,16 +75,16 @@ static func settle_completed_activity(
 		# 旧序特例:植物研究交接不受 in_progress 门槛约束。
 		_complete_research_booklet_work_task(world, resident_id, task)
 	elif _settlement_task_in_progress(world, task) and not (
-		world._occupation_services.request(
+		world.work_domain.services.request(
 			String(task.get("sourceRef", "")),
 		) as Dictionary
 	).is_empty():
-		_complete_occupation_service_work_task_before_release(world, 
+		_complete_occupation_service_work_task_before_release(world,
 			resident_id,
 			execution,
 			task,
 		)
-	_complete_place_service_work_task_before_release(world, 
+	_complete_place_service_work_task_before_release(world,
 		resident_id,
 		execution,
 	)
@@ -69,7 +97,7 @@ static func settle_completed_activity(
 			and capability == "inventory.release"
 			and source_kind == "inventory_request"
 		):
-			_complete_cargo_release_work_task_before_release(world, 
+			_complete_cargo_release_work_task_before_release(world,
 				resident_id,
 				execution,
 				task,
@@ -86,19 +114,19 @@ static func settle_completed_activity(
 				"library.accession",
 			]
 		):
-			_complete_cargo_receipt_work_task_before_release(world, 
+			_complete_cargo_receipt_work_task_before_release(world,
 				resident_id,
 				execution,
 				task,
 			)
 		elif activity_id in CONTENT_CATALOG.PRODUCTION_SETTLEMENT_ACTIVITIES:
-			_complete_production_work_task_before_release(world, 
+			_complete_production_work_task_before_release(world,
 				resident_id,
 				execution,
 				task,
 			)
 		elif activity_id in CONTENT_CATALOG.BOTANIST_SETTLEMENT_ACTIVITIES:
-			_complete_plant_research_work_task_before_release(world, 
+			_complete_plant_research_work_task_before_release(world,
 				resident_id,
 				execution,
 				task,
@@ -108,12 +136,12 @@ static func settle_completed_activity(
 			and capability == "craft.production"
 			and source_kind == "production_request"
 		):
-			_complete_craft_production_work_task_before_release(world, 
+			_complete_craft_production_work_task_before_release(world,
 				resident_id,
 				execution,
 				task,
 			)
-	_complete_natural_bulletin_work(world, 
+	_complete_natural_bulletin_work(world,
 		resident_id,
 		execution,
 	)
@@ -121,13 +149,13 @@ static func settle_completed_activity(
 	if _settlement_task_in_progress(world, task):
 		var capability := String(task.get("capability", ""))
 		var source_kind := String(task.get("sourceKind", ""))
-		if _matches_recurring_occupation_settlement(world, 
+		if _matches_recurring_occupation_settlement(world,
 			activity_id,
 			capability,
 			source_kind,
 			task,
 		):
-			_complete_recurring_occupation_work_task_before_release(world, 
+			_complete_recurring_occupation_work_task_before_release(world,
 				resident_id,
 				execution,
 				task,
@@ -137,7 +165,7 @@ static func settle_completed_activity(
 			and capability == "music.rehearse"
 			and source_kind == "personal_performance_plan"
 		):
-			_complete_music_work_task_before_release(world, 
+			_complete_music_work_task_before_release(world,
 				resident_id,
 				execution,
 				task,
@@ -147,7 +175,7 @@ static func settle_completed_activity(
 			and capability == "library.accession"
 			and source_kind == "research_handoff"
 		):
-			_complete_research_accession_work_task_before_release(world, 
+			_complete_research_accession_work_task_before_release(world,
 				resident_id,
 				execution,
 				task,
@@ -157,7 +185,7 @@ static func settle_completed_activity(
 			and capability == "food.production"
 			and source_kind in ["daily_baking_plan", "meal_demand"]
 		):
-			_complete_food_production_work_task_before_release(world, 
+			_complete_food_production_work_task_before_release(world,
 				resident_id,
 				execution,
 				task,
@@ -167,7 +195,7 @@ static func settle_completed_activity(
 			and capability == "retail.arrange"
 			and source_kind == "display_change"
 		):
-			_complete_retail_preparation_work_task_before_release(world, 
+			_complete_retail_preparation_work_task_before_release(world,
 				resident_id,
 				execution,
 				task,
@@ -176,7 +204,7 @@ static func settle_completed_activity(
 			not source_kind.is_empty()
 			and source_kind == String(CONTENT_CATALOG.FACILITY_CLEANUP_SOURCE_BY_ACTIVITY.get(activity_id, ""))
 		):
-			_complete_facility_cleanup_work_task_before_release(world, 
+			_complete_facility_cleanup_work_task_before_release(world,
 				resident_id,
 				execution,
 				task,
@@ -185,17 +213,17 @@ static func settle_completed_activity(
 			not capability.is_empty()
 			and capability == String(CONTENT_CATALOG.POSTAL_CAPABILITY_BY_ACTIVITY.get(activity_id, ""))
 		):
-			_complete_postal_process_work_task_before_release(world, 
+			_complete_postal_process_work_task_before_release(world,
 				resident_id,
 				execution,
 				task,
 			)
-	_complete_repair_pickup_from_visitor(world, 
+	_complete_repair_pickup_from_visitor(world,
 		resident_id,
 		execution,
 	)
 	_record_equipment_wear_from_activity(world, execution)
-	_record_facility_use_from_activity(world, 
+	_record_facility_use_from_activity(world,
 		resident_id,
 		execution,
 	)
@@ -206,12 +234,12 @@ static func _bound_settlement_task(
 	resident_id: String,
 	execution: Dictionary,
 ) -> Dictionary:
-	var binding_key : Variant = world._bound_work_task_binding_key(
+	var binding_key: String = world.activity_work_task_bindings.resolved_key(
 		resident_id,
 		String(execution.get("actionId", "")),
 	)
-	return world._work_tasks.task(
-		String(world._activity_work_task_bindings.get(binding_key, "")),
+	return world.work_domain.tasks.task(
+		world.activity_work_task_bindings.task_id_for_key(String(binding_key)),
 	) as Dictionary
 
 
@@ -288,7 +316,7 @@ static func _complete_place_service_work_task_before_release(
 	execution: Dictionary,
 ) -> void:
 	var place_id := String(execution.get("placeId", ""))
-	var state := world._place_service_states.get(place_id, {}) as Dictionary
+	var state: Dictionary = world.work_domain.place_services.state(place_id)
 	if (
 		state.is_empty()
 		or String(execution.get("activityId", ""))
@@ -300,10 +328,10 @@ static func _complete_place_service_work_task_before_release(
 		(state.get("pending_request_ids", []) as Array)[0],
 	)
 	if not (
-		world._occupation_services.request(request_id) as Dictionary
+		world.work_domain.services.request(request_id) as Dictionary
 	).is_empty():
 		return
-	_complete_bound_place_service_work_task(world, 
+	_complete_bound_place_service_work_task(world,
 		resident_id,
 		execution,
 		place_id,
@@ -324,7 +352,7 @@ static func _complete_occupation_service_work_task_before_release(
 	):
 		return
 	var request_id := String(task.get("sourceRef", ""))
-	var request := world._occupation_services.request(
+	var request := world.work_domain.services.request(
 		request_id,
 	) as Dictionary
 	if request.is_empty():
@@ -333,15 +361,18 @@ static func _complete_occupation_service_work_task_before_release(
 	if String(execution.get("placeId", "")) != place_id:
 		return
 	if (
-		world._occupation_service_request_requires_presence(request)
-		and not world._work_task_is_currently_available(task)
+		ACTION_SUPPORT.occupation_service_request_requires_presence(request)
+		and not world.work_domain.work_task_is_currently_available(
+			task,
+			world.residents(),
+		)
 	):
 		var wait_reason := "请求人尚未到达服务地点"
-		world._occupation_services.mark_waiting(
+		world.work_domain.services.mark_waiting(
 			request_id,
 			wait_reason,
 		)
-		world._work_tasks.release_task(
+		world.work_domain.tasks.release_task(
 			String(task.get("taskId", "")),
 			resident_id,
 			int(task.get("revision", 0)),
@@ -370,7 +401,7 @@ static func _complete_occupation_service_work_task_before_release(
 			process_facts["nextActivityId"] = (
 				"activity_cafe_receive_guests"
 			)
-			world._work_tasks.advance_process_stage(
+			world.work_domain.tasks.advance_process_stage(
 				String(task.get("taskId", "")),
 				resident_id,
 				int(task.get("revision", 0)),
@@ -397,22 +428,23 @@ static func _complete_occupation_service_work_task_before_release(
 				).strip_edges()
 				var research_booklet_used := false
 				if not research_record_id.is_empty():
-					if int(world._cargo_inventory.inventory_quantity(
+					if int(world.work_domain.cargo.inventory_quantity(
 						CONTENT_CATALOG.PLACE_CLINIC,
 						CONTENT_CATALOG.ITEM_RESEARCH_BOOKLET,
 					)) <= 0:
-						world._occupation_services.mark_waiting(
+						world.work_domain.services.mark_waiting(
 							request_id,
 							"所需研究小册子尚未送达诊所",
 						)
-						world._sync_specialty_service_demand(
+						PRODUCTION_TASK_COORDINATION_RUNTIME.sync_specialty_service_demand(
+							world,
 							kind,
 							CONTENT_CATALOG.ITEM_RESEARCH_BOOKLET,
 							request_id,
 							now,
 						)
 						return
-					var booklet_change := world._cargo_inventory.apply_inventory_recipe(
+					var booklet_change := world.work_domain.cargo.apply_inventory_recipe(
 						CONTENT_CATALOG.PLACE_CLINIC,
 						{CONTENT_CATALOG.ITEM_RESEARCH_BOOKLET: 1},
 						{},
@@ -423,7 +455,7 @@ static func _complete_occupation_service_work_task_before_release(
 				var is_follow_up := bool(
 					clinic_context.get("generatedFromFollowUp", false),
 				)
-				var patient := world._residents.get(
+				var patient := world.resident_registry.records.get(
 					requester_id,
 					{},
 				) as Dictionary
@@ -436,7 +468,7 @@ static func _complete_occupation_service_work_task_before_release(
 				var needs_medicine : Variant = (
 					false
 					if is_follow_up
-					else world._clinic_request_needs_basic_care(
+					else world.CLINIC_SERVICE_COORDINATION_RUNTIME.request_needs_basic_care(world,
 						requester_id,
 						clinic_context,
 					)
@@ -473,17 +505,17 @@ static func _complete_occupation_service_work_task_before_release(
 					"status": "follow_up_completed" if is_follow_up else "observed",
 				}
 				if needs_medicine:
-					world._occupation_services.record_progress(
+					world.work_domain.services.record_progress(
 						request_id,
 						outcome,
 					)
-					var follow_up : Variant = world._create_clinic_treatment_task(
+					var follow_up : Variant = world.work_domain.create_clinic_treatment_task(
 						request,
 						now,
 					)
 					if follow_up.get("ok") != true:
 						return
-					world._occupation_services.attach_follow_up_task(
+					world.work_domain.services.attach_follow_up_task(
 						request_id,
 						String(
 							(
@@ -496,23 +528,23 @@ static func _complete_occupation_service_work_task_before_release(
 					)
 					follow_up_created = true
 					world._bump_world_revision()
-					for candidate_id: String in world._resident_order:
-						if world._occupation_id_for_resident(
-							world._residents.get(
+					for candidate_id: String in world.resident_registry.order:
+						if world.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.primary_id(world,
+							world.resident_registry.records.get(
 								candidate_id,
 								{},
 							) as Dictionary,
 						) == "occupation_clinic_practitioner":
 							world._schedule_decision(candidate_id, true)
 				else:
-					domain_result = world._occupation_services.complete_request(
+					domain_result = world.work_domain.services.complete_request(
 						request_id,
 						resident_id,
 						now,
 						outcome,
 					) as Dictionary
 					if is_follow_up and domain_result.get("ok") == true:
-						world._occupation_services.resolve_follow_up(
+						world.work_domain.services.resolve_follow_up(
 							String(clinic_context.get("followUpId", "")),
 							now,
 						)
@@ -522,7 +554,7 @@ static func _complete_occupation_service_work_task_before_release(
 					{},
 				) as Dictionary
 				if bool(conflict_treatment_context.get("generatedFromConflictInjury", false)):
-					var treatment_started := world._begin_conflict_injury_treatment(
+					var treatment_started := world.CLINIC_SERVICE_COORDINATION_RUNTIME.begin_conflict_injury_treatment(world,
 						requester_id,
 						CONTENT_CATALOG.PLACE_CLINIC,
 					) as Dictionary
@@ -536,7 +568,7 @@ static func _complete_occupation_service_work_task_before_release(
 						"claim": "已经开始处理冲突造成的伤势，尚未痊愈",
 					}
 				else:
-					var follow_up_result := world._occupation_services.schedule_follow_up(
+					var follow_up_result := world.work_domain.services.schedule_follow_up(
 						request_id,
 						requester_id,
 						String(request.get("subjectRef", "身体不适")),
@@ -567,14 +599,14 @@ static func _complete_occupation_service_work_task_before_release(
 						),
 						"claim": "已经配药，但不直接宣称痊愈",
 					}
-				domain_result = world._occupation_services.complete_request(
+				domain_result = world.work_domain.services.complete_request(
 					request_id,
 					resident_id,
 					now,
 					outcome,
 				) as Dictionary
 		"library_loan":
-			domain_result = world._occupation_services.checkout_book(
+			domain_result = world.work_domain.services.checkout_book(
 				request_id,
 				resident_id,
 				now,
@@ -586,13 +618,13 @@ static func _complete_occupation_service_work_task_before_release(
 					).get("outcome", {}) as Dictionary
 				).duplicate(true)
 			else:
-				world._occupation_services.mark_waiting(
+				world.work_domain.services.mark_waiting(
 					request_id,
 					"所选书籍当前已经借出",
 				)
 				return
 		"library_return":
-			domain_result = world._occupation_services.return_book(
+			domain_result = world.work_domain.services.return_book(
 				request_id,
 				resident_id,
 				now,
@@ -613,7 +645,7 @@ static func _complete_occupation_service_work_task_before_release(
 				"assistedByResidentId": resident_id,
 				"completedAtMinute": now,
 			}
-			domain_result = world._occupation_services.complete_request(
+			domain_result = world.work_domain.services.complete_request(
 				request_id,
 				resident_id,
 				now,
@@ -628,7 +660,7 @@ static func _complete_occupation_service_work_task_before_release(
 				"handledByResidentId": resident_id,
 				"completedAtMinute": now,
 			}
-			domain_result = world._occupation_services.complete_request(
+			domain_result = world.work_domain.services.complete_request(
 				request_id,
 				resident_id,
 				now,
@@ -653,12 +685,12 @@ static func _complete_occupation_service_work_task_before_release(
 			var crafted_part_used := false
 			if (
 				complete_on_repair
-				and int(world._cargo_inventory.inventory_quantity(
+				and int(world.work_domain.cargo.inventory_quantity(
 					CONTENT_CATALOG.PLACE_WAREHOUSE,
 					"crafted_item",
 				)) > 0
 			):
-				var part_change := world._cargo_inventory.apply_inventory_recipe(
+				var part_change := world.work_domain.cargo.apply_inventory_recipe(
 					CONTENT_CATALOG.PLACE_WAREHOUSE,
 					{"crafted_item": 1},
 					{},
@@ -683,48 +715,48 @@ static func _complete_occupation_service_work_task_before_release(
 				"readyAtMinute": now,
 			}
 			if complete_on_repair:
-				var equipment_result := world._occupation_services.resolve_equipment_fault(
+				var equipment_result := world.work_domain.services.resolve_equipment_fault(
 					String(request.get("subjectRef", "")),
 					resident_id,
 					now,
 				) as Dictionary
 				if equipment_result.get("ok") != true:
 					return
-				domain_result = world._occupation_services.complete_request(
+				domain_result = world.work_domain.services.complete_request(
 					request_id,
 					resident_id,
 					now,
 					outcome,
 				) as Dictionary
 			else:
-				domain_result = world._occupation_services.record_progress(
+				domain_result = world.work_domain.services.record_progress(
 					request_id,
 					outcome,
 				) as Dictionary
 		"dining_order", "cafe_order", "grocer_sale", "flower_sale":
 			if (
 				kind == "dining_order"
-				and not world._dining_request_meal_is_ready(request)
+				and not world.work_domain.dining_request_meal_is_ready(request)
 			):
-				world._sync_meal_period_tasks(now)
+				PRODUCTION_TASK_COORDINATION_RUNTIME.sync_meal_period(world, now)
 				world.record_place_service_request(place_id, request_id, false)
-				world._occupation_services.mark_waiting(
+				world.work_domain.services.mark_waiting(
 					request_id,
 					(
 						"食堂当前不在供餐时间"
-						if world._meal_period_for_minute(now).is_empty()
+						if world.work_domain.meal_period_for_minute(now).is_empty()
 						else (
 							"当前餐次尚未开始供餐"
-							if not world._meal_service_is_open(now)
+							if not world.work_domain.meal_service_is_open(now)
 							else "当前餐次尚未完成备餐"
 						)
 					),
 				)
 				return
 			var item_id := String(request.get("itemId", ""))
-			if not world._occupation_service_item_allowed(kind, item_id):
+			if not OCCUPATION_SERVICE_DEFINITION.item_allowed(kind, item_id):
 				return
-			var specialty_cargo_used := bool(world._cargo_inventory.is_specialty_cargo_item(
+			var specialty_cargo_used := bool(world.work_domain.cargo.is_specialty_cargo_item(
 				item_id,
 			))
 			var service_context := (
@@ -748,22 +780,23 @@ static func _complete_occupation_service_work_task_before_release(
 					)) > 0
 				)
 				var available_quantity : Variant = (
-					int(world._cargo_inventory.inventory_quantity(
+					int(world.work_domain.cargo.inventory_quantity(
 						place_id,
 						item_id,
 					))
 					if owns_preorder_reservation
-					else world._unreserved_preorder_inventory_quantity(
+					else world.work_domain.unreserved_preorder_inventory_quantity(
 						place_id,
 						item_id,
 					)
 				)
 				if available_quantity <= 0:
-					world._occupation_services.mark_waiting(
+					world.work_domain.services.mark_waiting(
 						request_id,
 						"%s特色货批尚未到达" % item_id,
 					)
-					world._sync_specialty_service_demand(
+					PRODUCTION_TASK_COORDINATION_RUNTIME.sync_specialty_service_demand(
+						world,
 						kind,
 						item_id,
 						request_id,
@@ -792,7 +825,7 @@ static func _complete_occupation_service_work_task_before_release(
 				else:
 					var service_inputs := {}
 					service_inputs[item_id] = 1
-					var stock_change := world._cargo_inventory.apply_inventory_recipe(
+					var stock_change := world.work_domain.cargo.apply_inventory_recipe(
 						place_id,
 						service_inputs,
 						{},
@@ -827,11 +860,11 @@ static func _complete_occupation_service_work_task_before_release(
 			if kind == "dining_order":
 				outcome["serviceMode"] = "counter_batch"
 				outcome["batchCapacity"] = DINING_SERVICE.BATCH_SIZE
-			world._apply_consumed_service_item(
+			world.PLACE_SERVICE_COMMAND_RUNTIME.apply_consumed_item(world,
 				requester_id,
 				item_id,
 			)
-			domain_result = world._occupation_services.complete_request(
+			domain_result = world.work_domain.services.complete_request(
 				request_id,
 				resident_id,
 				now,
@@ -845,16 +878,23 @@ static func _complete_occupation_service_work_task_before_release(
 					),
 				)
 				if meal_period_ref.is_empty():
-					meal_period_ref = world._meal_period_source_ref(
+					meal_period_ref = world.work_domain.meal_period_source_ref(
 						int(request.get("createdAtMinute", -1)),
 					)
 				if not meal_period_ref.is_empty():
-					world._occupation_services.mark_dining_order_completed_for_resident_meal_period(
+					world.work_domain.services.mark_dining_order_completed_for_resident_meal_period(
 						requester_id,
 						meal_period_ref,
 					)
 		"performance":
-			var audience_ids : Variant = world._performance_audience_ids(
+			var residents: Dictionary = world.residents()
+			var present_resident_ids: Array[String] = []
+			for candidate_id: String in world.resident_order():
+				if world.resident_is_present(
+					residents.get(candidate_id, {}) as Dictionary,
+				):
+					present_resident_ids.append(candidate_id)
+			var audience_ids := PERFORMANCE_AUDIENCE_POLICY.audience_ids(
 				resident_id,
 				place_id,
 				int(
@@ -863,9 +903,12 @@ static func _complete_occupation_service_work_task_before_release(
 						-1,
 					),
 				),
+				residents,
+				world.resident_order(),
+				present_resident_ids,
 			)
 			if audience_ids.is_empty():
-				world._occupation_services.mark_waiting(
+				world.work_domain.services.mark_waiting(
 					request_id,
 					"现场还没有实际听众",
 				)
@@ -878,7 +921,7 @@ static func _complete_occupation_service_work_task_before_release(
 				"audienceCount": audience_ids.size(),
 				"audienceAreaId": "outdoor_plaza_01",
 			}
-			domain_result = world._occupation_services.complete_request(
+			domain_result = world.work_domain.services.complete_request(
 				request_id,
 				resident_id,
 				now,
@@ -891,26 +934,26 @@ static func _complete_occupation_service_work_task_before_release(
 						-1,
 					),
 				)
-				world._finish_performance_listener_waits(
+				world.PERFORMANCE_SERVICE_RUNTIME.finish_listener_waits(world,
 					performance_day_index,
 					audience_ids,
 				)
-				world._cancel_private_messages_for_source(
+				world.PRIVATE_MESSAGE_DELIVERY_RUNTIME.cancel_for_source(world,
 					"performance-event:%d" % performance_day_index,
 					"演出已经结束",
 				)
-				world._close_performance_invitation_sources(
+				world.PERFORMANCE_SERVICE_RUNTIME.close_invitation_sources(world,
 					performance_day_index,
 					"演出已经结束",
 				)
-				world._record_staffing_trial_from_result(
+				world.PLACE_SERVICE_COMMAND_RUNTIME.record_staffing_trial(world,
 					resident_id,
 					"occupation_musician",
 					outcome,
 				)
 	if outcome.is_empty():
 		return
-	var completed := world._work_tasks.complete_task(
+	var completed := world.work_domain.tasks.complete_task(
 		task_id,
 		resident_id,
 		int(task.get("revision", 0)),
@@ -924,7 +967,7 @@ static func _complete_occupation_service_work_task_before_release(
 	if completed.get("ok") != true:
 		return
 	if kind == "clinic" and not outcome.is_empty():
-		world._settle_clinic_condition_result(
+		world.CLINIC_CONDITION_SETTLEMENT_RUNTIME.settle(world,
 			request,
 			task,
 			resident_id,
@@ -936,11 +979,11 @@ static func _complete_occupation_service_work_task_before_release(
 		return
 	if domain_result.get("ok") != true:
 		return
-	var completed_request := world._occupation_services.request(
+	var completed_request := world.work_domain.services.request(
 		request_id,
 	) as Dictionary
 	if String(completed_request.get("state", "")) == "completed":
-		world._finish_customer_service_wait(
+		world.CUSTOMER_SERVICE_WAIT_RUNTIME.finish(world,
 			requester_id,
 			request_id,
 			"已经等到并完成这次服务",
@@ -954,7 +997,7 @@ static func _complete_occupation_service_work_task_before_release(
 				now,
 			)
 		if kind == "library_return":
-			world._cancel_private_messages_for_source(
+			world.PRIVATE_MESSAGE_DELIVERY_RUNTIME.cancel_for_source(world,
 				"library-return:%s" % String(request.get("subjectRef", "")),
 				"借阅已经归还，不再需要提醒",
 			)
@@ -964,7 +1007,7 @@ static func _complete_occupation_service_work_task_before_release(
 				false,
 			)
 		):
-			world._cancel_private_messages_for_source(
+			world.PRIVATE_MESSAGE_DELIVERY_RUNTIME.cancel_for_source(world,
 				"clinic-follow-up:%s" % String(
 					(request.get("context", {}) as Dictionary).get(
 						"followUpId",
@@ -979,15 +1022,16 @@ static func _complete_occupation_service_work_task_before_release(
 				"",
 			),
 		) == "preorder":
-			world._cancel_private_messages_for_source(
+			world.PRIVATE_MESSAGE_DELIVERY_RUNTIME.cancel_for_source(world,
 				"preorder:%s" % request_id,
 				"预订已经领取",
 			)
-			world._close_resident_request_source(
+			SOCIAL_MATTER_COMMAND_RUNTIME.close_resident_request_source(
+				world,
 				"preorder-pickup:%s" % request_id,
 				"preorder-picked-up",
 			)
-	world._append_service_log_event(
+	WORLD_LOG_COMMIT_RUNTIME.append_service(world,
 		request,
 		task,
 		resident_id,
@@ -997,10 +1041,10 @@ static func _complete_occupation_service_work_task_before_release(
 		kind == "repair"
 		and String(outcome.get("status", "")) == "ready_for_pickup"
 	):
-		world._notify_repair_ready(request, resident_id, now)
+		world.SERVICE_READY_NOTIFICATION_RUNTIME.notify_repair(world, request, resident_id, now)
 		return
 	if bool(
-		world._occupation_service_definition(kind).get(
+		OCCUPATION_SERVICE_DEFINITION.definition(kind).get(
 			"placeService",
 			false,
 		)
@@ -1031,19 +1075,19 @@ static func _complete_facility_cleanup_work_task_before_release(
 		return
 	var now := int(world._environment.get_absolute_minute())
 	var cleaned := (
-		world._occupation_services.clean_dirty_dish(
+		world.work_domain.services.clean_dirty_dish(
 			resident_id,
 			now,
 		)
 		if expected_source == "dirty_dishes"
-		else world._occupation_services.clean_used_cafe_table(
+		else world.work_domain.services.clean_used_cafe_table(
 			resident_id,
 			now,
 		)
 	) as Dictionary
 	if cleaned.get("ok") != true:
 		return
-	world._work_tasks.complete_task(
+	world.work_domain.tasks.complete_task(
 		task_id,
 		resident_id,
 		int(task.get("revision", 0)),
@@ -1065,7 +1109,7 @@ static func _complete_facility_cleanup_work_task_before_release(
 			},
 		},
 	)
-	world._ensure_facility_cleanup_task(expected_source, now)
+	world.work_domain.sync_facility_cleanup_task(expected_source, now)
 
 
 static func _complete_research_accession_work_task_before_release(
@@ -1088,7 +1132,7 @@ static func _complete_research_accession_work_task_before_release(
 		return
 	var record_id := String(task.get("sourceRef", ""))
 	var now := int(world._environment.get_absolute_minute())
-	var accession_result := world._occupation_services.record_accession(
+	var accession_result := world.work_domain.services.record_accession(
 		record_id,
 		resident_id,
 		now,
@@ -1099,14 +1143,14 @@ static func _complete_research_accession_work_task_before_release(
 		"accession",
 		{},
 	) as Dictionary
-	var production_result := world._production.record_research_accession(
+	var production_result := world.work_domain.production.record_research_accession(
 		record_id,
 		accession,
 		now,
 	) as Dictionary
 	if production_result.get("ok") != true:
 		return
-	var accession_task_completion := world._work_tasks.complete_task(
+	var accession_task_completion := world.work_domain.tasks.complete_task(
 		task_id,
 		resident_id,
 		int(task.get("revision", 0)),
@@ -1121,7 +1165,7 @@ static func _complete_research_accession_work_task_before_release(
 	if accession_task_completion.get("ok") != true:
 		return
 	var researcher_id := ""
-	for project_value: Variant in world._production.plant_research_projects():
+	for project_value: Variant in world.work_domain.production.plant_research_projects():
 		var project := project_value as Dictionary
 		var record := project.get("record", {}) as Dictionary
 		if String(record.get("recordId", "")) == record_id:
@@ -1165,7 +1209,7 @@ static func _complete_cargo_receipt_work_task_before_release(
 	):
 		return
 	var lot_id := String(task.get("sourceRef", ""))
-	var lot := world._cargo_inventory.cargo_lot(
+	var lot := world.work_domain.cargo.cargo_lot(
 		lot_id,
 	) as Dictionary
 	var place_id := String(execution.get("placeId", ""))
@@ -1174,7 +1218,7 @@ static func _complete_cargo_receipt_work_task_before_release(
 		or String(lot.get("destinationPlaceId", "")) != place_id
 	):
 		return
-	var received := world._cargo_inventory.receive(
+	var received := world.work_domain.cargo.receive(
 		lot_id,
 		resident_id,
 		place_id,
@@ -1182,7 +1226,7 @@ static func _complete_cargo_receipt_work_task_before_release(
 	) as Dictionary
 	if received.get("ok") != true:
 		return
-	world._work_tasks.complete_task(
+	world.work_domain.tasks.complete_task(
 		task_id,
 		resident_id,
 		int(task.get("revision", 0)),
@@ -1198,19 +1242,20 @@ static func _complete_cargo_receipt_work_task_before_release(
 			},
 		},
 	)
-	world._append_cargo_log_event(
+	WORLD_LOG_COMMIT_RUNTIME.append_cargo(world,
 		"货批入库",
 		received.get("lot", {}) as Dictionary,
 		resident_id,
 		"completed",
 	)
 	if place_id == CONTENT_CATALOG.PLACE_MARKET:
-		world._sync_market_preparation_tasks(
+		world.work_domain.sync_market_preparation_tasks(
 			int(world._environment.get_absolute_minute()),
 		)
 	var received_item_id := String(lot.get("itemId", ""))
 	if received_item_id == CONTENT_CATALOG.ITEM_RESEARCH_BOOKLET:
-		world._schedule_occupation_decisions(
+		world.CARGO_COMMAND_RUNTIME.schedule_occupation_decisions(
+			world,
 			(
 				"occupation_clinic_practitioner"
 				if place_id == CONTENT_CATALOG.PLACE_CLINIC
@@ -1218,7 +1263,9 @@ static func _complete_cargo_receipt_work_task_before_release(
 			),
 		)
 	elif received_item_id == "pastry" and place_id == CONTENT_CATALOG.PLACE_CAFE:
-		world._schedule_occupation_decisions("occupation_cafe_worker")
+		world.CARGO_COMMAND_RUNTIME.schedule_occupation_decisions(
+			world, "occupation_cafe_worker",
+		)
 
 
 static func _complete_cargo_release_work_task_before_release(
@@ -1239,12 +1286,12 @@ static func _complete_cargo_release_work_task_before_release(
 	):
 		return
 	var lot_id := String(task.get("sourceRef", ""))
-	var lot := world._cargo_inventory.cargo_lot(
+	var lot := world.work_domain.cargo.cargo_lot(
 		lot_id,
 	) as Dictionary
 	var now := int(world._environment.get_absolute_minute())
 	if String(lot.get("state", "")) == "awaiting_release":
-		var released := world._cargo_inventory.release(
+		var released := world.work_domain.cargo.release(
 			lot_id,
 			resident_id,
 			CONTENT_CATALOG.PLACE_WAREHOUSE,
@@ -1255,18 +1302,18 @@ static func _complete_cargo_release_work_task_before_release(
 		lot = released.get("lot", {}) as Dictionary
 	if String(lot.get("state", "")) != "available":
 		return
-	var active_delivery := world._work_tasks.active_task_for_source(
+	var active_delivery := world.work_domain.tasks.active_task_for_source(
 		"cargo_available",
 		lot_id,
 	) as Dictionary
 	if active_delivery.is_empty():
-		var delivery_result : Variant = world._create_cargo_delivery_task(
+		var delivery_result : Variant = world.CARGO_COMMAND_RUNTIME.create_delivery_task(world,
 			lot,
 			int(task.get("priority", 70)),
 		)
 		if delivery_result.get("ok") != true:
 			return
-	world._work_tasks.complete_task(
+	world.work_domain.tasks.complete_task(
 		task_id,
 		resident_id,
 		int(task.get("revision", 0)),
@@ -1284,13 +1331,15 @@ static func _complete_cargo_release_work_task_before_release(
 		},
 	)
 	world._bump_world_revision()
-	world._append_cargo_log_event(
+	WORLD_LOG_COMMIT_RUNTIME.append_cargo(world,
 		"货批放货",
 		lot,
 		resident_id,
 		"ongoing",
 	)
-	world._schedule_occupation_decisions("occupation_delivery_worker")
+	world.CARGO_COMMAND_RUNTIME.schedule_occupation_decisions(
+		world, "occupation_delivery_worker",
+	)
 
 
 static func _complete_production_work_task_before_release(
@@ -1314,7 +1363,7 @@ static func _complete_production_work_task_before_release(
 		activity_id == "activity_fisher_catch_in_region"
 		and capability == "fishing.harvest"
 	):
-		resolution = world._production.resolve_fishing(
+		resolution = world.work_domain.production.resolve_fishing(
 			now,
 			world.get_weather(),
 		) as Dictionary
@@ -1322,7 +1371,7 @@ static func _complete_production_work_task_before_release(
 			return
 		var fishing_quantity := int(resolution.get("quantity", 0))
 		if fishing_quantity <= 0:
-			_complete_bound_production_task(world, 
+			_complete_bound_production_task(world,
 				task,
 				resident_id,
 				"empty-catch:%s:%d"
@@ -1352,7 +1401,7 @@ static func _complete_production_work_task_before_release(
 			"lot",
 			{},
 		) as Dictionary
-		_complete_bound_production_task(world, 
+		_complete_bound_production_task(world,
 			task,
 			resident_id,
 			"catch-result:%s"
@@ -1372,12 +1421,12 @@ static func _complete_production_work_task_before_release(
 		activity_id == "activity_farm_water_beds"
 		and capability == "garden.care"
 	):
-		resolution = world._production.resolve_garden_care(
+		resolution = world.work_domain.production.resolve_garden_care(
 			String(task.get("sourceRef", "")),
 		) as Dictionary
 		if resolution.get("ok") != true:
 			return
-		_complete_bound_production_task(world, 
+		_complete_bound_production_task(world,
 			task,
 			resident_id,
 			"garden-care-result:%s"
@@ -1405,7 +1454,7 @@ static func _complete_production_work_task_before_release(
 		if sample_lot_result.get("ok") != true:
 			return
 		var sample_lot := sample_lot_result.get("lot", {}) as Dictionary
-		_complete_bound_production_task(world, 
+		_complete_bound_production_task(world,
 			task,
 			resident_id,
 			"plant-sample:%s" % String(sample_lot.get("lotId", "")),
@@ -1422,7 +1471,7 @@ static func _complete_production_work_task_before_release(
 		activity_id == "activity_garden_harvest_region"
 		and capability == "garden.harvest"
 	):
-		resolution = world._production.resolve_garden_harvest(
+		resolution = world.work_domain.production.resolve_garden_harvest(
 			String(task.get("sourceRef", "")),
 		) as Dictionary
 		if resolution.get("ok") != true:
@@ -1443,7 +1492,7 @@ static func _complete_production_work_task_before_release(
 			"lot",
 			{},
 		) as Dictionary
-		_complete_bound_production_task(world, 
+		_complete_bound_production_task(world,
 			task,
 			resident_id,
 			"garden-harvest-result:%s"
@@ -1490,7 +1539,7 @@ static func _complete_plant_research_work_task_before_release(
 					observation_region_id = String(target.get("ref", ""))
 					break
 			var place_features: Array = []
-			for place_value: Variant in world._world_data.get("places", []) as Array:
+			for place_value: Variant in world.world_definition.world_data.get("places", []) as Array:
 				var place := place_value as Dictionary
 				if String(place.get("name", "")) == String(
 					execution.get("placeId", ""),
@@ -1499,7 +1548,7 @@ static func _complete_plant_research_work_task_before_release(
 						place.get("visibleFeatures", []) as Array
 					).duplicate()
 					break
-			resolution = world._production.record_plant_observation(
+			resolution = world.work_domain.production.record_plant_observation(
 				project_id,
 				resident_id,
 				world.get_weather(),
@@ -1509,13 +1558,13 @@ static func _complete_plant_research_work_task_before_release(
 				place_features,
 			) as Dictionary
 		"research.verify":
-			resolution = world._production.record_plant_verification(
+			resolution = world.work_domain.production.record_plant_verification(
 				project_id,
 				resident_id,
 				now,
 			) as Dictionary
 		"research.record":
-			resolution = world._production.finish_plant_research_record(
+			resolution = world.work_domain.production.finish_plant_research_record(
 				project_id,
 				resident_id,
 				now,
@@ -1523,7 +1572,7 @@ static func _complete_plant_research_work_task_before_release(
 	if resolution.get("ok") != true:
 		return
 	var project := resolution.get("project", {}) as Dictionary
-	var completed := world._work_tasks.complete_task(
+	var completed := world.work_domain.tasks.complete_task(
 		task_id,
 		resident_id,
 		int(task.get("revision", 0)),
@@ -1543,9 +1592,13 @@ static func _complete_plant_research_work_task_before_release(
 		return
 	match expected_capability:
 		"research.observe":
-			world._create_plant_research_stage_task(project, "verify")
+			PRODUCTION_TASK_COORDINATION_RUNTIME.create_plant_research_stage_task(
+				world, project, "verify",
+			)
 		"research.verify":
-			world._create_plant_research_stage_task(project, "record")
+			PRODUCTION_TASK_COORDINATION_RUNTIME.create_plant_research_stage_task(
+				world, project, "record",
+			)
 		"research.record":
 			var record := resolution.get("record", {}) as Dictionary
 			var record_id := String(record.get("recordId", ""))
@@ -1593,7 +1646,7 @@ static func _complete_craft_production_work_task_before_release(
 	):
 		process_facts["materialsTakenAtMinute"] = now
 		process_facts["nextActivityId"] = "activity_workshop_grind_parts"
-		world._work_tasks.advance_process_stage(
+		world.work_domain.tasks.advance_process_stage(
 			task_id,
 			resident_id,
 			int(task.get("revision", 0)),
@@ -1607,7 +1660,7 @@ static func _complete_craft_production_work_task_before_release(
 	):
 		process_facts["partsPreparedAtMinute"] = now
 		process_facts["nextActivityId"] = "activity_workshop_assemble_item"
-		world._work_tasks.advance_process_stage(
+		world.work_domain.tasks.advance_process_stage(
 			task_id,
 			resident_id,
 			int(task.get("revision", 0)),
@@ -1636,7 +1689,7 @@ static func _complete_craft_production_work_task_before_release(
 	if lot_result.get("ok") != true:
 		return
 	var lot := lot_result.get("lot", {}) as Dictionary
-	world._work_tasks.complete_task(
+	world.work_domain.tasks.complete_task(
 		task_id,
 		resident_id,
 		int(task.get("revision", 0)),
@@ -1677,7 +1730,7 @@ static func _complete_music_work_task_before_release(
 		!= "personal_performance_plan"
 	):
 		return
-	_complete_bound_production_task(world, 
+	_complete_bound_production_task(world,
 		task,
 		resident_id,
 		"rehearsal:%s" % task_id,
@@ -1695,7 +1748,7 @@ static func _complete_music_work_task_before_release(
 	var program := "第%d日广场演奏" % (day_index + 1)
 	var performance := {}
 	for request_value: Variant in (
-		world._occupation_services.snapshot() as Dictionary
+		world.work_domain.services.snapshot() as Dictionary
 	).get("requests", []) as Array:
 		var existing_request := request_value as Dictionary
 		var existing_context := existing_request.get("context", {}) as Dictionary
@@ -1704,7 +1757,7 @@ static func _complete_music_work_task_before_release(
 			and String(existing_request.get("state", "")) in ["pending", "waiting"]
 			and int(existing_context.get("dayIndex", -1)) == day_index
 		):
-			var merged := world._occupation_services.merge_request_context(
+			var merged := world.work_domain.services.merge_request_context(
 				String(existing_request.get("requestId", "")),
 				{"generatedFromRehearsal": true},
 			) as Dictionary
@@ -1723,7 +1776,7 @@ static func _complete_music_work_task_before_release(
 		})
 	if performance.get("ok") != true:
 		return
-	world._ensure_production_task({
+	world.work_domain.ensure_production_task({
 		"taskId": "performance-bulletin:%d" % day_index,
 		"capability": "bulletin.publish",
 		"sourceKind": "public_matter",
@@ -1738,16 +1791,16 @@ static func _complete_music_work_task_before_release(
 		"processStage": "confirmed_post",
 		"processFacts": {
 			"text": "%s准备在中心广场演奏，愿意的居民可以到场听。" % (
-				world._resident_display_name(resident_id)
+				world.resident_display_name(resident_id)
 			),
 			"deliveryMode": "board",
 			"nextActivityId": world.BULLETIN_PUBLISH_ACTIVITY_ID,
 		},
 	})
 	var invitee_ids: Array[String] = []
-	for candidate_id: String in world._resident_order:
-		if candidate_id != resident_id and world._resident_is_present(
-			world._residents.get(candidate_id, {}) as Dictionary,
+	for candidate_id: String in world.resident_registry.order:
+		if candidate_id != resident_id and world.resident_is_present(
+			world.resident_registry.records.get(candidate_id, {}) as Dictionary,
 		):
 			invitee_ids.append(candidate_id)
 	invitee_ids.sort()
@@ -1804,7 +1857,7 @@ static func _complete_food_production_work_task_before_release(
 		process_facts["doughPreparedAtMinute"] = now
 		process_facts["preparedByResidentId"] = resident_id
 		process_facts["nextActivityId"] = "activity_baker_bake_bread"
-		world._work_tasks.advance_process_stage(
+		world.work_domain.tasks.advance_process_stage(
 			task_id,
 			resident_id,
 			int(task.get("revision", 0)),
@@ -1833,7 +1886,7 @@ static func _complete_food_production_work_task_before_release(
 	if lot_result.get("ok") != true:
 		return
 	var lot := lot_result.get("lot", {}) as Dictionary
-	world._work_tasks.complete_task(
+	world.work_domain.tasks.complete_task(
 		task_id,
 		resident_id,
 		int(task.get("revision", 0)),
@@ -1874,14 +1927,14 @@ static func _complete_retail_preparation_work_task_before_release(
 		return
 	var inputs := {CONTENT_CATALOG.ITEM_FRESH_FLOWERS: 2}
 	var outputs := {CONTENT_CATALOG.ITEM_BOUQUET: 1}
-	var transformed := world._cargo_inventory.apply_inventory_recipe(
+	var transformed := world.work_domain.cargo.apply_inventory_recipe(
 		CONTENT_CATALOG.PLACE_MARKET,
 		inputs,
 		outputs,
 	) as Dictionary
 	if transformed.get("ok") != true:
 		return
-	world._work_tasks.complete_task(
+	world.work_domain.tasks.complete_task(
 		task_id,
 		resident_id,
 		int(task.get("revision", 0)),
@@ -1896,7 +1949,7 @@ static func _complete_retail_preparation_work_task_before_release(
 			},
 		},
 	)
-	world._sync_market_preparation_tasks(
+	world.work_domain.sync_market_preparation_tasks(
 		int(world._environment.get_absolute_minute()),
 	)
 
@@ -1920,12 +1973,8 @@ static func _complete_recurring_occupation_work_task_before_release(
 		and source_kind == "daily_postal_collection_plan"
 		and activity_id == "activity_postal_collect_outgoing_mail"
 	):
-		var waiting_message_count := 0
-		for message_value: Variant in world._private_messages.values():
-			var message := message_value as Dictionary
-			if String(message.get("state", "")) in ["pending", "sorted", "prepared"]:
-				waiting_message_count += 1
-		_complete_bound_production_task(world, 
+		var waiting_message_count := POSTAL_MESSAGE_RUNTIME.waiting_message_count(world)
+		_complete_bound_production_task(world,
 			task,
 			resident_id,
 			"postal-collection:%s" % source_ref,
@@ -1942,7 +1991,7 @@ static func _complete_recurring_occupation_work_task_before_release(
 		if String(daily_operation_activities.get(capability, "")) == (
 			activity_id
 		):
-			_complete_bound_production_task(world, 
+			_complete_bound_production_task(world,
 				task,
 				resident_id,
 				"daily-operation:%s" % source_ref,
@@ -1959,7 +2008,7 @@ static func _complete_recurring_occupation_work_task_before_release(
 		and source_kind in ["daily_catalog_plan", "catalog_mismatch"]
 		and activity_id == "activity_library_staff_checkout"
 	):
-		_complete_bound_production_task(world, 
+		_complete_bound_production_task(world,
 			task,
 			resident_id,
 			"catalog-check:%s" % source_ref,
@@ -1986,7 +2035,7 @@ static func _complete_recurring_occupation_work_task_before_release(
 		var facts := (task.get("processFacts", {}) as Dictionary).duplicate(true)
 		facts["workerResidentId"] = resident_id
 		facts["completedAtMinute"] = now
-		var completed := world._work_tasks.complete_task(
+		var completed := world.work_domain.tasks.complete_task(
 			task_id,
 			resident_id,
 			int(task.get("revision", 0)),
@@ -2002,7 +2051,7 @@ static func _complete_recurring_occupation_work_task_before_release(
 		var bulletin_text := "今日天气%s，镇上公共服务按当前安排运行。" % weather
 		if int(facts.get("vacancyCount", 0)) > 0:
 			bulletin_text = "%s 当前有岗位需要居民协商接手。" % bulletin_text
-		world._ensure_production_task({
+		world.work_domain.ensure_production_task({
 			"taskId": "civic-bulletin:%s" % source_ref,
 			"capability": "bulletin.publish",
 			"sourceKind": "public_matter",
@@ -2039,7 +2088,7 @@ static func _complete_recurring_occupation_work_task_before_release(
 		)
 		staffing_facts["workerResidentId"] = resident_id
 		staffing_facts["reviewedAtMinute"] = now
-		_complete_bound_production_task(world, 
+		_complete_bound_production_task(world,
 			task,
 			resident_id,
 			"staffing-review:%s" % source_ref,
@@ -2052,7 +2101,7 @@ static func _complete_recurring_occupation_work_task_before_release(
 		and source_ref.begins_with("meal-period:")
 		and activity_id == "activity_dining_prepare_meal"
 	):
-		_complete_bound_production_task(world, 
+		_complete_bound_production_task(world,
 			task,
 			resident_id,
 			"prepared:%s" % source_ref,
@@ -2069,19 +2118,21 @@ static func _complete_recurring_occupation_work_task_before_release(
 				"baseSupplyUsed": true,
 			},
 		)
-		var completed_task := world._work_tasks.task(
+		var completed_task := world.work_domain.tasks.task(
 			String(task.get("taskId", "")),
 		) as Dictionary
 		if String(completed_task.get("state", "")) == "completed":
 			DINING_SERVICE.publish_meal_menu_announcement(
 				world,
-				world._meal_period_for_minute(int(
+				world.work_domain.meal_period_for_minute(int(
 					completed_task.get("createdAtMinute", now),
 				)) as Dictionary,
 				now,
 			)
-		world._activate_waiting_dining_orders()
-		world._schedule_occupation_decisions("occupation_dining_operator")
+		world.OCCUPATION_SERVICE_PRESENCE_ADVANCEMENT_RUNTIME.activate_waiting_dining_orders(world)
+		world.CARGO_COMMAND_RUNTIME.schedule_occupation_decisions(
+			world, "occupation_dining_operator",
+		)
 		return
 	if (
 		capability == "inventory.receive"
@@ -2092,7 +2143,7 @@ static func _complete_recurring_occupation_work_task_before_release(
 		]
 		and activity_id == "activity_warehouse_check_manifest"
 	):
-		_complete_bound_production_task(world, 
+		_complete_bound_production_task(world,
 			task,
 			resident_id,
 			"inventory-audit:%s" % source_ref,
@@ -2125,16 +2176,16 @@ static func _complete_postal_process_work_task_before_release(
 		return
 	var batch_id := String(task.get("sourceRef", ""))
 	var now := int(world._environment.get_absolute_minute())
-	var message_count : Variant = world._postal_batch_message_count(batch_id)
+	var message_count := POSTAL_MESSAGE_RUNTIME.batch_message_count(world, batch_id)
 	if message_count <= 0:
-		world._work_tasks.cancel_task(task_id, "本批消息已经不存在")
+		world.work_domain.tasks.cancel_task(task_id, "本批消息已经不存在")
 		return
 	var result_kind := (
 		"message_batch_sorted"
 		if expected_capability == "message.sort"
 		else "message_batch_prepared"
 	)
-	var completed := world._work_tasks.complete_task(
+	var completed := world.work_domain.tasks.complete_task(
 		task_id,
 		resident_id,
 		int(task.get("revision", 0)),
@@ -2152,13 +2203,14 @@ static func _complete_postal_process_work_task_before_release(
 	if completed.get("ok") != true:
 		return
 	if expected_capability == "message.sort":
-		world._set_postal_delivery_tasks_stage(
+		POSTAL_MESSAGE_RUNTIME.set_batch_delivery_stage(
+			world,
 			batch_id,
 			"sorted",
 			"__awaiting_mailbag__",
 			now,
 		)
-		world._ensure_production_task({
+		world.work_domain.ensure_production_task({
 			"taskId": "postal-prepare-task:%s" % batch_id,
 			"capability": "message.prepare",
 			"sourceKind": "postal_batch_sorted",
@@ -2169,14 +2221,17 @@ static func _complete_postal_process_work_task_before_release(
 			"priority": CONTENT_CATALOG.TASK_PRIORITY["postal_mailbag"],
 		})
 	else:
-		world._set_postal_delivery_tasks_stage(
+		POSTAL_MESSAGE_RUNTIME.set_batch_delivery_stage(
+			world,
 			batch_id,
 			"out_for_delivery",
 			"__resident_delivery__",
 			now,
 		)
-		world._reserve_postal_delivery_tasks(batch_id)
-		world._schedule_occupation_decisions("occupation_postal_worker")
+		world.POSTAL_MESSAGE_RUNTIME.reserve_delivery_tasks(world, batch_id)
+		world.CARGO_COMMAND_RUNTIME.schedule_occupation_decisions(
+			world, "occupation_postal_worker",
+		)
 
 
 static func _complete_bound_production_task(
@@ -2186,7 +2241,7 @@ static func _complete_bound_production_task(
 	result_ref: String,
 	facts: Dictionary,
 ) -> void:
-	world._work_tasks.complete_task(
+	world.work_domain.tasks.complete_task(
 		String(task.get("taskId", "")),
 		resident_id,
 		int(task.get("revision", 0)),
@@ -2206,23 +2261,23 @@ static func _complete_bound_place_service_work_task(
 	request_id: String,
 ) -> void:
 	var action_id := String(execution.get("actionId", ""))
-	var binding_key : Variant = world._bound_work_task_binding_key(
+	var binding_key: String = world.activity_work_task_bindings.resolved_key(
 		resident_id,
 		action_id,
 	)
 	var task_id := String(
-		world._activity_work_task_bindings.get(binding_key, ""),
+		world.activity_work_task_bindings.task_id_for_key(String(binding_key)),
 	)
 	if task_id.is_empty():
 		return
-	var task := world._work_tasks.task(task_id) as Dictionary
+	var task := world.work_domain.tasks.task(task_id) as Dictionary
 	if (
 		task.is_empty()
 		or String(task.get("sourceRef", "")) != request_id
 		or String(task.get("state", "")) != "in_progress"
 	):
 		return
-	world._work_tasks.complete_task(
+	world.work_domain.tasks.complete_task(
 		task_id,
 		resident_id,
 		int(task.get("revision", 0)),
@@ -2268,7 +2323,7 @@ static func _complete_research_booklet_work_task(
 	if lot_result.get("ok") != true:
 		return
 	var lot := lot_result.get("lot", {}) as Dictionary
-	world._work_tasks.complete_task(
+	world.work_domain.tasks.complete_task(
 		String(task.get("taskId", "")),
 		resident_id,
 		int(task.get("revision", 0)),
@@ -2293,13 +2348,14 @@ static func _complete_natural_bulletin_work(
 ) -> void:
 	if String(execution.get("activityId", "")) != world.BULLETIN_PUBLISH_ACTIVITY_ID:
 		return
-	var task : Variant = world._natural_bulletin_task_for_resident(resident_id)
+	var task : Variant = world.WORK_TASK_PUBLIC_RUNTIME.natural_bulletin_task_for_resident(world, resident_id)
 	if task.is_empty():
 		return
-	var claimed := world._claim_specific_work_task(
+	var claimed := world.work_domain.claim_specific_work_task(
 		task,
 		"occupation_town_manager",
 		resident_id,
+		world.residents(),
 	) as Dictionary
 	if claimed.get("ok") != true:
 		return
@@ -2314,7 +2370,7 @@ static func _complete_natural_bulletin_work(
 	if publish_result.get("ok") != true:
 		return
 	var announcement := publish_result.get("announcement", {}) as Dictionary
-	world._work_tasks.complete_task(
+	world.work_domain.tasks.complete_task(
 		String(task.get("taskId", "")),
 		resident_id,
 		int(task.get("revision", 0)),
@@ -2334,7 +2390,7 @@ static func _complete_natural_bulletin_work(
 			},
 		},
 	)
-	world._record_staffing_trial_from_result(
+	world.PLACE_SERVICE_COMMAND_RUNTIME.record_staffing_trial(world,
 		resident_id,
 		"occupation_town_manager",
 		{"announcementId": String(announcement.get("announcement_id", ""))},
@@ -2354,7 +2410,7 @@ static func _complete_repair_pickup_from_visitor(
 	):
 		return
 	var now := int(world._environment.get_absolute_minute())
-	var service_snapshot := world._occupation_services.snapshot(
+	var service_snapshot := world.work_domain.services.snapshot(
 	) as Dictionary
 	for value: Variant in service_snapshot.get("requests", []) as Array:
 		var request := value as Dictionary
@@ -2374,18 +2430,19 @@ static func _complete_repair_pickup_from_visitor(
 		pickup_outcome["deliveredToRequester"] = true
 		pickup_outcome["pickedUpByResidentId"] = resident_id
 		pickup_outcome["pickedUpAtMinute"] = now
-		var completed := world._occupation_services.complete_request(
+		var completed := world.work_domain.services.complete_request(
 			String(request.get("requestId", "")),
 			String(outcome.get("repairedByResidentId", "")),
 			now,
 			pickup_outcome,
 		) as Dictionary
 		if completed.get("ok") == true:
-			world._cancel_private_messages_for_source(
+			world.PRIVATE_MESSAGE_DELIVERY_RUNTIME.cancel_for_source(world,
 				"repair-pickup:%s" % String(request.get("requestId", "")),
 				"修理件已经领取",
 			)
-			world._close_resident_request_source(
+			SOCIAL_MATTER_COMMAND_RUNTIME.close_resident_request_source(
+				world,
 				"repair-pickup:%s" % String(request.get("requestId", "")),
 				"repair-item-picked-up",
 			)
@@ -2420,7 +2477,7 @@ static func _record_equipment_wear_from_activity(world, execution: Dictionary) -
 		).strip_edges()
 	if prop_name.is_empty():
 		return
-	var recorded := world._occupation_services.record_equipment_use(
+	var recorded := world.work_domain.services.record_equipment_use(
 		prop_name,
 		String(execution.get("placeId", "")),
 		activity_id,
@@ -2428,7 +2485,8 @@ static func _record_equipment_wear_from_activity(world, execution: Dictionary) -
 		6,
 	) as Dictionary
 	if recorded.get("ok") == true:
-		world._sync_craft_chain_tasks(
+		PRODUCTION_TASK_COORDINATION_RUNTIME.sync_craft_chain(
+			world,
 			int(world._environment.get_absolute_minute()),
 		)
 
@@ -2442,7 +2500,8 @@ static func _record_facility_use_from_activity(
 		return
 	var activity_id := String(execution.get("activityId", ""))
 	var now : Variant = world._authoritative_absolute_minute()
-	var occupation_request_spec : Variant = world._visitor_occupation_service_spec(
+	var occupation_request_spec : Variant = world.PLACE_SERVICE_COMMAND_RUNTIME.visitor_occupation_service_spec(
+		world,
 		resident_id,
 		activity_id,
 	)
@@ -2454,12 +2513,12 @@ static func _record_facility_use_from_activity(
 			occupation_request_spec.get("subjectRef", ""),
 		)
 		var active_clinic_request : Variant = (
-			world._active_clinic_request_for_resident(resident_id)
+			world.work_domain.active_clinic_request_for_resident(resident_id)
 			if request_kind == "clinic"
 			else {}
 		)
 		if not active_clinic_request.is_empty():
-			world._begin_customer_service_wait(
+			world.CUSTOMER_SERVICE_WAIT_RUNTIME.begin(world,
 				resident_id,
 				String(active_clinic_request.get("requestId", "")),
 				String(active_clinic_request.get("placeId", "")),
@@ -2467,7 +2526,7 @@ static func _record_facility_use_from_activity(
 			)
 		elif request_kind != "dining_order" and not (
 			request_kind == "library_return"
-			and bool(world._occupation_services.has_active_request(
+			and bool(world.work_domain.services.has_active_request(
 				request_kind,
 				request_subject,
 			))
@@ -2477,7 +2536,7 @@ static func _record_facility_use_from_activity(
 		# 用餐可能从一个餐次的末尾跨到下一个餐次；优先使用连续用餐
 		# 例程在开始时保存的餐次，而不是完成这一阶段时的当前时刻。
 		var meal_period_ref := ""
-		var meal_routine := world._activity_routines.get(
+		var meal_routine := world.activity_routine_state.records.get(
 			resident_id,
 			{},
 		) as Dictionary
@@ -2486,31 +2545,31 @@ static func _record_facility_use_from_activity(
 				meal_routine.get("mealPeriodRef", ""),
 			).strip_edges()
 		if meal_period_ref.is_empty():
-			meal_period_ref = String(world._meal_period_source_ref(int(now)))
+			meal_period_ref = String(world.work_domain.meal_period_source_ref(int(now)))
 		if (
 			not meal_period_ref.is_empty()
-			and not world._occupation_services.has_dining_order_completed_for_resident_meal_period(
+			and not world.work_domain.services.has_dining_order_completed_for_resident_meal_period(
 				resident_id,
 				meal_period_ref,
 			)
 		):
-			world._apply_consumed_service_item(resident_id, "meal")
-			world._occupation_services.mark_dining_order_completed_for_resident_meal_period(
+			world.PLACE_SERVICE_COMMAND_RUNTIME.apply_consumed_item(world, resident_id, "meal")
+			world.work_domain.services.mark_dining_order_completed_for_resident_meal_period(
 				resident_id,
 				meal_period_ref,
 			)
 		return
 	if activity_id == "activity_dining_return_dishes":
-		var recorded_dish := world._occupation_services.record_dirty_dish(
+		var recorded_dish := world.work_domain.services.record_dirty_dish(
 			resident_id,
 			now,
 		) as Dictionary
 		if recorded_dish.get("ok") == true:
-			world._ensure_facility_cleanup_task("dirty_dishes", now)
+			world.work_domain.sync_facility_cleanup_task("dirty_dishes", now)
 	elif activity_id == "activity_cafe_rest":
-		var recorded_table := world._occupation_services.record_used_cafe_table(
+		var recorded_table := world.work_domain.services.record_used_cafe_table(
 			resident_id,
 			now,
 		) as Dictionary
 		if recorded_table.get("ok") == true:
-			world._ensure_facility_cleanup_task("used_table", now)
+			world.work_domain.sync_facility_cleanup_task("used_table", now)

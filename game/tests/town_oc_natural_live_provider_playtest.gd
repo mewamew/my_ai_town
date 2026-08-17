@@ -452,6 +452,12 @@ func _wait_for_model(gateway: Node) -> bool:
 	while int(gateway.call("get_debug_inflight_count")) > 0:
 		if Time.get_ticks_msec() - started_at >= MODEL_TIMEOUT_MSEC:
 			return false
+		# 正式运行由 TownRuntime 每帧推进一次 Gateway 准备预算。此实测
+		# 没有挂载 TownRuntime，因此只在准备队列非空时复现同一推进动作；
+		# Provider 已经发出请求后不再接纳下一位居民，保持串行计数。
+		var preparation_queue := gateway.get("_agent_preparation_queue") as Array
+		if not preparation_queue.is_empty():
+			gateway.call("pump_frame_budgeted", 1)
 		await process_frame
 	return true
 

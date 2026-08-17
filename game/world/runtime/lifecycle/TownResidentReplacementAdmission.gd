@@ -2,7 +2,13 @@ class_name TownResidentReplacementAdmission
 extends RefCounted
 
 
+const RESIDENT_RUNTIME_FACTORY := preload(
+	"res://world/runtime/lifecycle/TownResidentRuntimeFactory.gd"
+)
 const AGENT_SOUL_PROFILE := preload("res://agent/soul/AgentSoulProfile.gd")
+const PLACE_SERVICE_COMMAND_RUNTIME := preload(
+	"res://world/runtime/work/TownPlaceServiceCommandRuntime.gd"
+)
 
 
 static func world_absolute_minute(world) -> int:
@@ -17,7 +23,7 @@ static func living_resident_count(world) -> int:
 	if world == null:
 		return 0
 	var count := 0
-	for resident_id: String in world._resident_order:
+	for resident_id: String in world.resident_registry.order:
 		count += 1 if world._resident_is_alive(resident_id) else 0
 	return count
 
@@ -38,15 +44,15 @@ static func validate(
 	var resident_name := String(attributes.get("name", "")).strip_edges()
 	var world_state := record.get("worldState", {}) as Dictionary
 	var position_value: Variant = world_state.get("position", [])
-	var name_owner_id := String(world._resident_id_by_name.get(resident_name, ""))
+	var name_owner_id := String(world.resident_registry.id_by_name.get(resident_name, ""))
 	if (
 		resident_id.is_empty()
 		or resident_name.is_empty()
 		or resident_id != replacement_for_resident_id.strip_edges()
-		or not world._residents.has(resident_id)
+		or not world.resident_registry.records.has(resident_id)
 		or world._resident_lifecycle.is_alive(resident_id)
 		or (
-			world._resident_id_by_name.has(resident_name)
+			world.resident_registry.id_by_name.has(resident_name)
 			and name_owner_id != resident_id
 		)
 		or not position_value is Array
@@ -94,10 +100,10 @@ static func preview_agent_initialization(
 	if not soul_profile.is_empty():
 		me["soul_profile"] = soul_profile.duplicate(true)
 	var others: Array[Dictionary] = []
-	for other_id: String in world._resident_order:
+	for other_id: String in world.resident_registry.order:
 		if other_id == resident_id:
 			continue
-		var other := world._residents[other_id] as Dictionary
+		var other := world.resident_registry.records[other_id] as Dictionary
 		var other_attributes := other.get("attributes", {}) as Dictionary
 		var other_social := other.get("socialState", {}) as Dictionary
 		others.append({
@@ -121,7 +127,7 @@ static func preview_agent_initialization(
 		"initialization": {
 			"me": me,
 			"residents": others,
-			"places": world._agent_places(),
+			"places": world.AGENT_INITIALIZATION_PROJECTION.places(world),
 		},
 	}
 
@@ -143,16 +149,16 @@ static func admit(
 	var attributes := record.get("attributes", {}) as Dictionary
 	var resident_name := String(attributes.get("name", "")).strip_edges()
 	var world_state := record.get("worldState", {}) as Dictionary
-	var resident_runtime: Dictionary = world._resident_runtime(
+	var resident_runtime: Dictionary = RESIDENT_RUNTIME_FACTORY.create(
 		record,
 		world_state,
 		resident_id,
 	) as Dictionary
-	var old_name := String(world._resident_name_by_id.get(resident_id, ""))
+	var old_name := String(world.resident_registry.name_by_id.get(resident_id, ""))
 	var lifecycle_result := world._resident_lifecycle.replace_deceased_resident(
 		resident_id,
 		resident_name,
-		world._resident_home_anchor(world._world_data, resident_runtime),
+		RESIDENT_RUNTIME_FACTORY.home_anchor(world.world_definition.world_data, resident_runtime),
 	) as Dictionary
 	if not bool(lifecycle_result.get("ok", false)):
 		return world._decorate_command_result(lifecycle_result)
@@ -167,29 +173,29 @@ static func admit(
 	) as Dictionary
 	if not bool(sleep_result.get("ok", false)):
 		return world._decorate_command_result(sleep_result)
-	world._residents[resident_id] = resident_runtime
-	world._resident_id_by_name.erase(old_name)
-	world._resident_name_by_id[resident_id] = resident_name
-	world._resident_id_by_name[resident_name] = resident_id
-	var opening_residents := world._opening.get("residents", []) as Array
+	world.resident_registry.records[resident_id] = resident_runtime
+	world.resident_registry.id_by_name.erase(old_name)
+	world.resident_registry.name_by_id[resident_id] = resident_name
+	world.resident_registry.id_by_name[resident_name] = resident_id
+	var opening_residents := world.world_definition.opening.get("residents", []) as Array
 	for resident_index in opening_residents.size():
 		if String((opening_residents[resident_index] as Dictionary).get("residentId", "")) == resident_id:
 			opening_residents[resident_index] = record.duplicate(true)
 			break
-	world._opening["residents"] = opening_residents
-	world._opening["agentSoulProfiles"] = AGENT_SOUL_PROFILE.analyze_all(
+	world.world_definition.opening["residents"] = opening_residents
+	world.world_definition.opening["agentSoulProfiles"] = AGENT_SOUL_PROFILE.analyze_all(
 		opening_residents,
 	)
-	world._activity_routines.erase(resident_id)
-	world._staffing.rebuild(
-		world._living_residents_for_staffing(),
+	world.activity_routine_state.records.erase(resident_id)
+	world.work_domain.staffing.rebuild(
+		world.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.living_residents_for_staffing(world),
 		int(world._environment.get_absolute_minute()),
 	)
-	world._refresh_place_service_staffing()
+	PLACE_SERVICE_COMMAND_RUNTIME.refresh_staffing(world)
 	world.PERCEPTION_RUNTIME._refresh_perception(world, false)
 	world._schedule_decision(resident_id, false)
 	world._bump_world_revision(false)
-	world._sync_staffing_matters()
+	world.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.sync_staffing_matters(world)
 	world._notify_world_revision()
 	world._emit_resident_state_changed(resident_id)
 	return world._decorate_command_result({

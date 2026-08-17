@@ -334,7 +334,7 @@ static func world_data_has_activity_at_place(
 	return false
 
 
-# defaults 由世界运行时按当前岗位状态构建（TownWorldRuntime._build_default_place_service_states），
+# defaults 由地点服务模块按当前岗位状态构建，
 # 本函数只负责把存档状态与默认配置逐字段对账。
 static func prepare_place_service_states(
 	value: Variant,
