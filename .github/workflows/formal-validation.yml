@@ -48,6 +48,19 @@ jobs:
             exit 0
           fi
           echo "Missing commands: ${missing[*]}"
+          for source_file in \
+            /etc/apt/apt-mirrors.txt \
+            /etc/apt/sources.list \
+            /etc/apt/sources.list.d/*.list \
+            /etc/apt/sources.list.d/*.sources; do
+            if [ -f "$source_file" ]; then
+              sudo -n sed -i \
+                -e 's#http://azure.archive.ubuntu.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' \
+                -e 's#https://azure.archive.ubuntu.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' \
+                -e 's#azure.archive.ubuntu.com#archive.ubuntu.com#g' \
+                "$source_file"
+            fi
+          done
           timeout --foreground 5m sudo -n apt-get update
           timeout --foreground 5m sudo -n env DEBIAN_FRONTEND=noninteractive \
             apt-get install -y zsh ripgrep unzip
