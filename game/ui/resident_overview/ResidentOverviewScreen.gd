@@ -108,6 +108,12 @@ func _ready() -> void:
 	_render()
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_mobile_roster_pointer = -1
+		_mobile_roster_dragged = false
+
+
 func _exit_tree() -> void:
 	_disconnect_adapter()
 
@@ -1103,7 +1109,7 @@ func _on_mobile_roster_input(event: InputEvent) -> void:
 			_mobile_roster_press_y = touch.position.y
 			_mobile_roster_dragged = false
 		elif not touch.pressed and touch.index == _mobile_roster_pointer:
-			if _mobile_roster_dragged:
+			if _mobile_roster_dragged and not touch.canceled:
 				var direction := (
 					MOBILE_ROSTER_PAGE_STEP
 					if touch.position.y < _mobile_roster_press_y

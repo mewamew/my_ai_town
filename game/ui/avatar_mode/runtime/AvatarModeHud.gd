@@ -268,8 +268,13 @@ func _fit_root_to_viewport() -> void:
 
 
 func _exit_tree() -> void:
-	_set_touch_movement(Vector2.ZERO)
+	_cancel_touch_movement()
 	_disconnect_adapter()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_cancel_touch_movement()
 
 
 func set_mobile_fixture(viewport_size: Vector2) -> void:
@@ -937,6 +942,10 @@ func audit_runtime_ownership() -> Dictionary:
 
 
 func _rebuild() -> void:
+	# A direct rebuild retires the current joystick. Clear its value first so a
+	# route change, application focus loss, or forced teardown cannot leave the
+	# avatar walking with a control that no longer exists.
+	_cancel_touch_movement()
 	UI_NODE_RETIREMENT.retire_children(self)
 	_component_nodes.clear()
 	_text_nodes.clear()
@@ -1782,7 +1791,25 @@ func _set_touch_movement(value: Vector2) -> void:
 		_rebuild.call_deferred()
 
 
+func _cancel_touch_movement() -> void:
+	_rebuild_after_joystick_release = false
+	if is_instance_valid(_touch_joystick):
+		_touch_joystick.cancel()
+	if not _touch_movement.is_zero_approx():
+		_set_touch_movement(Vector2.ZERO)
+
+
 func _request_rebuild_preserving_joystick() -> void:
+	# Route-level suppression must be immediate. In particular, opening chat
+	# while a finger is still on the joystick must hide the HUD and stop movement
+	# without waiting for a release event that Android may cancel or never send.
+	var avatar: Dictionary = _view_models.get("avatar", {})
+	var data: Dictionary = avatar.get("data", {})
+	var mode := str(data.get("mode", ""))
+	if not _configured or mode not in ["avatar_descent", "avatar_active"] or _conversation_open():
+		_cancel_touch_movement()
+		_rebuild()
+		return
 	if is_instance_valid(_touch_joystick) and _touch_joystick.is_pointer_active():
 		_rebuild_after_joystick_release = true
 		return

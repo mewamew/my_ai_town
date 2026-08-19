@@ -683,7 +683,10 @@ func _run() -> void:
 		avatar_entry,
 		"real formal Town enters avatar mode through the selected-model route",
 	)
-	await _wait_frames(120)
+	# The descent animation is time-based rather than frame-count based. A
+	# headless runner can advance 120 process frames in far less than 1.1s,
+	# leaving the real runtime in avatar_descent even though it is healthy.
+	await _wait_for_avatar_active(formal_runtime)
 	_expect_equal(
 		formal_runtime.call("get_avatar_mode"),
 		"avatar_active",
@@ -912,6 +915,17 @@ func _wait_for_town(host: Node) -> bool:
 			) == "town"
 		):
 			return true
+		await process_frame
+	return false
+
+
+func _wait_for_avatar_active(runtime: Node, timeout_msec: int = 5000) -> bool:
+	var deadline := Time.get_ticks_msec() + maxi(timeout_msec, 1)
+	while is_instance_valid(runtime):
+		if String(runtime.call("get_avatar_mode")) == "avatar_active":
+			return true
+		if Time.get_ticks_msec() >= deadline:
+			return false
 		await process_frame
 	return false
 

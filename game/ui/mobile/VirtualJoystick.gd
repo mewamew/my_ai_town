@@ -5,8 +5,10 @@ extends Control
 signal movement_changed(value: Vector2)
 
 const DEAD_ZONE := 0.12
+const POINTER_NONE := -1
+const POINTER_MOUSE := -2
 
-var _pointer_id := -1
+var _pointer_id := POINTER_NONE
 var _movement := Vector2.ZERO
 var _knob: Control
 
@@ -21,19 +23,24 @@ func movement() -> Vector2:
 
 
 func is_pointer_active() -> bool:
-	return _pointer_id >= 0
+	return _pointer_id != POINTER_NONE
 
 
 func cancel() -> void:
-	_pointer_id = -1
+	_pointer_id = POINTER_NONE
 	_set_movement(Vector2.ZERO)
 	_reset_knob()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		cancel()
 
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		var touch := event as InputEventScreenTouch
-		if touch.pressed and _pointer_id < 0:
+		if touch.pressed and _pointer_id == POINTER_NONE:
 			_pointer_id = touch.index
 			_update_pointer(touch.position)
 			accept_event()
@@ -47,17 +54,21 @@ func _gui_input(event: InputEvent) -> void:
 			accept_event()
 	elif event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
+		if button.device == InputEvent.DEVICE_ID_EMULATION:
+			return
 		if button.button_index != MOUSE_BUTTON_LEFT:
 			return
-		if button.pressed and _pointer_id < 0:
-			_pointer_id = 0
+		if button.pressed and _pointer_id == POINTER_NONE:
+			_pointer_id = POINTER_MOUSE
 			_update_pointer(button.position)
 			accept_event()
-		elif not button.pressed and _pointer_id == 0:
+		elif not button.pressed and _pointer_id == POINTER_MOUSE:
 			cancel()
 			accept_event()
-	elif event is InputEventMouseMotion and _pointer_id == 0:
+	elif event is InputEventMouseMotion and _pointer_id == POINTER_MOUSE:
 		var motion := event as InputEventMouseMotion
+		if motion.device == InputEvent.DEVICE_ID_EMULATION:
+			return
 		if motion.button_mask & MOUSE_BUTTON_MASK_LEFT:
 			_update_pointer(motion.position)
 			accept_event()

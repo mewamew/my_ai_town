@@ -115,6 +115,7 @@ var _locally_pending_actions: Dictionary = {}
 var _last_intent_dispatch_msec: Dictionary = {}
 var _resident_swipe_tracking := false
 var _resident_swipe_start := Vector2.ZERO
+var _resident_swipe_pointer := -1
 var _reflow_queued := false
 
 var _panel_root: Control
@@ -148,6 +149,12 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_queue_reflow)
 	_refresh_from_adapter()
 	_render()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_resident_swipe_tracking = false
+		_resident_swipe_pointer = -1
 
 
 func _exit_tree() -> void:
@@ -1145,12 +1152,18 @@ func _on_resident_scroll_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		var touch := event as InputEventScreenTouch
 		if touch.pressed:
+			if _resident_swipe_pointer >= 0:
+				return
 			_resident_swipe_tracking = true
 			_resident_swipe_start = touch.position
+			_resident_swipe_pointer = touch.index
 			return
-		if not _resident_swipe_tracking:
+		if not _resident_swipe_tracking or touch.index != _resident_swipe_pointer:
 			return
 		_resident_swipe_tracking = false
+		_resident_swipe_pointer = -1
+		if touch.canceled:
+			return
 		var delta_y := touch.position.y - _resident_swipe_start.y
 		if absf(delta_y) >= RESIDENT_SWIPE_THRESHOLD:
 			# Consume a real swipe even when already at the first/last page;

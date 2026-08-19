@@ -145,6 +145,7 @@ var _dropdown_active_option: Button
 var _dropdown_active_field := ""
 var _dropdown_dragging := false
 var _dropdown_drag_offset := 0.0
+var _dropdown_touch_index := -1
 var _cancel_button: Button
 var _create_button: Button
 var _status_frame: TextureRect
@@ -176,6 +177,12 @@ func _ready() -> void:
 	_build_exit_confirmation()
 	_render()
 	call_deferred("_focus_initial_control")
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_dropdown_dragging = false
+		_dropdown_touch_index = -1
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -1677,6 +1684,7 @@ func _close_dropdown_popup(restore_focus: bool) -> void:
 		return
 	_dropdown_overlay.visible = false
 	_dropdown_dragging = false
+	_dropdown_touch_index = -1
 	var previous := _dropdown_active_option
 	_dropdown_active_option = null
 	_dropdown_active_field = ""
@@ -1984,6 +1992,8 @@ func _on_dropdown_scroll_input(event: InputEvent, dragging_thumb: bool) -> void:
 		return
 	if event is InputEventMouseButton:
 		var mouse_button := event as InputEventMouseButton
+		if mouse_button.device == InputEvent.DEVICE_ID_EMULATION:
+			return
 		if mouse_button.button_index == MOUSE_BUTTON_WHEEL_UP and mouse_button.pressed:
 			bar.value -= maxf(DROPDOWN_POPUP_ITEM_SIZE.y, bar.page * 0.35)
 			get_viewport().set_input_as_handled()
@@ -1992,6 +2002,7 @@ func _on_dropdown_scroll_input(event: InputEvent, dragging_thumb: bool) -> void:
 			get_viewport().set_input_as_handled()
 		elif mouse_button.button_index == MOUSE_BUTTON_LEFT:
 			_dropdown_dragging = mouse_button.pressed
+			_dropdown_touch_index = -1
 			if mouse_button.pressed:
 				_dropdown_drag_offset = (
 					mouse_button.global_position.y
@@ -2002,21 +2013,39 @@ func _on_dropdown_scroll_input(event: InputEvent, dragging_thumb: bool) -> void:
 				_set_dropdown_scroll_from_global_y(mouse_button.global_position.y)
 			get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion and _dropdown_dragging:
+		if event.device == InputEvent.DEVICE_ID_EMULATION:
+			return
 		_set_dropdown_scroll_from_global_y((event as InputEventMouseMotion).global_position.y)
 		get_viewport().set_input_as_handled()
 	elif event is InputEventScreenTouch:
 		var touch := event as InputEventScreenTouch
-		_dropdown_dragging = touch.pressed
+		if touch.canceled:
+			if touch.index == _dropdown_touch_index:
+				_dropdown_dragging = false
+				_dropdown_touch_index = -1
+			return
 		if touch.pressed:
+			if _dropdown_touch_index >= 0:
+				return
+			_dropdown_dragging = true
+			_dropdown_touch_index = touch.index
 			_dropdown_drag_offset = (
 				touch.position.y - _dropdown_thumb.get_global_rect().position.y
 				if dragging_thumb
 				else _dropdown_thumb.size.y * 0.5
 			)
 			_set_dropdown_scroll_from_global_y(touch.position.y)
+		elif touch.index == _dropdown_touch_index:
+			_dropdown_dragging = false
+			_dropdown_touch_index = -1
+		else:
+			return
 		get_viewport().set_input_as_handled()
 	elif event is InputEventScreenDrag and _dropdown_dragging:
-		_set_dropdown_scroll_from_global_y((event as InputEventScreenDrag).position.y)
+		var drag := event as InputEventScreenDrag
+		if drag.index != _dropdown_touch_index:
+			return
+		_set_dropdown_scroll_from_global_y(drag.position.y)
 		get_viewport().set_input_as_handled()
 
 

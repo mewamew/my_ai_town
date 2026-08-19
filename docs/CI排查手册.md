@@ -380,6 +380,16 @@ gh run view <运行编号> --log-failed \
 
 ## 已发生案例
 
+### 2026-08-19：独立正式入口在无帧率限制的 headless 环境误报化身未落地
+
+表现：独立正式入口测试偶发报告 `actual=avatar_descent expected=avatar_active`，同一次启动的 Agent Gateway 错误属于测试故意覆盖的失败分支；重新运行时可能通过。
+
+直接原因：化身落地动画按毫秒推进，测试却只等待固定的 120 个 `process_frame`。无 vsync 的 headless runner 可以在动画达到 1.1 秒前跑完这些帧，导致把正常的时间动画误判为未完成。
+
+处理方法：测试改为等待真实运行时进入 `avatar_active`，设置明确的毫秒超时；保留生产入口和动画实现不变，不用增加固定帧数来掩盖时序问题。
+
+最终验证：独立正式入口连续运行两次均输出 `ISOLATED_FORMAL_ENTRY_STORY_PASS`，正式故事套件仍为 `FORMAL_RELEASE_STORY_SUITE_PASS checks=15 skipped=0`。
+
 ### 2026-08-17：活动想法页切换行动页残留文字
 
 表现：完整发行故事检查在活动专项中失败，想法页显示断言和行动页清理断言不稳定；其余活动运行时检查正常。

@@ -14,6 +14,7 @@ var _selected := false
 var _disabled := false
 var _hovered := false
 var _pressed := false
+var _touch_index := -1
 var _focused := false
 var _reduced_motion := false
 var _normal_color := Color.WHITE
@@ -35,6 +36,15 @@ func _ready() -> void:
 	focus_entered.connect(_on_focus_entered)
 	focus_exited.connect(_on_focus_exited)
 	_apply_visual_state(false)
+
+
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_APPLICATION_FOCUS_OUT:
+		return
+	_pressed = false
+	_touch_index = -1
+	if is_instance_valid(_label):
+		_apply_visual_state(false)
 
 
 func configure(config: Dictionary) -> void:
@@ -106,6 +116,7 @@ func set_disabled(value: bool) -> void:
 		return
 	_disabled = value
 	_pressed = false
+	_touch_index = -1
 	_apply_disabled_state()
 	_apply_visual_state(true)
 
@@ -162,8 +173,11 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseButton:
 		var mouse_event := event as InputEventMouseButton
+		if mouse_event.device == InputEvent.DEVICE_ID_EMULATION:
+			return
 		if mouse_event.button_index != MOUSE_BUTTON_LEFT:
 			return
+		_touch_index = -1
 		_pressed = mouse_event.pressed
 		if _pressed:
 			grab_focus()
@@ -174,15 +188,27 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	if event is InputEventScreenTouch:
 		var touch_event := event as InputEventScreenTouch
-		_pressed = touch_event.pressed
-		if _pressed:
+		if touch_event.pressed:
+			if _touch_index >= 0:
+				return
+			_touch_index = touch_event.index
+			_pressed = true
 			grab_focus()
+		elif touch_event.index == _touch_index:
+			_touch_index = -1
+			_pressed = false
+			if (
+				not touch_event.canceled
+				and Rect2(Vector2.ZERO, size).has_point(touch_event.position)
+			):
+				activated.emit(_tab_id)
 		else:
-			activated.emit(_tab_id)
+			return
 		_apply_visual_state(true)
 		accept_event()
 		return
 	if event.is_action_pressed("ui_accept"):
+		_touch_index = -1
 		_pressed = true
 		_apply_visual_state(true)
 		accept_event()
@@ -202,6 +228,7 @@ func _on_mouse_entered() -> void:
 func _on_mouse_exited() -> void:
 	_hovered = false
 	_pressed = false
+	_touch_index = -1
 	_apply_visual_state(true)
 
 
@@ -213,6 +240,7 @@ func _on_focus_entered() -> void:
 func _on_focus_exited() -> void:
 	_focused = false
 	_pressed = false
+	_touch_index = -1
 	_apply_visual_state(true)
 
 

@@ -277,6 +277,8 @@ func _exit_tree() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_touch_camera_gesture.reset()
+		_mobile_movement_input.clear()
 		set_background_paused(true)
 	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
 		set_background_paused(false)
@@ -502,6 +504,8 @@ func _input(event: InputEvent) -> void:
 		_release_text_input_focus()
 		return
 	if event is InputEventMouseButton and event.pressed:
+		if event.device == InputEvent.DEVICE_ID_EMULATION:
+			return
 		var focus_owner := get_viewport().gui_get_focus_owner()
 		if focus_owner == null or not focus_owner.get_global_rect().has_point(event.position):
 			_release_text_input_focus()
@@ -2608,6 +2612,7 @@ func _is_primary_pointer_press(event: InputEvent) -> bool:
 	return (
 		(
 			event is InputEventMouseButton
+			and event.device != InputEvent.DEVICE_ID_EMULATION
 			and event.pressed
 			and event.button_index == MOUSE_BUTTON_LEFT
 		)

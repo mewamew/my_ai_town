@@ -124,6 +124,7 @@ var _history_page_size := 2
 var _history_anchor_id := ""
 var _history_swipe_tracking := false
 var _history_swipe_start := Vector2.ZERO
+var _history_swipe_pointer := -1
 var _items: Array = []
 var _visible_item_ids: Array[String] = []
 var _safe_insets := Rect2()
@@ -167,6 +168,12 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_queue_responsive_layout)
 	_queue_responsive_layout()
 	_render()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_history_swipe_tracking = false
+		_history_swipe_pointer = -1
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -1626,12 +1633,18 @@ func _on_history_gui_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		var touch := event as InputEventScreenTouch
 		if touch.pressed:
+			if _history_swipe_pointer >= 0:
+				return
 			_history_swipe_tracking = true
 			_history_swipe_start = touch.position
+			_history_swipe_pointer = touch.index
 			return
-		if not _history_swipe_tracking:
+		if not _history_swipe_tracking or touch.index != _history_swipe_pointer:
 			return
 		_history_swipe_tracking = false
+		_history_swipe_pointer = -1
+		if touch.canceled:
+			return
 		var delta_x := touch.position.x - _history_swipe_start.x
 		if absf(delta_x) >= HISTORY_SWIPE_THRESHOLD:
 			_set_history_page(_history_page - 1 if delta_x > 0.0 else _history_page + 1)

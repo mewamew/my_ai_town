@@ -110,6 +110,13 @@ func _ready() -> void:
 	_layout_children()
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_touch_scroll_tracking = false
+		_touch_scroll_pointer = -1
+		_touch_scroll_dragged = false
+
+
 func apply_directory(data: Dictionary) -> void:
 	if _directory_snapshot_initialized and data == _directory_snapshot:
 		return
@@ -450,6 +457,9 @@ func _handle_touch_scroll(event: InputEvent) -> bool:
 			return false
 		_touch_scroll_tracking = false
 		_touch_scroll_pointer = -1
+		if touch.canceled:
+			_touch_scroll_dragged = false
+			return true
 		if _touch_scroll_dragged:
 			accept_event()
 			_reset_touch_scroll_dragged.call_deferred()

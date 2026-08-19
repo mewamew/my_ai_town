@@ -76,7 +76,9 @@ var _resident_offset := 0
 var _model_offset := 0
 var _completion_modal_visible := false
 var _drag_kind := ""
+var _drag_touch_index := -1
 var _gesture_accum := {"resident": 0.0, "model": 0.0}
+var _gesture_touch_index := {"resident": -1, "model": -1}
 var _last_selected_resident_id := ""
 var _last_selected_model_key := ""
 var _last_mode := ""
@@ -130,6 +132,14 @@ func _ready() -> void:
 	_build_model_grid()
 	_build_footer()
 	_build_completion_modal()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_drag_kind = ""
+		_drag_touch_index = -1
+		_gesture_accum = {"resident": 0.0, "model": 0.0}
+		_gesture_touch_index = {"resident": -1, "model": -1}
 
 
 func apply_view_model(view_model: Dictionary) -> void:
@@ -1038,14 +1048,29 @@ func _on_model_pressed(index: int) -> void:
 func _on_list_gui_input(event: InputEvent, kind: String, owner: Control) -> void:
 	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
 		var mouse := event as InputEventMouseButton
+		if mouse.device == InputEvent.DEVICE_ID_EMULATION:
+			return
 		if mouse.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_scroll_kind(kind, -1)
 			owner.accept_event()
 		elif mouse.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_scroll_kind(kind, 1)
 			owner.accept_event()
+	elif event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		var active_index := int(_gesture_touch_index.get(kind, -1))
+		if touch.pressed:
+			if active_index >= 0:
+				return
+			_gesture_touch_index[kind] = touch.index
+			_gesture_accum[kind] = 0.0
+		elif touch.index == active_index:
+			_gesture_touch_index[kind] = -1
+			_gesture_accum[kind] = 0.0
 	elif event is InputEventScreenDrag:
 		var drag := event as InputEventScreenDrag
+		if drag.index != int(_gesture_touch_index.get(kind, -1)):
+			return
 		_gesture_accum[kind] = float(_gesture_accum.get(kind, 0.0)) + drag.relative.y
 		if absf(float(_gesture_accum[kind])) >= 36.0:
 			_scroll_kind(kind, -1 if float(_gesture_accum[kind]) > 0.0 else 1)
@@ -1106,8 +1131,11 @@ func _build_asset_scrollbar(kind: String, rect: Rect2) -> void:
 func _on_scrollbar_gui_input(event: InputEvent, kind: String, owner: Control) -> void:
 	if event is InputEventMouseButton:
 		var mouse := event as InputEventMouseButton
+		if mouse.device == InputEvent.DEVICE_ID_EMULATION:
+			return
 		if mouse.button_index == MOUSE_BUTTON_LEFT:
 			_drag_kind = kind if mouse.pressed else ""
+			_drag_touch_index = -1
 			if mouse.pressed:
 				_set_scroll_from_ratio(kind, mouse.position.y / owner.size.y)
 			owner.accept_event()
@@ -1119,16 +1147,33 @@ func _on_scrollbar_gui_input(event: InputEvent, kind: String, owner: Control) ->
 			owner.accept_event()
 	elif event is InputEventMouseMotion and _drag_kind == kind:
 		var motion := event as InputEventMouseMotion
+		if motion.device == InputEvent.DEVICE_ID_EMULATION:
+			return
 		_set_scroll_from_ratio(kind, motion.position.y / owner.size.y)
 		owner.accept_event()
 	elif event is InputEventScreenTouch:
 		var touch := event as InputEventScreenTouch
-		_drag_kind = kind if touch.pressed else ""
+		if touch.canceled:
+			if touch.index == _drag_touch_index:
+				_drag_kind = ""
+				_drag_touch_index = -1
+			return
 		if touch.pressed:
+			if _drag_touch_index >= 0:
+				return
+			_drag_kind = kind
+			_drag_touch_index = touch.index
 			_set_scroll_from_ratio(kind, touch.position.y / owner.size.y)
+		elif touch.index == _drag_touch_index:
+			_drag_kind = ""
+			_drag_touch_index = -1
+		else:
+			return
 		owner.accept_event()
 	elif event is InputEventScreenDrag and _drag_kind == kind:
 		var drag := event as InputEventScreenDrag
+		if drag.index != _drag_touch_index:
+			return
 		_set_scroll_from_ratio(kind, drag.position.y / owner.size.y)
 		owner.accept_event()
 

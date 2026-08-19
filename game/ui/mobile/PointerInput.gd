@@ -18,7 +18,11 @@ static func is_primary_press(event: InputEvent) -> bool:
 
 static func is_primary_release(event: InputEvent) -> bool:
 	return (
-		(event is InputEventScreenTouch and not event.pressed)
+		(
+			event is InputEventScreenTouch
+			and not event.pressed
+			and not (event as InputEventScreenTouch).canceled
+		)
 		or (
 			not MOBILE_UI_PROFILE.is_mobile_runtime()
 			and

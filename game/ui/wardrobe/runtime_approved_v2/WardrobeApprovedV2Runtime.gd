@@ -51,6 +51,7 @@ const SUCCESS_INK := Color("7A4A20")
 const DISABLED_PRIMARY_INK := Color("E8C58F")
 const BODY_FONT_SIZE := 28
 const DISPLAY_FONT_SIZE := 40
+const TOUCH_TAP_SLOP := 18.0
 const INITIAL_LOOK_INDEX := 6
 const CATALOG_PAGE_SIZE := 6
 const CATALOG_CONTENT_RECTS: Array[Rect2] = [
@@ -181,6 +182,10 @@ var _loading_frame := 0
 var _loading_timer: Timer
 var _hover_target := ""
 var _focus_target := ""
+var _touch_target := ""
+var _touch_index := -1
+var _touch_origin := Vector2.ZERO
+var _touch_cancelled := false
 var _discard_confirmation_armed := false
 var _discard_confirmation: FormalDialog
 
@@ -1206,9 +1211,39 @@ func _create_hit_targets() -> void:
 func _on_hit_target_gui_input(event: InputEvent, target_id: String) -> void:
 	var activate := false
 	if event is InputEventMouseButton:
+		if event.device == InputEvent.DEVICE_ID_EMULATION:
+			return
 		activate = event.button_index == MOUSE_BUTTON_LEFT and event.pressed
 	elif event is InputEventScreenTouch:
-		activate = event.pressed
+		var touch := event as InputEventScreenTouch
+		if touch.pressed:
+			if _touch_index >= 0:
+				return
+			_touch_target = target_id
+			_touch_index = touch.index
+			_touch_origin = touch.position
+			_touch_cancelled = false
+			accept_event()
+			return
+		if touch.index != _touch_index or target_id != _touch_target:
+			return
+		activate = (
+			not touch.canceled
+			and not _touch_cancelled
+			and Rect2(
+				Vector2.ZERO,
+				(HIT_TARGETS[target_id] as Rect2).size,
+			).has_point(touch.position)
+		)
+		_reset_touch_target()
+	elif event is InputEventScreenDrag:
+		var drag := event as InputEventScreenDrag
+		if drag.index != _touch_index or target_id != _touch_target:
+			return
+		if drag.position.distance_to(_touch_origin) > TOUCH_TAP_SLOP:
+			_touch_cancelled = true
+		accept_event()
+		return
 	elif event is InputEventKey:
 		activate = event.pressed and not event.echo and (
 			event.keycode == KEY_ENTER or event.keycode == KEY_SPACE
@@ -1219,6 +1254,18 @@ func _on_hit_target_gui_input(event: InputEvent, target_id: String) -> void:
 		return
 	accept_event()
 	_activate_target(target_id)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_reset_touch_target()
+
+
+func _reset_touch_target() -> void:
+	_touch_target = ""
+	_touch_index = -1
+	_touch_origin = Vector2.ZERO
+	_touch_cancelled = false
 
 
 func _on_target_hover_changed(target_id: String, active: bool) -> void:

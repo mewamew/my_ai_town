@@ -128,6 +128,7 @@ var _resident_scroll_offset := 0
 var _resident_place_key := ""
 var _resident_swipe_tracking := false
 var _resident_swipe_start := Vector2.ZERO
+var _resident_swipe_pointer := -1
 var _locally_pending_actions: Dictionary = {}
 var _last_dispatch_msec: Dictionary = {}
 var _focus_controls: Array[Control] = []
@@ -170,6 +171,12 @@ func _ready() -> void:
 	_queue_layout()
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_resident_swipe_tracking = false
+		_resident_swipe_pointer = -1
+
+
 func _exit_tree() -> void:
 	_disconnect_adapter()
 
@@ -201,6 +208,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _input(event: InputEvent) -> void:
 	if not is_instance_valid(_panel_host) or not _panel_host.visible or _panel_collapsed:
 		_resident_swipe_tracking = false
+		_resident_swipe_pointer = -1
 		return
 	var input_rect := _design_rect_to_global(RESIDENT_INPUT_RECT)
 	if event is InputEventMouseButton:
@@ -218,12 +226,18 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		var touch := event as InputEventScreenTouch
 		if touch.pressed:
+			if _resident_swipe_pointer >= 0:
+				return
 			_resident_swipe_tracking = input_rect.has_point(touch.position)
 			_resident_swipe_start = touch.position
+			_resident_swipe_pointer = touch.index if _resident_swipe_tracking else -1
 			return
-		if not _resident_swipe_tracking:
+		if not _resident_swipe_tracking or touch.index != _resident_swipe_pointer:
 			return
 		_resident_swipe_tracking = false
+		_resident_swipe_pointer = -1
+		if touch.canceled:
+			return
 		var swipe_x := touch.position.x - _resident_swipe_start.x
 		if absf(swipe_x) >= RESIDENT_SWIPE_THRESHOLD_PX:
 			if scroll_residents(-1 if swipe_x > 0.0 else 1):

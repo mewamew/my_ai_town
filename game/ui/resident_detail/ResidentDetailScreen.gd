@@ -402,6 +402,13 @@ func _exit_tree() -> void:
 	_disconnect_adapter()
 
 
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_APPLICATION_FOCUS_OUT:
+		return
+	for value: Variant in _wood_scroll_chromes:
+		(value as Dictionary)["touchIndex"] = -1
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_pressed() or event.is_echo():
 		return
@@ -1005,6 +1012,7 @@ func _build_wood_scroll_chrome(
 		"chrome": chrome,
 		"track": track,
 		"thumb": thumb,
+		"touchIndex": -1,
 	}
 	_wood_scroll_chromes.append(chrome_data)
 	scrollbar.value_changed.connect(_refresh_wood_scrollbars.unbind(1))
@@ -1028,6 +1036,7 @@ func _refresh_wood_scrollbars() -> void:
 		)
 		chrome.visible = can_scroll
 		if not can_scroll:
+			chrome_data["touchIndex"] = -1
 			continue
 		track.position = Vector2(7, 0)
 		track.size = Vector2(24, chrome.size.y)
@@ -1065,6 +1074,9 @@ func _on_wood_scrollbar_gui_input(
 		return
 	if event is InputEventMouseButton:
 		var mouse_event := event as InputEventMouseButton
+		if mouse_event.device == InputEvent.DEVICE_ID_EMULATION:
+			return
+		chrome_data["touchIndex"] = -1
 		if mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP and mouse_event.pressed:
 			scrollbar.value -= maxf(48.0, scrollbar.page * 0.28)
 		elif mouse_event.button_index == MOUSE_BUTTON_WHEEL_DOWN and mouse_event.pressed:
@@ -1075,22 +1087,37 @@ func _on_wood_scrollbar_gui_input(
 			return
 	elif event is InputEventMouseMotion:
 		var motion := event as InputEventMouseMotion
+		if motion.device == InputEvent.DEVICE_ID_EMULATION:
+			return
 		if not bool(motion.button_mask & MOUSE_BUTTON_MASK_LEFT):
 			return
 		_set_wood_scrollbar_from_y(scrollbar, chrome, thumb, motion.position.y)
-	elif event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed:
-		_set_wood_scrollbar_from_y(
-			scrollbar,
-			chrome,
-			thumb,
-			(event as InputEventScreenTouch).position.y,
-		)
+	elif event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		var active_touch := int(chrome_data.get("touchIndex", -1))
+		if touch.pressed:
+			if active_touch >= 0:
+				return
+			chrome_data["touchIndex"] = touch.index
+			_set_wood_scrollbar_from_y(
+				scrollbar,
+				chrome,
+				thumb,
+				touch.position.y,
+			)
+		elif touch.index == active_touch:
+			chrome_data["touchIndex"] = -1
+		else:
+			return
 	elif event is InputEventScreenDrag:
+		var drag := event as InputEventScreenDrag
+		if drag.index != int(chrome_data.get("touchIndex", -1)):
+			return
 		_set_wood_scrollbar_from_y(
 			scrollbar,
 			chrome,
 			thumb,
-			(event as InputEventScreenDrag).position.y,
+			drag.position.y,
 		)
 	else:
 		return
@@ -2650,6 +2677,8 @@ func _on_status_detail_backdrop_input(event: InputEvent) -> void:
 	var close_requested := false
 	if event is InputEventMouseButton:
 		var mouse_event := event as InputEventMouseButton
+		if mouse_event.device == InputEvent.DEVICE_ID_EMULATION:
+			return
 		close_requested = (
 			mouse_event.button_index == MOUSE_BUTTON_LEFT
 			and mouse_event.pressed
@@ -3329,12 +3358,15 @@ func _on_row_gui_input(event: InputEvent, index: int) -> void:
 	var activate := false
 	if event is InputEventMouseButton:
 		var mouse_event := event as InputEventMouseButton
+		if mouse_event.device == InputEvent.DEVICE_ID_EMULATION:
+			return
 		activate = (
 			mouse_event.button_index == MOUSE_BUTTON_LEFT
 			and not mouse_event.pressed
 		)
 	elif event is InputEventScreenTouch:
-		activate = not (event as InputEventScreenTouch).pressed
+		var touch := event as InputEventScreenTouch
+		activate = not touch.pressed and not touch.canceled
 	else:
 		activate = event.is_action_pressed(&"ui_accept")
 	if not activate:

@@ -168,6 +168,12 @@ func _ready() -> void:
 		set_physics_process(true)
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_touch_tracking_index = -1
+		_touch_tracking_cancelled = false
+
+
 func _physics_process(delta: float) -> void:
 	if not _configured or not _world_visible:
 		velocity = Vector2.ZERO
@@ -751,6 +757,10 @@ func _on_touch_area_input(viewport: Node, event: InputEvent, _shape_index: int) 
 				_touch_tracking_cancelled = true
 			return
 		if touch.index != _touch_tracking_index:
+			return
+		if touch.canceled:
+			_touch_tracking_index = -1
+			_touch_tracking_cancelled = false
 			return
 		var is_tap := (
 			not _touch_tracking_cancelled

@@ -1613,6 +1613,15 @@ const MOBILE_TOUCH_SCROLL_ROUTER := preload(
 const MOBILE_TEXT_INPUT_POLICY := preload(
 	"res://ui/mobile/MobileTextInputPolicy.gd"
 )
+const BULLETIN_HISTORY_RAIL := preload(
+	"res://ui/bulletin_board/BulletinBoardHistoryRail.gd"
+)
+const RESIDENT_DETAIL_CLOSE_BUTTON_SCENE := preload(
+	"res://ui/resident_detail/components/ResidentDetailCloseButton.tscn"
+)
+const RESIDENT_MODEL_ASSIGNMENT_SIMPLIFIED := preload(
+	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentSimplifiedDesktop.gd"
+)
 const VIRTUAL_JOYSTICK := preload("res://ui/mobile/VirtualJoystick.gd")
 const TOUCH_CAMERA_GESTURE := preload("res://ui/mobile/TouchCameraGesture.gd")
 const MOBILE_MOVEMENT_INPUT := preload("res://ui/mobile/MobileMovementInput.gd")
@@ -1866,10 +1875,58 @@ func _verify_mobile_touch_scroll_router() -> void:
 	_expect(not router.consume(_mobile_touch(0, true, point)), "滚动起点不吞普通点击")
 	var drag := InputEventScreenDrag.new()
 	drag.index = 0
+	drag.position = point - Vector2(0.0, 4.0)
+	_expect(not router.consume(drag), "触摸位移未超过阈值时不抢走点击或文本选区")
 	drag.position = point - Vector2(0.0, 100.0)
 	_expect(router.consume(drag), "手指拖动由滚动路由接管")
 	_expect(scroll.scroll_vertical > 0, "手指上拖后竖向滑条同步前进")
 	_expect(router.consume(_mobile_touch(0, false, drag.position)), "拖动抬手不误触列表项")
+	_expect(not bool(router.get("_drag_started")), "滚动结束后清理拖动状态")
+	_expect(not router.consume(_mobile_touch(1, true, point)), "取消场景先建立滚动候选")
+	var canceled_touch := _mobile_touch(1, false, point)
+	canceled_touch.canceled = true
+	_expect(not router.consume(canceled_touch), "系统取消普通触摸时不提交滚动操作")
+	_expect_equal(router.get("_pointer_index"), -1, "系统取消触摸后释放滚动指针")
+	_expect(not router.consume(_mobile_touch(2, true, point)), "切后台场景先建立滚动候选")
+	router.call("_notification", NOTIFICATION_APPLICATION_FOCUS_OUT)
+	_expect_equal(router.get("_pointer_index"), -1, "应用切到后台后释放滚动指针")
+	_expect(not bool(router.get("_drag_started")), "应用切到后台后清理滚动拖动状态")
+	var selection_owner := LineEdit.new()
+	selection_owner.position = Vector2(20.0, 20.0)
+	selection_owner.size = Vector2(240.0, 72.0)
+	content.add_child(selection_owner)
+	selection_owner.grab_focus()
+	selection_owner.set_meta("mobile_native_text_actions_visible", true)
+	_expect(not router.consume(_mobile_touch(3, true, point)), "长按选区场景先建立滚动候选")
+	# Synthetic input does not update Viewport.gui_get_hovered_control(), so bind
+	# the same source control the real touch hit-test records.
+	router.set("_source_control", selection_owner)
+	var selection_drag := InputEventScreenDrag.new()
+	selection_drag.index = 3
+	selection_drag.position = point - Vector2(0.0, 80.0)
+	_expect(not router.consume(selection_drag), "原生文本选区出现后不抢走拖动")
+	_expect_equal(router.get("_pointer_index"), -1, "文本选区接管拖动后释放页面滚动指针")
+	var clip_parent := Control.new()
+	clip_parent.position = Vector2(900.0, 100.0)
+	clip_parent.size = Vector2(100.0, 100.0)
+	clip_parent.clip_contents = true
+	root.add_child(clip_parent)
+	var clipped_scroll := ScrollContainer.new()
+	clipped_scroll.size = Vector2(300.0, 300.0)
+	clip_parent.add_child(clipped_scroll)
+	var clipped_content := Control.new()
+	clipped_content.custom_minimum_size = Vector2(280.0, 900.0)
+	clipped_scroll.add_child(clipped_content)
+	await process_frame
+	_expect(
+		not bool(router.call(
+			"_point_inside_control_clips",
+			clipped_scroll,
+			Vector2(1050.0, 150.0),
+		)),
+		"统一触控滑动不会命中父容器裁剪区外的隐藏列表",
+	)
+	clip_parent.queue_free()
 	router.queue_free()
 	scroll.queue_free()
 	await process_frame
@@ -1888,7 +1945,11 @@ func _verify_mobile_text_input_policy() -> void:
 		not line.virtual_keyboard_enabled,
 		"移动端输入框初始不自动唤起输入法",
 	)
-	_expect(line.context_menu_enabled, "移动端输入框保留系统长按文本菜单")
+	_expect(
+		not line.virtual_keyboard_show_on_focus,
+		"页面恢复焦点时不能绕过短按判定自动弹出输入法",
+	)
+	_expect(line.context_menu_enabled, "移动端输入框保留桌面右键菜单")
 	var point := Vector2(540.0, 130.0)
 	policy.call("_handle_screen_touch", _mobile_touch(1, true, point))
 	_expect_equal(
@@ -1911,6 +1972,21 @@ func _verify_mobile_text_input_policy() -> void:
 		0,
 		"触控结束后清理输入候选状态",
 	)
+	var canceled_press := _mobile_touch(2, true, point)
+	policy.call("_handle_screen_touch", canceled_press)
+	var canceled_release := _mobile_touch(2, false, point)
+	canceled_release.canceled = true
+	policy.call("_handle_screen_touch", canceled_release)
+	_expect(
+		not bool(policy.get("_keyboard_visible")),
+		"系统取消触摸不能误弹输入法",
+	)
+	line.editable = false
+	_expect(
+		policy.call("_text_input_at", point) == null,
+		"只读输入框不能成为移动端键盘目标",
+	)
+	line.editable = true
 	line.grab_focus()
 	policy.call("_show_system_keyboard", line)
 	_expect(bool(policy.get("_keyboard_visible")), "短按后记录已打开的系统键盘")
@@ -1920,7 +1996,39 @@ func _verify_mobile_text_input_policy() -> void:
 		not bool(policy.get("_keyboard_visible")),
 		"输入框失去焦点后收起手动打开的系统键盘",
 	)
+	policy.call("_handle_screen_touch", _mobile_touch(3, true, point))
+	line.grab_focus()
+	line.set_meta("mobile_native_text_actions_visible", true)
+	policy.set("_native_action_control", line)
+	policy.set("_keyboard_control", line)
+	policy.set("_keyboard_visible", true)
+	policy.set("_keyboard_retry_remaining", 3)
+	policy.set("_keyboard_retry_at_msec", 0)
+	policy.call("_process", 0.0)
+	_expect_equal(
+		policy.get("_keyboard_retry_remaining"),
+		3,
+		"原生长按操作栏建立后不再重复请求键盘",
+	)
+	policy.call("_notification", NOTIFICATION_APPLICATION_FOCUS_OUT)
+	_expect_equal(
+		(policy.get("_touch_candidates") as Dictionary).size(),
+		0,
+		"应用切到后台后清理输入候选状态",
+	)
+	_expect(
+		not line.has_meta("mobile_native_text_actions_visible"),
+		"应用切到后台后清理 Android 文本操作栏占用状态",
+	)
+	policy.call("_handle_screen_touch", _mobile_touch(4, true, point))
+	line.set_meta("mobile_native_text_actions_visible", true)
+	policy.set("_native_action_control", line)
 	policy.queue_free()
+	await process_frame
+	_expect(
+		not line.has_meta("mobile_native_text_actions_visible"),
+		"输入策略退出页面时清理 Android 文本操作栏占用状态",
+	)
 	line.queue_free()
 	await process_frame
 
@@ -1948,6 +2056,35 @@ func _verify_mobile_scene_interaction() -> void:
 	joystick.call("_gui_input", _mobile_touch(7, false, Vector2(285.0, 150.0)))
 	_expect((joystick.call("movement") as Vector2).is_zero_approx(), "摇杆抬手后回中并清空移动输入")
 	_expect(movement_events.size() >= 2, "摇杆按下与抬手都通知运行时")
+	var emulated_mouse_press := InputEventMouseButton.new()
+	emulated_mouse_press.device = InputEvent.DEVICE_ID_EMULATION
+	emulated_mouse_press.button_index = MOUSE_BUTTON_LEFT
+	emulated_mouse_press.pressed = true
+	emulated_mouse_press.position = Vector2(285.0, 150.0)
+	joystick.call("_gui_input", emulated_mouse_press)
+	_expect(
+		(joystick.call("movement") as Vector2).is_zero_approx()
+		and not bool(joystick.call("is_pointer_active")),
+		"触摸生成的鼠标副本不会让摇杆重复接管指针",
+	)
+	var physical_mouse_press := emulated_mouse_press.duplicate() as InputEventMouseButton
+	physical_mouse_press.device = InputEvent.DEVICE_ID_MOUSE
+	joystick.call("_gui_input", physical_mouse_press)
+	_expect(
+		(joystick.call("movement") as Vector2).x > 0.7,
+		"真实鼠标仍可操作摇杆以支持桌面调试和外接鼠标",
+	)
+	physical_mouse_press.pressed = false
+	joystick.call("_gui_input", physical_mouse_press)
+	joystick.call("_gui_input", _mobile_touch(0, true, Vector2(285.0, 150.0)))
+	physical_mouse_press.pressed = false
+	joystick.call("_gui_input", physical_mouse_press)
+	_expect(
+		(joystick.call("movement") as Vector2).x > 0.7
+		and bool(joystick.call("is_pointer_active")),
+		"外接鼠标抬起不会取消第零根手指控制的摇杆",
+	)
+	joystick.call("_gui_input", _mobile_touch(0, false, Vector2(285.0, 150.0)))
 	var gesture := TOUCH_CAMERA_GESTURE.new()
 	_expect(
 		not bool(gesture.consume(_mobile_touch(1, true, Vector2(100.0, 100.0))).get("handled", true)),
@@ -1964,6 +2101,59 @@ func _verify_mobile_scene_interaction() -> void:
 	input.set_value(Vector2(0.8, 0.0))
 	_expect_equal(input.merged_with(Vector2.ZERO), Vector2(0.8, 0.0), "触控移动输入在物理输入为空时生效")
 	_expect_equal(input.merged_with(Vector2(1.0, 0.0)), Vector2(1.0, 0.0), "物理输入优先于较弱触控输入")
+	var history_rail := BULLETIN_HISTORY_RAIL.new() as Control
+	history_rail.size = Vector2(48.0, 240.0)
+	root.add_child(history_rail)
+	history_rail.call("set_page_state", 0, 4)
+	history_rail.call("_gui_input", _mobile_touch(21, true, Vector2(24.0, 30.0)))
+	history_rail.call("_gui_input", _mobile_touch(22, false, Vector2(24.0, 210.0)))
+	_expect_equal(history_rail.get("_touch_index"), 21, "公告历史滑条忽略另一根手指的抬起")
+	history_rail.call("_gui_input", _mobile_touch(21, false, Vector2(24.0, 30.0)))
+	_expect_equal(history_rail.get("_touch_index"), -1, "公告历史滑条只由原触点结束拖动")
+	var close_button := RESIDENT_DETAIL_CLOSE_BUTTON_SCENE.instantiate() as Control
+	close_button.position = Vector2(900.0, 420.0)
+	close_button.size = Vector2(96.0, 96.0)
+	root.add_child(close_button)
+	var close_requests := [0]
+	close_button.close_requested.connect(func() -> void: close_requests[0] += 1)
+	close_button.call("_gui_input", _mobile_touch(31, true, Vector2(48.0, 48.0)))
+	close_button.call("_gui_input", _mobile_touch(32, false, Vector2(48.0, 48.0)))
+	_expect_equal(close_requests[0], 0, "居民详情自绘按钮忽略另一根手指的抬起")
+	_expect_equal(close_button.get("_touch_index"), 31, "居民详情自绘按钮保留原触点归属")
+	close_button.call("_gui_input", _mobile_touch(31, false, Vector2(48.0, 48.0)))
+	_expect_equal(close_requests[0], 1, "居民详情自绘按钮由同一触点完成点击")
+	close_button.call("_gui_input", _mobile_touch(33, true, Vector2(48.0, 48.0)))
+	close_button.call("_gui_input", _mobile_touch(33, false, Vector2(140.0, 48.0)))
+	_expect_equal(close_requests[0], 1, "手指移出居民详情自绘按钮后抬起不会误触")
+	var assignment := RESIDENT_MODEL_ASSIGNMENT_SIMPLIFIED.new() as Control
+	var gesture_owner := Control.new()
+	assignment.call("_on_list_gui_input", _mobile_touch(41, true, Vector2(20.0, 20.0)), "resident", gesture_owner)
+	var unrelated_drag := InputEventScreenDrag.new()
+	unrelated_drag.index = 42
+	unrelated_drag.position = Vector2(20.0, 30.0)
+	unrelated_drag.relative = Vector2(0.0, 10.0)
+	assignment.call("_on_list_gui_input", unrelated_drag, "resident", gesture_owner)
+	_expect_equal(
+		float((assignment.get("_gesture_accum") as Dictionary).get("resident", -1.0)),
+		0.0,
+		"模型分配列表忽略另一根手指的拖动",
+	)
+	assignment.call("_on_list_gui_input", _mobile_touch(42, false, Vector2(20.0, 30.0)), "resident", gesture_owner)
+	_expect_equal(
+		int((assignment.get("_gesture_touch_index") as Dictionary).get("resident", -1)),
+		41,
+		"模型分配列表忽略另一根手指的抬起",
+	)
+	assignment.call("_on_list_gui_input", _mobile_touch(41, false, Vector2(20.0, 20.0)), "resident", gesture_owner)
+	_expect_equal(
+		int((assignment.get("_gesture_touch_index") as Dictionary).get("resident", -2)),
+		-1,
+		"模型分配列表只由原触点结束手势",
+	)
+	assignment.free()
+	gesture_owner.free()
+	close_button.queue_free()
+	history_rail.queue_free()
 	joystick.queue_free()
 	await process_frame
 
@@ -2424,6 +2614,30 @@ func _scenario_ui_runtime_host_navigation() -> void:
 	})
 	await process_frame
 	await _verify_avatar_skillbar_touch_scaling()
+	var fixture_before_conversation := (
+		_avatar_hud.get("_fixture") as Dictionary
+	).duplicate(true)
+	var touch_fixture := fixture_before_conversation.duplicate(true)
+	touch_fixture["inputMode"] = "touch"
+	_avatar_hud.set("_fixture", touch_fixture)
+	_avatar_hud.call("_request_rebuild_preserving_joystick")
+	await process_frame
+	await process_frame
+	var held_joystick := _avatar_hud.get("_touch_joystick") as Control
+	_expect(held_joystick != null, "触控化身 HUD 提供摇杆")
+	if held_joystick != null:
+		held_joystick.call(
+			"_gui_input",
+			_mobile_touch(
+				11,
+				true,
+				Vector2(held_joystick.size.x * 0.9, held_joystick.size.y * 0.5),
+			),
+		)
+		_expect(
+			not (_avatar_hud.get("_touch_movement") as Vector2).is_zero_approx(),
+			"聊天打开前摇杆能够保持按压方向",
+		)
 	# The conversation page owns the visible interaction surface. Keep the
 	# AvatarModeHud mounted for fast restoration, but hide its skillbar and
 	# movement controls so the chat close button and input remain clickable.
@@ -2446,6 +2660,15 @@ func _scenario_ui_runtime_host_navigation() -> void:
 		"active avatar can open the real conversation page",
 	)
 	_expect(not _avatar_hud.visible, "conversation page hides the active AvatarModeHud")
+	_expect(
+		(_avatar_hud.get("_touch_movement") as Vector2).is_zero_approx(),
+		"聊天打开时立即清空仍被按住的摇杆输入",
+	)
+	_expect(
+		not bool(_avatar_hud.get("_rebuild_after_joystick_release")),
+		"聊天隐藏 HUD 不等待可能缺失的触摸抬手事件",
+	)
+	_avatar_hud.set("_fixture", fixture_before_conversation)
 	_expect_equal(
 		_avatar_hud.process_mode,
 		Node.PROCESS_MODE_ALWAYS,
@@ -5407,6 +5630,51 @@ func _test_resident_selection_runtime_contract() -> void:
 			selection.find_child("TownClock", true, false) as TextureRect
 		).texture != null,
 		"居民选择正式页动态 TownClock 图标未进入运行树",
+	)
+	selection.call("_open_resident_overview")
+	var overview_track := selection.find_child(
+		"ResidentOverviewScrollTrack",
+		true,
+		false,
+	) as TextureRect
+	var overview_point := (
+		overview_track.get_global_rect().get_center()
+		if overview_track != null
+		else Vector2.ZERO
+	)
+	var emulated_scroll_press := InputEventMouseButton.new()
+	emulated_scroll_press.device = InputEvent.DEVICE_ID_EMULATION
+	emulated_scroll_press.button_index = MOUSE_BUTTON_LEFT
+	emulated_scroll_press.pressed = true
+	emulated_scroll_press.global_position = overview_point
+	selection.call(
+		"_on_overview_scroll_control_gui_input",
+		emulated_scroll_press,
+		false,
+	)
+	_expect(
+		not bool(selection.get("_overview_scroll_dragging")),
+		"居民选择滚动条不能重复接收触摸模拟鼠标事件",
+	)
+	selection.call(
+		"_on_overview_scroll_control_gui_input",
+		_mobile_touch(17, true, overview_point),
+		false,
+	)
+	_expect(
+		bool(selection.get("_overview_scroll_dragging"))
+		and int(selection.get("_overview_scroll_touch_index")) == 17,
+		"居民选择滚动条必须直接接收原生触摸按下",
+	)
+	var overview_drag := InputEventScreenDrag.new()
+	overview_drag.index = 17
+	overview_drag.position = overview_point + Vector2(0.0, 24.0)
+	selection.call("_input", overview_drag)
+	selection.call("_input", _mobile_touch(17, false, overview_drag.position))
+	_expect(
+		not bool(selection.get("_overview_scroll_dragging"))
+		and int(selection.get("_overview_scroll_touch_index")) == -1,
+		"居民选择滚动条触摸结束后必须释放拖动状态",
 	)
 	root.remove_child(selection)
 	selection.free()

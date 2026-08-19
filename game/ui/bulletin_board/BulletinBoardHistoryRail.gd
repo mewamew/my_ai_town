@@ -13,6 +13,7 @@ const MINIMUM_THUMB_HEIGHT := 48.0
 var _page_count := 1
 var _page_index := 0
 var _dragging := false
+var _touch_index := -1
 
 
 func _ready() -> void:
@@ -46,6 +47,8 @@ func page_count() -> int:
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mouse_event := event as InputEventMouseButton
+		if mouse_event.device == InputEvent.DEVICE_ID_EMULATION:
+			return
 		if (
 			mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP
 			and mouse_event.pressed
@@ -60,22 +63,36 @@ func _gui_input(event: InputEvent) -> void:
 			accept_event()
 		elif mouse_event.button_index == MOUSE_BUTTON_LEFT:
 			_dragging = mouse_event.pressed
+			_touch_index = -1
 			if _dragging:
 				grab_focus()
 				_request_page(_page_for_y(mouse_event.position.y))
 			accept_event()
 	elif event is InputEventMouseMotion and _dragging:
+		if event.device == InputEvent.DEVICE_ID_EMULATION:
+			return
 		_request_page(_page_for_y((event as InputEventMouseMotion).position.y))
 		accept_event()
 	elif event is InputEventScreenTouch:
 		var touch_event := event as InputEventScreenTouch
-		_dragging = touch_event.pressed
-		if _dragging:
+		if touch_event.pressed:
+			if _touch_index >= 0:
+				return
+			_dragging = true
+			_touch_index = touch_event.index
 			grab_focus()
 			_request_page(_page_for_y(touch_event.position.y))
+		elif touch_event.index == _touch_index:
+			_dragging = false
+			_touch_index = -1
+		else:
+			return
 		accept_event()
 	elif event is InputEventScreenDrag:
-		_request_page(_page_for_y((event as InputEventScreenDrag).position.y))
+		var drag := event as InputEventScreenDrag
+		if not _dragging or drag.index != _touch_index:
+			return
+		_request_page(_page_for_y(drag.position.y))
 		accept_event()
 	elif event is InputEventKey:
 		var key_event := event as InputEventKey
@@ -99,6 +116,10 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_dragging = false
+		_touch_index = -1
+		return
 	if what in [NOTIFICATION_FOCUS_ENTER, NOTIFICATION_FOCUS_EXIT]:
 		queue_redraw()
 

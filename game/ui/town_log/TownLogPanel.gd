@@ -823,7 +823,12 @@ func _make_table_row(
 		_animate_control_tint(panel, Color.WHITE, ROW_MOTION_SECONDS)
 	)
 	panel.gui_input.connect(func(event: InputEvent) -> void:
-		if POINTER_INPUT.is_primary_press(event):
+		var activate := (
+			POINTER_INPUT.is_primary_release(event)
+			if MOBILE_UI_PROFILE.is_mobile_runtime()
+			else POINTER_INPUT.is_primary_press(event)
+		)
+		if activate:
 			panel.modulate = ROW_PRESS_TINT
 			_request_action("selectThread", {"threadId": thread_id})
 			accept_event()

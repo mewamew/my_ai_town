@@ -196,6 +196,7 @@ var _overview_scroll_track: TextureRect
 var _overview_scroll_thumb: TextureRect
 var _overview_scroll_dragging := false
 var _overview_scroll_drag_offset := 0.0
+var _overview_scroll_touch_index := -1
 var _overview_button: Button
 var _overview_icon: TextureRect
 var _overview_text: Label
@@ -355,11 +356,31 @@ func _input(event: InputEvent) -> void:
 	if not _overview_scroll_dragging:
 		return
 	if event is InputEventMouseMotion:
-		_set_overview_scroll_from_global_y((event as InputEventMouseMotion).global_position.y)
+		var mouse_motion := event as InputEventMouseMotion
+		if mouse_motion.device != InputEvent.DEVICE_ID_EMULATION:
+			_set_overview_scroll_from_global_y(mouse_motion.global_position.y)
 	elif event is InputEventMouseButton:
 		var mouse_button := event as InputEventMouseButton
+		if mouse_button.device == InputEvent.DEVICE_ID_EMULATION:
+			return
 		if mouse_button.button_index == MOUSE_BUTTON_LEFT and not mouse_button.pressed:
 			_overview_scroll_dragging = false
+	elif event is InputEventScreenDrag:
+		var drag := event as InputEventScreenDrag
+		if drag.index == _overview_scroll_touch_index:
+			_set_overview_scroll_from_global_y(drag.position.y)
+	elif event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		if touch.index == _overview_scroll_touch_index and not touch.pressed:
+			_overview_scroll_dragging = false
+			_overview_scroll_touch_index = -1
+
+
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_APPLICATION_FOCUS_OUT:
+		return
+	_overview_scroll_dragging = false
+	_overview_scroll_touch_index = -1
 
 
 func apply_view_model(snapshot: Dictionary) -> bool:
@@ -1488,6 +1509,7 @@ func _close_resident_overview() -> void:
 	if _detail_mode == DetailMode.SHOWCASE:
 		return
 	_overview_scroll_dragging = false
+	_overview_scroll_touch_index = -1
 	_detail_mode = DetailMode.SHOWCASE
 	_refresh_detail()
 	_configure_detail_geometry()
@@ -1567,6 +1589,8 @@ func _on_overview_scroll_control_gui_input(
 		return
 	if event is InputEventMouseButton:
 		var mouse_button := event as InputEventMouseButton
+		if mouse_button.device == InputEvent.DEVICE_ID_EMULATION:
+			return
 		if mouse_button.button_index == MOUSE_BUTTON_WHEEL_UP and mouse_button.pressed:
 			scroll_bar.value -= maxf(48.0, scroll_bar.page * 0.16)
 			get_viewport().set_input_as_handled()
@@ -1575,6 +1599,7 @@ func _on_overview_scroll_control_gui_input(
 			get_viewport().set_input_as_handled()
 		elif mouse_button.button_index == MOUSE_BUTTON_LEFT:
 			_overview_scroll_dragging = mouse_button.pressed
+			_overview_scroll_touch_index = -1
 			if mouse_button.pressed:
 				_overview_scroll_drag_offset = (
 					mouse_button.global_position.y
@@ -1584,6 +1609,24 @@ func _on_overview_scroll_control_gui_input(
 				)
 				_set_overview_scroll_from_global_y(mouse_button.global_position.y)
 			get_viewport().set_input_as_handled()
+	elif event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		if touch.pressed:
+			if _overview_scroll_touch_index >= 0:
+				return
+			_overview_scroll_dragging = true
+			_overview_scroll_touch_index = touch.index
+			_overview_scroll_drag_offset = (
+				touch.position.y
+				- _overview_scroll_thumb.get_global_rect().position.y
+				if dragging_thumb
+				else _overview_scroll_thumb.size.y * 0.5
+			)
+			_set_overview_scroll_from_global_y(touch.position.y)
+		elif touch.index == _overview_scroll_touch_index:
+			_overview_scroll_dragging = false
+			_overview_scroll_touch_index = -1
+		get_viewport().set_input_as_handled()
 
 
 func _set_overview_scroll_from_global_y(global_y: float) -> void:

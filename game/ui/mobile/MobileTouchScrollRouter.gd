@@ -9,6 +9,7 @@ const TOUCH_DRAG_DEADZONE := 10.0
 var _force_touch_runtime := false
 var _pointer_index := -1
 var _target_control: Control
+var _source_control: Control
 var _vertical_scrollbar: VScrollBar
 var _horizontal_scrollbar: HScrollBar
 var _start_position := Vector2.ZERO
@@ -21,6 +22,11 @@ func _ready() -> void:
 	set_process_input(true)
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		reset()
+
+
 func configure(force_touch_runtime := false) -> void:
 	_force_touch_runtime = force_touch_runtime
 
@@ -28,6 +34,7 @@ func configure(force_touch_runtime := false) -> void:
 func reset() -> void:
 	_pointer_index = -1
 	_target_control = null
+	_source_control = null
 	_vertical_scrollbar = null
 	_horizontal_scrollbar = null
 	_start_position = Vector2.ZERO
@@ -59,6 +66,10 @@ func _consume_touch(event: InputEventScreenTouch) -> bool:
 			return false
 		_pointer_index = event.index
 		_target_control = target.get("control") as Control
+		_source_control = target.get(
+			"source",
+			target.get("control"),
+		) as Control
 		_vertical_scrollbar = target.get("vertical") as VScrollBar
 		_horizontal_scrollbar = target.get("horizontal") as HScrollBar
 		_start_position = event.position
@@ -70,12 +81,20 @@ func _consume_touch(event: InputEventScreenTouch) -> bool:
 		return false
 	var suppress_release := _drag_started
 	reset()
+	if event.canceled:
+		return suppress_release
 	# A completed drag must not also activate the list row below the finger.
 	return suppress_release
 
 
 func _consume_drag(event: InputEventScreenDrag) -> bool:
 	if event.index != _pointer_index or not is_instance_valid(_target_control):
+		return false
+	# The press can begin before a long press opens Android's native text
+	# ActionMode. Recheck here so selection-handle movement is not stolen by the
+	# page scroll route after the toolbar appears.
+	if is_instance_valid(_source_control) and _text_selection_owns_drag(_source_control):
+		reset()
 		return false
 	if not _target_control.is_visible_in_tree():
 		reset()
@@ -85,7 +104,7 @@ func _consume_drag(event: InputEventScreenDrag) -> bool:
 		var from_start := event.position - _start_position
 		if from_start.length() < TOUCH_DRAG_DEADZONE:
 			_last_position = event.position
-			return true
+			return false
 		_drag_started = true
 		from_last = from_start
 	_scroll_by_finger_delta(from_last)
@@ -117,6 +136,31 @@ func _scroll_by_finger_delta(delta: Vector2) -> void:
 func _find_scroll_target(position: Vector2) -> Dictionary:
 	if not is_inside_tree():
 		return {}
+	# Use Godot's GUI hit result whenever available. It respects CanvasLayer,
+	# z-order, clipping and overlays, while a scene-tree scan does not.
+	var hovered := get_viewport().gui_get_hovered_control()
+	if (
+		is_instance_valid(hovered)
+		and hovered.get_global_rect().has_point(position)
+	):
+		if _text_selection_owns_drag(hovered):
+			return {}
+		var current: Node = hovered
+		while current != null:
+			if current is Control:
+				var control := current as Control
+				var ranges := _scroll_ranges_for(control)
+				var vertical := ranges.get("vertical") as VScrollBar
+				var horizontal := ranges.get("horizontal") as HScrollBar
+				if _range_can_scroll(vertical) or _range_can_scroll(horizontal):
+					return {
+						"control": control,
+						"source": hovered,
+						"vertical": vertical,
+						"horizontal": horizontal,
+					}
+			current = current.get_parent()
+		return {}
 	var candidates: Array[Dictionary] = []
 	_collect_scroll_targets(get_tree().root, position, candidates, 0)
 	if candidates.is_empty():
@@ -129,6 +173,18 @@ func _find_scroll_target(position: Vector2) -> Dictionary:
 		return float(left.get("area", INF)) < float(right.get("area", INF))
 	)
 	return candidates[0]
+
+
+func _text_selection_owns_drag(control: Control) -> bool:
+	var current: Node = control
+	while current != null:
+		if current is LineEdit or current is TextEdit:
+			return (
+				(current as Control).has_focus()
+				and (current as Control).has_meta("mobile_native_text_actions_visible")
+			)
+		current = current.get_parent()
+	return false
 
 
 func _collect_scroll_targets(
@@ -144,6 +200,7 @@ func _collect_scroll_targets(
 		if (
 			control.mouse_filter != Control.MOUSE_FILTER_IGNORE
 			and control.get_global_rect().has_point(position)
+			and _point_inside_control_clips(control, position)
 		):
 			var ranges := _scroll_ranges_for(control)
 			var vertical := ranges.get("vertical") as VScrollBar
@@ -158,6 +215,20 @@ func _collect_scroll_targets(
 				})
 	for child: Node in node.get_children():
 		_collect_scroll_targets(child, position, candidates, depth + 1)
+
+
+func _point_inside_control_clips(control: Control, position: Vector2) -> bool:
+	var current: Node = control.get_parent()
+	while current != null:
+		if current is Control:
+			var parent_control := current as Control
+			if (
+				parent_control.clip_contents
+				and not parent_control.get_global_rect().has_point(position)
+			):
+				return false
+		current = current.get_parent()
+	return true
 
 
 func _scroll_ranges_for(control: Control) -> Dictionary:
