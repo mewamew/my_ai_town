@@ -151,6 +151,16 @@ rmdir "$check_root"
 
 处理方法：在行动页渲染入口清空想法 Label 的文字并关闭可见状态；在审计快照中同时报告想法气泡是否实际可见。修改后运行 `town_activity_test.gd`，再运行完整正式故事检查。
 
+### 2026-08-19：正式套件在依赖安装阶段被取消
+
+表现：防复发守卫已经通过，`formal-suite` 没有进入 Godot 导入或正式测试；日志停在 `Install dependencies`，任务运行约两小时后出现 `The operation was canceled`。
+
+直接原因：工作流无条件执行 `apt-get update`，Ubuntu runner 访问 `azure.archive.ubuntu.com` 时持续重试，导致安装步骤占满工作流的 120 分钟超时。这个失败不代表项目代码或测试本身失败。
+
+处理方法：工作流先检查 `zsh`、`rg` 和 `unzip`，runner 已预装时跳过包管理器；确实缺少工具时才执行安装，并为 APT 请求、锁等待和整个更新/安装步骤设置有限重试与超时。不要只重复运行同一个卡住的工作流，也不要把依赖镜像问题误判成 Godot 回归。
+
+最终验证：本地仍需运行 `tools/guards/run_guards.sh`、Godot 无头导入和正式测试；远端应确认依赖步骤能在有限时间内结束，然后才判断正式套件结果。
+
 ### Godot 导入：`Preload file ... does not exist`
 
 含义：脚本引用的资源不在 CI 取得的提交中，或者路径不完全一致。
@@ -491,6 +501,7 @@ gh run view <运行编号> --log-failed \
 - [ ] 相关测试通过；发行改动完成正式测试套件。
 - [ ] provider 测试退出时没有资源泄漏；同步 transport 已确认不会残留请求状态或 watchdog。
 - [ ] 正式 Godot 回归默认使用 `AI_TOWN_PROVIDER_TEST_NO_NETWORK=1`；联网 Provider 验证单独运行并显式授权。
+- [ ] CI 工作流依赖步骤先检查 `zsh`、`rg` 和 `unzip`，只有缺少工具时才执行带超时的 APT 安装。
 - [ ] 发行工作流改动确认 Windows 使用 Linux 构建机、macOS 使用 macOS 构建机。
 - [ ] 测试后 `git status --porcelain` 没有意外变化。
 - [ ] 玩家可见改动已经写入根目录 `更新日志.md`，并已同步 README 的最新更新摘要。
