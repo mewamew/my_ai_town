@@ -460,6 +460,7 @@ func _initialize() -> void:
 	_test_immediate_agent_rejection_cannot_loop_forever()
 	_test_recovered_admission_rejection_is_not_final()
 	_test_provider_failure_stays_final_when_continuity_keeps_life_moving()
+	_test_thinking_only_provider_failures_are_retried()
 	_test_provider_diagnostic_keeps_safe_code_only()
 	_test_failed_decision_uses_available_world_prop()
 	_test_failed_decision_uses_available_world_activity()
@@ -1301,6 +1302,26 @@ func _test_provider_failure_stays_final_when_continuity_keeps_life_moving() -> v
 			(failure.get("diagnostic", {}) as Dictionary).get("recoveredByFallback"),
 			false,
 			"continuity does not claim to recover the provider",
+		)
+	gateway.free()
+
+
+func _test_thinking_only_provider_failures_are_retried() -> void:
+	var gateway: Node = GATEWAY.new()
+	var ordinary_life_wake := {"events": []}
+	for error_type: String in [
+		"reasoning_only_response",
+		"thinking_only_content",
+	]:
+		_expect(
+			gateway.call(
+				"_decision_result_should_retry",
+				1,
+				{"error_type": error_type, "retryable": false},
+				ordinary_life_wake,
+			),
+			"%s retries an ordinary resident decision instead of falling back immediately"
+			% error_type,
 		)
 	gateway.free()
 
