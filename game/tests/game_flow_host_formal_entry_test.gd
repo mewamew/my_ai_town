@@ -1001,7 +1001,11 @@ func _remove_tree(path: String) -> void:
 func _expect_ok(result: Dictionary, message: String) -> void:
 	_expect(
 		bool(result.get("ok", false)),
-		"%s (error=%s)" % [message, result.get("errorCode", "")],
+		"%s (error=%s result=%s)" % [
+			message,
+			result.get("errorCode", ""),
+			JSON.stringify(result),
+		],
 	)
 
 
