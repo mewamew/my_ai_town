@@ -682,6 +682,24 @@ func _public_diagnostic(source: Dictionary) -> Dictionary:
 		var number := _public_nonnegative_integer(source.get(key))
 		if number >= 0:
 			result[key] = number
+	var request_value: Variant = source.get("request")
+	if request_value is Dictionary:
+		var request_url := _public_request_url(request_value as Dictionary)
+		if not request_url.is_empty():
+			result["request_url"] = request_url
+	for key in [
+		"content_present",
+		"reasoning_present",
+		"thinking_block_removed",
+		"json_repaired",
+	]:
+		var flag_value: Variant = source.get(key)
+		if typeof(flag_value) == TYPE_BOOL:
+			result[key] = flag_value as bool
+	for key in ["content_length", "reasoning_length", "parse_content_length"]:
+		var length := _public_nonnegative_integer(source.get(key))
+		if length >= 0:
+			result[key] = length
 	var retryable_value: Variant = source.get("retryable")
 	if typeof(retryable_value) == TYPE_BOOL:
 		result["retryable"] = retryable_value as bool
@@ -1263,6 +1281,16 @@ func _canonical_id_is_valid(value: String) -> bool:
 
 func _public_string(value: Variant, fallback := "") -> String:
 	return value as String if typeof(value) == TYPE_STRING else fallback
+
+
+func _public_request_url(request: Dictionary) -> String:
+	var url := _public_string(request.get("url"))
+	if url.is_empty():
+		return ""
+	var query_start := url.find("?")
+	if query_start >= 0:
+		return "%s?<已隐藏参数>" % url.left(query_start)
+	return url
 
 
 func _public_nonnegative_integer(value: Variant) -> int:

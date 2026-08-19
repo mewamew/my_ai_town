@@ -539,11 +539,43 @@ func _handle_transport_result(
 		diagnostics["error_type"] = "missing_message"
 		_complete_failure(on_complete, ["模型回答缺少 message"], diagnostics)
 		return
-	var content := String((message_value as Dictionary).get("content", "")).strip_edges()
-	diagnostics["raw_content"] = content
+	var message := message_value as Dictionary
+	var raw_content := _response_text(message.get("content", ""))
+	var reasoning_content := _reasoning_text(choice_data, message)
+	diagnostics["raw_content"] = raw_content
+	diagnostics["content_length"] = raw_content.length()
+	diagnostics["content_present"] = not raw_content.is_empty()
+	diagnostics["reasoning_present"] = not reasoning_content.is_empty()
+	diagnostics["reasoning_length"] = reasoning_content.length()
+	if raw_content.is_empty():
+		diagnostics["error_type"] = (
+			"reasoning_only_response"
+			if not reasoning_content.is_empty()
+			else "empty_content"
+		)
+		_complete_failure(
+			on_complete,
+			[
+				(
+					"模型只返回了思考内容，没有返回居民动作 JSON"
+					if not reasoning_content.is_empty()
+					else "模型返回了空回答"
+				),
+			],
+			diagnostics,
+		)
+		return
+	var cleaned_content := _strip_thinking_blocks(raw_content)
+	diagnostics["thinking_block_removed"] = bool(cleaned_content.get("removed", false))
+	var content := String(cleaned_content.get("text", "")).strip_edges()
+	diagnostics["parse_content_length"] = content.length()
 	if content.is_empty():
-		diagnostics["error_type"] = "empty_content"
-		_complete_failure(on_complete, ["模型返回了空回答"], diagnostics)
+		diagnostics["error_type"] = "thinking_only_content"
+		_complete_failure(
+			on_complete,
+			["模型只返回了思考内容，没有返回居民动作 JSON"],
+			diagnostics,
+		)
 		return
 	var repair := _parse_decision_content(content)
 	var decision: Variant = repair.get("decision")
@@ -566,9 +598,9 @@ func _handle_transport_result(
 
 func _parse_decision_content(content: String) -> Dictionary:
 	# Provider responses occasionally wrap an otherwise valid object in a
-	# markdown fence or one short sentence. Strip only that outer noise and a
-	# trailing comma; the World/Agent contract still performs the full action
-	# validation after this parse. Anything else remains a bounded retry.
+	# markdown fence or one short sentence. Parse balanced JSON objects instead
+	# of taking the first and last braces: thinking text may contain an example
+	# object before the actual resident decision.
 	var candidates: Array[Dictionary] = []
 	var trimmed := content.strip_edges()
 	candidates.append({"text": trimmed, "kind": "direct"})
@@ -582,14 +614,12 @@ func _parse_decision_content(content: String) -> Dictionary:
 				last_fence - first_newline - 1,
 			).strip_edges()
 			candidates.append({"text": unfenced, "kind": "code_fence"})
-	var object_start := unfenced.find("{")
-	var object_end := unfenced.rfind("}")
-	if object_start >= 0 and object_end > object_start:
-		var extracted := unfenced.substr(
-			object_start,
-			object_end - object_start + 1,
-		).strip_edges()
-		candidates.append({"text": extracted, "kind": "outer_text"})
+	var object_candidates := _balanced_json_objects(unfenced)
+	for index in range(object_candidates.size() - 1, -1, -1):
+		candidates.append({
+			"text": object_candidates[index],
+			"kind": "outer_text",
+		})
 	for candidate: Dictionary in candidates:
 		var candidate_text := String(candidate.get("text", ""))
 		var parsed: Variant = _try_parse_json(candidate_text)
@@ -612,6 +642,95 @@ func _parse_decision_content(content: String) -> Dictionary:
 					),
 				}
 	return {"decision": null, "repaired": false}
+
+
+func _response_text(value: Variant) -> String:
+	if typeof(value) == TYPE_STRING:
+		return (value as String).strip_edges()
+	if value is Array:
+		var parts: Array[String] = []
+		for part_value: Variant in value as Array:
+			var part_text := _response_text(part_value)
+			if not part_text.is_empty():
+				parts.append(part_text)
+		return "\n".join(parts).strip_edges()
+	if value is Dictionary:
+		var part := value as Dictionary
+		for key: String in ["text", "content", "value"]:
+			if part.has(key):
+				return _response_text(part.get(key))
+	return ""
+
+
+func _reasoning_text(choice: Dictionary, message: Dictionary) -> String:
+	for source: Dictionary in [message, choice]:
+		for key: String in [
+			"reasoning_content",
+			"thinking_content",
+			"reasoning",
+			"thinking",
+		]:
+			if source.has(key):
+				var text := _response_text(source.get(key))
+				if not text.is_empty():
+					return text
+	return ""
+
+
+func _strip_thinking_blocks(content: String) -> Dictionary:
+	var cleaned := content
+	var removed := false
+	for tag: String in ["think", "thinking", "reasoning"]:
+		var regex := RegEx.new()
+		if regex.compile("(?is)<%s>.*?</%s>" % [tag, tag]) != OK:
+			continue
+		var replaced := regex.sub(cleaned, "", true)
+		if replaced != cleaned:
+			removed = true
+		cleaned = replaced
+		var opening := RegEx.new()
+		if opening.compile("(?is)<%s>" % tag) != OK:
+			continue
+		var match := opening.search(cleaned)
+		if match != null:
+			# An unfinished thinking block cannot safely be searched for a
+			# decision object; discard it and let the caller report a clear error.
+			cleaned = cleaned.substr(0, match.get_start()).strip_edges()
+			removed = true
+	return {"text": cleaned.strip_edges(), "removed": removed}
+
+
+func _balanced_json_objects(text: String) -> Array[String]:
+	var objects: Array[String] = []
+	var depth := 0
+	var object_start := -1
+	var in_string := false
+	var escaped := false
+	for index: int in text.length():
+		var character := text.substr(index, 1)
+		if in_string:
+			if escaped:
+				escaped = false
+			elif character == "\\":
+				escaped = true
+			elif character == '"':
+				in_string = false
+			continue
+		if character == '"':
+			in_string = true
+		elif character == '{':
+			if depth == 0:
+				object_start = index
+			depth += 1
+		elif character == '}' and depth > 0:
+			depth -= 1
+			if depth == 0 and object_start >= 0:
+				objects.append(text.substr(
+					object_start,
+					index - object_start + 1,
+				).strip_edges())
+				object_start = -1
+	return objects
 
 
 func _try_parse_json(text: String) -> Variant:

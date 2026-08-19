@@ -212,7 +212,11 @@ func _model_catalog_result(response: Dictionary) -> Dictionary:
 		if typeof(value) == TYPE_STRING:
 			model_id = (value as String).strip_edges()
 		elif value is Dictionary:
-			model_id = String((value as Dictionary).get("id", "")).strip_edges()
+			var entry := value as Dictionary
+			model_id = String(entry.get(
+				"id",
+				entry.get("model", entry.get("name", "")),
+			)).strip_edges()
 		if not model_id.is_empty() and model_id not in models:
 			models.append(model_id)
 	if models.is_empty():
@@ -253,9 +257,21 @@ func _build_request_body(model_request: Dictionary) -> Dictionary:
 	body.erase("max_tokens")
 	# Ollama 与 LM Studio 的 OpenAI-compatible 端点支持 reasoning_effort=none。
 	# 居民决策需要把输出预算留给最终 JSON，避免思考模型只返回推理过程。
-	if _provider_id() in ["ollama", "lm-studio"]:
+	if _should_disable_thinking():
 		body["reasoning_effort"] = "none"
 	return body
+
+
+func _should_disable_thinking() -> bool:
+	var configured: Variant = _config.get("disable_thinking", null)
+	if typeof(configured) == TYPE_BOOL:
+		return configured as bool
+	# 动态兼容连接用于居民结构化决策，默认关闭服务端思考；内置
+	# Ollama/LM Studio 也沿用这个字段，旧配置无需迁移即可生效。
+	return (
+		_provider_id() in ["ollama", "lm-studio"]
+		or _provider_id().begins_with("openai-compatible-")
+	)
 
 
 func validate_configuration() -> Array[String]:

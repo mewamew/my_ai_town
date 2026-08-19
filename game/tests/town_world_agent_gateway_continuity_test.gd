@@ -1314,7 +1314,14 @@ func _test_provider_diagnostic_keeps_safe_code_only() -> void:
 		"provider_error_code": "insufficient_balance",
 		"provider_error_message": "secret account detail",
 		"raw_response": {"api_key": "must-not-leak"},
-		"request": {"prompt": "private OC"},
+		"request": {
+			"prompt": "private OC",
+			"url": "https://model.example/v1/chat/completions?api_key=secret",
+		},
+		"content_present": true,
+		"reasoning_present": true,
+		"content_length": 32,
+		"request_url": "https://model.example/v1/chat/completions",
 		"retryable": false,
 	}) as Dictionary
 	_expect_equal(
@@ -1325,6 +1332,11 @@ func _test_provider_diagnostic_keeps_safe_code_only() -> void:
 	_expect(not diagnostic.has("provider_error_message"), "provider message is not exposed")
 	_expect(not diagnostic.has("raw_response"), "raw provider response is not exposed")
 	_expect(not diagnostic.has("request"), "private prompt is not exposed")
+	_expect_equal(
+		diagnostic.get("request_url"),
+		"https://model.example/v1/chat/completions?<已隐藏参数>",
+		"request URL is exposed without query credentials",
+	)
 
 
 func _test_failed_decision_uses_available_world_prop() -> void:

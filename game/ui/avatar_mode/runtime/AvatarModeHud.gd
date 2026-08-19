@@ -213,6 +213,7 @@ var _using_placeholder := true
 var _binding_batch := false
 var _revision_by_scope: Dictionary = {}
 var _last_confirmed_data_by_scope: Dictionary = {}
+var _last_confirmed_view_model_by_scope: Dictionary = {}
 var _adapter_contract_gaps: Dictionary = {}
 var _last_dispatch_result: Dictionary = {}
 var _configured := false
@@ -348,6 +349,7 @@ func configure(view_models: Dictionary, fixture: Dictionary) -> void:
 	_using_placeholder = true
 	_revision_by_scope.clear()
 	_last_confirmed_data_by_scope.clear()
+	_last_confirmed_view_model_by_scope.clear()
 	for scope: String in REQUIRED_ADAPTER_SCOPES:
 		var view_model_value: Variant = _view_models.get(scope)
 		if not view_model_value is Dictionary:
@@ -359,6 +361,7 @@ func configure(view_models: Dictionary, fixture: Dictionary) -> void:
 			_last_confirmed_data_by_scope[scope] = (
 				data_value as Dictionary
 			).duplicate(true)
+			_last_confirmed_view_model_by_scope[scope] = view_model.duplicate(true)
 	var town_hud_view_model := _view_models.get(TIME_HUD_SCOPE, {}) as Dictionary
 	if not town_hud_view_model.is_empty():
 		var town_data_value: Variant = town_hud_view_model.get("data", {})
@@ -401,6 +404,7 @@ func bind_town_ui_adapter(adapter: Node) -> PackedStringArray:
 	_view_models.clear()
 	_revision_by_scope.clear()
 	_last_confirmed_data_by_scope.clear()
+	_last_confirmed_view_model_by_scope.clear()
 	_adapter_contract_gaps.clear()
 	_last_dispatch_result.clear()
 	var callback := Callable(self, "_on_adapter_view_model_changed")
@@ -439,6 +443,7 @@ func unbind_town_ui_adapter() -> void:
 	_view_models.clear()
 	_revision_by_scope.clear()
 	_last_confirmed_data_by_scope.clear()
+	_last_confirmed_view_model_by_scope.clear()
 	_adapter_contract_gaps.clear()
 	_last_dispatch_result.clear()
 	if is_node_ready():
@@ -471,6 +476,9 @@ func apply_view_model(view_model: Dictionary) -> PackedStringArray:
 	var last_confirmed_raw: Variant = _last_confirmed_data_by_scope.get(scope, {})
 	if last_confirmed_raw is Dictionary:
 		last_confirmed = (last_confirmed_raw as Dictionary).duplicate(true)
+	var last_confirmed_view_model := (
+		_last_confirmed_view_model_by_scope.get(scope, {}) as Dictionary
+	).duplicate(true)
 	var operation_status: String = str(
 		(view_model.get("operation", {}) as Dictionary).get("status", "")
 	)
@@ -481,12 +489,44 @@ func apply_view_model(view_model: Dictionary) -> PackedStringArray:
 		render_data = last_confirmed
 	elif incoming_data.is_empty() and not last_confirmed.is_empty():
 		render_data = last_confirmed
+	elif (
+		scope == "avatar"
+		and not last_confirmed.is_empty()
+		and not _avatar_mode_is_valid(incoming_data.get("mode", ""))
+	):
+		# Adapter refreshes can carry a partial avatar payload while the route
+		# transition is still settling. Never let that transient payload hide the
+		# only HUD that can return the player to observer mode.
+		render_data = incoming_data.duplicate(true)
 	elif not incoming_data.is_empty():
 		_last_confirmed_data_by_scope[scope] = incoming_data.duplicate(true)
 	var render_snapshot := view_model.duplicate(true)
+	if scope == "avatar" and not last_confirmed_view_model.is_empty():
+		var fallback_data := last_confirmed_view_model.get("data", {}) as Dictionary
+		for field_name: String in [
+			"mode",
+			"focusedTargetId",
+			"currentTarget",
+			"nextTarget",
+			"contextTargets",
+		]:
+			if not render_data.has(field_name) and fallback_data.has(field_name):
+				render_data[field_name] = fallback_data[field_name]
+		var actions := render_snapshot.get("actions", {}) as Dictionary
+		var fallback_actions := last_confirmed_view_model.get("actions", {}) as Dictionary
+		for action_name: String in ["attackTarget", "exitMode", "retry"]:
+			if not actions.has(action_name) and fallback_actions.has(action_name):
+				actions[action_name] = fallback_actions[action_name]
+		render_snapshot["actions"] = actions
 	render_snapshot["data"] = render_data
 	_view_models[scope] = render_snapshot
 	_revision_by_scope[scope] = incoming_revision
+	if (
+		scope != "avatar"
+		or _avatar_mode_is_valid(render_data.get("mode", ""))
+	):
+		_last_confirmed_data_by_scope[scope] = render_data.duplicate(true)
+		_last_confirmed_view_model_by_scope[scope] = render_snapshot.duplicate(true)
 	_update_adapter_contract_gaps(scope, view_model)
 	var render_changed := (
 		previous_render_projection
@@ -614,6 +654,10 @@ func _render_projection(scope: String, view_model: Dictionary) -> Dictionary:
 		data[field_name] = target
 	projection["data"] = data
 	return projection
+
+
+func _avatar_mode_is_valid(value: Variant) -> bool:
+	return String(value) in ["observer", "avatar_descent", "avatar_active"]
 
 
 func get_adapter_integration_snapshot() -> Dictionary:

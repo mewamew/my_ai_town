@@ -11,6 +11,7 @@ func _initialize() -> void:
 	_expect(provider_script != null, "通用 OpenAI Compatible Provider 脚本可加载")
 	if provider_script != null:
 		_test_generic_conservative_request(provider_script)
+		_test_dynamic_profile_disables_reasoning(provider_script)
 		_test_base_url_completion(provider_script)
 		_test_local_api_key_is_optional(provider_script)
 		_test_model_catalog_discovery_contract(provider_script)
@@ -94,6 +95,30 @@ func _test_base_url_completion(provider_script: Script) -> void:
 		preset_transport.requests[0].get("url") if preset_transport.requests.size() == 1 else "",
 		"https://api.302.ai/v1/chat/completions",
 		"a provider preset completes its default base URL",
+	)
+
+
+func _test_dynamic_profile_disables_reasoning(provider_script: Script) -> void:
+	var transport := FakeTransport.new()
+	transport.response = _success_response("dynamic-profile-decision")
+	var provider: RefCounted = provider_script.new(null, transport, {
+		"api_key": "temporary-compatible-key",
+		"endpoint": "http://192.168.1.29:11433/v1",
+		"api_model": "llama-local",
+		"preset_provider_id": "openai-compatible-2",
+		"allow_insecure_http": true,
+	})
+	provider.call(
+		"request_decision",
+		{"messages": [{"role": "user", "content": "决定"}]},
+		ResultCollector.new().collect,
+	)
+	_expect_equal(
+		transport.requests[0].get("body", {}).get("reasoning_effort")
+			if transport.requests.size() == 1
+			else null,
+		"none",
+		"动态兼容连接默认关闭思考，给居民动作 JSON 留出预算",
 	)
 
 
@@ -184,6 +209,21 @@ func _test_model_catalog_discovery_contract(provider_script: Script) -> void:
 		parsed.get("models", []),
 		["vendor/model-a", "vendor/model-b"],
 		"discovered model ids are validated and deduplicated",
+	)
+	var alternate_shape := provider_302.call("_model_catalog_result", {
+		"result": HTTPRequest.RESULT_SUCCESS,
+		"status_code": 200,
+		"body": JSON.stringify({
+			"models": [
+				{"name": "llama-3"},
+				{"model": "qwen-local"},
+			],
+		}).to_utf8_buffer(),
+	}) as Dictionary
+	_expect_equal(
+		alternate_shape.get("models", []),
+		["llama-3", "qwen-local"],
+		"local model catalog accepts name and model aliases",
 	)
 
 

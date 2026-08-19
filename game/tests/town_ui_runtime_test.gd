@@ -2329,6 +2329,33 @@ func _scenario_ui_runtime_host_navigation() -> void:
 		"active avatar mode enables AvatarModeHud input",
 	)
 	var active_snapshot := _avatar_hud.call("get_runtime_snapshot") as Dictionary
+	_adapter.publish("avatar", {
+		"source": "runtime",
+		"capabilityMode": "formal",
+		"formalReady": true,
+		# 路由切换期间模拟一个缺少 mode 的部分快照；HUD 应保留上一次
+		# 已确认的 active 状态，不能把返回观察按钮一起卸载。
+		"focusedTargetId": "resident-lin",
+	})
+	await process_frame
+	var partial_avatar_snapshot := _avatar_hud.call("get_runtime_snapshot") as Dictionary
+	_expect(_avatar_hud.visible, "partial avatar snapshot keeps the last visible HUD")
+	_expect_equal(
+		partial_avatar_snapshot.get("avatarMode"),
+		"avatar_active",
+		"partial avatar snapshot retains the last confirmed mode",
+	)
+	_expect(
+		"exitMode" in (partial_avatar_snapshot.get("actionIds", []) as Array),
+		"partial avatar snapshot retains the return-to-observer action",
+	)
+	_adapter.publish("avatar", {
+		"source": "runtime",
+		"capabilityMode": "formal",
+		"formalReady": true,
+		"mode": "avatar_active",
+	})
+	await process_frame
 	await _verify_avatar_skillbar_touch_scaling()
 	# The conversation page owns the visible interaction surface. Keep the
 	# AvatarModeHud mounted for fast restoration, but hide its skillbar and
