@@ -161,10 +161,10 @@ func _find_scroll_target(position: Vector2) -> Dictionary:
 						"horizontal": horizontal,
 					}
 			current = current.get_parent()
-		# A touch can arrive before the emulated mouse position has updated, or
-		# after an overlay changed the hovered control. Fall back to the actual
-		# scene hit-test instead of requiring the player to grab the native bar.
-		return fallback_target
+		# A valid GUI hit without a scroll ancestor belongs to an overlay or
+		# another non-scrollable control. Respect that hit result instead of
+		# scrolling a page underneath the overlay.
+		return {}
 	return fallback_target
 
 
