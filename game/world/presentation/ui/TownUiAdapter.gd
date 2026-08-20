@@ -2556,7 +2556,7 @@ func _build_town_hud_view_model(operation: Dictionary, error: Dictionary) -> Dic
 	var can_control_observer_camera := (
 		started
 		and not player_avatar_enabled
-		and view_mode == "town"
+		and view_mode in ["town", "interior"]
 		and _runtime != null
 		and _runtime.has_method("zoom_observer_camera")
 		and _runtime.has_method("reset_observer_camera")

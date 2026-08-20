@@ -750,7 +750,10 @@ func _build_custom_connection_selector(
 	scroll.offset_right = -popup_margin
 	scroll.offset_bottom = -popup_margin
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
+	# MobileTouchScrollRouter lets the whole popup list follow a finger. Keep
+	# the native range available for mouse and keyboard users, but do not force
+	# mobile players to grab the narrow scrollbar thumb.
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	dropdown.add_child(scroll)
 	var scroll_bar := scroll.get_v_scroll_bar()
 	scroll_bar.custom_minimum_size.x = _scaled_spacing(20.0)

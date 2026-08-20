@@ -2472,9 +2472,21 @@ func _observer_camera_accepts_input() -> bool:
 		_observer_camera_input_enabled
 		and _avatar_mode == AVATAR_MODE_OBSERVER
 		and _world != null
-		and not bool(_world.is_paused())
+		and _observer_camera_pause_allows_input()
 		and not _is_text_input_focused()
 	)
+
+
+func _observer_camera_pause_allows_input() -> bool:
+	if not bool(_world.is_paused()):
+		return true
+	# 手动暂停只冻结小镇时间，不冻结玩家的观察操作。暂停菜单、后台
+	# 暂停和居民编辑等覆盖页面仍然保留输入隔离，避免镜头或建筑入口在
+	# 页面下方继续响应。
+	var pause_reasons := (
+		_world.get_lifecycle_state().get("pauseReasons", []) as Array
+	)
+	return pause_reasons.size() == 1 and pause_reasons.has("manual")
 
 
 func _observer_camera_accepts_zoom_input() -> bool:

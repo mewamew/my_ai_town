@@ -14,6 +14,7 @@ var return_to_provider_settings := false
 const UI_SIGNALS := preload(
 	"res://ui/common/AiTownUiSignals.gd"
 )
+const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
 const UiViewModel = preload("res://ui/common/AiTownUiViewModel.gd")
 const UiNodeRetirement = preload("res://ui/common/AiTownUiNodeRetirement.gd")
 const PageTheme = preload(
@@ -106,6 +107,8 @@ var _body: BoxContainer
 var _resident_section: PanelContainer
 var _catalog_section: PanelContainer
 var _inspector_section: PanelContainer
+var _resident_scroll: ScrollContainer
+var _model_scroll: ScrollContainer
 var _resident_list: VBoxContainer
 var _provider_list: BoxContainer
 var _model_list: VBoxContainer
@@ -803,18 +806,18 @@ func _build_resident_section() -> void:
 	_selected_count_label = _label("单人模式", 17, PageTheme.INK_MUTED, "SelectionModeSummary")
 	stack.add_child(_selected_count_label)
 
-	var scroll := ScrollContainer.new()
-	scroll.name = "ResidentQueueScroll"
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.custom_minimum_size = Vector2(0, 540)
-	stack.add_child(scroll)
+	_resident_scroll = ScrollContainer.new()
+	_resident_scroll.name = "ResidentQueueScroll"
+	_resident_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_resident_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_resident_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_resident_scroll.custom_minimum_size = Vector2(0, 540)
+	stack.add_child(_resident_scroll)
 	_resident_list = VBoxContainer.new()
 	_resident_list.name = "ResidentRows"
 	_resident_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_resident_list.add_theme_constant_override("separation", 8)
-	scroll.add_child(_resident_list)
+	_resident_scroll.add_child(_resident_list)
 
 
 func _build_catalog_section() -> void:
@@ -837,18 +840,18 @@ func _build_catalog_section() -> void:
 	divider.set_meta("owner_level", "section_divider")
 	stack.add_child(divider)
 
-	var model_scroll := ScrollContainer.new()
-	model_scroll.name = "ModelCatalogScroll"
-	model_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	model_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	model_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	model_scroll.custom_minimum_size = Vector2(0, 220)
-	stack.add_child(model_scroll)
+	_model_scroll = ScrollContainer.new()
+	_model_scroll.name = "ModelCatalogScroll"
+	_model_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_model_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_model_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_model_scroll.custom_minimum_size = Vector2(0, 220)
+	stack.add_child(_model_scroll)
 	_model_list = VBoxContainer.new()
 	_model_list.name = "ModelCards"
 	_model_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_model_list.add_theme_constant_override("separation", 10)
-	model_scroll.add_child(_model_list)
+	_model_scroll.add_child(_model_list)
 
 	var detail_stack := VBoxContainer.new()
 	detail_stack.name = "SelectedModelDetails"
@@ -922,6 +925,8 @@ func _render() -> void:
 		_composite_desktop.call("apply_view_model", _presentation_view_model())
 	_sync_completion_modal_visibility()
 	_rendering = false
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		_queue_responsive_layout()
 	call_deferred("_restore_pending_focus")
 
 
@@ -1573,7 +1578,12 @@ func _queue_responsive_layout() -> void:
 
 func _apply_responsive_layout_for_size(viewport_size: Vector2) -> void:
 	_layout_profile = layout_profile_for_size(viewport_size)
-	var use_accepted_composite := viewport_size.x >= 1720.0 and viewport_size.y >= 981.0
+	var mobile_runtime := MOBILE_UI_PROFILE.is_mobile_runtime()
+	var use_accepted_composite := (
+		not mobile_runtime
+		and viewport_size.x >= 1720.0
+		and viewport_size.y >= 981.0
+	)
 	_native_root.visible = not use_accepted_composite
 	_composite_host.visible = use_accepted_composite
 	if _native_modal_panel != null:
@@ -1583,18 +1593,22 @@ func _apply_responsive_layout_for_size(viewport_size: Vector2) -> void:
 		_native_modal_panel.offset_top = -round(modal_height * 0.5)
 		_native_modal_panel.offset_right = round(modal_width * 0.5)
 		_native_modal_panel.offset_bottom = round(modal_height * 0.5)
-	var stacked := _layout_profile in ["compact", "narrow_landscape", "portrait"]
+	var stacked := mobile_runtime or _layout_profile in ["compact", "narrow_landscape", "portrait"]
 	_body.vertical = stacked
-	_header_top.vertical = _layout_profile in ["narrow_landscape", "portrait"]
+	_header_top.vertical = mobile_runtime or _layout_profile in ["narrow_landscape", "portrait"]
 	_summary_grid.columns = (
 		1
-		if _layout_profile in ["narrow_landscape", "portrait"]
+		if mobile_runtime or _layout_profile in ["narrow_landscape", "portrait"]
 		else 2 if _layout_profile == "compact" else 4
 	)
-	_provider_list.vertical = _layout_profile in ["narrow_landscape", "portrait"]
+	_provider_list.vertical = mobile_runtime or _layout_profile in ["narrow_landscape", "portrait"]
 	_page_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_page_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	if stacked:
-		_page_panel.custom_minimum_size = Vector2(maxf(viewport_size.x - 48.0, 320.0), 2020.0)
+		_page_panel.custom_minimum_size = Vector2(
+			maxf(viewport_size.x - (32.0 if mobile_runtime else 48.0), 320.0),
+			2020.0,
+		)
 		for section in [_resident_section, _catalog_section, _inspector_section]:
 			section.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			section.custom_minimum_size = Vector2(0, 580)
@@ -1606,7 +1620,46 @@ func _apply_responsive_layout_for_size(viewport_size: Vector2) -> void:
 		_resident_section.size_flags_horizontal = Control.SIZE_FILL
 		_catalog_section.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_inspector_section.size_flags_horizontal = Control.SIZE_FILL
+	if mobile_runtime:
+		_apply_mobile_section_minimum_sizes()
+	if _resident_scroll != null:
+		_resident_scroll.vertical_scroll_mode = (
+			ScrollContainer.SCROLL_MODE_DISABLED
+			if mobile_runtime
+			else ScrollContainer.SCROLL_MODE_AUTO
+		)
+	if _model_scroll != null:
+		_model_scroll.vertical_scroll_mode = (
+			ScrollContainer.SCROLL_MODE_DISABLED
+			if mobile_runtime
+			else ScrollContainer.SCROLL_MODE_AUTO
+		)
 	_sync_completion_modal_visibility()
+
+
+func _apply_mobile_section_minimum_sizes() -> void:
+	if _resident_list == null or _model_list == null:
+		return
+	# The two desktop list panes become ordinary content on a phone. Give the
+	# outer page enough height for their rows so a finger can move through one
+	# continuous page instead of having to find a nested scrollbar.
+	var resident_height := maxf(
+		580.0,
+		210.0 + float(_resident_list.get_child_count()) * 90.0,
+	)
+	var catalog_height := maxf(
+		580.0,
+		320.0
+			+ float(_provider_list.get_child_count()) * 66.0
+			+ float(_model_list.get_child_count()) * 142.0,
+	)
+	var inspector_height := 820.0
+	_resident_section.custom_minimum_size.y = resident_height
+	_catalog_section.custom_minimum_size.y = catalog_height
+	_inspector_section.custom_minimum_size.y = inspector_height
+	_page_panel.custom_minimum_size.y = (
+		resident_height + catalog_height + inspector_height + 180.0
+	)
 
 
 func _refresh_from_adapter() -> void:
