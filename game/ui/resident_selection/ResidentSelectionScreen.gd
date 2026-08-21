@@ -5,6 +5,7 @@ const UiNodeRetirement := preload("res://ui/common/AiTownUiNodeRetirement.gd")
 
 
 const UiViewModel := preload("res://ui/common/AiTownUiViewModel.gd")
+const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
 
 
 signal resident_selection_requested(resident_id: String, should_select: bool, revision: int)
@@ -2588,6 +2589,17 @@ func _apply_responsive_layout() -> void:
 
 
 func _layout_mode_for_size(viewport_size: Vector2) -> LayoutMode:
+	# Android/iOS use a mobile reference viewport (currently 1280x720).  That
+	# size also satisfies the desktop STANDARD threshold below, which used to
+	# send phones through the compact desktop shell and made the resident picker
+	# look like the retired placeholder page.  Resolve mobile first so the
+	# desktop thresholds remain unchanged for every desktop build and window.
+	if MOBILE_UI_PROFILE.is_mobile_runtime():
+		return (
+			LayoutMode.PHONE_LANDSCAPE
+			if viewport_size.x >= viewport_size.y
+			else LayoutMode.PHONE_PORTRAIT
+		)
 	var aspect := viewport_size.x / maxf(1.0, viewport_size.y)
 	if viewport_size.x >= 1920.0 and viewport_size.y >= 1080.0:
 		return LayoutMode.DESKTOP
