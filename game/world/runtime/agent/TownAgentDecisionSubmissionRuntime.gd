@@ -36,6 +36,7 @@ const ACTION_SUPPORT := preload(
 const ACTION_VALIDATION := preload(
 	"res://world/runtime/action/TownActionValidation.gd"
 )
+const TOWN_LOG := preload("res://world/runtime/TownLog.gd")
 
 
 static func submit(host, resident_name: String, decision: Dictionary) -> Dictionary:
@@ -186,6 +187,9 @@ static func submit_valid(
 	context: Dictionary,
 ) -> Dictionary:
 	var resident_id := String(context.get("residentId", ""))
+	var resident_name_for_log: String = host.resident_display_name(resident_id)
+	if resident_name_for_log.is_empty():
+		resident_name_for_log = resident_id
 	var decision_id := String(context.get("decisionId", ""))
 	var inflight_events := context.get("inflightEvents", []) as Array
 	var inflight_results := context.get("inflightResults", []) as Array
@@ -194,6 +198,13 @@ static func submit_valid(
 	var is_initial_invitation := bool(context.get("invitationRequiresReply", false))
 	var handling := decision.get("handling") as String
 	if handling == "continue_current":
+		TOWN_LOG.line(
+			"AGENT",
+			"%s | %s 选择了: 继续当前动作" % [
+				host._time_label(),
+				resident_name_for_log,
+			],
+		)
 		return AGENT_DECISION_ACTION_RUNTIME.continue_decision(
 			host, resident_id, resident, decision, context
 		)
@@ -201,6 +212,51 @@ static func submit_valid(
 		host._schedule_decision(resident_id, false)
 		return host._complete_agent_submission({"ok": false, "stale": false, "errors": ["决定必须继续当前动作或提交新动作"]})
 	var action := (decision.get("action", {}) as Dictionary).duplicate(true)
+	# 行为流日志: LLM 本轮最终选择的动作(与"收到选项"呼应)
+	var decision_conflict_intent := (
+		decision.get("conflict_intent", {}) as Dictionary
+		if decision.get("conflict_intent") is Dictionary
+		else {}
+	)
+	var choice_summary := String(action.get("type", ""))
+	if not decision_conflict_intent.is_empty():
+		var intent_kind := String(decision_conflict_intent.get("kind", ""))
+		var intent_target := String(decision_conflict_intent.get("target_resident_id", ""))
+		if intent_kind.is_empty():
+			intent_kind = "意图"
+		var intent_label := intent_kind
+		if not intent_target.is_empty():
+			var intent_target_name: String = host.resident_display_name(intent_target)
+			if intent_target_name.is_empty():
+				intent_target_name = intent_target
+			intent_label += "→%s" % intent_target_name
+		choice_summary += "（%s）" % intent_label
+	var choice_target := String(action.get("target_resident_id", ""))
+	if not choice_target.is_empty():
+		var choice_target_name: String = host.resident_display_name(choice_target)
+		if choice_target_name.is_empty():
+			choice_target_name = choice_target
+		choice_summary += " 目标:%s" % choice_target_name
+	for choice_key: String in ["place", "prop", "verb", "activity_id"]:
+		var choice_value := String(action.get(choice_key, ""))
+		if not choice_value.is_empty():
+			choice_summary += " %s:%s" % [choice_key, choice_value]
+	var choice_text := String(action.get("line", "")).strip_edges()
+	if choice_text.is_empty():
+		choice_text = String(action.get("text", "")).strip_edges()
+	if not choice_text.is_empty():
+		choice_text = choice_text.replace("\n", " ")
+		if choice_text.length() > 40:
+			choice_text = choice_text.substr(0, 40) + "…"
+		choice_summary += " 台词:%s" % choice_text
+	TOWN_LOG.line(
+		"AGENT",
+		"%s | %s 选择了: %s" % [
+			host._time_label(),
+			resident_name_for_log,
+			choice_summary,
+		],
+	)
 	var current_action := resident.get("currentAction", {}) as Dictionary
 	if bool(context.get("wasPrefetched", false)) and not current_action.is_empty():
 		return host._complete_agent_submission(
