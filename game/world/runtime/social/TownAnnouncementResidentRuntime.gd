@@ -4,6 +4,7 @@ extends RefCounted
 const ACTION_VALIDATION := preload(
 	"res://world/runtime/action/TownActionValidation.gd"
 )
+const TOWN_LOG := preload("res://world/runtime/TownLog.gd")
 const SYSTEM_BULLETIN_PUBLISHER_ID := "world"
 
 
@@ -89,6 +90,20 @@ static func emit_reactions(
 	if resolved_reaction.is_empty():
 		resolved_reaction = _required_reaction(inflight_results)
 	if not resolved_reaction.is_empty():
+		# 行为流日志: 居民的内心活动(决策时的心理回应)
+		var reaction_text := String(resolved_reaction.get("text", "")).strip_edges()
+		if not reaction_text.is_empty():
+			var rname := host.resident_display_name(resident_id)
+			if rname.is_empty():
+				rname = resident_id
+			TOWN_LOG.line(
+				"AGENT",
+				"%s | %s 内心：%s" % [
+					host._time_label(),
+					rname,
+					reaction_text,
+				],
+			)
 		var payload := {
 			"reactionId": "%s::reaction" % decision_id,
 			"decisionId": decision_id,

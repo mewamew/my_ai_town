@@ -25,6 +25,7 @@ const AGENT_WORLD_QUERY_RUNTIME := preload(
 const GO_ACTION_PREFETCH_RUNTIME := preload(
 	"res://world/runtime/movement/TownGoActionPrefetchRuntime.gd"
 )
+const TOWN_LOG := preload("res://world/runtime/TownLog.gd")
 
 
 static func wake_packet(
@@ -55,6 +56,27 @@ static func wake_packet(
 			"available_for_conversation": CONVERSATION_RUNTIME._active_conversation_for_person(host, other_name).is_empty(),
 		})
 	var public_events: Array[Dictionary] = AGENT_WORLD_QUERY_RUNTIME.fact_payloads(events)
+	# 行为流日志: LLM 本轮感知到附近的人
+	if not nearby.is_empty():
+		var actor_name_for_log: String = host.resident_display_name(resident_name)
+		if actor_name_for_log.is_empty():
+			actor_name_for_log = resident_name
+		var nearby_lines: Array[String] = []
+		for nearby_value: Variant in nearby:
+			var nearby_person := nearby_value as Dictionary
+			var person_name := String(nearby_person.get("name", ""))
+			var person_doing := String(nearby_person.get("doing", ""))
+			if person_doing.is_empty():
+				person_doing = "空闲"
+			nearby_lines.append("%s(%s)" % [person_name, person_doing])
+		TOWN_LOG.line(
+			"AGENT",
+			"%s | %s 感知到: %s" % [
+				host._time_label(),
+				actor_name_for_log,
+				"、".join(nearby_lines),
+			],
+		)
 	var public_results: Array[Dictionary] = AGENT_WORLD_QUERY_RUNTIME.fact_payloads(results)
 	var social_results := WAKE_PACKET_PROJECTION.public_social_results(
 		social_results_value if social_results_value is Array else (
@@ -101,6 +123,32 @@ static func wake_packet(
 	var conflict_snapshot: Dictionary = AGENT_WORLD_QUERY_RUNTIME.conflict_snapshot(
 		host, resident_name, resident, WAKE_PACKET_PROJECTION.resident_ids(nearby),
 	)
+	# 行为流日志: LLM 本轮收到的冲突/动作选项(含暗杀/攻击目标)
+	var tension_options := conflict_snapshot.get("conflict_tension_options", []) as Array
+	if not tension_options.is_empty():
+		var option_actor_name: String = host.resident_display_name(resident_name)
+		if option_actor_name.is_empty():
+			option_actor_name = resident_name
+		var option_lines: Array[String] = []
+		for option_value: Variant in tension_options:
+			var option := option_value as Dictionary
+			var kind := String(option.get("kind", ""))
+			var target_id := String(option.get("target_resident_id", ""))
+			var option_label := kind
+			if not target_id.is_empty():
+				var target_name: String = host.resident_display_name(target_id)
+				if target_name.is_empty():
+					target_name = target_id
+				option_label += "→%s" % target_name
+			option_lines.append(option_label)
+		TOWN_LOG.line(
+			"AGENT",
+			"%s | %s 收到选项: %s" % [
+				host._time_label(),
+				option_actor_name,
+				"、".join(option_lines),
+			],
+		)
 	var post_injury_reaction: Dictionary = host.WORLD_EVENT_DELIVERY_PROJECTION.post_injury_reaction_for_host(host,
 		resident_name,
 		events,
