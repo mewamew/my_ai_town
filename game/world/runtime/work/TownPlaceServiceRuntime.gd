@@ -95,7 +95,7 @@ func build_default_states(
 		)
 		var owner_id := (
 			assigned_resident_ids[0]
-			if assigned_resident_ids.size() == 1
+			if not assigned_resident_ids.is_empty()
 			else ""
 		)
 		var capacity := int(profile.get("capacity", 0))
@@ -264,7 +264,18 @@ func service_control(resident: Dictionary) -> Dictionary:
 	var resident_id := String(resident.get("residentId", ""))
 	var current_place := String(resident.get("currentPlace", ""))
 	var current := state(current_place)
-	if current.is_empty() or String(current.get("owner_id", "")) != resident_id:
+	var workplace := String(
+		(resident.get("socialState", {}) as Dictionary).get("workplace", ""),
+	)
+	# owner_id 是旧存档沿用的当班协调者字段，不代表铺面归属。
+	# 同一工作地点的其他现任职员也可以调整服务状态。
+	if (
+		current.is_empty()
+		or (
+			String(current.get("owner_id", "")) != resident_id
+			and workplace != current_place
+		)
+	):
 		return {}
 	return {
 		"place_id": current_place,

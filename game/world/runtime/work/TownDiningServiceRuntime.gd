@@ -273,12 +273,12 @@ static func prioritize_dining_worker_arrival(
 			or String(social_state.get("workplace", ""))
 			== CONTENT_CATALOG.PLACE_DINING_HALL
 		)
-		if not is_dining_worker and resident_id != "resident_su_tang_01":
+		if not is_dining_worker:
 			continue
 		var rank := (
 			0
-			if resident_id == "resident_su_tang_01"
-			else 1 if job.contains("厨师") or job.contains("主理") else 2
+			if job.contains("厨师") or job.contains("主理")
+			else 1
 		)
 		if rank >= worker_rank:
 			continue
@@ -293,29 +293,6 @@ static func prioritize_dining_worker_arrival(
 	var held := candidate_minutes[worker_index]
 	candidate_minutes[worker_index] = candidate_minutes[earliest_index]
 	candidate_minutes[earliest_index] = held
-
-
-static func reserve_meal_preparation_task(world, source_ref: String) -> void:
-	var resident_id := "resident_su_tang_01"
-	if not world.resident_registry.records.has(resident_id):
-		return
-	var task := world.work_domain.tasks.task(
-		"meal-preparation:%s" % source_ref,
-	) as Dictionary
-	if (
-		task.is_empty()
-		or String(task.get("state", "")) not in ["open", "waiting"]
-		or not world._resident_can_accept_work_task(resident_id, task)
-	):
-		return
-	var accepted := world.work_domain.tasks.accept_task(
-		String(task.get("taskId", "")),
-		resident_id,
-		"occupation_dining_operator",
-		int(task.get("revision", 0)),
-	) as Dictionary
-	if accepted.get("ok") == true:
-		world._schedule_decision(resident_id, true, false, true)
 
 
 static func decorate_projected_meal_task(
@@ -636,12 +613,18 @@ static func publish_meal_menu_announcement(
 		if String(announcement.get("text", "")) == text:
 			return
 	var publisher_id: String = String(
-		"resident_su_tang_01"
-		if world.resident_registry.records.has("resident_su_tang_01")
-		else world.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.first_resident(world,
+		world.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.first_available_resident(
+			world,
 			"occupation_dining_operator",
 		)
 	)
+	if publisher_id.is_empty():
+		publisher_id = String(
+			world.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.first_resident(
+				world,
+				"occupation_dining_operator",
+			)
+		)
 	if publisher_id.is_empty():
 		world.publish_announcement(text)
 	else:

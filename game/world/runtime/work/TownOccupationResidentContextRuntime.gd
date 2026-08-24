@@ -31,6 +31,129 @@ static func first_resident(host, occupation_id: String) -> String:
 	return ""
 
 
+static func first_available_resident(
+	host,
+	occupation_id: String,
+	excluded_resident_ids: Dictionary = {},
+) -> String:
+	# 当前主职业优先于临时兼岗，避免自动接单时让兼岗居民抢在正式职员前面。
+	var primary_resident_id := first_available_primary_resident(
+		host,
+		occupation_id,
+		excluded_resident_ids,
+	)
+	if not primary_resident_id.is_empty():
+		return primary_resident_id
+	for resident_id: String in host.resident_registry.order:
+		if excluded_resident_ids.has(resident_id):
+			continue
+		var resident := host.resident_registry.records.get(
+			resident_id,
+			{},
+		) as Dictionary
+		if (
+			can_work_occupation(host, resident_id, occupation_id)
+			and available_for_work(host, resident)
+		):
+			return resident_id
+	return ""
+
+
+static func first_available_primary_resident(
+	host,
+	occupation_id: String,
+	excluded_resident_ids: Dictionary = {},
+) -> String:
+	for resident_id: String in host.resident_registry.order:
+		if excluded_resident_ids.has(resident_id):
+			continue
+		var resident := host.resident_registry.records.get(
+			resident_id,
+			{},
+		) as Dictionary
+		if (
+			primary_id(host, resident) == occupation_id
+			and available_for_work(host, resident)
+		):
+			return resident_id
+	return ""
+
+
+static func occupation_ids_for_place(host, place_id: String) -> Array[String]:
+	var normalized := place_id.strip_edges()
+	var result: Array[String] = []
+	if normalized.is_empty():
+		return result
+	for value: Variant in (
+		host.world_definition.world_data.get("occupations", []) as Array
+	):
+		if value is not Dictionary:
+			continue
+		var occupation := value as Dictionary
+		var related_places := (
+			occupation.get("relatedWorkplacePlaces", []) as Array
+		)
+		if (
+			String(occupation.get("primaryWorkplacePlace", "")) != normalized
+			and not related_places.has(normalized)
+		):
+			continue
+		var occupation_id := String(
+			occupation.get("occupationId", ""),
+		).strip_edges()
+		if not occupation_id.is_empty() and not result.has(occupation_id):
+			result.append(occupation_id)
+	result.sort()
+	return result
+
+
+static func resident_ids_for_place(
+	host,
+	place_id: String,
+	available_only := false,
+) -> Array[String]:
+	var occupation_ids := occupation_ids_for_place(host, place_id)
+	var responsible: Dictionary = {}
+	for occupation_id: String in occupation_ids:
+		var post := host._work.staffing.post_for_occupation(
+			occupation_id,
+		) as Dictionary
+		for resident_id_value: Variant in post.get(
+			"responsibleResidentIds",
+			[],
+		) as Array:
+			responsible[String(resident_id_value)] = true
+	# 开局早期或旧存档没有岗位快照时，仍以居民当前职业为准重建结果。
+	if responsible.is_empty():
+		for resident_id: String in host.resident_registry.order:
+			if occupation_ids.has(primary_id(
+				host,
+				host.resident_registry.records.get(resident_id, {}) as Dictionary,
+			)):
+				responsible[resident_id] = true
+	var result: Array[String] = []
+	for resident_id: String in host.resident_registry.order:
+		if not responsible.has(resident_id):
+			continue
+		var resident := host.resident_registry.records.get(
+			resident_id,
+			{},
+		) as Dictionary
+		if available_only and not available_for_work(host, resident):
+			continue
+		result.append(resident_id)
+	return result
+
+
+static func first_resident_for_place(
+	host,
+	place_id: String,
+	available_only := false,
+) -> String:
+	var resident_ids := resident_ids_for_place(host, place_id, available_only)
+	return resident_ids[0] if not resident_ids.is_empty() else ""
+
+
 static func can_work_occupation(
 	host,
 	resident_id: String,

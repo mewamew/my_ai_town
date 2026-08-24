@@ -97,7 +97,6 @@ static func build_catalog(world_data: Dictionary, view_model: Dictionary) -> Dic
 		if String(occupation.get("workplacePlace", "")) == "市集铺面":
 			occupation["workplacePlace"] = "独立市集"
 		residents.append(entry)
-	var formal_catalog := FORMAL_CATALOG.load_catalog()
 	return {
 		"schemaVersion": 1,
 		"worldId": String(world_data.get("worldId", "")),
@@ -120,12 +119,9 @@ static func build_catalog(world_data: Dictionary, view_model: Dictionary) -> Dic
 					"doing": "刚刚抵达小镇",
 				},
 			},
-		},
-		"residents": residents,
-		"shopOwnerCandidates": (
-			formal_catalog.get("shopOwnerCandidates", {}) as Dictionary
-		).duplicate(true),
-	}
+			},
+			"residents": residents,
+		}
 
 
 static func default_model_id(provider_id: String) -> String:

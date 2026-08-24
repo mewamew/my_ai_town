@@ -300,7 +300,7 @@ func _initialization() -> Dictionary:
 		"residents": [{"resident_id": "resident-tang-xiao-man", "name": "唐小满", "gender": "女", "age": 29, "job": "摆杂货摊的", "home": "唐小满家", "workplace": "市集"}],
 		"places": [
 			{"name": "广场", "type": "公共地点", "owner": null, "owner_resident_id": null, "summary": "碰头、闲坐和聚集的地方"},
-			{"name": "工作坊", "type": "铺面", "owner": "林岚", "owner_resident_id": "resident-lin-lan", "summary": "做木工的地方"},
+			{"name": "工作坊", "type": "铺面", "owner": null, "owner_resident_id": null, "summary": "做木工的地方"},
 		],
 	}
 

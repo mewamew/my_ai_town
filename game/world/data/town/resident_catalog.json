@@ -30,24 +30,6 @@
       }
     }
   },
-  "shopOwnerCandidates": {
-    "工作坊": [
-      "resident_luo_yuan_01",
-      "resident_mi_ya_01"
-    ],
-    "独立市集": [
-      "resident_tang_xiaoman_01",
-      "resident_jiang_cheng_01"
-    ],
-    "码头仓库": [
-      "resident_zhou_jiming_01",
-      "resident_qiao_yiming_01"
-    ],
-    "花房咖啡馆": [
-      "resident_hanako_01",
-      "resident_tang_xiaoman_01"
-    ]
-  },
   "residents": [
     {
       "residentId": "resident_hanako_01",

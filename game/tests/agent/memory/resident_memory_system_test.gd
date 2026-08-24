@@ -956,6 +956,14 @@ func _test_player_query_is_read_only() -> void:
 		"",
 		"player output drops unknown internal resident IDs instead of exposing them",
 	)
+	_expect_equal(
+		system.call(
+			"_public_person_label",
+			"custom_resident_not_in_initialization",
+		),
+		"",
+		"player output drops stale custom resident IDs instead of exposing them",
+	)
 	_expect_equal(public_memory.get("interventions"), [], "new memory has no interventions")
 	var public_important := String(public_memory.get("important_memories", ""))
 	_expect(not public_important.is_empty(), "formal memories project a public working summary")

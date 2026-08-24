@@ -13,6 +13,20 @@ func _initialize() -> void:
 		[],
 		"标准居民初始化资料通过 JSON 契约",
 	)
+	var shop_without_owner := valid.duplicate(true)
+	(shop_without_owner.get("places", []) as Array).append({
+		"name": "无固定负责人的工作坊",
+		"type": "铺面",
+		"owner": null,
+		"owner_resident_id": null,
+		"summary": "由当前职业岗位中的居民提供服务",
+		"features": ["工作台"],
+	})
+	_expect_equal(
+		AgentContractScript.validate_initialization(shop_without_owner),
+		[],
+		"铺面可以不绑定固定居民负责人",
+	)
 	var cases: Array[Dictionary] = [
 		{"id": "not_object", "value": [], "error": "初始化资料必须是对象"},
 		{"id": "unknown_field", "value": _with_field(valid, "unknown", true), "error": "initialization.unknown"},

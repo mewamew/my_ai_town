@@ -49,19 +49,6 @@ static func compile(
 		return residents_by_id_result
 	var residents_by_id := residents_by_id_result.get("residents", {}) as Dictionary
 	var model_bindings := DRAFT.model_bindings(draft)
-	var selected_resident_ids: Dictionary = {}
-	for binding in model_bindings:
-		selected_resident_ids[String(binding.get("residentId", ""))] = true
-	var shop_owner_result := _resolve_shop_owners(
-		catalog,
-		selected_resident_ids,
-		places_by_name,
-	)
-	if not bool(shop_owner_result.get("ok", false)):
-		return shop_owner_result
-	var owned_place_by_resident := (
-		shop_owner_result.get("ownedPlaceByResident", {}) as Dictionary
-	)
 	var defaults := catalog.get("openingDefaults", {}) as Dictionary
 	var resident_body := defaults.get("residentBody", {}) as Dictionary
 	var resident_doing := String(defaults.get("residentDoing", "")).strip_edges()
@@ -94,7 +81,6 @@ static func compile(
 	var opening_residents: Array[Dictionary] = []
 	var owner_assignments: Dictionary = {}
 	var resolved_bindings: Array[Dictionary] = []
-	var workplace_residents: Dictionary = {}
 	var resident_names: Dictionary = {}
 	var south_entry := MOVEMENT.formal_south_entry(world_data) as Dictionary
 	if south_entry.is_empty():
@@ -160,23 +146,6 @@ static func compile(
 		var occupation := entry.get("occupation", {}) as Dictionary
 		var job_name := String(occupation.get("name", "")).strip_edges()
 		var workplace_name := String(occupation.get("workplacePlace", "")).strip_edges()
-		var legacy_owned_place_name := String(
-			occupation.get("ownedPlace", "")
-		).strip_edges()
-		var owned_place_name := String(
-			owned_place_by_resident.get(
-				resident_id,
-				legacy_owned_place_name,
-			)
-		).strip_edges()
-		if (
-			not legacy_owned_place_name.is_empty()
-			and owned_place_name != legacy_owned_place_name
-		):
-			errors.append(_error(
-				"residents.%s.occupation.ownedPlace" % resident_id,
-				"SESSION_CATALOG_PLACE_OWNER_AMBIGUOUS",
-			))
 		if job_name.is_empty():
 			errors.append(_error(
 				"residents.%s.occupation.name" % resident_id,
@@ -186,17 +155,6 @@ static func compile(
 			errors.append(_error(
 				"residents.%s.occupation.workplacePlace" % resident_id,
 				"SESSION_CATALOG_WORKPLACE_UNKNOWN",
-			))
-		if (
-			not owned_place_name.is_empty()
-			and (
-				not places_by_name.has(owned_place_name)
-				or String((places_by_name[owned_place_name] as Dictionary).get("type", "")) != "铺面"
-			)
-		):
-			errors.append(_error(
-				"residents.%s.occupation.ownedPlace" % resident_id,
-				"SESSION_CATALOG_OWNED_PLACE_INVALID",
 			))
 		var home_place := places_by_space.get(space_id, {}) as Dictionary
 		if home_place.is_empty() or String(home_place.get("type", "")) != "住家":
@@ -215,10 +173,6 @@ static func compile(
 			))
 			continue
 		owner_assignments[home_name] = resident_id
-		if not owned_place_name.is_empty():
-			var resident_ids := workplace_residents.get(owned_place_name, []) as Array
-			resident_ids.append(resident_id)
-			workplace_residents[owned_place_name] = resident_ids
 		var initial_state := {
 			"place": String(south_entry.get("placeName", "")),
 			"spaceId": String(south_entry.get("spaceId", "")),
@@ -242,26 +196,6 @@ static func compile(
 			"residentName": resident_name,
 			"llmBinding": (binding.get("llmBinding", {}) as Dictionary).duplicate(true),
 		})
-	if not errors.is_empty():
-		return _catalog_failure(errors)
-	for place_variant in world_data.get("places", []) as Array:
-		var place := place_variant as Dictionary
-		if String(place.get("type", "")) in ["公共地点", "住家"]:
-			continue
-		var place_name := String(place.get("name", ""))
-		var candidates := workplace_residents.get(place_name, []) as Array
-		if candidates.size() != 1:
-			errors.append(_error(
-				"ownerAssignments.%s" % place_name,
-				(
-					"SESSION_CATALOG_PLACE_OWNER_MISSING"
-					if candidates.is_empty()
-					else "SESSION_CATALOG_PLACE_OWNER_AMBIGUOUS"
-				),
-				{"residentIds": candidates.duplicate()},
-			))
-			continue
-		owner_assignments[place_name] = String(candidates[0])
 	if not errors.is_empty():
 		return _catalog_failure(errors)
 	var opening_environment := (
@@ -446,105 +380,6 @@ static func _appearance_id_is_known(value: Variant) -> bool:
 		):
 			return true
 	return false
-
-
-static func _resolve_shop_owners(
-	catalog: Dictionary,
-	selected_resident_ids: Dictionary,
-	places_by_name: Dictionary,
-) -> Dictionary:
-	var candidates_value: Variant = catalog.get("shopOwnerCandidates")
-	if candidates_value == null:
-		return {"ok": true, "ownedPlaceByResident": {}}
-	if not candidates_value is Dictionary or (candidates_value as Dictionary).is_empty():
-		return _catalog_failure([_error(
-			"shopOwnerCandidates",
-			"SESSION_CATALOG_SHOP_OWNER_CANDIDATES_INVALID",
-		)])
-	var candidates := candidates_value as Dictionary
-	var owned_place_by_resident: Dictionary = {}
-	var assigned_owner_ids: Dictionary = {}
-	var shop_names: Array[String] = []
-	for shop_name_value: Variant in candidates:
-		if not shop_name_value is String:
-			return _catalog_failure([_error(
-				"shopOwnerCandidates",
-				"SESSION_CATALOG_SHOP_OWNER_CANDIDATES_INVALID",
-			)])
-		shop_names.append(String(shop_name_value))
-	shop_names.sort()
-	for shop_name in shop_names:
-		var place := places_by_name.get(shop_name, {}) as Dictionary
-		var candidate_values: Variant = candidates.get(shop_name)
-		if (
-			place.is_empty()
-			or String(place.get("type", "")) != "铺面"
-			or not candidate_values is Array
-			or (candidate_values as Array).is_empty()
-		):
-			return _catalog_failure([_error(
-				"shopOwnerCandidates.%s" % shop_name,
-				"SESSION_CATALOG_SHOP_OWNER_CANDIDATES_INVALID",
-			)])
-		var owner_id := ""
-		var has_selected_candidate := false
-		for candidate_value: Variant in candidate_values as Array:
-			if (
-				candidate_value is String
-				and selected_resident_ids.has(String(candidate_value))
-			):
-				has_selected_candidate = true
-			if (
-				candidate_value is String
-				and selected_resident_ids.has(String(candidate_value))
-				and not assigned_owner_ids.has(String(candidate_value))
-			):
-				owner_id = String(candidate_value)
-				break
-		if owner_id.is_empty() and has_selected_candidate:
-			owner_id = _fallback_selected_shop_owner(
-				catalog,
-				selected_resident_ids,
-				assigned_owner_ids,
-				shop_name,
-			)
-		if owner_id.is_empty():
-			return _catalog_failure([_error(
-				"ownerAssignments.%s" % shop_name,
-				"SESSION_CATALOG_PLACE_OWNER_MISSING",
-			)])
-		owned_place_by_resident[owner_id] = shop_name
-		assigned_owner_ids[owner_id] = true
-	return {
-		"ok": true,
-		"ownedPlaceByResident": owned_place_by_resident,
-}
-
-
-static func _fallback_selected_shop_owner(
-	catalog: Dictionary,
-	selected_resident_ids: Dictionary,
-	assigned_owner_ids: Dictionary,
-	shop_name: String,
-) -> String:
-	var selected_fallback := ""
-	for resident_value: Variant in catalog.get("residents", []) as Array:
-		if not resident_value is Dictionary:
-			continue
-		var resident := resident_value as Dictionary
-		var resident_id := String(resident.get("residentId", "")).strip_edges()
-		if (
-			resident_id.is_empty()
-			or not selected_resident_ids.has(resident_id)
-			or assigned_owner_ids.has(resident_id)
-		):
-			continue
-		if selected_fallback.is_empty():
-			selected_fallback = resident_id
-		var occupation := resident.get("occupation", {}) as Dictionary
-		if String(occupation.get("workplacePlace", "")).strip_edges() == shop_name:
-			return resident_id
-	return selected_fallback
 
 
 static func _initial_region_state(

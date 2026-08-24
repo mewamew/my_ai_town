@@ -6,6 +6,9 @@ const ACTIVITY_SCALARS := preload(
 const AGENT_WAKE_CONTEXT_RUNTIME := preload(
 	"res://world/runtime/agent/TownAgentWakeContextRuntime.gd"
 )
+const DINING_SERVICE_RUNTIME := preload(
+	"res://world/runtime/work/TownDiningServiceRuntime.gd"
+)
 ## 世界基础与日志 合并套件。
 ##
 ## 由以下测试合并而来，断言逐条保留：
@@ -2344,6 +2347,15 @@ func _scenario_place_service_runtime_state() -> void:
 		}).get("open"),
 		false,
 		"service owner control projects the authoritative open state",
+	)
+	_expect_equal(
+		runtime.service_control({
+			"residentId": "resident-colleague",
+			"currentPlace": "测试服务点",
+			"socialState": {"workplace": "测试服务点"},
+		}).get("open"),
+		false,
+		"同一地点的其他现任职员也能调整营业状态",
 	)
 	_expect_equal(
 		runtime.is_closed_for_visitor({
@@ -5297,6 +5309,49 @@ func _environment_from_config(config: Dictionary) -> RefCounted:
 
 
 func _scenario_staggered_arrival() -> void:
+	var custom_arrival_ids: Array[String] = [
+		"custom_resident_musician_01",
+		"custom_resident_dining_01",
+	]
+	var custom_arrival_minutes: Array[int] = [11, 29]
+	DINING_SERVICE_RUNTIME.prioritize_dining_worker_arrival(
+		{
+			"residents": [{
+				"residentId": custom_arrival_ids[0],
+				"occupation": {
+					"name": "乐师",
+					"workplacePlace": "中心广场",
+				},
+				"socialState": {
+					"job": "乐师",
+					"workplace": "中心广场",
+				},
+			}, {
+				"residentId": custom_arrival_ids[1],
+				"occupation": {
+					"name": "食堂主理人",
+					"workplacePlace": "公共食堂",
+				},
+				"socialState": {
+					"job": "食堂主理人",
+					"workplace": "公共食堂",
+				},
+			}],
+		},
+		custom_arrival_ids,
+		custom_arrival_minutes,
+	)
+	_expect_equal(
+		custom_arrival_minutes[1],
+		11,
+		"custom dining operator receives the earliest arrival by occupation",
+	)
+	_expect(
+		not FileAccess.get_file_as_string(
+			"res://world/runtime/work/TownDiningServiceRuntime.gd",
+		).contains("resident_su_tang_01"),
+		"formal dining runtime does not depend on one built-in resident ID",
+	)
 	var world_data := BUILDER.build_from_source(SOURCE_DIR)
 	var loaded := OPENING.load_config(
 		OPENING_PATH,

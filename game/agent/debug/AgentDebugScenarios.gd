@@ -54,8 +54,8 @@ func initialization() -> Dictionary:
 			{
 				"name": "工作坊",
 				"type": "铺面",
-				"owner": "林岚",
-				"owner_resident_id": "resident-lin-lan",
+				"owner": null,
+				"owner_resident_id": null,
 				"summary": "做木工的地方",
 			},
 		],

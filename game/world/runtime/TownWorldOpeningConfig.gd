@@ -500,12 +500,22 @@ static func _validate_owners(
 	for place_name_value: Variant in places:
 		var place_name := String(place_name_value)
 		var place := places[place_name] as Dictionary
-		if String(place.get("type", "")) == "公共地点":
+		var place_type := String(place.get("type", ""))
+		if place_type == "公共地点":
 			if owners.has(place_name):
 				errors.append("公共地点不能分配归属人：%s" % place_name)
 			continue
-		if not owners.has(place_name) or not resident_ids.has(String(owners.get(place_name, ""))):
-			errors.append("住家或铺面缺少合法居民归属：%s" % place_name)
+		if place_type == "住家" and (
+			not owners.has(place_name)
+			or not resident_ids.has(String(owners.get(place_name, "")))
+		):
+			errors.append("住家缺少合法居民归属：%s" % place_name)
+		elif (
+			place_type == "铺面"
+			and owners.has(place_name)
+			and not resident_ids.has(String(owners.get(place_name, "")))
+		):
+			errors.append("铺面归属引用非法居民：%s" % place_name)
 	for place_name_value: Variant in owners:
 		if not places.has(String(place_name_value)):
 			errors.append("归属配置引用未知地点：%s" % place_name_value)

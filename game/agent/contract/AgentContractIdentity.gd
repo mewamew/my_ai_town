@@ -155,15 +155,15 @@ static func _validate_places(places: Array, errors: Array[String]) -> void:
 			errors.append("%s.type 必须是公共地点、住家或铺面" % path)
 		if not place.has("owner"):
 			errors.append("%s.owner 缺失" % path)
-		elif place_type == "公共地点" and place["owner"] != null:
-			errors.append("%s.owner 在公共地点必须为 null" % path)
-		elif place_type != "公共地点":
+		elif place_type in ["公共地点", "铺面"] and place["owner"] != null:
+			errors.append("%s.owner 在公共地点或铺面必须为 null" % path)
+		elif place_type == "住家":
 			AgentContract._require_non_empty_string(place, "owner", "%s.owner" % path, errors)
 		if not place.has("owner_resident_id"):
 			errors.append("%s.owner_resident_id 缺失" % path)
-		elif place_type == "公共地点" and place["owner_resident_id"] != null:
-			errors.append("%s.owner_resident_id 在公共地点必须为 null" % path)
-		elif place_type != "公共地点":
+		elif place_type in ["公共地点", "铺面"] and place["owner_resident_id"] != null:
+			errors.append("%s.owner_resident_id 在公共地点或铺面必须为 null" % path)
+		elif place_type == "住家":
 			_validate_resident_id(
 				place,
 				"owner_resident_id",

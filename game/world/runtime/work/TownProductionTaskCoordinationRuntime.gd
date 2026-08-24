@@ -89,11 +89,24 @@ static func sync(host, absolute_minute: int) -> void:
 
 
 static func sync_craft_chain(host, absolute_minute: int) -> void:
+	var requester_by_place: Dictionary = {}
+	for place_value: Variant in (
+		host.world_definition.world_data.get("places", []) as Array
+	):
+		var place_id := String((place_value as Dictionary).get("name", ""))
+		var requester_id: String = (
+			host.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.first_resident_for_place(
+				host,
+				place_id,
+				true,
+			)
+		)
+		if not requester_id.is_empty():
+			requester_by_place[place_id] = requester_id
 	for request_spec: Dictionary in TASK_SYNC.craft_repair_request_specs(
 		host._work.services,
-		host.world_definition.owners,
+		requester_by_place,
 		host.resident_registry.records,
-		host.resident_registry.id_by_name,
 		host.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.first_resident(host, "occupation_town_manager"),
 	):
 		host.create_occupation_service_request(request_spec)
@@ -211,7 +224,6 @@ static func sync_meal_period(host, absolute_minute: int) -> void:
 	var source_ref := String(synced.get("sourceRef", ""))
 	if source_ref.is_empty():
 		return
-	DINING_SERVICE.reserve_meal_preparation_task(host, source_ref)
 	host.OCCUPATION_SERVICE_PRESENCE_ADVANCEMENT_RUNTIME.activate_waiting_dining_orders(host)
 
 

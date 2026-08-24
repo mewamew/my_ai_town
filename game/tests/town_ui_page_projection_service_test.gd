@@ -322,6 +322,52 @@ class FakeWorld:
 		return world_log.call("get_filter_catalog") as Dictionary
 
 
+class CustomResidentWorld:
+	extends FakeWorld
+
+	const CUSTOM_ID := "custom_resident_projection_01"
+	const CUSTOM_NAME := "自定义小禾"
+
+	func get_resident_identity_snapshot() -> Dictionary:
+		return {
+			"status": "confirmed",
+			"residents": [{
+				"residentId": CUSTOM_ID,
+				"residentName": CUSTOM_NAME,
+			}],
+		}
+
+	func get_resident_state(resident_name: String) -> Dictionary:
+		if resident_name != CUSTOM_NAME:
+			return {}
+		return {
+			"name": resident_name,
+			"currentPlace": "图书馆",
+			"doing": "整理自己的笔记",
+			"body": {"困": "不困", "饿": "不饿", "累": "不累"},
+			"activityNeeds": activity_needs,
+			"conditions": [],
+			"activeNeeds": [],
+			"recentOutcome": {},
+		}
+
+	func get_resident_detail(resident_name: String) -> Dictionary:
+		var runtime_state := get_resident_state(resident_name)
+		if runtime_state.is_empty():
+			return {}
+		return {
+			"residentId": CUSTOM_ID,
+			"name": resident_name,
+			"attributes": {
+				"name": resident_name,
+				"appearance": "resident_wardrobe_v1:look_01",
+				"desire": "整理好自己的生活",
+			},
+			"socialState": {},
+			"runtimeState": runtime_state,
+		}
+
+
 class FakeRuntime:
 	extends Node
 
@@ -1139,6 +1185,59 @@ func _run() -> void:
 			"Texture2D",
 		),
 		"inner observation portrait points to an importable resident image",
+	)
+	var custom_world := CustomResidentWorld.new()
+	var custom_runtime := FakeRuntime.new(custom_world)
+	root.add_child(custom_runtime)
+	var custom_gateway := FakeGateway.new()
+	custom_gateway.fail_inner_request = true
+	var custom_service := SERVICE.new()
+	var custom_bind := custom_service.bind(
+		custom_runtime,
+		custom_world,
+		{
+			"worldStartMode": "formal",
+			"source": "runtime",
+			"capabilityMode": "formal",
+			"formalReady": true,
+		},
+		custom_gateway,
+	) as Dictionary
+	_expect(bool(custom_bind.get("ok", false)), "custom resident projection binds")
+	custom_service.set_page_context("resident_action_menu", {
+		"residentId": CustomResidentWorld.CUSTOM_ID,
+		"open": true,
+	})
+	var custom_inner_open := custom_service.dispatch(
+		"resident.inner_observation.open",
+		{"residentId": CustomResidentWorld.CUSTOM_ID},
+	) as Dictionary
+	_expect(
+		bool(custom_inner_open.get("ok", false)),
+		"custom resident inner observation remains reachable",
+	)
+	var custom_inner := custom_service.get_view_model(
+		"inner_observation",
+	) as Dictionary
+	var custom_portrait := (
+		(
+			(custom_inner.get("data", {}) as Dictionary).get(
+				"resident",
+				{},
+			) as Dictionary
+		).get("portrait", {}) as Dictionary
+	)
+	_expect_equal(
+		custom_portrait.get("status"),
+		"ready",
+		"custom resident inner observation uses the live approved appearance",
+	)
+	_expect(
+		ResourceLoader.exists(
+			String(custom_portrait.get("assetPath", "")),
+			"Texture2D",
+		),
+		"custom resident inner observation portrait is importable",
 	)
 	_expect_equal(inner_data.get("visibility"), "visible", "inner failure is shown on its page")
 	_expect_equal(inner_data.get("phase"), "failed", "inner data failure has an honest failed phase")

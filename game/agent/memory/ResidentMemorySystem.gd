@@ -838,6 +838,8 @@ func _looks_like_internal_person_id(value: String) -> bool:
 	return (
 		normalized.begins_with("resident-")
 		or normalized.begins_with("resident_")
+		or normalized.begins_with("custom-resident-")
+		or normalized.begins_with("custom_resident_")
 		or normalized.begins_with("player-")
 		or normalized.begins_with("player_")
 		or normalized.begins_with("avatar-")

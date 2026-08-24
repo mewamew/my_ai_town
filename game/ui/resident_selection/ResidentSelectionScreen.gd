@@ -130,6 +130,7 @@ var _data_source := "placeholder"
 var _resident_catalog_status := "placeholder"
 var _internal_playtest := false
 var _confirmation_payload: Dictionary = {}
+var _staffing_warnings: Array[Dictionary] = []
 var _draft_revision_floor := 0
 var _operation: Dictionary = {}
 var _error_value: Variant = null
@@ -534,6 +535,14 @@ func _consume_view_model(snapshot: Dictionary) -> bool:
 	_confirmation_payload = _normalize_roster_draft_for_selection(
 		data.get("confirmation_payload", {}) as Dictionary
 	)
+	_staffing_warnings.clear()
+	var staffing_warnings_value: Variant = data.get("staffing_warnings", [])
+	if staffing_warnings_value is Array:
+		for warning_value: Variant in staffing_warnings_value as Array:
+			if warning_value is Dictionary:
+				_staffing_warnings.append(
+					(warning_value as Dictionary).duplicate(true),
+				)
 	_draft_revision_floor = maxi(
 		_draft_revision_floor,
 		int(_confirmation_payload.get("draftRevision", 0))
@@ -2135,8 +2144,35 @@ func _refresh_count() -> void:
 		)
 	elif not bool(payload_validation.get("passed", false)):
 		_confirm_button.tooltip_text = "15 槽居民草稿不完整"
+	elif not _staffing_warnings.is_empty():
+		_confirm_button.tooltip_text = _staffing_warning_summary()
 	else:
 		_confirm_button.tooltip_text = "保留本局名单并进入居民模型选择"
+
+
+func _staffing_warning_summary() -> String:
+	var labels: Array[String] = []
+	for warning: Dictionary in _staffing_warnings:
+		var occupation_label := String(
+			warning.get("occupationLabel", ""),
+		).strip_edges()
+		if occupation_label.is_empty():
+			continue
+		labels.append(occupation_label)
+		if labels.size() >= 4:
+			break
+	var visible_labels := "、".join(labels)
+	var omitted_count := maxi(_staffing_warnings.size() - labels.size(), 0)
+	var omitted_suffix := ""
+	if omitted_count > 0:
+		omitted_suffix = "等 %d 个职业" % _staffing_warnings.size()
+	elif not visible_labels.is_empty():
+		omitted_suffix = "职业"
+	var vacancy_list := visible_labels + omitted_suffix
+	return (
+		"职业空缺：%s。相关服务会等待任职居民；仍可继续创建小镇。"
+		% vacancy_list
+	)
 
 
 func _open_custom_resident_entry() -> void:

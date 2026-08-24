@@ -18,6 +18,10 @@ const FORMAL_OPENING := preload("res://tests/support/TownWorldFormalOpeningTestH
 ## 类型不变）。清单外的任何字段漂移都判失败。
 const ALLOWED_CHANGES := {
 	"sequences/worldRevision": "increment",
+	"owners/工作坊": "removed",
+	"owners/花房咖啡馆": "removed",
+	"owners/独立市集": "removed",
+	"owners/码头仓库": "removed",
 }
 
 var _restore_events: Array[Dictionary] = []
@@ -342,7 +346,23 @@ func _scenario_roundtrip_equivalence() -> void:
 					typeof(diff.get("b")) == typeof(diff.get("a")),
 					"allowed field %s keeps its type across restore" % path,
 				)
+			"removed":
+				_expect_equal(
+					diff.get("b"),
+					"<缺失>",
+					"legacy shop ownership is removed after restore: %s" % path,
+				)
 	_expect_equal(unexpected, [], "no stable persistent field drifts across save->restore->save")
+	var restored_owners := (
+		snapshot_two.get("state", {}) as Dictionary
+	).get("owners", {}) as Dictionary
+	for place_value: Variant in data.get("places", []) as Array:
+		var place := place_value as Dictionary
+		if String(place.get("type", "")) == "铺面":
+			_expect(
+				not restored_owners.has(String(place.get("name", ""))),
+				"restored saves rebuild shop responsibility from staffing",
+			)
 	_expect(
 		seen_allowed.has("sequences/worldRevision"),
 		"worldRevision does change across restore (allowed-list stays honest)",

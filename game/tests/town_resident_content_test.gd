@@ -78,8 +78,8 @@ func _scenario_resident_catalog() -> void:
 	var catalog := CATALOG.load_catalog() as Dictionary
 	_verify_candidate_catalog(catalog)
 	_verify_world_references(catalog)
+	_verify_staffing_warning_contract()
 	_verify_world_home_space_failures(catalog)
-	_verify_owner_resolution(catalog)
 	_verify_view_model(catalog)
 	_verify_confirmation_payload_order()
 	_verify_session_projection_confirmation()
@@ -147,24 +147,31 @@ func _verify_world_references(catalog: Dictionary) -> void:
 		)
 		_expect(
 			not occupation.has("ownedPlace"),
-			"shop ownership is resolved from the selected roster, not fixed on candidates",
+			"resident occupations do not carry legacy shop ownership",
 		)
-	var expected_shop_names: Array[String] = []
-	for place_name_value: Variant in places_by_name:
-		var place_name := String(place_name_value)
-		if String((places_by_name[place_name] as Dictionary).get("type", "")) == "铺面":
-			expected_shop_names.append(place_name)
-	expected_shop_names.sort()
-	var owner_candidates := catalog.get("shopOwnerCandidates", {}) as Dictionary
-	var actual_shop_names: Array[String] = []
-	for shop_name_value: Variant in owner_candidates:
-		actual_shop_names.append(String(shop_name_value))
-	actual_shop_names.sort()
-	_expect_equal(
-		actual_shop_names,
-		expected_shop_names,
-		"owner candidate rules cover every formal shop exactly",
+	_expect(
+		not catalog.has("shopOwnerCandidates"),
+		"resident catalog does not bind formal shops to built-in residents",
 	)
+	for occupation_value: Variant in world_data.get("occupations", []) as Array:
+		var world_occupation := occupation_value as Dictionary
+		var occupation_id := String(world_occupation.get("occupationId", ""))
+		var occupation_label := String(world_occupation.get("label", ""))
+		var primary_workplace := String(
+			world_occupation.get("primaryWorkplacePlace", ""),
+		)
+		_expect(
+			not occupation_id.is_empty(),
+			"formal occupation publishes a stable id",
+		)
+		_expect(
+			not occupation_label.is_empty(),
+			"formal occupation publishes a player-facing label: %s" % occupation_id,
+		)
+		_expect(
+			places_by_name.has(primary_workplace),
+			"formal occupation workplace resolves in World: %s" % occupation_label,
+		)
 	var defaults := catalog.get("openingDefaults", {}) as Dictionary
 	var player_avatar := defaults.get("playerAvatar", {}) as Dictionary
 	var player_state := player_avatar.get("worldState", {}) as Dictionary
@@ -175,6 +182,66 @@ func _verify_world_references(catalog: Dictionary) -> void:
 		).is_empty(),
 		"default player position resolves to the authored place and region",
 	)
+
+
+func _verify_staffing_warning_contract() -> void:
+	var world_data := _read_json(WORLD_DATA_PATH)
+	var staffing_catalog: Array[Dictionary] = []
+	var selected_ids: Array[String] = []
+	var world_occupations := world_data.get("occupations", []) as Array
+	for index in world_occupations.size():
+		var occupation := world_occupations[index] as Dictionary
+		var resident_id := "custom_resident_staffing_%02d" % (index + 1)
+		selected_ids.append(resident_id)
+		staffing_catalog.append({
+			"residentId": resident_id,
+			"occupation": {
+				"name": String(occupation.get("label", "")),
+			},
+		})
+	_expect_equal(
+		CATALOG._occupation_staffing_warnings(
+			selected_ids,
+			staffing_catalog,
+			world_data,
+		).size(),
+		0,
+		"a roster covering every formal occupation has no vacancy warning",
+	)
+	for index in world_occupations.size():
+		var occupation := world_occupations[index] as Dictionary
+		var selected_without_role := selected_ids.duplicate()
+		selected_without_role.remove_at(index)
+		var warnings := CATALOG._occupation_staffing_warnings(
+			selected_without_role,
+			staffing_catalog,
+			world_data,
+		) as Array[Dictionary]
+		_expect_equal(
+			warnings.size(),
+			1,
+			"omitting one occupation reports exactly one vacancy",
+		)
+		var warning := warnings[0] if warnings.size() == 1 else {}
+		_expect_equal(
+			warning.get("occupationId"),
+			occupation.get("occupationId"),
+			"vacancy warning keeps the missing occupation id",
+		)
+		_expect_equal(
+			warning.get("occupationLabel"),
+			occupation.get("label"),
+			"vacancy warning keeps the missing occupation label",
+		)
+		_expect_equal(
+			warning.get("workplacePlace"),
+			occupation.get("primaryWorkplacePlace"),
+			"vacancy warning keeps the affected workplace",
+		)
+		_expect(
+			not String(warning.get("vacancyEffect", "")).is_empty(),
+			"vacancy warning keeps the authored service effect",
+		)
 
 
 
@@ -298,6 +365,28 @@ func _verify_view_model(_catalog: Dictionary) -> void:
 		15,
 		"recommended selection fills all 15 homes",
 	)
+	var catalog_by_id: Dictionary = {}
+	for catalog_value: Variant in data.get("resident_catalog", []) as Array:
+		var catalog_entry := catalog_value as Dictionary
+		catalog_by_id[String(catalog_entry.get("residentId", ""))] = catalog_entry
+	var recommended_occupations: Dictionary = {}
+	for resident_id_value: Variant in data.get("recommended_resident_ids", []) as Array:
+		var resident_id := String(resident_id_value)
+		var occupation_label := String(
+			(
+				(catalog_by_id.get(resident_id, {}) as Dictionary).get(
+					"occupation",
+					{},
+				) as Dictionary
+			).get("name", ""),
+		)
+		_expect(
+			not occupation_label.is_empty()
+			and not recommended_occupations.has(occupation_label),
+			"recommended roster covers a distinct current occupation: %s"
+				% occupation_label,
+		)
+		recommended_occupations[occupation_label] = true
 	_expect_equal(
 		data.get("confirmation_payload"),
 		{},
@@ -307,79 +396,6 @@ func _verify_view_model(_catalog: Dictionary) -> void:
 		CATALOG.build_view_model(0),
 		{},
 		"non-positive revisions fail closed",
-	)
-
-
-
-func _verify_owner_resolution(catalog: Dictionary) -> void:
-	var residents := catalog.get("residents", []) as Array
-	var recommended_ids: Array[String] = []
-	for index in CATALOG.SELECTION_LIMIT:
-		recommended_ids.append(String((residents[index] as Dictionary).get(
-			"residentId",
-			"",
-		)))
-	for omitted_index in residents.size():
-		var selected_ids: Array[String] = []
-		for index in residents.size():
-			if index == omitted_index:
-				continue
-			selected_ids.append(String((residents[index] as Dictionary).get(
-				"residentId",
-				"",
-			)))
-		var resolved := CATALOG.resolve_shop_owners(
-			catalog,
-			selected_ids,
-		) as Dictionary
-		_expect(
-			bool(resolved.get("ok", false)),
-			"every 16-choose-15 roster resolves shop owners when omitting %s"
-			% String((residents[omitted_index] as Dictionary).get("residentId", "")),
-		)
-		var assignments := resolved.get("ownerAssignments", {}) as Dictionary
-		_expect_equal(
-			assignments.size(),
-			4,
-			"every selectable roster resolves all four formal shops",
-		)
-		for owner_value: Variant in assignments.values():
-			_expect(
-				selected_ids.has(String(owner_value)),
-				"shop ownership only references a selected resident",
-			)
-	var short_selection := recommended_ids.duplicate()
-	short_selection.pop_back()
-	var short_result := CATALOG.resolve_shop_owners(
-		catalog,
-		short_selection,
-	) as Dictionary
-	_expect_equal(
-		short_result.get("errorCode"),
-		"SESSION_CATALOG_SELECTION_COUNT_INVALID",
-		"shop ownership rejects incomplete rosters",
-	)
-	var duplicate_selection := recommended_ids.duplicate()
-	duplicate_selection[1] = duplicate_selection[0]
-	var duplicate_result := CATALOG.resolve_shop_owners(
-		catalog,
-		duplicate_selection,
-	) as Dictionary
-	_expect_equal(
-		duplicate_result.get("errorCode"),
-		"SESSION_CATALOG_SELECTION_RESIDENT_INVALID",
-		"shop ownership rejects duplicate resident ids",
-	)
-	var unknown_selection := recommended_ids.duplicate()
-	unknown_selection[0] = "resident_unknown_01"
-	var unknown_result := CATALOG.resolve_shop_owners(
-		catalog,
-		unknown_selection,
-	) as Dictionary
-	_expect_equal(
-		unknown_result.get("errorCode"),
-		"SESSION_CATALOG_SELECTION_RESIDENT_INVALID",
-		"shop ownership rejects unknown resident ids",
 	)
 
 
@@ -770,36 +786,6 @@ func _verify_validation_failures(catalog: Dictionary) -> void:
 		unexpected_occupation_field,
 		"SESSION_CATALOG_OCCUPATION_INVALID",
 		"resident occupations reject fields outside the pending contract",
-	)
-	var single_owner_candidate := catalog.duplicate(true)
-	(
-		single_owner_candidate.get("shopOwnerCandidates", {}) as Dictionary
-	)["花房咖啡馆"] = ["resident_hanako_01"]
-	_expect_error(
-		single_owner_candidate,
-		"SESSION_CATALOG_SHOP_OWNER_CANDIDATES_INVALID",
-		"every shop keeps a fallback when one candidate is omitted",
-	)
-	var unknown_owner_candidate := catalog.duplicate(true)
-	(
-		unknown_owner_candidate.get("shopOwnerCandidates", {}) as Dictionary
-	)["花房咖啡馆"] = [
-		"resident_hanako_01",
-		"resident_unknown_01",
-	]
-	_expect_error(
-		unknown_owner_candidate,
-		"SESSION_CATALOG_SHOP_OWNER_CANDIDATES_INVALID",
-		"shop ownership candidates must reference known residents",
-	)
-	var missing_shop_rule := catalog.duplicate(true)
-	(
-		missing_shop_rule.get("shopOwnerCandidates", {}) as Dictionary
-	).erase("工作坊")
-	_expect_error(
-		missing_shop_rule,
-		"SESSION_CATALOG_SHOP_OWNER_CANDIDATES_INVALID",
-		"shop ownership rules must cover every formal shop",
 	)
 	var wrong_location := catalog.duplicate(true)
 	(

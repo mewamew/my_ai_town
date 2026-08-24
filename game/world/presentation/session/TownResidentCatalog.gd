@@ -15,25 +15,11 @@ const INTERESTS := preload(
 )
 const CATALOG_PATH := "res://world/data/town/resident_catalog.json"
 const WORLD_DATA_PATH := "res://world/data/town/town_world.json"
+const WORK_CHAIN_CATALOG_PATH := (
+	"res://world/data/town/work_chain_catalog.json"
+)
 const SELECTION_LIMIT := 15
 const EXPECTED_RESIDENT_COUNT := 16
-const RECOMMENDED_RESIDENT_IDS: Array[String] = [
-	"resident_hanako_01",
-	"resident_lin_lan_01",
-	"resident_xu_zhao_01",
-	"resident_zhou_jiming_01",
-	"resident_tang_xiaoman_01",
-	"resident_luo_yuan_01",
-	"resident_jiang_cheng_01",
-	"resident_qiao_yiming_01",
-	"resident_su_tang_01",
-	"resident_lu_qingzhou_01",
-	"resident_xie_mian_01",
-	"resident_bai_zhi_01",
-	"resident_wen_xu_01",
-	"resident_mi_ya_01",
-	"resident_shen_qiao_01",
-]
 const MAX_SESSION_RESIDENT_COUNT := 128
 const RESIDENT_ID_PREFIX := "resident_"
 const CUSTOM_RESIDENT_ID_PREFIX := "custom_resident_"
@@ -96,7 +82,6 @@ static func validate_against_world(
 			"worldId",
 			"appearanceStatus",
 			"openingDefaults",
-			"shopOwnerCandidates",
 			"residents",
 		],
 	):
@@ -258,13 +243,6 @@ static func validate_against_world(
 		):
 			return _failure("SESSION_CATALOG_PORTRAIT_MISSING")
 		ids[resident_id] = true
-	var owner_candidates_validation := _validate_shop_owner_candidates(
-		catalog.get("shopOwnerCandidates"),
-		ids,
-		world_data,
-	)
-	if not bool(owner_candidates_validation.get("ok", false)):
-		return owner_candidates_validation
 	return {
 		"ok": true,
 		"errorCode": "",
@@ -272,54 +250,6 @@ static func validate_against_world(
 		"residentCount": ids.size(),
 		"selectionLimit": SELECTION_LIMIT,
 		"appearanceReady": true,
-	}
-
-
-static func resolve_shop_owners(
-	catalog: Dictionary,
-	selected_values: Variant,
-) -> Dictionary:
-	var validation := validate(catalog)
-	if not bool(validation.get("ok", false)):
-		return validation
-	if (
-		not selected_values is Array
-		or (selected_values as Array).size() != SELECTION_LIMIT
-	):
-		return _failure("SESSION_CATALOG_SELECTION_COUNT_INVALID")
-	var resident_ids: Dictionary = {}
-	for value: Variant in catalog.get("residents", []) as Array:
-		var resident := value as Dictionary
-		resident_ids[String(resident.get("residentId", ""))] = true
-	var selected_ids: Dictionary = {}
-	for selected_value: Variant in selected_values as Array:
-		if not _valid_resident_id(selected_value):
-			return _failure("SESSION_CATALOG_SELECTION_RESIDENT_INVALID")
-		var resident_id := String(selected_value)
-		if not resident_ids.has(resident_id) or selected_ids.has(resident_id):
-			return _failure("SESSION_CATALOG_SELECTION_RESIDENT_INVALID")
-		selected_ids[resident_id] = true
-	var assignments: Dictionary = {}
-	var owner_candidates := catalog.get("shopOwnerCandidates", {}) as Dictionary
-	var shop_names: Array[String] = []
-	for shop_name_value: Variant in owner_candidates:
-		shop_names.append(String(shop_name_value))
-	shop_names.sort()
-	for shop_name in shop_names:
-		var owner_id := ""
-		for candidate_value: Variant in owner_candidates.get(shop_name, []) as Array:
-			var candidate_id := String(candidate_value)
-			if selected_ids.has(candidate_id):
-				owner_id = candidate_id
-				break
-		if owner_id.is_empty():
-			return _failure("SESSION_CATALOG_PLACE_OWNER_MISSING")
-		assignments[shop_name] = owner_id
-	return {
-		"ok": true,
-		"errorCode": "",
-		"retryable": false,
-		"ownerAssignments": assignments,
 	}
 
 
@@ -377,13 +307,7 @@ static func build_view_model(
 				else "legacy_first_frame"
 			),
 		})
-	var recommended_ids: Array[String] = []
-	var available_ids: Dictionary = {}
-	for resident in residents:
-		available_ids[String(resident.get("resident_id", ""))] = true
-	for resident_id: String in RECOMMENDED_RESIDENT_IDS:
-		if available_ids.has(resident_id):
-			recommended_ids.append(resident_id)
+	var recommended_ids := _recommended_resident_ids(resident_catalog)
 	if recommended_ids.size() != SELECTION_LIMIT:
 		return {}
 	var data := {
@@ -404,6 +328,7 @@ static func build_view_model(
 		"selected_resident_ids": [],
 		"recommended_resident_ids": recommended_ids,
 		"confirmation_payload": {},
+		"staffing_warnings": [],
 		"resident_catalog_status": "formal",
 		"resident_catalog": resident_catalog.duplicate(true),
 		"residents": residents,
@@ -427,12 +352,54 @@ static func build_view_model(
 	}
 
 
+static func _recommended_resident_ids(
+	resident_catalog: Array,
+) -> Array[String]:
+	var recommended_ids: Array[String] = []
+	var recommended_set: Dictionary = {}
+	var covered_occupations: Dictionary = {}
+	# 推荐组合先覆盖尽可能多的职业，再按候选目录顺序补足人数。
+	for catalog_value: Variant in resident_catalog:
+		if not catalog_value is Dictionary:
+			continue
+		var catalog_entry := catalog_value as Dictionary
+		var resident_id := String(catalog_entry.get("residentId", ""))
+		var occupation_label := String(
+			(catalog_entry.get("occupation", {}) as Dictionary).get("name", ""),
+		)
+		if (
+			resident_id.is_empty()
+			or occupation_label.is_empty()
+			or covered_occupations.has(occupation_label)
+		):
+			continue
+		recommended_ids.append(resident_id)
+		recommended_set[resident_id] = true
+		covered_occupations[occupation_label] = true
+		if recommended_ids.size() >= SELECTION_LIMIT:
+			return recommended_ids
+	for catalog_value: Variant in resident_catalog:
+		if not catalog_value is Dictionary:
+			continue
+		var resident_id := String(
+			(catalog_value as Dictionary).get("residentId", ""),
+		)
+		if resident_id.is_empty() or recommended_set.has(resident_id):
+			continue
+		recommended_ids.append(resident_id)
+		recommended_set[resident_id] = true
+		if recommended_ids.size() >= SELECTION_LIMIT:
+			break
+	return recommended_ids
+
+
 static func update_confirmation_payload(
 	data: Dictionary,
 	provider_id_value: Variant,
 	model_id_value: Variant = "",
 	draft_revision: int = 1,
 ) -> void:
+	data["staffing_warnings"] = []
 	var provider_id := str(provider_id_value)
 	var model_id := str(model_id_value)
 	if _is_integer_number(provider_id_value) and str(model_id_value).is_empty():
@@ -541,6 +508,11 @@ static func update_confirmation_payload(
 	if ordered_ids.size() != SELECTION_LIMIT:
 		data["confirmation_payload"] = {}
 		return
+	data["staffing_warnings"] = _occupation_staffing_warnings(
+		ordered_ids,
+		session_catalog,
+		world_data,
+	)
 	var slots: Array[Dictionary] = []
 	for index in SELECTION_LIMIT:
 		slots.append({
@@ -560,53 +532,69 @@ static func update_confirmation_payload(
 	}
 
 
-static func _validate_shop_owner_candidates(
-	value: Variant,
-	resident_ids: Dictionary,
+static func _occupation_staffing_warnings(
+	selected_resident_ids: Array[String],
+	session_catalog: Array,
 	world_data: Dictionary,
-) -> Dictionary:
-	if not value is Dictionary or value.is_empty():
-		return _failure("SESSION_CATALOG_SHOP_OWNER_CANDIDATES_INVALID")
-	var owner_candidates := value as Dictionary
-	var shop_names: Array[String] = []
-	for shop_name_value: Variant in owner_candidates:
-		if not shop_name_value is String:
-			return _failure("SESSION_CATALOG_SHOP_OWNER_CANDIDATES_INVALID")
-		shop_names.append(String(shop_name_value))
-	shop_names.sort()
-	var expected_shop_names: Array[String] = []
-	for place_value: Variant in world_data.get("places", []) as Array:
-		if not place_value is Dictionary:
-			return _failure("SESSION_CATALOG_SHOP_OWNER_CANDIDATES_INVALID")
-		var place := place_value as Dictionary
-		if String(place.get("type", "")) == "铺面":
-			expected_shop_names.append(String(place.get("name", "")))
-	expected_shop_names.sort()
-	if shop_names != expected_shop_names:
-		return _failure("SESSION_CATALOG_SHOP_OWNER_CANDIDATES_INVALID")
-	for shop_name_value: Variant in owner_candidates:
+) -> Array[Dictionary]:
+	var catalog_by_id: Dictionary = {}
+	for catalog_value: Variant in session_catalog:
+		if not catalog_value is Dictionary:
+			continue
+		var catalog_entry := catalog_value as Dictionary
+		catalog_by_id[String(catalog_entry.get("residentId", ""))] = catalog_entry
+	var selected_occupation_counts: Dictionary = {}
+	for resident_id: String in selected_resident_ids:
+		if not catalog_by_id.has(resident_id):
+			continue
+		var occupation_value: Variant = (
+			catalog_by_id[resident_id] as Dictionary
+		).get("occupation", {})
+		if not occupation_value is Dictionary:
+			continue
+		var occupation_label := String(
+			(occupation_value as Dictionary).get("name", ""),
+		).strip_edges()
+		if occupation_label.is_empty():
+			continue
+		selected_occupation_counts[occupation_label] = (
+			int(selected_occupation_counts.get(occupation_label, 0)) + 1
+		)
+	var vacancy_effect_by_occupation_id: Dictionary = {}
+	var work_chain_catalog := _load_json_dictionary(WORK_CHAIN_CATALOG_PATH)
+	for chain_value: Variant in work_chain_catalog.get("chains", []) as Array:
+		if not chain_value is Dictionary:
+			continue
+		var chain := chain_value as Dictionary
+		var occupation_id := String(chain.get("occupationId", ""))
+		if occupation_id.is_empty():
+			continue
+		vacancy_effect_by_occupation_id[occupation_id] = String(
+			chain.get("vacancyEffect", ""),
+		)
+	var warnings: Array[Dictionary] = []
+	for occupation_value: Variant in world_data.get("occupations", []) as Array:
+		if not occupation_value is Dictionary:
+			continue
+		var occupation := occupation_value as Dictionary
+		var occupation_label := String(occupation.get("label", "")).strip_edges()
 		if (
-			String(shop_name_value).strip_edges().is_empty()
-			or String(shop_name_value) != String(shop_name_value).strip_edges()
+			occupation_label.is_empty()
+			or int(selected_occupation_counts.get(occupation_label, 0)) > 0
 		):
-			return _failure("SESSION_CATALOG_SHOP_OWNER_CANDIDATES_INVALID")
-		var candidate_values: Variant = owner_candidates.get(shop_name_value)
-		if not candidate_values is Array or candidate_values.size() < 2:
-			return _failure("SESSION_CATALOG_SHOP_OWNER_CANDIDATES_INVALID")
-		var seen: Dictionary = {}
-		for candidate_value: Variant in candidate_values as Array:
-			if (
-				not _valid_resident_id(candidate_value)
-				or not resident_ids.has(String(candidate_value))
-				or seen.has(String(candidate_value))
-			):
-				return _failure("SESSION_CATALOG_SHOP_OWNER_CANDIDATES_INVALID")
-			seen[String(candidate_value)] = true
-	return {
-		"ok": true,
-		"errorCode": "",
-		"retryable": false,
-	}
+			continue
+		var occupation_id := String(occupation.get("occupationId", ""))
+		warnings.append({
+			"occupationId": occupation_id,
+			"occupationLabel": occupation_label,
+			"workplacePlace": String(
+				occupation.get("primaryWorkplacePlace", ""),
+			),
+			"vacancyEffect": String(
+				vacancy_effect_by_occupation_id.get(occupation_id, ""),
+			),
+		})
+	return warnings
 
 
 static func _validate_opening_defaults(
@@ -747,10 +735,14 @@ static func _is_ascii_digit(character: String) -> bool:
 
 
 static func _load_world_data() -> Dictionary:
-	if not FileAccess.file_exists(WORLD_DATA_PATH):
+	return _load_json_dictionary(WORLD_DATA_PATH)
+
+
+static func _load_json_dictionary(path: String) -> Dictionary:
+	if not FileAccess.file_exists(path):
 		return {}
 	var parsed: Variant = JSON.parse_string(
-		FileAccess.get_file_as_string(WORLD_DATA_PATH)
+		FileAccess.get_file_as_string(path)
 	)
 	return (
 		(parsed as Dictionary).duplicate(true)

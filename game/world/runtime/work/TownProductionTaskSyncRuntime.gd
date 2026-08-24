@@ -250,9 +250,8 @@ static func sync_market_preparation(
 
 static func craft_repair_request_specs(
 	occupation_services: TownOccupationServiceRuntime,
-	owners: Dictionary,
+	requester_by_place: Dictionary,
 	residents: Dictionary,
-	resident_id_by_name: Dictionary,
 	town_manager_id: String,
 ) -> Array[Dictionary]:
 	var service_requests: Array[Dictionary] = []
@@ -262,12 +261,11 @@ static func craft_repair_request_specs(
 		if bool(occupation_services.has_active_request("repair", fault_id)):
 			continue
 		var place_id := String(fault.get("placeId", ""))
-		var owner_ref := String(owners.get(place_id, "")).strip_edges()
-		var requester_id := (
-			owner_ref
-			if residents.has(owner_ref)
-			else String(resident_id_by_name.get(owner_ref, ""))
-		)
+		var requester_id := String(
+			requester_by_place.get(place_id, ""),
+		).strip_edges()
+		if not residents.has(requester_id):
+			requester_id = ""
 		if requester_id.is_empty():
 			requester_id = town_manager_id
 		if requester_id.is_empty():

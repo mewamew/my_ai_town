@@ -73,10 +73,12 @@ func detail(
 			resident_names.append(
 				String(resident_display_name.call(resident_id)),
 			)
+	# 地点归属只描述住家。铺面的工作责任由职业岗位系统提供，旧存档
+	# 中可能残留的铺面归属不能再投影成当前负责人。
 	var owner_resident_id: Variant = (
-		null
-		if String(place.get("type", "")) == "公共地点"
-		else owners.get(place_name)
+		owners.get(place_name)
+		if String(place.get("type", "")) == "住家"
+		else null
 	)
 	return {
 		"name": place_name,
@@ -245,7 +247,7 @@ func agent_places(
 		var place_name := String(place.get("name", ""))
 		var place_type := String(place.get("type", ""))
 		var owner: Variant = (
-			null if place_type == "公共地点" else owners.get(place_name)
+			owners.get(place_name) if place_type == "住家" else null
 		)
 		var owner_id := String(owner) if owner != null else ""
 		var owner_name := String(resident_names_by_id.get(owner_id, ""))
