@@ -1291,7 +1291,12 @@ func _inner_observation_resident(
 	resident_id: String,
 	resident_name: String,
 ) -> Dictionary:
-	var detail := _resident_detail(resident_name)
+	# 居民 ID 才是稳定身份；姓名只是旧世界/测试替身仍支持的兼容入口。
+	# 同名居民合法存在时，不能先按姓名查询，否则可能把另一人的实时外观
+	# 投影到当前居民的内观察页面。
+	var detail := _resident_detail(resident_id)
+	if detail.is_empty():
+		detail = _resident_detail(resident_name)
 	var live_attributes := detail.get("attributes", {}) as Dictionary
 	var portrait := _resident_portrait_projection(
 		resident_id,
