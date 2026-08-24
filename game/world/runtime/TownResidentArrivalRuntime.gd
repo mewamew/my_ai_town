@@ -147,6 +147,7 @@ static func activate_entry_continuity(
 			action["idleTargetPosition"] = step_path[-1]
 			action["idleMoveDurationMinutes"] = 1
 	resident["currentAction"] = action
+	(resident.get("usedActionIds", {}) as Dictionary)[action_id] = true
 	resident["actionSuspendedAbsoluteMinute"] = -1
 	resident["doing"] = line
 

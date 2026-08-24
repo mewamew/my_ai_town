@@ -5586,6 +5586,12 @@ func _scenario_staggered_arrival() -> void:
 			var arrival_action := (
 				arrival_resident.get("currentAction", {}) as Dictionary
 			)
+			_expect(
+				(
+					arrival_resident.get("usedActionIds", {}) as Dictionary
+				).has(String(arrival_action.get("action_id", ""))),
+				"the arrival bridge registers its action for save and restore",
+			)
 			_expect_equal(
 				present_states[0].get("currentPlace"),
 				"南入口",
