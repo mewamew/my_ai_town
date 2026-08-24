@@ -15,6 +15,7 @@ func _verify_option_injection() -> void:
 	var opening := _garden_opening(data, "xie baizhi opening")
 	var world: RefCounted = WORLD.new()
 	world.call("start", data, opening)
+	_advance_to_minute_of_day(world, 1200)  # 暗杀只在夜间可用(20:00)
 	var residents := world.call("residents") as Dictionary
 	# 注入谢眠(卧底)
 	residents[UNDERCOVER_ID] = {
@@ -63,3 +64,14 @@ func _verify_option_injection() -> void:
 	_expect_equal(has_assassinate, true, "卧底同屋目标时注入 assassinate 选项")
 	_expect_equal(has_attack, true, "卧底同屋目标时注入 attack 选项")
 	world.call("stop")
+
+
+func _advance_to_minute_of_day(world: RefCounted, target_minute: int) -> void:
+	var env: Object = world.get("_environment")
+	var current := int(env.call("get_absolute_minute"))
+	var minute_of_day := posmod(current, 1440)
+	var delta := target_minute - minute_of_day
+	if delta <= 0:
+		delta += 1440
+	var result := world.call("advance", float(delta)) as Dictionary
+	_expect_equal(result.get("ok"), true, "advance %d 分钟 ok" % delta)

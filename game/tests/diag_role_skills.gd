@@ -30,6 +30,7 @@ func _initialize() -> void:
 	_verify_frame_and_police_case()
 	_verify_police_quota()
 	_verify_night_only_team_cap()
+	_verify_subdue_option_injection()
 	_finish_suite("ROLE_SKILL_PASS")
 
 
@@ -461,6 +462,48 @@ func _verify_night_only_team_cap() -> void:
 		day_action,
 	) as Dictionary
 	_expect_equal(next_night_prepared.get("ok"), true, "新的一晚恢复暗杀额度")
+	world.call("stop")
+
+
+# 场景7: 警察选项注入 — 闻叙(警察)对感知范围内居民注入 subdue
+# 与 _prepare_subdue_action 判定一致(同 spaceId+同 regionId+距离),选项出现=提交能通过
+func _verify_subdue_option_injection() -> void:
+	var world := _new_skill_world("role skill subdue option opening")
+	var residents: Dictionary = world.call("residents")
+	var police: Variant = residents.get(POLICE_ID)
+	if not police is Dictionary:
+		_expect_equal(police is Dictionary, true, "闻叙已注入")
+		world.call("stop")
+		return
+	var police_dict := police as Dictionary
+	police_dict["spaceId"] = "town_outdoor"
+	police_dict["regionId"] = "outdoor_plaza_01"
+	police_dict["position"] = Vector2(100, 100)
+	var civilian: Variant = residents.get(CIVILIAN_ID)
+	if civilian is Dictionary:
+		var civilian_dict := civilian as Dictionary
+		civilian_dict["spaceId"] = "town_outdoor"
+		civilian_dict["regionId"] = "outdoor_plaza_01"
+		civilian_dict["position"] = Vector2(200, 100)
+		civilian_dict["currentAction"] = {}
+	var decorated: Array = world.call(
+		"_decorate_conflict_tension_options",
+		POLICE_ID,
+		police_dict,
+		[],
+	) as Array
+	var has_subdue := false
+	var target_id := ""
+	for option_value: Variant in decorated:
+		if not option_value is Dictionary:
+			continue
+		var option := option_value as Dictionary
+		if String(option.get("kind", "")) == "subdue":
+			has_subdue = true
+			target_id = String(option.get("target_resident_id", ""))
+			break
+	_expect_equal(has_subdue, true, "警察选项注入含 subdue (共%d个)" % decorated.size())
+	print("  注入选项数=%d subdue目标=%s" % [decorated.size(), target_id])
 	world.call("stop")
 
 

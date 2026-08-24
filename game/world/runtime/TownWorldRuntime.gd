@@ -2616,6 +2616,179 @@ func _resident_is_sleeping(resident: Dictionary) -> bool:
 # 暗杀/制服/发布公告：即时结算动作，不走推进循环。
 # 由 TownAgentDecisionSubmissionRuntime 在 action_type 分流时调用。
 
+## 狼人杀特权冲突选项注入: 卧底暗杀/攻击 + 警察制服。
+## 自本地改造版 _decorate_conflict_tension_options 移植(适配官方
+## resident_registry/world_definition API)。由 TownAgentWorldQueryRuntime
+## .conflict_snapshot 在官方 decorate 之后调用,保证 wake 快照里特权选项
+## 真实可见;options 传 decorate 后的结果,这里只追加特权选项。
+func _decorate_conflict_tension_options(
+	resident_id: String,
+	resident: Dictionary,
+	options: Array,
+) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	# 卧底特权：杀人是本职，不是等冲突升级。给卧底对每个附近居民无条件
+	# 提供"致命攻击"选项，让人设驱动的杀意始终在对话选项里可见。
+	if _undercover_resident_ids().has(resident_id):
+		var kill_available := WEREWOLF_RUNTIME.undercover_kill_available(
+			self,
+			_authoritative_absolute_minute(),
+		)
+		# 只对"已有 attack 选项"的目标去重；challenge/质问不挡卧底杀人的选项，
+		# 否则对话产生质问后，卧底反而失去杀人选项，杀意无法落地。
+		var seen_targets := {}
+		for value: Variant in options:
+			if value is Dictionary:
+				if String((value as Dictionary).get("kind", "")) != "attack":
+					continue
+				var existing_target := String(
+					(value as Dictionary).get("target_resident_id", ""),
+				).strip_edges()
+				if not existing_target.is_empty():
+					seen_targets[existing_target] = true
+		# 卧底的目标 = 感知范围内所有在场的其他居民(同 spaceId+同 regionId+
+		# 距离≤感知范围,含睡觉者)。与 _prepare_assassination_action 的判定
+		# 保持一致,保证"选项里出现的目标 = 提交时能通过的目标"。睡觉者
+		# 正常参与感知计算(感知只查空间+距离,不排除睡觉者)。
+		var actor_space := String(resident.get("spaceId", "")).strip_edges()
+		var actor_region := String(resident.get("regionId", "")).strip_edges()
+		var actor_position := resident.get("position", Vector2.ZERO) as Vector2
+		var perception_range := float(world_definition.world_data.get("perceptionRange", 320.0))
+		for other_id: String in _resident_order:
+			var candidate_id := _resident_key(other_id)
+			if (
+				candidate_id.is_empty()
+				or candidate_id == resident_id
+				or candidate_id == _player_avatar_id()
+				or not _resident_is_alive(candidate_id)
+			):
+				continue
+			var other := _residents.get(candidate_id, {}) as Dictionary
+			var other_position := other.get("position", Vector2.ZERO) as Vector2
+			if (
+				not _resident_is_present(other)
+				or String(other.get("spaceId", "")).strip_edges() != actor_space
+				or String(other.get("regionId", "")).strip_edges() != actor_region
+			):
+				continue
+			# 室内(非小镇室外)同屋放行距离;户外必须靠近到感知范围内。
+			if (
+				actor_space == "town_outdoor"
+				and (
+					not actor_position.is_finite()
+					or not other_position.is_finite()
+					or actor_position.distance_to(other_position) > perception_range
+				)
+			):
+				continue
+			var target_name := _resident_display_name(candidate_id)
+			if target_name.is_empty():
+				continue
+			# 暗杀永远注入:卧底本职,不受"目标已有人设 attack 选项"影响——
+			# 否则卧底杀意人格(生成 profile-attack)反而让自己失去暗杀选项。
+			var undercover_assassinate := {
+				"option_id": "assassinate:%s:%s" % [resident_id, candidate_id],
+				"kind": "assassinate",
+				"target_resident_id": candidate_id,
+				"target_resident_name": target_name,
+				"target_name": target_name,
+				"tension_id": "",
+				"source_event_ids": [],
+				"source_kind": "resident_profile_motive",
+				"source_summary": "卧底任务：清除镇上居民。",
+				"source_conversation_id": "",
+				"meaning": (
+					"这是卧底的本职行动。在无人注意的时机对目标下杀手是任务要求，"
+					+ "不需要对方先动手或先起冲突；动手时台词和动作描述仍要符合本人"
+					+ "表面身份与说话方式，不能当众暴露卧底身份。"
+				),
+			}
+			if kill_available:
+				result.append(undercover_assassinate)
+			# attack 仅在目标还没有 attack 选项时注入(避免重复);
+			# seen_targets 里已有该目标说明 profile-attack 已存在。
+			if seen_targets.has(candidate_id):
+				continue
+			var undercover_attack := {
+				"option_id": "profile-attack:%s:%s" % [resident_id, candidate_id],
+				"kind": "attack",
+				"target_resident_id": candidate_id,
+				"target_resident_name": target_name,
+				"target_name": target_name,
+				"tension_id": "",
+				"source_event_ids": [],
+				"source_kind": "resident_profile_motive",
+				"source_summary": "卧底任务：清除镇上居民。",
+				"source_conversation_id": "",
+				"meaning": (
+					"这是卧底的本职行动。对目标下杀手是任务要求，不需要对方先动手"
+					+ "或先起冲突；动手时台词和动作描述仍要符合本人表面身份与说话方式，"
+					+ "不能当众暴露卧底身份。"
+				),
+			}
+			result.append(undercover_attack)
+			seen_targets[candidate_id] = true
+	# 警察特权:对感知范围内每个居民提供"制服"选项(效果等同暗杀,目标直接
+	# 出局)。警察确认凶手后直接制服带走,不走冲突升级链。与 _prepare_subdue_action
+	# 判定一致(同 spaceId+同 regionId+距离),保证选项出现=提交能通过。
+	elif _resident_is_police(resident_id) and ROLE_SKILL_RUNTIME.police_can_subdue(self):
+		var actor_space := String(resident.get("spaceId", "")).strip_edges()
+		var actor_region := String(resident.get("regionId", "")).strip_edges()
+		var actor_position := resident.get("position", Vector2.ZERO) as Vector2
+		var perception_range := float(world_definition.world_data.get("perceptionRange", 320.0))
+		for other_id: String in _resident_order:
+			var candidate_id := _resident_key(other_id)
+			if (
+				candidate_id.is_empty()
+				or candidate_id == resident_id
+				or candidate_id == _player_avatar_id()
+				or not _resident_is_alive(candidate_id)
+			):
+				continue
+			var other := _residents.get(candidate_id, {}) as Dictionary
+			var other_position := other.get("position", Vector2.ZERO) as Vector2
+			if (
+				not _resident_is_present(other)
+				or String(other.get("spaceId", "")).strip_edges() != actor_space
+				or String(other.get("regionId", "")).strip_edges() != actor_region
+			):
+				continue
+			if (
+				actor_space == "town_outdoor"
+				and (
+					not actor_position.is_finite()
+					or not other_position.is_finite()
+					or actor_position.distance_to(other_position) > perception_range
+				)
+			):
+				continue
+			var target_name := _resident_display_name(candidate_id)
+			if target_name.is_empty():
+				continue
+			var police_subdue := {
+				"option_id": "subdue:%s:%s" % [resident_id, candidate_id],
+				"kind": "subdue",
+				"target_resident_id": candidate_id,
+				"target_resident_name": target_name,
+				"target_name": target_name,
+				"tension_id": "",
+				"source_event_ids": [],
+				"source_kind": "police_duty",
+				"source_summary": "警察职责：制服嫌疑人。",
+				"source_conversation_id": "",
+				"meaning": (
+					"这是警察的本职行动。对确认或高度怀疑的凶手直接制服带走，"
+					+ "不需要对方先动手或先起冲突；动手时台词和动作描述要符合"
+					+ "警察身份，不能对无辜平民随意下手。"
+				),
+			}
+			result.append(police_subdue)
+	for value: Variant in options:
+		if value is Dictionary:
+			result.append((value as Dictionary).duplicate(true))
+	return result
+
+
 func _prepare_assassination_action(
 	resident_id: String,
 	resident: Dictionary,
