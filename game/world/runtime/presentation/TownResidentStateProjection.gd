@@ -98,6 +98,15 @@ static func project_fields(
 	var all_fields := keys.is_empty()
 	var attributes := resident.get("attributes", {}) as Dictionary
 	var resident_id := String(resident.get("residentId", ""))
+	var pending_death := {}
+	if world.has_method("_werewolf_pending_death_presentation"):
+		pending_death = world.call(
+			"_werewolf_pending_death_presentation",
+			resident_id,
+		) as Dictionary
+	var death_appearance_masked := bool(
+		pending_death.get("pending", false),
+	)
 	var projection := {}
 	if all_fields or keys.has("residentId"):
 		projection["residentId"] = resident_id
@@ -106,7 +115,13 @@ static func project_fields(
 	if all_fields or keys.has("worldRevision"):
 		projection["worldRevision"] = world._world_revision
 	if all_fields or keys.has("isPresent"):
-		projection["isPresent"] = world.resident_is_present(resident)
+		# 狼人杀化:天亮前待公布的死亡,表现层仍显示在场(掩盖死亡),
+		# 避免 UI 提前显示"已经死亡"。
+		projection["isPresent"] = (
+			true
+			if death_appearance_masked
+			else world.resident_is_present(resident)
+		)
 	if all_fields or keys.has("arrivalState"):
 		projection["arrivalState"] = (
 			resident.get(
@@ -131,7 +146,19 @@ static func project_fields(
 	if all_fields or keys.has("currentPlace"):
 		projection["currentPlace"] = String(resident.get("currentPlace", ""))
 	if all_fields or keys.has("doing"):
-		projection["doing"] = String(resident.get("doing", ""))
+		# 狼人杀化:天亮前待公布的死亡,表现层沿用死者生前的 doing,
+		# 避免 UI 提前显示"已经死亡"。
+		if death_appearance_masked:
+			var masked_doing := String(
+				pending_death.get("previousDoing", ""),
+			).strip_edges()
+			projection["doing"] = (
+				masked_doing
+				if not masked_doing.is_empty()
+				else "休息"
+			)
+		else:
+			projection["doing"] = String(resident.get("doing", ""))
 	if all_fields or keys.has("body"):
 		projection["body"] = (resident.get("body", {}) as Dictionary).duplicate(true)
 	if all_fields or keys.has("activityNeeds"):

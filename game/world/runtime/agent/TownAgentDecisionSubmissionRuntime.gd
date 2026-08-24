@@ -55,6 +55,25 @@ static func submit(host, resident_name: String, decision: Dictionary) -> Diction
 		decision_id,
 	)
 	if not entry_error.is_empty():
+		# 本地修复: 医生守诊的 night_skill 即使决策 stale 也消费技能意图。
+		# decision_id 频繁过期会让医生整晚守不成(实锤: 白芷 7 次守诊全部
+		# "决定已经失效", 警察无人保护被暗杀); consumed=true 让 gateway
+		# 不再 discard/重投, 避免重试风暴。
+		if (
+			bool(entry_error.get("stale", false))
+			and (decision.get("night_skill") is Dictionary)
+			and not (decision.get("night_skill") as Dictionary).is_empty()
+		):
+			host.ROLE_SKILL_RUNTIME.submit_night_skill(
+				host,
+				resident_id,
+				decision.get("night_skill") as Dictionary,
+			)
+			entry_error = entry_error.duplicate(true)
+			entry_error["consumed"] = true
+			entry_error["errors"] = [
+				"决定已经失效：%s（夜间技能意图已记录）" % decision_id,
+			]
 		return entry_error
 	var submission_context := AGENT_DECISION_ENVELOPE_RUNTIME.submission_context(
 		resident,
