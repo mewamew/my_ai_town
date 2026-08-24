@@ -44,21 +44,22 @@ static func _validate_action(
 		var current_place := String(
 			snapshot_place.get("name", ""),
 		)
-		if not place.is_empty() and place == current_place:
-			errors.append("action.place 不能是当前地点")
-		if (
-			not place.is_empty()
-			and snapshot_place.has("destinations")
-			and not (
-				snapshot_place.get("destinations", []) as Array
-			).has(place)
-		):
-			errors.append(
-				(
-					"action.place 当前不可前往，必须来自 snapshot.place.destinations；"
-					+ "已关闭或已失效的地点不能继续作为去的目标，想留在原地等候必须改用待着"
+		# 提交"当前地点"视为原地停留: 不拒绝、不检查 destinations。
+		# 夜间可去地点极少, 蹲守/留守的居民(如卧底跟踪)想留在原地时容易
+		# 误把当前地点填进"去", 拒绝会让居民反复提交同一失败动作而卡死循环。
+		if not place.is_empty() and place != current_place:
+			if (
+				snapshot_place.has("destinations")
+				and not (
+					snapshot_place.get("destinations", []) as Array
+				).has(place)
+			):
+				errors.append(
+					(
+						"action.place 当前不可前往，必须来自 snapshot.place.destinations；"
+						+ "已关闭或已失效的地点不能继续作为去的目标，想留在原地等候必须改用待着"
+					)
 				)
-			)
 	elif action_type == "用道具":
 		var prop := AgentContract._require_non_empty_string(action, "prop", "action.prop", errors)
 		var verb := AgentContract._require_non_empty_string(action, "verb", "action.verb", errors)
