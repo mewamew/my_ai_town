@@ -250,6 +250,23 @@ func _test_continuity_result_does_not_require_a_fabricated_agent_intent() -> voi
 		0,
 		"promise continuation mechanics stay out of resident memory evidence",
 	)
+	var dining_close := TestData.wake_packet("after-dining-close")
+	dining_close["action_results"] = [{
+		"action_id": "dining-close-home:resident-lin-lan-01:833",
+		"status": "completed",
+		"reason": "食堂结束供餐，正在回家",
+		"time": {"day": 1, "clock": "08:26", "period": "上午"},
+	}]
+	_expect_ok(
+		system.call("prepare_context", dining_close),
+		"dining close-home does not require a fabricated Agent intent",
+	)
+	snapshot = system.call("get_debug_snapshot") as Dictionary
+	_expect_equal(
+		snapshot.get("evidence_item_count"),
+		0,
+		"dining close-home stays out of resident memory evidence",
+	)
 	var ordinary_unmatched := TestData.wake_packet("ordinary-unmatched")
 	ordinary_unmatched["action_results"] = [{
 		"action_id": "resident-authored-continuity-action",

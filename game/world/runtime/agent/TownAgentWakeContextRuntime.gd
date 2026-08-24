@@ -148,6 +148,20 @@ static func wake_packet(
 			),
 			"conflictSnapshot": conflict_snapshot,
 			"postInjuryReaction": post_injury_reaction,
+			"exileVote": host.WEREWOLF_RUNTIME.vote_snapshot(
+				host, resident_name,
+			),
+			"nightSkill": host.ROLE_SKILL_RUNTIME.night_skill_snapshot(
+				host, resident_name,
+			),
+			"undercoverKillQuotaExhausted": (
+				host._undercover_resident_ids().has(resident_name)
+				and host.WEREWOLF_RUNTIME.undercover_kill_quota_exhausted(
+					host,
+					int(host._environment.get_absolute_minute()),
+				)
+			),
+			"townDeathCases": host._police_death_cases(resident_name),
 		},
 		public_events,
 		public_results,

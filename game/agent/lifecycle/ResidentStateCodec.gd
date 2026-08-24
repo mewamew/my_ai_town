@@ -158,11 +158,22 @@ func _initialization_without_display_names(initialization: Dictionary) -> Dictio
 		var attributes_value: Variant = (me_value as Dictionary).get("attributes")
 		if typeof(attributes_value) == TYPE_DICTIONARY:
 			(attributes_value as Dictionary).erase("name")
+		# 金钱/声望是运行时动态数值,不属于居民存档身份,不应参与
+		# 恢复时的初始化等价比较(旧档无这些字段,新档有,直接比较会误判)。
+		var me_social: Variant = (me_value as Dictionary).get("social_state")
+		if typeof(me_social) == TYPE_DICTIONARY:
+			(me_social as Dictionary).erase("money")
+			(me_social as Dictionary).erase("reputation")
 	var residents_value: Variant = normalized.get("residents")
 	if typeof(residents_value) == TYPE_ARRAY:
 		for resident_value: Variant in residents_value as Array:
-			if typeof(resident_value) == TYPE_DICTIONARY:
-				(resident_value as Dictionary).erase("name")
+			if typeof(resident_value) != TYPE_DICTIONARY:
+				continue
+			var resident := resident_value as Dictionary
+			resident.erase("name")
+			# 其他居民的财富/声望同为运行时动态数值,不参与身份等价比较。
+			resident.erase("money")
+			resident.erase("reputation")
 	var places_value: Variant = normalized.get("places")
 	if typeof(places_value) == TYPE_ARRAY:
 		for place_value: Variant in places_value as Array:

@@ -10,6 +10,7 @@ const RESULT_SHAPES := preload(
 	"res://world/contract/TownWorldResultShapes.gd"
 )
 const AGENT_SYSTEM := preload("res://agent/AgentSystem.gd")
+const TOWN_LOG := preload("res://world/runtime/TownLog.gd")
 const PHOTO_STORE := preload(
 	"res://world/integration/TownConversationPhotoStore.gd"
 )
@@ -2319,6 +2320,7 @@ func _dispatch_prepared_agent_decision(request: Dictionary) -> void:
 			"attempt": attempt,
 			"recoveredByFallback": fallback_applied,
 			"final": not should_retry and not fallback_applied,
+			"accepted": accepted.duplicate(true),
 		},
 	)
 	if not debug_decision_completed.get_connections().is_empty():
@@ -2489,6 +2491,17 @@ func _on_agent_result(
 		])
 	var decision_consumed := _world_consumed_agent_decision(submission)
 	var decision_accepted := bool(submission.get("ok", false))
+	# 合同校验失败落盘: 保存居民收到的完整 wake 与 LLM 提交的决策(含被拒原因),
+	# 便于排查"AI 到底收到了什么、选了什么"。写 user://logs/requests/rejected/。
+	if not decision_accepted:
+		_persist_rejected_decision(
+			resident_id,
+			resident_name,
+			decision_id,
+			inflight.get("wakePacket", {}) as Dictionary,
+			decision,
+			submission,
+		)
 	# A consumed rejection has already queued an authoritative World result for
 	# this action. Keep the Agent-side pending intention until that result is
 	# ingested, otherwise the evidence layer cannot pair the rejection with the
@@ -2512,6 +2525,18 @@ func _on_agent_result(
 			String(social_response.get("matter_id", "")),
 			"request_cancelled",
 		)
+		if bool(submission.get("stale", false)) and _world != null:
+			# 决定已失效(唤醒风暴下旧决策过期被静默丢弃): 清掉旧 pending
+			# 后 force_fresh 重新调度一次, 让居民用最新快照重新提交。
+			# 否则投票等关键决策被丢弃后无人接管, 直接拉低参与率。
+			_world._schedule_decision(
+				resident_id,
+				false,
+				false,
+				false,
+				true,
+				false,
+			)
 	_last_submissions[resident_id] = submission.duplicate(true)
 	var recoverable_submission_rejection := (
 		_is_recoverable_submission_rejection(submission)
@@ -2980,6 +3005,10 @@ func _finish_social_candidates_from_wake(
 
 func _world_consumed_agent_decision(submission: Dictionary) -> bool:
 	if bool(submission.get("stale", false)):
+		# stale 决策通常未消费; 但夜间技能意图(stale+consumed=true)算已
+		# 消费——gateway 不再 discard/重投, 避免守诊被唤醒风暴反复打断。
+		if submission.get("consumed") is bool:
+			return bool(submission.get("consumed"))
 		return false
 	if submission.get("consumed") is bool:
 		return bool(submission.get("consumed"))
@@ -2987,6 +3016,58 @@ func _world_consumed_agent_decision(submission: Dictionary) -> bool:
 		"WORLD_NOT_RUNNING",
 		"WORLD_PAUSED",
 	]
+
+
+## 合同校验失败落盘: 保存居民收到的完整 wake 与 LLM 提交的决策(含被拒原因)。
+## 文件: user://logs/requests/rejected/<时间戳>_<居民id>_<决策id前段>.json
+func _persist_rejected_decision(
+	resident_id: String,
+	resident_name: String,
+	decision_id: String,
+	wake: Dictionary,
+	decision: Dictionary,
+	submission: Dictionary,
+) -> void:
+	var root := ProjectSettings.globalize_path(
+		"user://logs/requests/rejected"
+	)
+	var time_stamp := Time.get_datetime_string_from_system(
+		false,
+		true,
+	).replace(":", "-").replace("T", "_")
+	var file_name := "%s_%s_%s.json" % [
+		time_stamp,
+		resident_id,
+		decision_id.substr(0, 12),
+	]
+	var record := {
+		"resident_id": resident_id,
+		"resident_name": resident_name,
+		"decision_id": decision_id,
+		"recorded_at": time_stamp,
+		"wake": wake,
+		"decision": decision,
+		"rejection": submission,
+		"schema": "agent-decision-rejected",
+		"schema_version": 1,
+	}
+	var payload := JSON.stringify(record, "  ")
+	var dir_error := DirAccess.make_dir_recursive_absolute(root)
+	if dir_error != OK and dir_error != ERR_ALREADY_EXISTS:
+		push_warning("无法创建拒绝决策记录目录 %s: %s" % [root, error_string(dir_error)])
+		return
+	var file := FileAccess.open(
+		"%s/%s" % [root, file_name],
+		FileAccess.WRITE,
+	)
+	if file == null:
+		push_warning("无法写入拒绝决策记录 %s: %s" % [
+			file_name,
+			error_string(FileAccess.get_open_error()),
+		])
+		return
+	file.store_string(payload)
+	file.close()
 
 
 func _discard_unconfirmed_agent_decision(
@@ -3112,6 +3193,43 @@ func _record_error(
 	diagnostic: Dictionary = {},
 ) -> void:
 	_error_sequence += 1
+	# 行为流日志: 居民决策请求失败(排查卡住/fallback 循环用)
+	var agent_errors_text := ""
+	var agent_errors_value: Variant = diagnostic.get(
+		"agentErrors",
+		diagnostic.get("agent_errors", []),
+	)
+	if agent_errors_value is Array:
+		var error_parts: Array[String] = []
+		for error_value: Variant in agent_errors_value as Array:
+			if error_value is String:
+				error_parts.append(error_value as String)
+			else:
+				error_parts.append(str(error_value))
+		agent_errors_text = "、".join(error_parts)
+	var submission_text := ""
+	var submission_value: Variant = diagnostic.get("submission", {})
+	if submission_value is Dictionary:
+		var submission_dict := submission_value as Dictionary
+		var submission_errors: Variant = submission_dict.get("errors", [])
+		if submission_errors is Array and not (submission_errors as Array).is_empty():
+			submission_text = "submit: " + str(submission_errors)
+	var accepted_text := ""
+	var accepted_value: Variant = diagnostic.get("accepted", {})
+	if accepted_value is Dictionary:
+		accepted_text = " | accepted=" + str(accepted_value as Dictionary)
+	TOWN_LOG.line(
+		"AGENT",
+		"请求失败 | %s | %s | retryable=%s | error_type=%s | 详情=%s%s%s" % [
+			resident_name,
+			error_code,
+			str(retryable),
+			String(diagnostic.get("error_type", "")),
+			agent_errors_text.substr(0, 120),
+			submission_text,
+			accepted_text.substr(0, 200),
+		],
+	)
 	_errors.append({
 		"errorSequence": _error_sequence,
 		"residentId": resident_id,

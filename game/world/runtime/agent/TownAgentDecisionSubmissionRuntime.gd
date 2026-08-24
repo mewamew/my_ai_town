@@ -159,6 +159,18 @@ static func consume(
 			resident_id,
 			decision.get("social_response"),
 		)
+	if decision.has("exile_vote"):
+		host.WEREWOLF_RUNTIME.submit_vote(
+			host,
+			resident_id,
+			decision.get("exile_vote") as Dictionary,
+		)
+	if decision.has("night_skill"):
+		host.ROLE_SKILL_RUNTIME.submit_night_skill(
+			host,
+			resident_id,
+			decision.get("night_skill") as Dictionary,
+		)
 	context["probeLapUsec"] = WORLD_PERFORMANCE_PROBE.record_lap(
 		int(context.get("probeLapUsec", 0)),
 		"submission_validate_and_social",
@@ -237,6 +249,62 @@ static func submit_valid(
 		return AGENT_DECISION_ACTION_RUNTIME.submit_conflict_intent(
 			host, resident, action, conflict_intent, context
 		)
+	if action_type in ["暗杀", "制服", "发布公告"]:
+		# 狼人杀即时动作:提交即校验(prepare),通过后立即结算(activate),
+		# 不写 currentAction、不进推进循环。
+		var prepared_action: Dictionary
+		match action_type:
+			"暗杀":
+				prepared_action = host._prepare_assassination_action(
+					resident_id, resident, action,
+				)
+			"制服":
+				prepared_action = host._prepare_subdue_action(
+					resident_id, resident, action,
+				)
+			_:
+				prepared_action = host._prepare_announcement_action(
+					resident_id, resident, action,
+				)
+		if prepared_action.get("ok") != true:
+			return host._complete_agent_submission(
+				ACTION_RESULT_RUNTIME.reject_invalid(
+					host,
+					resident_id,
+					resident,
+					action,
+					String(
+						(prepared_action.get("errors", ["动作被拒绝"]) as Array)[0]
+					),
+				)
+			)
+		var validated_action := prepared_action.get("action", {}) as Dictionary
+		var conversation_end_reason := AGENT_DECISION_ACCEPTANCE_POLICY.conversation_end_reason(
+			active_conversation,
+			action_type,
+			is_initial_invitation,
+		)
+		match action_type:
+			"暗杀":
+				host._activate_assassination_action(
+					resident_id, resident, validated_action, decision_wake,
+					conversation_end_reason, active_conversation,
+				)
+			"制服":
+				host._activate_subdue_action(
+					resident_id, resident, validated_action, decision_wake,
+					conversation_end_reason, active_conversation,
+				)
+			_:
+				host._activate_announcement_action(
+					resident_id, resident, validated_action, decision_wake,
+					conversation_end_reason, active_conversation,
+				)
+		return host._complete_agent_submission({
+			"ok": true,
+			"consumed": true,
+			"stale": false,
+		})
 	var conversation_end_reason := AGENT_DECISION_ACCEPTANCE_POLICY.conversation_end_reason(
 		active_conversation,
 		action_type,

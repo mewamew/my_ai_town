@@ -60,6 +60,7 @@ static func create_snapshot(host) -> Dictionary:
 		"residentLifecycle": host._resident_lifecycle,
 		"travelerRelationships": host._traveler_relationship_state,
 		"dynamicProps": host._dynamic_prop_runtime,
+		"werewolfState": host._werewolf_state,
 		"conversationSequence": host.conversation_state.sequence,
 		"worldRevision": host._world_revision,
 	}))

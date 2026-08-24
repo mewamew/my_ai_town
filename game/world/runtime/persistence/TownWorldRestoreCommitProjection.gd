@@ -38,6 +38,7 @@ static func commit_context(
 		"preparedWorldLog": candidate.get("preparedWorldLog"),
 		"activityRuntime": activity_runtime,
 		"playerAvatarPresent": player_avatar_present,
+		"werewolfState": prepared.get("werewolfState", {}),
 	}
 
 

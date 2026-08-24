@@ -6,13 +6,15 @@ const ACTION_TYPES := ["争执", "攻击", "回应冲突", "介入冲突", "离�
 const ACTION_FIELDS := {
 	"争执": ["action_id", "type", "tension_option_id", "line"],
 	"攻击": ["action_id", "type", "target_resident_id", "attack_kind", "cause_id", "line"],
+	"暗杀": ["action_id", "type", "target_resident_id", "line"],
+	"制服": ["action_id", "type", "target_resident_id", "line"],
 	"回应冲突": ["action_id", "type", "conflict_id", "response_kind", "line"],
 	"介入冲突": ["action_id", "type", "conflict_id", "intervention_kind", "line"],
 	"离开冲突": ["action_id", "type", "conflict_id", "reason", "line"],
 }
 const RESPONSE_KINDS := ["retaliate", "flee", "deescalate"]
 const INTERVENTION_KINDS := ["join", "protect", "mediate"]
-const ATTACK_KINDS := ["unarmed", "improvised"]
+const ATTACK_KINDS := ["unarmed", "improvised", "lethal"]
 const ATTACK_KIND_ALIASES := {
 	"blood": "unarmed",
 	"bite": "unarmed",
@@ -33,8 +35,51 @@ const ATTACK_KIND_ALIASES := {
 	"棍棒": "improvised",
 	"武器": "improvised",
 	"拔刀": "improvised",
+	"致命": "lethal",
+	"杀死": "lethal",
+	"杀": "lethal",
+	"下杀手": "lethal",
+	"取命": "lethal",
+	"索命": "lethal",
+	"致命一击": "lethal",
+	"kill": "lethal",
+	"murder": "lethal",
 }
-const TENSION_KINDS := ["challenge", "threaten", "apologize", "disengage", "attack"]
+const TENSION_KINDS := ["challenge", "threaten", "apologize", "disengage", "attack", "assassinate", "subdue"]
+# 动作类型别名: LLM 可能用英文/近义词表达动作类型, 提交前归一为合法中文类型。
+const ACTION_TYPE_ALIASES := {
+	"assassinate": "暗杀",
+	"kill": "暗杀",
+	"杀死": "暗杀",
+	"杀人": "暗杀",
+	"下杀手": "暗杀",
+	"灭口": "暗杀",
+	"subdue": "制服",
+	"arrest": "制服",
+	"逮捕": "制服",
+	"抓捕": "制服",
+	"制服": "制服",
+	"拿下": "制服",
+	"捉拿": "制服",
+	"attack": "攻击",
+	"打人": "攻击",
+	"殴打": "攻击",
+	"动手": "攻击",
+	"talking": "搭话",
+	"talk": "搭话",
+	"对话": "搭话",
+	"say": "答话",
+	"回应": "答话",
+	"answer": "答话",
+	"stay": "待着",
+	"等待": "待着",
+	"wait": "待着",
+	"休息": "待着",
+	"go": "去",
+	"move": "去",
+	"前往": "去",
+	"离开": "去",
+}
 
 
 static func normalize_model_decision_references(value: Dictionary, wake_packet: Dictionary) -> Dictionary:
@@ -49,6 +94,28 @@ static func normalize_model_decision_references(value: Dictionary, wake_packet: 
 	if String(normalized.get("handling", "")) != "replace_current" or normalized.get("action") is not Dictionary:
 		return normalized
 	var action := normalized.get("action") as Dictionary
+	var action_type := String(action.get("type", "")).strip_edges()
+	# 动作类型别名归一化: LLM 可能用英文或近义词写暗杀/攻击,
+	# 统一归一为合法类型,避免"type 不是合法动作类型"被拒。
+	var normalized_type: String = String(ACTION_TYPE_ALIASES.get(action_type, action_type))
+	if normalized_type != action_type:
+		action["type"] = normalized_type
+		action_type = normalized_type
+	if action_type == "暗杀":
+		# 暗杀只接受 action_id/type/target_resident_id/line 四个字段（字段白名单）。
+		# LLM 常把 prompt 冲突选项行里展示的 option_id（assassinate:卧底:目标）
+		# 当作 cause_id 一并提交，导致白名单拒绝"包含未知字段"而丢掉动作。
+		# 暗杀不需要原因 id，直接剥离这些多余字段，避免"词不对被丢掉"。
+		action.erase("cause_id")
+		action.erase("option_id")
+		action.erase("attack_kind")
+		return normalized
+	if action_type == "制服":
+		# 制服(警察版暗杀)同样只收四个字段,剥离 LLM 可能带的多余字段。
+		action.erase("cause_id")
+		action.erase("option_id")
+		action.erase("attack_kind")
+		return normalized
 	if String(action.get("type", "")) != "攻击":
 		return normalized
 	var attack_kind := String(action.get("attack_kind", "")).strip_edges()
@@ -56,7 +123,9 @@ static func normalize_model_decision_references(value: Dictionary, wake_packet: 
 		action["attack_kind"] = String(ATTACK_KIND_ALIASES[attack_kind])
 	else:
 		var lowered := attack_kind.to_lower()
-		if _contains_any(attack_kind, ["刀", "棍", "武器", "瓶", "椅", "抢"]):
+		if _contains_any(attack_kind, ["致命", "杀死", "杀", "索命", "取命", "下杀手"]) or _contains_any(lowered, ["kill", "murder", "lethal"]):
+			action["attack_kind"] = "lethal"
+		elif _contains_any(attack_kind, ["刀", "棍", "武器", "瓶", "椅", "抢"]):
 			action["attack_kind"] = "improvised"
 		elif _contains_any(attack_kind, ["扑", "咬", "拳", "抓", "打", "按", "踢", "袭", "吸血"]) or _contains_any(lowered, ["grapple", "punch", "fist", "claw", "bite"]):
 			action["attack_kind"] = "unarmed"
@@ -193,6 +262,8 @@ static func prompt_constraints(snapshot: Dictionary) -> Dictionary:
 	var tension_options: Array = snapshot.get("conflict_tension_options", []) as Array
 	var dispute_options: Array = []
 	var attack_causes: Array = []
+	var assassinate_causes: Array = []
+	var subdue_causes: Array = []
 	for value_option: Variant in tension_options:
 		if value_option is not Dictionary:
 			continue
@@ -211,12 +282,26 @@ static func prompt_constraints(snapshot: Dictionary) -> Dictionary:
 			cause["cause_id"] = String(cause.get("option_id", ""))
 			cause.erase("option_id")
 			attack_causes.append(cause)
+		elif String(option.get("kind", "")) == "assassinate":
+			var assassinate_cause := normalized.duplicate(true)
+			assassinate_cause["cause_id"] = String(assassinate_cause.get("option_id", ""))
+			assassinate_cause.erase("option_id")
+			assassinate_causes.append(assassinate_cause)
+		elif String(option.get("kind", "")) == "subdue":
+			var subdue_cause := normalized.duplicate(true)
+			subdue_cause["cause_id"] = String(subdue_cause.get("option_id", ""))
+			subdue_cause.erase("option_id")
+			subdue_causes.append(subdue_cause)
 		else:
 			dispute_options.append(normalized)
 	if not already_in_conflict and not dispute_options.is_empty():
 		actions["争执"] = {"fields": ACTION_FIELDS["争执"].duplicate(), "options": dispute_options}
 	if not already_in_conflict and not attack_causes.is_empty():
 		actions["攻击"] = {"fields": ACTION_FIELDS["攻击"].duplicate(), "causes": attack_causes, "attack_kinds": ATTACK_KINDS.duplicate()}
+	if not already_in_conflict and not assassinate_causes.is_empty():
+		actions["暗杀"] = {"fields": ACTION_FIELDS["暗杀"].duplicate(), "causes": assassinate_causes}
+	if not already_in_conflict and not subdue_causes.is_empty():
+		actions["制服"] = {"fields": ACTION_FIELDS["制服"].duplicate(), "causes": subdue_causes}
 	return actions
 
 

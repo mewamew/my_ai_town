@@ -1,0 +1,199 @@
+{
+ "residents": [
+  {
+   "residentId": "resident_bai_zhi_01",
+   "name": "白芷",
+   "gender": "女",
+   "age": 31,
+   "socialState": {
+    "home": "南街四号住宅",
+    "job": "草药医师",
+    "workplace": "诊所",
+    "money": 60,
+    "reputation": 70
+   }
+  },
+  {
+   "residentId": "resident_hanako_01",
+   "name": "花子",
+   "gender": "女",
+   "age": 27,
+   "socialState": {
+    "home": "北街一号住宅",
+    "job": "咖啡店店员",
+    "workplace": "花房咖啡馆",
+    "money": 35,
+    "reputation": 25
+   }
+  },
+  {
+   "residentId": "resident_jiang_cheng_01",
+   "name": "姜澄",
+   "gender": "女",
+   "age": 27,
+   "socialState": {
+    "home": "西街五号住宅",
+    "job": "花店店主",
+    "workplace": "独立市集",
+    "money": 90,
+    "reputation": 45
+   }
+  },
+  {
+   "residentId": "resident_lin_lan_01",
+   "name": "林岚",
+   "gender": "男",
+   "age": 32,
+   "socialState": {
+    "home": "北街二号住宅",
+    "job": "植物研究员",
+    "workplace": "社区花园",
+    "money": 50,
+    "reputation": 45
+   }
+  },
+  {
+   "residentId": "resident_lu_qingzhou_01",
+   "name": "陆青舟",
+   "gender": "男",
+   "age": 30,
+   "socialState": {
+    "home": "南街二号住宅",
+    "job": "渔夫",
+    "workplace": "渔港",
+    "money": 50,
+    "reputation": 45
+   }
+  },
+  {
+   "residentId": "resident_luo_yuan_01",
+   "name": "罗远",
+   "gender": "男",
+   "age": 39,
+   "socialState": {
+    "home": "西街四号住宅",
+    "job": "工匠",
+    "workplace": "工作坊",
+    "money": 80,
+    "reputation": 55
+   }
+  },
+  {
+   "residentId": "resident_mi_ya_01",
+   "name": "米芽",
+   "gender": "女",
+   "age": 22,
+   "socialState": {
+    "home": "东南街住宅",
+    "job": "园艺师",
+    "workplace": "社区花园",
+    "money": 35,
+    "reputation": 25
+   }
+  },
+  {
+   "residentId": "resident_qiao_yiming_01",
+   "name": "乔一鸣",
+   "gender": "男",
+   "age": 24,
+   "socialState": {
+    "home": "西街六号住宅",
+    "job": "送货员",
+    "workplace": "码头仓库",
+    "money": 25,
+    "reputation": 15
+   }
+  },
+  {
+   "residentId": "resident_shen_qiao_01",
+   "name": "沈桥",
+   "gender": "男",
+   "age": 58,
+   "socialState": {
+    "home": "西街一号住宅",
+    "job": "邮差",
+    "workplace": "小镇道路",
+    "money": 50,
+    "reputation": 45
+   }
+  },
+  {
+   "residentId": "resident_su_tang_01",
+   "name": "苏棠",
+   "gender": "女",
+   "age": 26,
+   "socialState": {
+    "home": "南街一号住宅",
+    "job": "食堂主理人",
+    "workplace": "公共食堂",
+    "money": 70,
+    "reputation": 50
+   }
+  },
+  {
+   "residentId": "resident_tang_xiaoman_01",
+   "name": "唐小满",
+   "gender": "女",
+   "age": 29,
+   "socialState": {
+    "home": "西街三号住宅",
+    "job": "杂货店主",
+    "workplace": "独立市集",
+    "money": 90,
+    "reputation": 45
+   }
+  },
+  {
+   "residentId": "resident_wen_xu_01",
+   "name": "闻叙",
+   "gender": "男",
+   "age": 29,
+   "socialState": {
+    "home": "南街五号住宅",
+    "job": "小镇管理者",
+    "workplace": "镇公所",
+    "money": 85,
+    "reputation": 85
+   }
+  },
+  {
+   "residentId": "resident_xie_mian_01",
+   "name": "谢眠",
+   "gender": "男",
+   "age": 28,
+   "socialState": {
+    "home": "南街三号住宅",
+    "job": "乐师",
+    "workplace": "中心广场",
+    "money": 15,
+    "reputation": 10
+   }
+  },
+  {
+   "residentId": "resident_xu_zhao_01",
+   "name": "许照",
+   "gender": "女",
+   "age": 31,
+   "socialState": {
+    "home": "北街三号住宅",
+    "job": "图书管理员",
+    "workplace": "图书馆",
+    "money": 50,
+    "reputation": 45
+   }
+  },
+  {
+   "residentId": "resident_zhou_jiming_01",
+   "name": "周既明",
+   "gender": "男",
+   "age": 35,
+   "socialState": {
+    "home": "西街二号住宅",
+    "job": "仓库管理员",
+    "workplace": "码头仓库",
+    "money": 50,
+    "reputation": 45
+   }
+  }
+ ]
+}

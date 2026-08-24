@@ -44,6 +44,7 @@ const CONVERSATION_GATEWAY_ERROR_CODES := [
 ]
 const CONVERSATION_WAIT_TIMEOUT_MSEC := 65_000
 const DEFAULT_PLAYER_AVATAR_ID := "person_7f3a91c2d8e4"
+const DEFAULT_AVATAR_NAME := "旅行者"
 const AVATAR_ATTACK_KIND_BY_ACTION_ID := {
 	"skill_attack_1": "unarmed",
 	"skill_attack_2": "avatar_susanoo_strike",
@@ -4544,11 +4545,32 @@ func _execute_lifecycle_intent(intent: String, payload: Dictionary) -> Dictionar
 	return _local_failure("UI_INTENT_NOT_AVAILABLE", false)
 
 
+## 玩家化身当前显示名（world 侧权威来源），world 不可用时回退默认名。
+func _player_avatar_name() -> String:
+	if _world != null and _world.has_method("get_player_avatar_state"):
+		var avatar := _world.get_player_avatar_state() as Dictionary
+		var name := str(avatar.get("name", "")).strip_edges()
+		if not name.is_empty():
+			return name
+	return DEFAULT_AVATAR_NAME
+
+
+## 供 UI 层（如统一聊天页）读取玩家化身显示名，world 不可用时回退默认名。
+func get_player_avatar_name() -> String:
+	return _player_avatar_name()
+
+
 func _execute_environment_intent(intent: String, payload: Dictionary) -> Dictionary:
 	match intent:
 		"environment.weather_change":
 			if _world != null and _world.has_method("set_weather"):
 				return _normalize_command_result(_world.set_weather(str(payload.get("weatherId", ""))))
+		"environment.weather_force":
+			if _world != null and _world.has_method("set_forced_weather"):
+				return _normalize_command_result(_world.set_forced_weather(str(payload.get("weatherId", ""))))
+		"environment.weather_unforce":
+			if _world != null and _world.has_method("set_forced_weather"):
+				return _normalize_command_result(_world.set_forced_weather(""))
 	return _local_failure("UI_INTENT_NOT_AVAILABLE", false)
 
 
@@ -4598,7 +4620,7 @@ func _execute_conversation_intent(intent: String, payload: Dictionary) -> Dictio
 					"player_start_conversation",
 					resident_name,
 					str(payload.get("say", "")),
-					str(payload.get("narration", "旅行者开口搭话"))
+					str(payload.get("narration", _player_avatar_name() + "开口搭话"))
 				))
 		"conversation.reply":
 			return _execute_conversation_reply_intent(payload)
@@ -4609,7 +4631,7 @@ func _execute_conversation_intent(intent: String, payload: Dictionary) -> Dictio
 				var end_result := _normalize_command_result(_runtime.call(
 					"player_end_conversation",
 					conversation_id,
-					str(payload.get("narration", "旅行者结束交谈"))
+					str(payload.get("narration", _player_avatar_name() + "结束交谈"))
 				))
 				if bool(end_result.get("ok", false)):
 					_pending_player_ended_conversation.clear()
@@ -4622,7 +4644,7 @@ func _execute_conversation_intent(intent: String, payload: Dictionary) -> Dictio
 				var reject_result := _normalize_command_result(_runtime.call(
 					"player_reject_conversation",
 					conversation_id,
-					str(payload.get("narration", "旅行者没有接话"))
+					str(payload.get("narration", _player_avatar_name() + "没有接话"))
 				))
 				if bool(reject_result.get("ok", false)):
 					_pending_player_ended_conversation.clear()
@@ -4870,7 +4892,7 @@ func _execute_conversation_reply_intent(payload: Dictionary) -> Dictionary:
 				str(
 					payload.get(
 						"narration",
-						"旅行者继续交谈",
+						_player_avatar_name() + "继续交谈",
 					)
 				),
 				photos,
@@ -4884,7 +4906,7 @@ func _execute_conversation_reply_intent(payload: Dictionary) -> Dictionary:
 				str(
 					payload.get(
 						"narration",
-						"旅行者继续交谈",
+						_player_avatar_name() + "继续交谈",
 					)
 				),
 				false,

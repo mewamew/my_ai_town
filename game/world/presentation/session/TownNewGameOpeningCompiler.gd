@@ -234,6 +234,8 @@ static func compile(
 				"home": home_name,
 				"job": job_name,
 				"workplace": workplace_name,
+				"money": _initial_money_for_occupation(job_name),
+				"reputation": _initial_reputation_for_occupation(job_name),
 			},
 			"worldState": initial_state,
 		})
@@ -628,3 +630,57 @@ static func _error(path: String, code: String, meta: Dictionary = {}) -> Diction
 		"code": code,
 		"meta": meta.duplicate(true),
 	}
+
+
+## 金钱系统:按职业分配开局财富(富裕>中产>底层)。
+static func _initial_money_for_occupation(occupation_name: String) -> int:
+	match occupation_name:
+		"杂货店主", "花店店主":
+			return 90
+		"工匠":
+			return 80
+		"小镇管理者":
+			return 85
+		"警察":
+			return 90
+		"食堂主理人":
+			return 70
+		"草药医师":
+			return 60
+		"植物研究员", "仓库管理员", "图书管理员", "邮差":
+			return 50
+		"渔夫":
+			return 45
+		"咖啡店店员", "园艺师":
+			return 35
+		"送货员":
+			return 25
+		"乐师":
+			return 15
+	return 40
+
+
+## 声望系统:按职业分配开局威望(管理者/医师高, 底层低)。
+static func _initial_reputation_for_occupation(occupation_name: String) -> int:
+	match occupation_name:
+		"小镇管理者":
+			return 85
+		"警察":
+			return 95
+		"草药医师":
+			return 70
+		"工匠":
+			return 55
+		"食堂主理人":
+			return 50
+		"杂货店主", "花店店主", "植物研究员", "图书管理员", "邮差", "仓库管理员":
+			return 45
+		"渔夫":
+			return 25
+		"咖啡店店员", "园艺师":
+			return 25
+		"送货员":
+			return 15
+		"乐师":
+			return 10
+	return 30

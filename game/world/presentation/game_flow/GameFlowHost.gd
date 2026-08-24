@@ -373,6 +373,9 @@ func _ensure_town_entry_loading_overlay() -> void:
 
 
 func _poll_resident_replacement() -> void:
+	# 2026-08-12 本地改造: 禁用官方"新居民申请入镇"机制。
+	# 猫鼠玩法中死者不补位, 保持 15 人局固定, 避免新人稀释目标池/干扰案件档案。
+	return
 	if (
 		_replacement_generation_pending
 		or not _pending_replacement_candidate.is_empty()
@@ -816,6 +819,15 @@ func _merge_replacement_editor_source(source: Dictionary) -> void:
 	social["workplace"] = String(
 		occupation.get("workplacePlace", social.get("workplace", ""))
 	)
+	# 金钱/声望系统:按职业给初始财富与威望(缺失时才注入,保留存档已有值)。
+	if not social.has("money"):
+		social["money"] = _initial_money_for_occupation(
+			String(occupation.get("name", "")),
+		)
+	if not social.has("reputation"):
+		social["reputation"] = _initial_reputation_for_occupation(
+			String(occupation.get("name", "")),
+		)
 	record["socialState"] = social
 	if source.get("presentation", {}) is Dictionary:
 		record["presentation"] = (
@@ -5879,6 +5891,66 @@ func _build_startup_view_models() -> Dictionary:
 			"error": null,
 		},
 	}
+
+
+func _initial_money_for_occupation(occupation_name: String) -> int:
+	# 阶级分层:富裕(店主/工匠) > 中产(职员/专业) > 底层(劳工/艺人)
+	match occupation_name:
+		"杂货店主", "花店店主":
+			return 90
+		"工匠":
+			return 80
+		"小镇管理者":
+			return 85
+		"警察":
+			return 90
+		"食堂主理人":
+			return 70
+		"草药医师":
+			return 60
+		"植物研究员", "仓库管理员", "图书管理员", "邮差":
+			return 50
+		"渔夫":
+			return 45
+		"咖啡店店员", "园艺师":
+			return 35
+		"送货员":
+			return 25
+		"乐师":
+			return 15
+	return 40
+
+
+func _initial_reputation_for_occupation(occupation_name: String) -> int:
+	# 声望分层:权力者/德高望重 > 手艺人与店主 > 底层
+	match occupation_name:
+		"小镇管理者":
+			return 85
+		"警察":
+			return 95
+		"草药医师":
+			return 70
+		"工匠":
+			return 55
+		"食堂主理人":
+			return 50
+		"杂货店主":
+			return 45
+		"花店店主":
+			return 40
+		"植物研究员", "图书管理员", "邮差":
+			return 35
+		"仓库管理员":
+			return 30
+		"渔夫", "咖啡店店员":
+			return 25
+		"园艺师":
+			return 20
+		"送货员":
+			return 15
+		"乐师":
+			return 10
+	return 25
 
 
 func _startup_slot_projection(slot: Dictionary) -> Dictionary:

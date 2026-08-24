@@ -21,6 +21,7 @@ const DEATH_EVENT_KEYS := [
 	"deceased_resident_name",
 	"reason",
 	"location",
+	"attacker_resident_id",
 ]
 const RESIDENT_STATE_KEYS := [
 	"residentId",
@@ -110,6 +111,8 @@ func confirm_death(
 	world_time: Dictionary,
 	death_location: Dictionary,
 	queue_direct_death_events: bool,
+	attacker_resident_id: String = "",
+	witness_resident_ids: Array = [],
 ) -> Dictionary:
 	var normalized_id := resident_id.strip_edges()
 	if not _residents.has(normalized_id):
@@ -166,7 +169,13 @@ func confirm_death(
 		),
 		"reason": normalized_reason,
 		"location": confirmed_location.duplicate(true),
+		"attacker_resident_id": attacker_resident_id.strip_edges(),
 	}
+	var normalized_witnesses := _unique_string_array(
+		witness_resident_ids,
+	)
+	if not normalized_witnesses.is_empty():
+		event["witness_resident_ids"] = normalized_witnesses
 	state["status"] = STATUS_DEAD
 	state["revision"] = int(state.get("revision", 1)) + 1
 	state["deathEvent"] = event.duplicate(true)

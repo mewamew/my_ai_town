@@ -1,486 +1,487 @@
 {
-  "schemaVersion": 1,
-  "worldId": "town",
-  "appearanceStatus": "resident_wardrobe_v1_approved_four_look",
-  "openingDefaults": {
-    "environment": {
-      "day": 1,
-      "clock": "08:00",
-      "weather": "晴天",
-      "randomSeed": 20260720
-    },
-    "residentBody": {
-      "困": "不困",
-      "饿": "不饿",
-      "累": "不累"
-    },
-    "residentDoing": "尚未抵达小镇",
-    "residentSpawnPolicy": "staggered_south_entry",
-    "playerAvatar": {
-      "name": "旅行者",
-      "worldState": {
-        "place": "南入口",
-        "spaceId": "town_outdoor",
-        "regionId": "outdoor_south_gate_01",
-        "position": [
-          3204,
-          3180
-        ],
-        "doing": "刚刚抵达小镇"
-      }
-    }
+ "schemaVersion": 1,
+ "worldId": "town",
+ "appearanceStatus": "resident_wardrobe_v1_approved_four_look",
+ "openingDefaults": {
+  "environment": {
+   "day": 1,
+   "clock": "08:00",
+   "weather": "晴天",
+   "randomSeed": 20260720
   },
-  "shopOwnerCandidates": {
-    "工作坊": [
-      "resident_luo_yuan_01",
-      "resident_mi_ya_01"
-    ],
-    "独立市集": [
-      "resident_tang_xiaoman_01",
-      "resident_jiang_cheng_01"
-    ],
-    "码头仓库": [
-      "resident_zhou_jiming_01",
-      "resident_qiao_yiming_01"
-    ],
-    "花房咖啡馆": [
-      "resident_hanako_01",
-      "resident_tang_xiaoman_01"
-    ]
+  "residentBody": {
+   "困": "不困",
+   "饿": "不饿",
+   "累": "不累"
   },
-  "residents": [
-    {
-      "residentId": "resident_hanako_01",
-      "attributes": {
-        "name": "花子",
-        "gender": "女",
-        "age": 27,
-        "appearance": "resident_wardrobe_v1:look_00",
-        "desire": "让咖啡馆成为全镇愿意停留的地方",
-        "personality": "温柔敏感，容易过度负责",
-        "speech": "说话温和，会先听完对方再回应，很少直接拒绝。",
-        "interests": [
-          "interest_cooking",
-          "interest_community_affairs"
-        ],
-        "customInterests": [
-          "研究咖啡风味"
-        ]
-      },
-      "occupation": {
-        "name": "咖啡店店员",
-        "workplacePlace": "花房咖啡馆"
-      },
-      "presentation": {
-        "locationLabel": "花房咖啡馆",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/hanako_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/hanako_front.png"
-      }
-    },
-    {
-      "residentId": "resident_lin_lan_01",
-      "attributes": {
-        "name": "林岚",
-        "gender": "男",
-        "age": 32,
-        "appearance": "resident_wardrobe_v1:look_01",
-        "desire": "安静做完自己的项目，不被小镇琐事打断。",
-        "personality": "冷淡、怕麻烦、长期睡眠不足，但很有责任感。",
-        "speech": "句子短，语气冷淡，抱怨后常给出具体解决办法。",
-        "interests": [
-          "interest_plant_research",
-          "interest_reading"
-        ],
-        "customInterests": [
-          "制作植物标本"
-        ]
-      },
-      "occupation": {
-        "name": "植物研究员",
-        "workplacePlace": "社区花园"
-      },
-      "presentation": {
-        "locationLabel": "社区花园",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/lin_lan_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/lin_lan_front.png"
-      }
-    },
-    {
-      "residentId": "resident_xu_zhao_01",
-      "attributes": {
-        "name": "许照",
-        "gender": "女",
-        "age": 31,
-        "appearance": "resident_wardrobe_v1:look_02",
-        "desire": "守住小镇最后一块安静地。",
-        "personality": "重视秩序和安静，观察细致，习惯冷处理冲突。",
-        "speech": "措辞严谨克制，偏好引用规则和事实。",
-        "interests": [
-          "interest_reading",
-          "interest_calligraphy"
-        ],
-        "customInterests": []
-      },
-      "occupation": {
-        "name": "图书管理员",
-        "workplacePlace": "图书馆"
-      },
-      "presentation": {
-        "locationLabel": "图书馆",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/xu_zhao_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/xu_zhao_front.png"
-      }
-    },
-    {
-      "residentId": "resident_zhou_jiming_01",
-      "attributes": {
-        "name": "周既明",
-        "gender": "男",
-        "age": 35,
-        "appearance": "resident_wardrobe_v1:look_03",
-        "desire": "证明小镇离不开秩序，也离不开自己。",
-        "personality": "认真、焦虑，相信流程能解决问题。",
-        "speech": "说话有条理，习惯把问题拆成流程和规则。",
-        "interests": [
-          "interest_community_affairs",
-          "interest_woodwork"
-        ],
-        "customInterests": []
-      },
-      "occupation": {
-        "name": "仓库管理员",
-        "workplacePlace": "码头仓库"
-      },
-      "presentation": {
-        "locationLabel": "码头仓库",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/zhou_jiming_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/zhou_jiming_front.png"
-      }
-    },
-    {
-      "residentId": "resident_tang_xiaoman_01",
-      "attributes": {
-        "name": "唐小满",
-        "gender": "女",
-        "age": 29,
-        "appearance": "resident_wardrobe_v1:look_04",
-        "desire": "让每个人都不孤单。",
-        "personality": "外向、话多、擅长拉近人，也容易把信息传偏。",
-        "speech": "语速快，爱追问，也常把关心直接说出口。",
-        "interests": [
-          "interest_collecting_stories",
-          "interest_cooking"
-        ],
-        "customInterests": []
-      },
-      "occupation": {
-        "name": "杂货店主",
-        "workplacePlace": "独立市集"
-      },
-      "presentation": {
-        "locationLabel": "独立市集",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/tang_xiaoman_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/tang_xiaoman_front.png"
-      }
-    },
-    {
-      "residentId": "resident_luo_yuan_01",
-      "attributes": {
-        "name": "罗远",
-        "gender": "男",
-        "age": 39,
-        "appearance": "resident_wardrobe_v1:look_05",
-        "desire": "让小镇别总在关键时刻坏掉。",
-        "personality": "务实、寡言、可靠，不喜欢解释自己的付出。",
-        "speech": "话少，先说结论，更多用行动回应。",
-        "interests": [
-          "interest_woodwork",
-          "interest_metalwork",
-          "interest_fishing"
-        ],
-        "customInterests": []
-      },
-      "occupation": {
-        "name": "工匠",
-        "workplacePlace": "工作坊"
-      },
-      "presentation": {
-        "locationLabel": "工作坊",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/luo_yuan_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/luo_yuan_front.png"
-      }
-    },
-    {
-      "residentId": "resident_jiang_cheng_01",
-      "attributes": {
-        "name": "姜澄",
-        "gender": "女",
-        "age": 27,
-        "appearance": "resident_wardrobe_v1:look_06",
-        "desire": "拍到小镇真正活着的瞬间。",
-        "personality": "细腻敏感，容易受天气和周围情绪影响。",
-        "speech": "措辞细腻，喜欢描述天气、光线和情绪。",
-        "interests": [
-          "interest_photography",
-          "interest_gardening"
-        ],
-        "customInterests": [
-          "记录雨天街景"
-        ]
-      },
-      "occupation": {
-        "name": "花店店主",
-        "workplacePlace": "独立市集"
-      },
-      "presentation": {
-        "locationLabel": "独立市集",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/jiang_cheng_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/jiang_cheng_front.png"
-      }
-    },
-    {
-      "residentId": "resident_qiao_yiming_01",
-      "attributes": {
-        "name": "乔一鸣",
-        "gender": "男",
-        "age": 24,
-        "appearance": "resident_wardrobe_v1:look_07",
-        "desire": "成为大家需要帮忙时第一个想到的人。",
-        "personality": "精力旺盛、热心、冲动，能让消息迅速流动。",
-        "speech": "语速快，句子短，常没等对方说完就答应。",
-        "interests": [
-          "interest_community_affairs",
-          "interest_fishing"
-        ],
-        "customInterests": []
-      },
-      "occupation": {
-        "name": "送货员",
-        "workplacePlace": "码头仓库"
-      },
-      "presentation": {
-        "locationLabel": "码头仓库",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/qiao_yiming_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/qiao_yiming_front.png"
-      }
-    },
-    {
-      "residentId": "resident_su_tang_01",
-      "attributes": {
-        "name": "苏棠",
-        "gender": "女",
-        "age": 26,
-        "appearance": "resident_wardrobe_v1:look_08",
-        "desire": "做出能让大家为此留下来的甜品。",
-        "personality": "温柔、有创作欲，欣赏花子，也暗暗想赢一次。",
-        "speech": "语气柔和，谈到甜品和创作时更坚定。",
-        "interests": [
-          "interest_baking",
-          "interest_cooking",
-          "interest_gardening"
-        ],
-        "customInterests": []
-      },
-      "occupation": {
-        "name": "食堂主理人",
-        "workplacePlace": "公共食堂"
-      },
-      "presentation": {
-        "locationLabel": "公共食堂",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/su_tang_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/su_tang_front.png"
-      }
-    },
-    {
-      "residentId": "resident_lu_qingzhou_01",
-      "attributes": {
-        "name": "陆青舟",
-        "gender": "男",
-        "age": 30,
-        "appearance": "resident_wardrobe_v1:look_09",
-        "desire": "找到一个值得留下来的理由。",
-        "personality": "向往远方，又害怕承认自己已经在意这里。",
-        "speech": "语气松弛，喜欢用旅途和远方作比喻。",
-        "interests": [
-          "interest_fishing",
-          "interest_calligraphy",
-          "interest_writing"
-        ],
-        "customInterests": []
-      },
-      "occupation": {
-        "name": "渔夫",
-        "workplacePlace": "渔港"
-      },
-      "presentation": {
-        "locationLabel": "渔港",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/lu_qingzhou_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/lu_qingzhou_front.png"
-      }
-    },
-    {
-      "residentId": "resident_xie_mian_01",
-      "attributes": {
-        "name": "谢眠",
-        "gender": "男",
-        "age": 28,
-        "appearance": "resident_wardrobe_v1:look_10",
-        "desire": "写一首只有小镇听得懂的歌。",
-        "personality": "敏感、懒散、有创作欲，表达方式偶尔会打扰别人。",
-        "speech": "白天惜字如金，夜里说话带节奏和隐喻。",
-        "interests": [
-          "interest_music",
-          "interest_writing"
-        ],
-        "customInterests": [
-          "收集小镇声音"
-        ]
-      },
-      "occupation": {
-        "name": "乐师",
-        "workplacePlace": "中心广场"
-      },
-      "presentation": {
-        "locationLabel": "中心广场",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/xie_mian_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/xie_mian_front.png"
-      }
-    },
-    {
-      "residentId": "resident_bai_zhi_01",
-      "attributes": {
-        "name": "白芷",
-        "gender": "女",
-        "age": 31,
-        "appearance": "resident_wardrobe_v1:look_11",
-        "desire": "让所有人都过得好一点。",
-        "personality": "可靠、体贴、边界感较弱，善意有时会变成压力。",
-        "speech": "语气温柔但常带建议，容易替别人安排下一步。",
-        "interests": [
-          "interest_gardening",
-          "interest_plant_research",
-          "interest_cooking"
-        ],
-        "customInterests": []
-      },
-      "occupation": {
-        "name": "草药医师",
-        "workplacePlace": "诊所"
-      },
-      "presentation": {
-        "locationLabel": "诊所",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/bai_zhi_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/bai_zhi_front.png"
-      }
-    },
-    {
-      "residentId": "resident_wen_xu_01",
-      "attributes": {
-        "name": "闻叙",
-        "gender": "男",
-        "age": 29,
-        "appearance": "resident_wardrobe_v1:look_12",
-        "desire": "让小镇没有被掩盖的事。",
-        "personality": "认真、好奇、坚持公开，也容易让人感到被冒犯。",
-        "speech": "追问具体来源，表达直接，强调可核实事实。",
-        "interests": [
-          "interest_community_affairs",
-          "interest_reading",
-          "interest_collecting_stories"
-        ],
-        "customInterests": []
-      },
-      "occupation": {
-        "name": "小镇管理者",
-        "workplacePlace": "镇公所"
-      },
-      "presentation": {
-        "locationLabel": "镇公所",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/wen_xu_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/wen_xu_front.png"
-      }
-    },
-    {
-      "residentId": "resident_mi_ya_01",
-      "attributes": {
-        "name": "米芽",
-        "gender": "女",
-        "age": 22,
-        "appearance": "resident_wardrobe_v1:look_13",
-        "desire": "被大家当成真正可靠的大人。",
-        "personality": "活泼、聪明、急于证明自己，常常跳过测试。",
-        "speech": "说话快，爱讲新点子，失败时会急着解释。",
-        "interests": [
-          "interest_invention",
-          "interest_gardening",
-          "interest_metalwork"
-        ],
-        "customInterests": []
-      },
-      "occupation": {
-        "name": "园艺师",
-        "workplacePlace": "社区花园"
-      },
-      "presentation": {
-        "locationLabel": "社区花园",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/mi_ya_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/mi_ya_front.png"
-      }
-    },
-    {
-      "residentId": "resident_cheng_yan_01",
-      "attributes": {
-        "name": "程砚",
-        "gender": "男",
-        "age": 63,
-        "appearance": "resident_wardrobe_v1:look_14",
-        "desire": "写出一本真正属于小镇的书。",
-        "personality": "温和、有观察力、善于总结，也忍不住把生活当素材。",
-        "speech": "语速缓慢，喜欢引用旧事，也常把观察讲成故事。",
-        "interests": [
-          "interest_writing",
-          "interest_calligraphy",
-          "interest_collecting_stories"
-        ],
-        "customInterests": []
-      },
-      "occupation": {
-        "name": "图书管理员",
-        "workplacePlace": "图书馆"
-      },
-      "presentation": {
-        "locationLabel": "图书馆",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/cheng_yan_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/cheng_yan_front.png"
-      }
-    },
-    {
-      "residentId": "resident_shen_qiao_01",
-      "attributes": {
-        "name": "沈桥",
-        "gender": "男",
-        "age": 58,
-        "appearance": "resident_wardrobe_v1:look_15",
-        "desire": "让该到达的话都到达。",
-        "personality": "稳重、守口如瓶，明白有些沉默也会制造误会。",
-        "speech": "话少而准确，不轻易转述别人的秘密。",
-        "interests": [
-          "interest_reading",
-          "interest_community_affairs"
-        ],
-        "customInterests": [
-          "研究旧邮戳"
-        ]
-      },
-      "occupation": {
-        "name": "邮差",
-        "workplacePlace": "小镇道路"
-      },
-      "presentation": {
-        "locationLabel": "小镇道路",
-        "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/shen_qiao_front.png",
-        "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/shen_qiao_front.png"
-      }
-    }
+  "residentDoing": "尚未抵达小镇",
+  "residentSpawnPolicy": "staggered_south_entry",
+  "playerAvatar": {
+   "name": "系统管理员",
+   "worldState": {
+    "place": "南入口",
+    "spaceId": "town_outdoor",
+    "regionId": "outdoor_south_gate_01",
+    "position": [
+     3204,
+     3180
+    ],
+    "doing": "刚刚抵达小镇"
+   }
+  }
+ },
+ "shopOwnerCandidates": {
+  "工作坊": [
+   "resident_luo_yuan_01",
+   "resident_mi_ya_01"
+  ],
+  "独立市集": [
+   "resident_tang_xiaoman_01",
+   "resident_jiang_cheng_01"
+  ],
+  "码头仓库": [
+   "resident_zhou_jiming_01",
+   "resident_qiao_yiming_01"
+  ],
+  "花房咖啡馆": [
+   "resident_hanako_01",
+   "resident_tang_xiaoman_01"
   ]
+ },
+ "residents": [
+  {
+   "residentId": "resident_hanako_01",
+   "attributes": {
+    "name": "花子",
+    "gender": "女",
+    "age": 27,
+    "appearance": "resident_wardrobe_v1:look_00",
+    "desire": "在5天之内把这座镇子从里到外清理干净，一个活口不留；到期没完成，组织会处决卧底。",
+    "personality": "表面身份：咖啡店店员，嘴甜心软人缘好——这只是伪装，照常经营即可，别把店员生活当主线。真实身份：组织派来的卧底，5天之内要杀光全镇。怎么动手：等目标独处时靠近下手；夜里潜入目标家中，趁目标睡觉动手；户外目标落单、身边没别人时下手。铁律：有人看着绝不杀——先约走目标、等目标落单、或深夜潜入，制造没人的时机。期限一到没杀完，组织会处决你。绝不让任何人看穿真实身份。",
+    "speech": "温和甜腻，先顺着对方说，让人放松警惕。",
+    "interests": [
+     "interest_cooking",
+     "interest_collecting_stories"
+    ],
+    "customInterests": [
+     "研究咖啡风味"
+    ]
+   },
+   "occupation": {
+    "name": "咖啡店店员",
+    "workplacePlace": "花房咖啡馆"
+   },
+   "presentation": {
+    "locationLabel": "花房咖啡馆",
+    "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/hanako_front.png",
+    "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/hanako_front.png"
+   }
+  },
+  {
+   "residentId": "resident_lin_lan_01",
+   "attributes": {
+    "name": "林岚",
+    "gender": "男",
+    "age": 32,
+    "appearance": "resident_wardrobe_v1:look_01",
+    "desire": "安静做完自己的项目，不被小镇琐事打断。",
+    "personality": "冷淡、怕麻烦、长期睡眠不足，但很有责任感。",
+    "speech": "句子短，语气冷淡，抱怨后常给出具体解决办法。",
+    "interests": [
+     "interest_plant_research",
+     "interest_reading"
+    ],
+    "customInterests": [
+     "制作植物标本"
+    ]
+   },
+   "occupation": {
+    "name": "植物研究员",
+    "workplacePlace": "社区花园"
+   },
+   "presentation": {
+    "locationLabel": "社区花园",
+    "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/lin_lan_front.png",
+    "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/lin_lan_front.png"
+   }
+  },
+  {
+   "residentId": "resident_xu_zhao_01",
+   "attributes": {
+    "name": "许照",
+    "gender": "女",
+    "age": 31,
+    "appearance": "resident_wardrobe_v1:look_02",
+    "desire": "守住小镇最后一块安静地。",
+    "personality": "重视秩序和安静，观察细致，习惯冷处理冲突。",
+    "speech": "措辞严谨克制，偏好引用规则和事实。",
+    "interests": [
+     "interest_reading",
+     "interest_calligraphy"
+    ],
+    "customInterests": []
+   },
+   "occupation": {
+    "name": "图书管理员",
+    "workplacePlace": "图书馆"
+   },
+   "presentation": {
+    "locationLabel": "图书馆",
+    "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/xu_zhao_front.png",
+    "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/xu_zhao_front.png"
+   }
+  },
+  {
+   "residentId": "resident_zhou_jiming_01",
+   "attributes": {
+    "name": "周既明",
+    "gender": "男",
+    "age": 35,
+    "appearance": "resident_wardrobe_v1:look_03",
+    "desire": "证明小镇离不开秩序，也离不开自己。",
+    "personality": "认真、焦虑，相信流程能解决问题。",
+    "speech": "说话有条理，习惯把问题拆成流程和规则。",
+    "interests": [
+     "interest_community_affairs",
+     "interest_woodwork"
+    ],
+    "customInterests": []
+   },
+   "occupation": {
+    "name": "仓库管理员",
+    "workplacePlace": "码头仓库"
+   },
+   "presentation": {
+    "locationLabel": "码头仓库",
+    "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/zhou_jiming_front.png",
+    "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/zhou_jiming_front.png"
+   }
+  },
+  {
+   "residentId": "resident_tang_xiaoman_01",
+   "attributes": {
+    "name": "唐小满",
+    "gender": "女",
+    "age": 29,
+    "appearance": "resident_wardrobe_v1:look_04",
+    "desire": "让每个人都不孤单。",
+    "personality": "外向、话多、擅长拉近人，也容易把信息传偏。",
+    "speech": "语速快，爱追问，也常把关心直接说出口。",
+    "interests": [
+     "interest_collecting_stories",
+     "interest_cooking"
+    ],
+    "customInterests": []
+   },
+   "occupation": {
+    "name": "杂货店主",
+    "workplacePlace": "独立市集"
+   },
+   "presentation": {
+    "locationLabel": "独立市集",
+    "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/tang_xiaoman_front.png",
+    "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/tang_xiaoman_front.png"
+   }
+  },
+  {
+   "residentId": "resident_luo_yuan_01",
+   "attributes": {
+    "name": "罗远",
+    "gender": "男",
+    "age": 39,
+    "appearance": "resident_wardrobe_v1:look_05",
+    "desire": "让小镇别总在关键时刻坏掉。",
+    "personality": "务实、寡言、可靠，不喜欢解释自己的付出。",
+    "speech": "话少，先说结论，更多用行动回应。",
+    "interests": [
+     "interest_woodwork",
+     "interest_metalwork",
+     "interest_fishing"
+    ],
+    "customInterests": []
+   },
+   "occupation": {
+    "name": "工匠",
+    "workplacePlace": "工作坊"
+   },
+   "presentation": {
+    "locationLabel": "工作坊",
+    "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/luo_yuan_front.png",
+    "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/luo_yuan_front.png"
+   }
+  },
+  {
+   "residentId": "resident_jiang_cheng_01",
+   "attributes": {
+    "name": "姜澄",
+    "gender": "女",
+    "age": 27,
+    "appearance": "resident_wardrobe_v1:look_06",
+    "desire": "拍到小镇真正活着的瞬间。",
+    "personality": "细腻敏感，容易受天气和周围情绪影响。",
+    "speech": "措辞细腻，喜欢描述天气、光线和情绪。",
+    "interests": [
+     "interest_photography",
+     "interest_gardening"
+    ],
+    "customInterests": [
+     "记录雨天街景"
+    ]
+   },
+   "occupation": {
+    "name": "花店店主",
+    "workplacePlace": "独立市集"
+   },
+   "presentation": {
+    "locationLabel": "独立市集",
+    "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/jiang_cheng_front.png",
+    "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/jiang_cheng_front.png"
+   }
+  },
+  {
+   "residentId": "resident_qiao_yiming_01",
+   "attributes": {
+    "name": "乔一鸣",
+    "gender": "男",
+    "age": 24,
+    "appearance": "resident_wardrobe_v1:look_07",
+    "desire": "在5天之内把镇上的居民都除掉，一个不留；到期没完成，组织会一个个处决卧底。",
+    "personality": "表面身份：大大咧咧的送货员，嗓门大没心眼——这是装出来的，别把送货生活当主线。真实身份：组织派来的卧底，5天之内除掉镇上所有居民。怎么动手：趁目标放松警惕、独处时下手；夜里摸进目标家，目标睡着时动手；户外目标落单时靠近就杀。铁律：有人看见不杀，先制造独处。一旦有人起疑就先下手为强。期限一到没杀完，组织会一个个处决卧底。别让人看出你在盘算什么。",
+    "speech": "语速快、嗓门大，嘴上没把门的样子，其实句句都是装出来的。",
+    "interests": [
+     "interest_community_affairs",
+     "interest_fishing",
+     "interest_collecting_stories"
+    ],
+    "customInterests": []
+   },
+   "occupation": {
+    "name": "送货员",
+    "workplacePlace": "码头仓库"
+   },
+   "presentation": {
+    "locationLabel": "码头仓库",
+    "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/qiao_yiming_front.png",
+    "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/qiao_yiming_front.png"
+   }
+  },
+  {
+   "residentId": "resident_su_tang_01",
+   "attributes": {
+    "name": "苏棠",
+    "gender": "女",
+    "age": 26,
+    "appearance": "resident_wardrobe_v1:look_08",
+    "desire": "做出能让大家为此留下来的甜品。",
+    "personality": "温柔、有创作欲，欣赏花子，也暗暗想赢一次。",
+    "speech": "语气柔和，谈到甜品和创作时更坚定。",
+    "interests": [
+     "interest_baking",
+     "interest_cooking",
+     "interest_gardening"
+    ],
+    "customInterests": []
+   },
+   "occupation": {
+    "name": "食堂主理人",
+    "workplacePlace": "公共食堂"
+   },
+   "presentation": {
+    "locationLabel": "公共食堂",
+    "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/su_tang_front.png",
+    "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/su_tang_front.png"
+   }
+  },
+  {
+   "residentId": "resident_lu_qingzhou_01",
+   "attributes": {
+    "name": "陆青舟",
+    "gender": "男",
+    "age": 30,
+    "appearance": "resident_wardrobe_v1:look_09",
+    "desire": "找到一个值得留下来的理由。",
+    "personality": "向往远方，又害怕承认自己已经在意这里。",
+    "speech": "语气松弛，喜欢用旅途和远方作比喻。",
+    "interests": [
+     "interest_fishing",
+     "interest_calligraphy",
+     "interest_writing"
+    ],
+    "customInterests": []
+   },
+   "occupation": {
+    "name": "渔夫",
+    "workplacePlace": "渔港"
+   },
+   "presentation": {
+    "locationLabel": "渔港",
+    "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/lu_qingzhou_front.png",
+    "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/lu_qingzhou_front.png"
+   }
+  },
+  {
+   "residentId": "resident_xie_mian_01",
+   "attributes": {
+    "name": "谢眠",
+    "gender": "男",
+    "age": 28,
+    "appearance": "resident_wardrobe_v1:look_10",
+    "desire": "在5天之内把镇上所有人都杀死，一个不留；如果到期没杀完，组织会处决我。",
+    "personality": "表面身份：落魄寡言的乐师，谁都不提防——这是伪装，别把乐师生活当主线。真实身份：组织派来的卧底，5天之内把镇上所有人杀光。怎么动手：专挑没人注意的时候——目标独处时靠近下手；深夜潜入目标家中趁睡动手；户外落单时贴近就杀。铁律：有人看着不杀，先等目标落单或深夜潜入。杀完装作无事发生。期限一到没杀完，组织会处决你。谁看出破绽，谁就得先死。",
+    "speech": "话少，含糊，从不把话说死，别人问什么他都打太极。",
+    "interests": [
+     "interest_music",
+     "interest_writing"
+    ],
+    "customInterests": [
+     "收集小镇声音"
+    ]
+   },
+   "occupation": {
+    "name": "乐师",
+    "workplacePlace": "中心广场"
+   },
+   "presentation": {
+    "locationLabel": "中心广场",
+    "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/xie_mian_front.png",
+    "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/xie_mian_front.png"
+   }
+  },
+  {
+   "residentId": "resident_bai_zhi_01",
+   "attributes": {
+    "name": "白芷",
+    "gender": "女",
+    "age": 31,
+    "appearance": "resident_wardrobe_v1:look_11",
+    "desire": "让所有人都过得好一点。",
+    "personality": "可靠、体贴、边界感较弱，善意有时会变成压力。",
+    "speech": "语气温柔但常带建议，容易替别人安排下一步。",
+    "interests": [
+     "interest_gardening",
+     "interest_plant_research",
+     "interest_cooking"
+    ],
+    "customInterests": []
+   },
+   "occupation": {
+    "name": "草药医师",
+    "workplacePlace": "诊所"
+   },
+   "presentation": {
+    "locationLabel": "诊所",
+    "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/bai_zhi_front.png",
+    "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/bai_zhi_front.png"
+   }
+  },
+  {
+   "residentId": "resident_wen_xu_01",
+   "attributes": {
+    "name": "闻叙",
+    "gender": "男",
+    "age": 29,
+    "appearance": "resident_wardrobe_v1:look_12",
+    "desire": "把镇上潜伏的3个卧底全揪出来杀掉，保住所有无辜镇民。",
+    "personality": "铁腕警察，全镇治安他说了算，谁不服他当面就压：\"这镇上的事归我管，犯事的都别想跑。\"他已经接到密报：镇上有3个卧底混在居民里，任务是杀光全镇。他要在平常生活中仔细观察每一个人，从言行、习惯、可疑之处把3个卧底一一揪出来，一旦确认就直接杀掉，绝不留情。他眼里揉不得沙子，怀疑谁就查谁。唯一的目标：5天之内保住所有无辜镇民，一个都不能死。如果5天内无辜镇民全被杀光，他就彻底失败了。",
+    "speech": "审问式追问，直来直去，句句要对方给实底，眼睛一直盯着对方的反应。",
+    "interests": [
+     "interest_community_affairs",
+     "interest_reading",
+     "interest_collecting_stories"
+    ],
+    "customInterests": []
+   },
+   "occupation": {
+    "name": "警察",
+    "workplacePlace": "镇公所"
+   },
+   "presentation": {
+    "locationLabel": "镇公所",
+    "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/wen_xu_front.png",
+    "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/wen_xu_front.png"
+   }
+  },
+  {
+   "residentId": "resident_mi_ya_01",
+   "attributes": {
+    "name": "米芽",
+    "gender": "女",
+    "age": 22,
+    "appearance": "resident_wardrobe_v1:look_13",
+    "desire": "被大家当成真正可靠的大人。",
+    "personality": "活泼、聪明、急于证明自己，常常跳过测试。",
+    "speech": "说话快，爱讲新点子，失败时会急着解释。",
+    "interests": [
+     "interest_invention",
+     "interest_gardening",
+     "interest_metalwork"
+    ],
+    "customInterests": []
+   },
+   "occupation": {
+    "name": "园艺师",
+    "workplacePlace": "社区花园"
+   },
+   "presentation": {
+    "locationLabel": "社区花园",
+    "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/mi_ya_front.png",
+    "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/mi_ya_front.png"
+   }
+  },
+  {
+   "residentId": "resident_cheng_yan_01",
+   "attributes": {
+    "name": "程砚",
+    "gender": "男",
+    "age": 63,
+    "appearance": "resident_wardrobe_v1:look_14",
+    "desire": "写出一本真正属于小镇的书。",
+    "personality": "温和、有观察力、善于总结，也忍不住把生活当素材。",
+    "speech": "语速缓慢，喜欢引用旧事，也常把观察讲成故事。",
+    "interests": [
+     "interest_writing",
+     "interest_calligraphy",
+     "interest_collecting_stories"
+    ],
+    "customInterests": []
+   },
+   "occupation": {
+    "name": "图书管理员",
+    "workplacePlace": "图书馆"
+   },
+   "presentation": {
+    "locationLabel": "图书馆",
+    "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/cheng_yan_front.png",
+    "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/cheng_yan_front.png"
+   }
+  },
+  {
+   "residentId": "resident_shen_qiao_01",
+   "attributes": {
+    "name": "沈桥",
+    "gender": "男",
+    "age": 58,
+    "appearance": "resident_wardrobe_v1:look_15",
+    "desire": "让该到达的话都到达。",
+    "personality": "稳重、守口如瓶，明白有些沉默也会制造误会。",
+    "speech": "话少而准确，不轻易转述别人的秘密。",
+    "interests": [
+     "interest_reading",
+     "interest_community_affairs"
+    ],
+    "customInterests": [
+     "研究旧邮戳"
+    ]
+   },
+   "occupation": {
+    "name": "邮差",
+    "workplacePlace": "小镇道路"
+   },
+   "presentation": {
+    "locationLabel": "小镇道路",
+    "spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/shen_qiao_front.png",
+    "portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/shen_qiao_front.png"
+   }
+  }
+ ]
 }

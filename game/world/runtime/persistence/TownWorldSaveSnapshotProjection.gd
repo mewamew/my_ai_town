@@ -80,6 +80,9 @@ static func capture(context: Dictionary) -> Dictionary:
 		"residentLifecycle": resident_lifecycle.create_save_snapshot() as Dictionary,
 		"travelerRelations": traveler_relationships.snapshot(),
 		"indoorLayoutOverrides": dynamic_props.layout_override_snapshots(),
+		"werewolfState": (
+			context.get("werewolfState", {}) as Dictionary
+		).duplicate(true),
 		"sequences": {
 			"event": event_journal.event_sequence(),
 			"announcement": bulletin.announcement_sequence(),

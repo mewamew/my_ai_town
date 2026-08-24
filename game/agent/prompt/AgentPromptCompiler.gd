@@ -9,6 +9,7 @@ const AgentContractScript := preload("res://agent/AgentContract.gd")
 const AgentConflictContractScript := preload("res://agent/conflict/AgentConflictContract.gd")
 const ModelImageContentScript := preload("res://agent/prompt/ModelImageContent.gd")
 const PromptTextScript := preload("res://agent/prompt/PromptText.gd")
+const TOWN_LOG := preload("res://world/runtime/TownLog.gd")
 const DEFAULT_PROMPT_ROOT := "res://prompts"
 const STATIC_LAYERS := [
 	{"directory": "rules", "heading": "行为与决策规则", "tag": "rules"},
@@ -48,10 +49,114 @@ func _init(
 		static_prompt,
 		_render_initialization(),
 	]
+	var role_prompt := _load_role_prompt()
+	if not role_prompt.is_empty():
+		_baseline_prompt += "\n\n<role_rules>\n## 角色专属规则\n\n%s\n</role_rules>" % role_prompt
+
+
+## 角色专属规则(卧底/警察/居民个人):在编译源头让 system 按身份分流。
+## 加载顺序:身份规则(卧底 undercover.md / 警察 police.md)在前,
+## 居民个人规则 prompts/roles/<resident_id>.md(存在时)在后追加。
+## 卧底/警察普通居民无任何专属规则。
+func _load_role_prompt() -> String:
+	var me := _initialization.get("me", {}) as Dictionary
+	var parts: Array[String] = []
+	if bool(me.get("is_undercover", false)):
+		parts.append(_load_role_file("undercover.md"))
+	var social_state := me.get("social_state", {}) as Dictionary
+	if String(social_state.get("job", "")).strip_edges() == "警察":
+		parts.append(_load_role_file("police.md"))
+	var resident_id := String(me.get("resident_id", "")).strip_edges()
+	if not resident_id.is_empty():
+		var personal := _load_role_file(resident_id + ".md", true)
+		if not personal.is_empty():
+			parts.append(personal)
+	var joined: Array[String] = []
+	for part in parts:
+		if not part.strip_edges().is_empty():
+			joined.append(part)
+	return "\n\n".join(joined)
+
+
+func _load_role_file(filename: String, silent := false) -> String:
+	var path := _prompt_root.path_join("roles").path_join(filename)
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		if not silent:
+			_load_errors.append("无法读取角色提示词文件：%s" % path)
+		return ""
+	return file.get_as_text().strip_edges()
 
 
 func get_load_errors() -> Array[String]:
 	return _load_errors.duplicate()
+
+
+## 行为流日志: 打印 LLM 本轮收到的全部可选行动(动作类型+目标/地点/道具)。
+## 输出到 godot.log, 便于后台直接确认"这轮能选什么"(含暗杀/攻击/搭话等)。
+func _log_available_actions(derived_constraints: Dictionary) -> void:
+	var me := _initialization.get("me", {}) as Dictionary
+	var attributes := me.get("attributes", {}) as Dictionary
+	var actor_name := String(attributes.get("name", "")).strip_edges()
+	if actor_name.is_empty():
+		actor_name = String(me.get("resident_id", ""))
+	var actions := derived_constraints.get("actions", {}) as Dictionary
+	var summaries: Array[String] = []
+	for action_type: Variant in actions:
+		var data := actions[action_type] as Dictionary
+		var summary := String(action_type)
+		var extras: Array[String] = []
+		if data.has("places"):
+			var places := data["places"] as Array
+			if not places.is_empty():
+				# 日志精简: "去" 的地点列表每轮刷屏(几十个地点), 只留动作名。
+				if String(action_type) != "去":
+					extras.append("去%s" % "、".join(places))
+		if data.has("targets"):
+			var targets := data["targets"] as Array
+			if not targets.is_empty():
+				extras.append("对%s" % "、".join(targets))
+		if data.has("causes"):
+			var causes := data["causes"] as Array
+			if not causes.is_empty():
+				var target_names: Array[String] = []
+				for cause_value: Variant in causes:
+					if cause_value is Dictionary:
+						var cause := cause_value as Dictionary
+						var tname := String(
+							cause.get(
+								"target_resident_name",
+								cause.get("target_name", ""),
+							),
+						).strip_edges()
+						if not tname.is_empty() and not target_names.has(tname):
+							target_names.append(tname)
+				if not target_names.is_empty():
+					extras.append("目标%s" % "、".join(target_names))
+		if data.has("options"):
+			var options := data["options"] as Array
+			if not options.is_empty():
+				var prop_names: Array[String] = []
+				for option_value: Variant in options:
+					if option_value is Dictionary:
+						var option := option_value as Dictionary
+						var prop := String(option.get("prop", ""))
+						if not prop.is_empty() and not prop_names.has(prop):
+							prop_names.append(prop)
+				if not prop_names.is_empty():
+					extras.append("用%s" % "、".join(prop_names))
+		if not extras.is_empty():
+			summary += "(%s)" % "、".join(extras)
+		summaries.append(summary)
+	if summaries.is_empty():
+		return
+	TOWN_LOG.line(
+		"AGENT",
+		"%s 可选: %s" % [
+			actor_name,
+			"；".join(summaries),
+		],
+	)
 
 
 func compile(
@@ -61,6 +166,7 @@ func compile(
 ) -> Dictionary:
 	var wake_copy := wake_packet.duplicate(true)
 	var derived_constraints := _build_derived_constraints(wake_copy)
+	_log_available_actions(derived_constraints)
 	var dynamic_context := _build_dynamic_context(
 		wake_copy,
 		memory_prompt,
@@ -176,10 +282,26 @@ func _render_initialization() -> String:
 			else "、".join(interest_labels)
 		),
 		_render_soul_profile(soul_profile),
-		"住处：%s；职业：%s；工作地：%s" % [
+		"住处：%s；职业：%s；工作地：%s%s%s" % [
 			_safe(social_state.get("home", "")),
 			_safe(social_state.get("job", "")),
 			_safe(social_state.get("workplace", "")),
+			(
+				"；家底%d（家境%s）" % [
+					int(social_state.get("money", 40)),
+					_wealth_label(int(social_state.get("money", 40))),
+				]
+				if social_state.get("money") is int
+				else ""
+			),
+			(
+				"；声望%d（镇上威望%s）" % [
+					int(social_state.get("reputation", 25)),
+					_reputation_label(int(social_state.get("reputation", 25))),
+				]
+				if social_state.get("reputation") is int
+				else ""
+			),
 		],
 		"",
 		"居民公开身份：",
@@ -189,13 +311,29 @@ func _render_initialization() -> String:
 		lines.append("- 无")
 	for resident_value: Variant in residents:
 		var resident := resident_value as Dictionary
-		lines.append("- %s；性别：%s；年龄：%s；职业：%s；住处：%s；工作地：%s" % [
+		lines.append("- %s；性别：%s；年龄：%s；职业：%s；住处：%s；工作地：%s%s%s" % [
 			_person(resident.get("resident_id", ""), resident.get("name", "")),
 			_safe(resident.get("gender", "")),
 			_safe(resident.get("age", "")),
 			_safe(resident.get("job", "")),
 			_safe(resident.get("home", "")),
 			_safe(resident.get("workplace", "")),
+			(
+				"；家底%d（家境%s）" % [
+					int(resident.get("money", 40)),
+					_wealth_label(int(resident.get("money", 40))),
+				]
+				if resident.get("money") is int
+				else ""
+			),
+			(
+				"；声望%d（镇上威望%s）" % [
+					int(resident.get("reputation", 25)),
+					_reputation_label(int(resident.get("reputation", 25))),
+				]
+				if resident.get("reputation") is int
+				else ""
+			),
 		])
 	lines.append("")
 	lines.append("已知地点：")
@@ -334,6 +472,12 @@ func _render_snapshot(wake_packet: Dictionary) -> String:
 		],
 	]
 	lines.append_array(AgentConflictContractScript.render_snapshot_lines(snapshot))
+	# 卧底额度已满: 明确告知, 避免它不知道"今晚已动过手"而反复硬提交暗杀。
+	if bool(snapshot.get("undercover_kill_quota_exhausted", false)):
+		lines.append(
+			"⚠ 今晚全队暗杀额度已经用完（已经有卧底动过手或被医生挡下），"
+			+ "今晚你不能再提交暗杀动作；继续踩点、观察或与同伙接头，等明晚再动手。"
+		)
 	var post_injury_reaction := snapshot.get("post_injury_reaction", {}) as Dictionary
 	if bool(post_injury_reaction.get("required", false)):
 		var attacker_name := String(
@@ -629,6 +773,28 @@ func _render_snapshot(wake_packet: Dictionary) -> String:
 					),
 				],
 			)
+			var service_kind := String(
+				service_request.get("kind", ""),
+			).strip_edges()
+			if service_kind in [
+				"dining_order",
+				"cafe_order",
+				"grocer_sale",
+				"clinic",
+			]:
+				lines.append(
+					(
+						"  - 重要：%s正在等这项服务，先处理完服务再考虑其他事；"
+						+ "顾客等待服务是当前最高优先级，不要因为休息、聊天或整理而耽搁。"
+					)
+					% _person(
+						service_request.get(
+							"requester_resident_id",
+							"",
+						),
+						service_request.get("requester_name", ""),
+					),
+				)
 			var medical_dialogue: Dictionary = {}
 			var medical_dialogue_value: Variant = service_request.get(
 				"medical_dialogue",
@@ -820,6 +986,39 @@ func _render_snapshot(wake_packet: Dictionary) -> String:
 				)
 	else:
 		lines.append("当前对话：无")
+	var death_cases := snapshot.get("town_death_cases", []) as Array
+	if not death_cases.is_empty():
+		lines.append("案件档案（你是警察，全镇死亡记录）：")
+		for case_value: Variant in death_cases:
+			var case_dict := case_value as Dictionary
+			var case_time := ""
+			var day := int(case_dict.get("day", 0))
+			var clock := String(case_dict.get("clock", "")).strip_edges()
+			if day > 0:
+				case_time = "第%d天" % day
+			if not clock.is_empty():
+				case_time += clock
+			if case_time.is_empty():
+				case_time = "时间不明"
+			var place_name := String(
+				case_dict.get("place_name", ""),
+			).strip_edges()
+			lines.append(
+				"- %s于%s在%s死亡；死因：%s。"
+				% [
+					_safe(case_dict.get("deceased_resident_name", "")),
+					case_time,
+					(
+						place_name
+						if not place_name.is_empty()
+						else "地点不明"
+					),
+					_safe(case_dict.get("reason", "不明")),
+				]
+			)
+		lines.append(
+			"作为警察，你的职责是查清连环死亡真相、找出凶手并处置。可前往案发地点调查、盘问当时在场的人；有人可能知道什么。",
+		)
 	return "\n".join(lines)
 
 
@@ -918,6 +1117,19 @@ func _render_events(events: Array) -> String:
 				lines.append("%s；%s" % [
 					prefix,
 					_safe(event.get("summary", "")),
+				])
+			"目睹暗杀":
+				lines.append("%s；%s（你亲眼看见%s对%s下了杀手）" % [
+					prefix,
+					_safe(event.get("summary", "")),
+					_person(
+						event.get("attacker_resident_id", ""),
+						event.get("attacker_name", ""),
+					),
+					_person(
+						event.get("victim_resident_id", ""),
+						event.get("victim_name", ""),
+					),
 				])
 			"有人来了", "有人走了":
 				lines.append("%s；%s" % [
@@ -1166,11 +1378,13 @@ func _render_constraints(constraints: Dictionary) -> String:
 				"必填公告反应数组 announcement_reactions：每个元素字段 %s；"
 				+ "按顺序逐条回应公告事件 %s，每个事件只能回应一次。"
 				+ "用本人态度明确表达接受、拒绝、怀疑或暂不决定，不能像没听见一样省略；"
+				+ "每条 text 最多 %d 个字符（一两句话即可，写太长整条决策会被拒绝）；"
 				+ "这不会替代本轮 action，也不能把未来时间的事情假装成已经完成"
 			)
 			% [
 				_join(announcement_reactions.get("fields", [])),
 				_join(announcement_reactions.get("source_event_ids", [])),
+				int(announcement_reactions.get("max_characters", 64)),
 			]
 		)
 	var social_response := constraints.get(
@@ -1196,6 +1410,61 @@ func _render_constraints(constraints: Dictionary) -> String:
 					_join(matter.get("option_ids", [])),
 				]
 			)
+	var exile_vote := constraints.get(
+		"exile_vote",
+		{},
+	) as Dictionary
+	if not exile_vote.is_empty():
+		if bool(exile_vote.get("required", false)):
+			lines.append(
+				(
+					"必填放逐投票 exile_vote：镇民大会投票即将截止，今天 %s 开票，"
+					+ "你还没有投票，本轮必须提交 exile_vote；字段 %s；"
+					+ "target_resident_name 必须从候选人中选：%s；"
+					+ "line 用一句话说明你的怀疑理由。你只能投一票，"
+					+ "候选人已排除警察、死者和你自己，警察绝不是卧底、不要投他；"
+					+ "本轮除了投票不再做其他行动"
+				)
+				% [
+					_safe(exile_vote.get("settle_clock", "")),
+					_join(exile_vote.get("fields", [])),
+					_join(exile_vote.get("candidate_names", [])),
+				]
+			)
+		else:
+			lines.append(
+				(
+					"可选放逐投票 exile_vote：镇民大会正在进行，今天 %s 开票，"
+					+ "得票最高者将被放逐出镇并公布身份；字段 %s；"
+					+ "target_resident_name 必须从候选人中选：%s；"
+					+ "line 用一句话说明你的怀疑理由。候选人已排除警察、死者和你自己，"
+					+ "警察绝不是卧底、不要投他。凭线索投票，可以故意不投或弃权（省略字段即可）"
+				)
+				% [
+					_safe(exile_vote.get("settle_clock", "")),
+					_join(exile_vote.get("fields", [])),
+					_join(exile_vote.get("candidate_names", [])),
+				]
+			)
+	var night_skill := constraints.get(
+		"night_skill",
+		{},
+	) as Dictionary
+	if not night_skill.is_empty():
+		lines.append(
+			(
+				"可选夜间技能 night_skill：今晚是夜间行动阶段，%s 结算；"
+				+ "字段 %s；可用技能：%s；"
+				+ "target_resident_name 必须从候选名单中选：%s；"
+				+ "line 写一句你的行动理由。不想使用或没有可用技能时省略字段即可"
+			)
+			% [
+				_safe(night_skill.get("settle_clock", "")),
+				_join(night_skill.get("fields", [])),
+				_join(night_skill.get("skills", [])),
+				_join(night_skill.get("candidate_names", [])),
+			]
+		)
 	var social_attention := constraints.get(
 		"social_attention",
 		{},
@@ -1340,6 +1609,29 @@ func _render_constraints(constraints: Dictionary) -> String:
 					_join(option.get("verbs", [])),
 				])
 			text += "；道具：%s" % "、".join(options)
+		if data.has("causes"):
+			var cause_lines: Array[String] = []
+			for cause_value: Variant in data["causes"] as Array:
+				var cause := cause_value as Dictionary
+				cause_lines.append(
+					"    - 目标%s（%s）：%s"
+					% [
+						_person(
+							cause.get("target_resident_id", ""),
+							cause.get("target_name", ""),
+						),
+						_safe(cause.get("cause_id", "")),
+						_safe(cause.get("meaning", "")),
+					]
+				)
+			text += "\n  可用目标：\n%s" % "\n".join(cause_lines)
+		if String(action_type) == "暗杀":
+			# 卧底暗杀提交模板: LLM 常见错误是 type 写英文/近义词或带多余字段,
+			# 这里直接给出唯一合法格式,减少"动作被拒→fallback"循环。
+			text += "\n  提交格式(唯一合法,type必须写'暗杀'两字): {\"action_id\":\"当前决定编号-暗杀\",\"type\":\"暗杀\",\"target_resident_id\":\"上面某个目标的ID\",\"line\":\"符合本人表面身份的短台词\"}; 不要加其他字段"
+		if String(action_type) == "制服":
+			# 警察制服提交模板(效果等同暗杀,目标直接出局)。
+			text += "\n  提交格式(唯一合法,type必须写'制服'两字): {\"action_id\":\"当前决定编号-制服\",\"type\":\"制服\",\"target_resident_id\":\"上面某个目标的ID\",\"line\":\"符合警察身份的短台词\"}; 不要加其他字段"
 		lines.append(text)
 	return "\n".join(lines)
 
@@ -1463,7 +1755,7 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 			reply_constraints["announcement_reactions"] = {
 				"fields": ["source_event_id", "text"],
 				"source_event_ids": reply_announcement_event_ids,
-				"max_characters": 32,
+				"max_characters": 64,
 				"required": true,
 			}
 		var reply_follow_up := _conversation_follow_up_constraints(snapshot)
@@ -1512,6 +1804,13 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 			"托人传话",
 			{"recipients": private_message_recipient_ids},
 		)
+	# 发布公告:站在中心广场公告栏处才能向全镇发公告(与 _prepare_announcement_action
+	# 的校验一致)。LLM 在广场时给出发公告选项,文本可含自然语言时间。
+	var current_place_name := String(
+		(place.get("name", "") as String) if place.has("name") else ""
+	).strip_edges()
+	if current_place_name == "中心广场":
+		actions["发布公告"] = _action_constraints("发布公告")
 	var prop_options: Array[Dictionary] = []
 	for value: Variant in place.get("props", []) as Array:
 		if typeof(value) == TYPE_DICTIONARY:
@@ -1605,19 +1904,25 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 		constraints["reaction"] = {
 			"fields": ["source_action_id", "text"],
 			"source_action_id": reaction_source_action_id,
-			"max_characters": 32,
+			"max_characters": 64,
 			"required": true,
 		}
 	if not announcement_reaction_event_ids.is_empty():
 		constraints["announcement_reactions"] = {
 			"fields": ["source_event_id", "text"],
 			"source_event_ids": announcement_reaction_event_ids,
-			"max_characters": 32,
+			"max_characters": 64,
 			"required": true,
 		}
 	var social_response := _social_response_constraints(snapshot)
 	if not social_response.is_empty():
 		constraints["social_response"] = social_response
+	var exile_vote := _exile_vote_constraints(snapshot)
+	if not exile_vote.is_empty():
+		constraints["exile_vote"] = exile_vote
+	var night_skill := _night_skill_constraints(snapshot)
+	if not night_skill.is_empty():
+		constraints["night_skill"] = night_skill
 	var social_attention := _social_attention_constraints(snapshot)
 	if not social_attention.is_empty():
 		constraints["social_attention"] = social_attention
@@ -1787,6 +2092,56 @@ func _social_assignment(snapshot: Dictionary) -> Dictionary:
 	return {}
 
 
+func _exile_vote_constraints(
+	snapshot: Dictionary,
+) -> Dictionary:
+	var vote := snapshot.get("exile_vote", {}) as Dictionary
+	if vote.is_empty():
+		return {}
+	var candidate_names: Array[String] = []
+	for name_value: Variant in vote.get("candidate_names", []) as Array:
+		candidate_names.append(String(name_value))
+	if candidate_names.is_empty():
+		return {}
+	return {
+		"fields": (
+			AgentContractScript.EXILE_VOTE_FIELDS as Array
+		).duplicate(),
+		"candidate_names": candidate_names,
+		"round_day": int(vote.get("round_day", 0)),
+		"settle_clock": String(vote.get("settle_clock", "")),
+		"max_line_characters": 80,
+		"required": bool(vote.get("forced", false)),
+	}
+
+
+func _night_skill_constraints(
+	snapshot: Dictionary,
+) -> Dictionary:
+	var skill := snapshot.get("night_skill", {}) as Dictionary
+	if skill.is_empty():
+		return {}
+	var skill_ids: Array[String] = []
+	for skill_value: Variant in skill.get("skills", []) as Array:
+		skill_ids.append(String(skill_value))
+	var candidate_names: Array[String] = []
+	for name_value: Variant in skill.get("candidate_names", []) as Array:
+		candidate_names.append(String(name_value))
+	if skill_ids.is_empty() or candidate_names.is_empty():
+		return {}
+	return {
+		"fields": (
+			AgentContractScript.NIGHT_SKILL_FIELDS as Array
+		).duplicate(),
+		"skills": skill_ids,
+		"candidate_names": candidate_names,
+		"round_day": int(skill.get("round_day", 0)),
+		"settle_clock": String(skill.get("settle_clock", "")),
+		"max_line_characters": 80,
+		"required": false,
+	}
+
+
 func _social_response_constraints(
 	snapshot: Dictionary,
 ) -> Dictionary:
@@ -1878,6 +2233,28 @@ func _index_resident_names() -> void:
 		if typeof(value) == TYPE_DICTIONARY:
 			var resident := value as Dictionary
 			_resident_names[String(resident.get("resident_id", ""))] = String(resident.get("name", ""))
+
+
+func _wealth_label(money: int) -> String:
+	if money >= 80:
+		return "殷实"
+	elif money >= 55:
+		return "宽裕"
+	elif money >= 30:
+		return "普通"
+	else:
+		return "拮据"
+
+
+func _reputation_label(reputation: int) -> String:
+	if reputation >= 65:
+		return "很高"
+	elif reputation >= 40:
+		return "较高"
+	elif reputation >= 20:
+		return "一般"
+	else:
+		return "低下"
 
 
 func _person(resident_id_value: Variant, supplied_name: Variant = "") -> String:

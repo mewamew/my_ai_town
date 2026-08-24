@@ -268,6 +268,22 @@
       "taskCapabilities": ["cargo.pickup", "cargo.transport", "cargo.deliver"],
       "transitionPolicy": "direct",
       "scheduleTemplateId": "schedule_day_delivery"
+    },
+    {
+      "occupationId": "occupation_police",
+      "label": "警察",
+      "aliases": ["治安官", "捕快"],
+      "workplacePolicy": "required",
+      "workplaceMode": "single_place",
+      "primaryWorkplacePlace": "镇公所",
+      "relatedWorkplacePlaces": ["中心广场"],
+      "dynamicWorkTargetRules": ["task_public_place"],
+      "fixedWorkAreaIds": [],
+      "requiredPlaceCapabilitiesAny": ["civic.records"],
+      "allowedActivityTags": ["civic.records", "civic.service", "civic.meeting", "bulletin.publish"],
+      "taskCapabilities": ["civic.service", "bulletin.publish", "staffing.coordinate"],
+      "transitionPolicy": "demonstrated",
+      "scheduleTemplateId": "schedule_day_civic"
     }
   ],
   "referenceStatus": {
@@ -304,7 +320,7 @@
       {"combinationId": "default_social_fisher_harbor", "occupationName": "渔夫", "workplacePlace": "渔港", "occupationId": "occupation_fisher", "status": "formal_executable"},
       {"combinationId": "default_social_musician_plaza", "occupationName": "乐师", "workplacePlace": "中心广场", "occupationId": "occupation_musician", "status": "formal_executable"},
       {"combinationId": "default_social_clinic_practitioner_clinic", "occupationName": "草药医师", "workplacePlace": "诊所", "occupationId": "occupation_clinic_practitioner", "status": "formal_executable"},
-      {"combinationId": "default_social_town_manager_town_hall", "occupationName": "小镇管理者", "workplacePlace": "镇公所", "occupationId": "occupation_town_manager", "status": "formal_executable"},
+      {"combinationId": "default_social_police_town_hall", "occupationName": "警察", "workplacePlace": "镇公所", "occupationId": "occupation_police", "status": "formal_executable"},
       {"combinationId": "default_social_gardener_community_garden", "occupationName": "园艺师", "workplacePlace": "社区花园", "occupationId": "occupation_gardener", "status": "formal_executable"},
       {"combinationId": "default_social_librarian_candidate_library", "occupationName": "图书管理员", "workplacePlace": "图书馆", "occupationId": "occupation_librarian", "status": "formal_executable"},
       {"combinationId": "default_social_postal_worker_town_road", "occupationName": "邮差", "workplacePlace": "小镇道路", "occupationId": "occupation_postal_worker", "status": "formal_executable"}

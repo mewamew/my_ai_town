@@ -15,6 +15,7 @@ const ACTION_FIELDS := {
 		"content",
 		"line",
 	],
+	"发布公告": ["action_id", "type", "text", "line"],
 	"待着": ["action_id", "type", "line"],
 	"搭话": ["action_id", "type", "target_resident_id", "say", "narration", "photos"],
 	"答话": [
@@ -39,6 +40,18 @@ const ACTION_FIELDS := {
 		"target_resident_id",
 		"attack_kind",
 		"cause_id",
+		"line",
+	],
+	"暗杀": [
+		"action_id",
+		"type",
+		"target_resident_id",
+		"line",
+	],
+	"制服": [
+		"action_id",
+		"type",
+		"target_resident_id",
 		"line",
 	],
 	"回应冲突": [
@@ -120,6 +133,17 @@ static func validate_action_shape(action: Dictionary) -> String:
 				return message_error
 			if String(action.get("content", "")).length() > 240:
 				return "托人传话动作 content 最多 240 字"
+			return ""
+		"发布公告":
+			var announcement_error := require_action_texts(
+				action,
+				["text", "line"],
+				action_type,
+			)
+			if not announcement_error.is_empty():
+				return announcement_error
+			if String(action.get("text", "")).length() > 240:
+				return "发布公告动作 text 最多 240 字"
 			return ""
 		"待着":
 			return require_action_texts(action, ["line"], action_type)
@@ -349,6 +373,14 @@ static func validate_decision_shape(
 		allowed_fields.append("announcement_reactions")
 	if decision.has("social_response"):
 		allowed_fields.append("social_response")
+	if decision.has("exile_vote"):
+		allowed_fields.append("exile_vote")
+		if not decision.get("exile_vote") is Dictionary:
+			return "exile_vote 必须是对象"
+	if decision.has("night_skill"):
+		allowed_fields.append("night_skill")
+		if not decision.get("night_skill") is Dictionary:
+			return "night_skill 必须是对象"
 	if decision.has("social_attention"):
 		allowed_fields.append("social_attention")
 	if decision.has("social_request"):

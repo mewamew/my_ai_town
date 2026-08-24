@@ -350,6 +350,18 @@
       "noTaskFallback": "music_interest_or_normal_life",
       "staffingEntryRule": "performance_required",
       "vacancyEffect": "formal_performances_stop_while_personal_music_interest_remains"
+    },
+    {
+      "occupationId": "occupation_police",
+      "taskCapabilities": ["civic.service", "bulletin.publish", "staffing.coordinate"],
+      "taskSources": ["resident_request", "place_service_change", "staffing_matter", "public_matter"],
+      "targetKinds": ["prop", "route", "resident", "service_request"],
+      "resultKinds": ["civic_case_update", "bulletin_publish", "staffing_matter_update"],
+      "upstreamOccupationIds": [],
+      "downstreamOccupationIds": ["occupation_postal_worker"],
+      "noTaskFallback": "normal_life",
+      "staffingEntryRule": "performance_required",
+      "vacancyEffect": "civic_requests_wait_and_new_formal_bulletins_pause"
     }
   ]
 }

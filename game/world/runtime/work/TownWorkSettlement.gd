@@ -227,6 +227,22 @@ static func settle_completed_activity(
 		resident_id,
 		execution,
 	)
+	# 金钱/声望系统:任务结算完成后发放报酬。
+	# 这里处于结算末尾,重新读取任务以拿到最终状态;只有任务确实
+	# 处于 in_progress(本次完成将推进为 completed)才算工作收入,
+	# 避免把吃饭、休息等日常活动当作赚钱。
+	var final_task := _bound_settlement_task(world, resident_id, execution) as Dictionary
+	if (
+		world.has_method("_award_resident_work_income")
+		and not final_task.is_empty()
+		and String(final_task.get("state", "")) == "in_progress"
+	):
+		world._award_resident_work_income(
+			resident_id,
+			String(final_task.get("capability", "")),
+			String(final_task.get("sourceKind", "")),
+			String(final_task.get("taskId", "")),
+		)
 
 
 static func _bound_settlement_task(

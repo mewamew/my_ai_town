@@ -83,6 +83,12 @@ static func packet(
 				conflict_snapshot.get("medical_follow_up", {}) as Dictionary
 			).duplicate(true),
 			"post_injury_reaction": context.get("postInjuryReaction", {}) as Dictionary,
+			"exile_vote": context.get("exileVote", {}) as Dictionary,
+			"night_skill": context.get("nightSkill", {}) as Dictionary,
+			"undercover_kill_quota_exhausted": bool(
+				context.get("undercoverKillQuotaExhausted", false)
+			),
+			"town_death_cases": context.get("townDeathCases", []) as Array,
 		},
 		"events": events,
 		"action_results": results,

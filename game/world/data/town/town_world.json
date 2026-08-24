@@ -1051,12 +1051,12 @@
       "activity_definitions.json": "7e214115e4bd332e2be6f441bf026d09a9b5288fdf0a60ad458f4a426efa9d9c",
       "activity_slots.json": "b1d646753a396c8be1cb505933e6d881100fcb6231ae2dd7f4a3200cdeb53e17",
       "indoor_prop_authoring.json": "9c636eabef2a7ef1517fb1b024111137ba62f2e076c6c68299addaa315d2e286",
-      "occupation_catalog.json": "eddae46da2c289df21ee8ec93b1042d36c22db8211a1bc51a0addd3e65c139af",
+      "occupation_catalog.json": "6e0210da5a59c0cc4c4db8253a441c78f9ecf3f5114d7ae79fc113adfd3ac25d",
       "places.json": "17dc9a4fdd84421544713171fd69f394d5f40efd10586bb2de9e3de3c241342e",
       "props.json": "90ca9c6f5f0fdc14df9eacb33088144cb53273a36661f27d8746b86f3896b934",
       "schedule_templates.json": "c813a58fb45813c52230c398181b2bc2ebd5aa9a1f6b76cb2c5d7c0708c50d63"
     },
-    "sourceFingerprint": "70dcd511461e5266174f3ddb5323d2adf4ecd5caf38cf25d7ba886ead3e3b818",
+    "sourceFingerprint": "bc3442e119eeccd05687f4f1bc73bb3f857c8747f651d5291b6f53cce09c3490",
     "sourceWorldId": "town",
     "staticReferencesValidated": true,
     "status": "formal_executable",
@@ -145114,6 +145114,40 @@
       ],
       "transitionPolicy": "demonstrated",
       "workplaceMode": "multi_place",
+      "workplacePolicy": "required"
+    },
+    {
+      "aliases": [
+        "治安官",
+        "捕快"
+      ],
+      "allowedActivityTags": [
+        "civic.records",
+        "civic.service",
+        "civic.meeting",
+        "bulletin.publish"
+      ],
+      "dynamicWorkTargetRules": [
+        "task_public_place"
+      ],
+      "fixedWorkAreaIds": [],
+      "label": "警察",
+      "occupationId": "occupation_police",
+      "primaryWorkplacePlace": "镇公所",
+      "relatedWorkplacePlaces": [
+        "中心广场"
+      ],
+      "requiredPlaceCapabilitiesAny": [
+        "civic.records"
+      ],
+      "scheduleTemplateId": "schedule_day_civic",
+      "taskCapabilities": [
+        "civic.service",
+        "bulletin.publish",
+        "staffing.coordinate"
+      ],
+      "transitionPolicy": "demonstrated",
+      "workplaceMode": "single_place",
       "workplacePolicy": "required"
     },
     {

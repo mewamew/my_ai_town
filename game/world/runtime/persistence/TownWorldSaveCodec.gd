@@ -50,6 +50,7 @@ const OPTIONAL_STATE_KEYS := [
 	"conflictState",
 	"residentLifecycle",
 	"travelerRelations",
+	"werewolfState",
 ]
 
 
@@ -387,6 +388,11 @@ static func _validate_state(
 		and not state.get("communityBulletin") is Dictionary
 	):
 		errors.append("世界存档 state.communityBulletin 必须是对象")
+	if (
+		state.has("werewolfState")
+		and not state.get("werewolfState") is Dictionary
+	):
+		errors.append("世界存档 state.werewolfState 必须是对象")
 	if (
 		state.has("animalFacts")
 		and not state.get("animalFacts") is Dictionary

@@ -6,7 +6,7 @@ extends RefCounted
 const WORLD_SCALARS := preload("res://world/data/town/TownWorldScalars.gd")
 const SOUL_PROFILE := preload("res://agent/soul/AgentSoulProfile.gd")
 static func _validate_me(me: Dictionary, errors: Array[String]) -> void:
-	_validate_allowed_fields(me, ["resident_id", "attributes", "social_state", "soul_profile"], "me", errors)
+	_validate_allowed_fields(me, ["resident_id", "attributes", "social_state", "soul_profile", "is_undercover"], "me", errors)
 	_validate_resident_id(me, "resident_id", "me.resident_id", errors)
 	var attributes := AgentContract._require_dictionary(me, "attributes", "me.attributes", errors)
 	if not attributes.is_empty():
@@ -42,7 +42,7 @@ static func _validate_me(me: Dictionary, errors: Array[String]) -> void:
 	if not social_state.is_empty():
 		_validate_allowed_fields(
 			social_state,
-			["home", "job", "workplace"],
+			["home", "job", "workplace", "money", "reputation"],
 			"me.social_state",
 			errors,
 		)
@@ -74,7 +74,7 @@ static func _validate_residents(
 			resident,
 			[
 				"resident_id", "name", "gender", "age", "job", "home",
-				"workplace", "lifecycle_status",
+				"workplace", "lifecycle_status", "money", "reputation",
 			],
 			path,
 			errors,

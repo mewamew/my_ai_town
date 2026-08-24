@@ -482,7 +482,11 @@ func begin_attack(command: Dictionary) -> Dictionary:
 	)
 	var injury_result := _apply_injury(
 		target_id,
-		"light",
+		(
+			"fatal"
+			if String(command.get("attackKind", "")) == "lethal"
+			else "light"
+		),
 		conflict,
 		attacker_id,
 		occurred_at,
@@ -1211,8 +1215,9 @@ func _apply_injury(
 	var current := _injuries.get(actor_id, {}) as Dictionary
 	var current_severity := String(current.get("severity", ""))
 	var resolved_severity := severity
+	# 方案A:已重伤(heavy)的居民再次受击 → 致命(fatal),由 World 侧确认死亡。
 	if current_severity == "heavy":
-		resolved_severity = "heavy"
+		resolved_severity = "fatal"
 	elif current_severity == "light" and severity == "light":
 		resolved_severity = "heavy"
 	_revision += 1

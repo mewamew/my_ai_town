@@ -24,6 +24,8 @@ static func confirm(
 	reason: String,
 	expected_lifecycle_revision: int = -1,
 	expected_world_instance_token: String = "",
+	attacker_resident_id: String = "",
+	witness_resident_ids: Array = [],
 ) -> Dictionary:
 	var resident_id: String = host._resident_key(resident_ref)
 	var prepared := RESIDENT_DEATH_POLICY.prepare_confirmation(
@@ -55,19 +57,34 @@ static func confirm(
 		host.get_time(),
 		RESIDENT_DEATH_POLICY.death_location(resident),
 		false,
+		attacker_resident_id.strip_edges(),
+		witness_resident_ids,
 	) as Dictionary
 	if confirmed.get("ok") != true:
 		return host._decorate_command_result(confirmed)
 	var event := confirmed.get("event", {}) as Dictionary
-	host.WORLD_LOG_COMMIT_RUNTIME.append_public(
+	# 卧底嫁祸在暗杀结算时即被消费，污染警察后续案件档案线索。
+	if normalized_reason.contains("暗杀"):
+		host.ROLE_SKILL_RUNTIME.consume_frame_for_death(host, event_id)
+	# 狼人杀化:夜间暗杀死亡不即时公告,入队等次日 08:00 天亮统一公布。
+	# 入队期间死亡不进入公共事件日志(天亮 flush 时补记),表现层按
+	# pending_death_presentation 保持"在世"外观,杜绝天亮前的信息泄露。
+	var previous_doing := String(resident.get("doing", ""))
+	var deferred_to_dawn: bool = host.WEREWOLF_RUNTIME.defer_night_death_announcement(
 		host,
-		event_id,
-		"world_event",
-		resident_id,
-		host.resident_display_name(resident_id),
-		previous_place,
 		event,
+		previous_doing,
 	)
+	if not deferred_to_dawn:
+		host.WORLD_LOG_COMMIT_RUNTIME.append_public(
+			host,
+			event_id,
+			"world_event",
+			resident_id,
+			host.resident_display_name(resident_id),
+			previous_place,
+			event,
+		)
 	var conversation := CONVERSATION_RUNTIME._active_conversation_for_person(
 		host,
 		resident_id,
@@ -116,26 +133,28 @@ static func confirm(
 		int(host._environment.get_absolute_minute()),
 	)
 	PLACE_SERVICE_COMMAND_RUNTIME.refresh_staffing(host)
-	var death_announcement: Dictionary = ANNOUNCEMENT_COMMAND_RUNTIME.publish(
-		host,
-		SYSTEM_BULLETIN_PUBLISHER_ID,
-		RESIDENT_DEATH_POLICY.announcement_text(event),
-		"",
-		"board",
-	)
-	if death_announcement.get("ok") != true:
-		push_error(
-			"居民死亡公告发布失败：%s"
-			% String(death_announcement.get("errorCode", "UNKNOWN"))
+	if not deferred_to_dawn:
+		var death_announcement: Dictionary = ANNOUNCEMENT_COMMAND_RUNTIME.publish(
+			host,
+			SYSTEM_BULLETIN_PUBLISHER_ID,
+			host._death_announcement_text(event),
+			"",
+			"board",
 		)
-	for recipient_id: String in host.resident_registry.order:
-		if host._resident_is_alive(recipient_id):
-			host._schedule_decision(recipient_id, true)
+		if death_announcement.get("ok") != true:
+			push_error(
+				"居民死亡公告发布失败：%s"
+				% String(death_announcement.get("errorCode", "UNKNOWN"))
+			)
+		for recipient_id: String in host.resident_registry.order:
+			if host._resident_is_alive(recipient_id):
+				host._schedule_decision(recipient_id, true)
 	host._bump_world_revision(false)
 	host.RESIDENT_POSITION_COMMIT_RUNTIME.emit_place_change(host, resident_id, previous_place)
 	host.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.sync_staffing_matters(host)
 	host._notify_world_revision()
 	host._emit_resident_state_changed(resident_id)
+	host.WEREWOLF_RUNTIME.check_victory(host)
 	return host._decorate_command_result({
 		"ok": true,
 		"changed": true,

@@ -316,7 +316,7 @@ static func _validate_saved_resident(
 	if not social_value is Dictionary:
 		errors.append("世界存档居民 %s 的 socialState 必须是对象" % resident_id)
 	var social := social_value as Dictionary if social_value is Dictionary else {}
-	_validate_exact_keys(social, ["home", "job", "workplace"], "世界存档居民 %s 的 socialState" % resident_id, errors)
+	_validate_exact_keys(social, ["home", "job", "workplace", "money", "reputation"], "世界存档居民 %s 的 socialState" % resident_id, errors)
 	for key in ["home", "workplace"]:
 		if not _nonempty_string(social.get(key)) or not known_places.has(social.get(key)):
 			errors.append("世界存档居民 %s 的 %s 不是已知地点" % [resident_id, key])
