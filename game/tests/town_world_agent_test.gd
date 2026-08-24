@@ -961,7 +961,7 @@ func _test_full_queue_only_dispatches_request_that_frees_slot() -> void:
 	gateway.set("_connected_resident_ids", connected_resident_ids)
 	gateway.set("_session_active", true)
 	var inflight := {}
-	for index in 6:
+	for index in 3:
 		var resident_id := (
 			"resident-a"
 			if index == 0
@@ -999,7 +999,7 @@ func _test_full_queue_only_dispatches_request_that_frees_slot() -> void:
 		"a full queue waits because replacing bookkeeping cannot cancel a real call",
 	)
 	inflight = gateway.get("_inflight") as Dictionary
-	_expect_equal(inflight.size(), 6, "the real model request cap remains exact")
+	_expect_equal(inflight.size(), 3, "the real model request cap remains exact")
 	_expect(
 		not inflight.has("decision-current"),
 		"replacement waits until the old call actually finishes",
@@ -1509,7 +1509,7 @@ func _test_failed_first_pair_cannot_starve_the_town() -> void:
 
 	_expect_equal(
 		gateway.call("pump"),
-		5,
+		2,
 		"ordinary life leaves one bounded model slot available for conversation",
 	)
 	_expect_equal(
@@ -1517,13 +1517,10 @@ func _test_failed_first_pair_cannot_starve_the_town() -> void:
 		[
 			"resident-a",
 			"resident-b",
-			"resident-c",
-			"resident-d",
-			"resident-e",
 		],
 		"first pump begins from the current round-robin cursor",
 	)
-	for resident_id in resident_ids.slice(0, 5):
+	for resident_id in resident_ids.slice(0, 2):
 		agent.fail("decision-%s" % resident_id)
 	_expect_equal(
 		world.submissions.size(),
@@ -1532,18 +1529,23 @@ func _test_failed_first_pair_cannot_starve_the_town() -> void:
 	)
 	_expect_equal(
 		gateway.call("pump"),
-		5,
+		2,
 		"the next bounded batch mixes correction attempts with waiting residents",
 	)
-	var correction_batch := agent.requested_resident_ids.slice(5)
+	var correction_batch := agent.requested_resident_ids.slice(2)
 	_expect(
-		correction_batch.has("resident-f")
-		and correction_batch.has("resident-g")
-		and correction_batch.has("resident-h"),
+		correction_batch.has("resident-c")
+		and correction_batch.has("resident-d"),
 		"a bad first group cannot starve residents that were already waiting",
 	)
-	for resident_id in correction_batch:
-		agent.fail("decision-%s" % resident_id)
+	# 槽位降到 2 后，fresh 重试排到等待居民之后，失败居民要等多轮才能耗尽
+	# 第二次机会。持续 pump-fail 直到安全连续性兜底触发。
+	var attempts := 0
+	while world.submissions.is_empty() and attempts < 20:
+		gateway.call("pump")
+		for decision_value in agent.callbacks.keys():
+			agent.fail(String(decision_value))
+		attempts += 1
 	_expect(
 		world.submissions.size() > 0,
 		"residents whose correction was exhausted receive safe continuity",
@@ -1663,8 +1665,8 @@ func _test_conversation_lane_stays_available_during_ordinary_work() -> void:
 
 	_expect_equal(
 		gateway.call("pump"),
-		5,
-		"five ordinary requests can run without consuming the conversation lane",
+		2,
+		"two ordinary requests can run without consuming the conversation lane",
 	)
 	var urgent := _request("resident-f", "decision-avatar-reply")
 	var wake := urgent.get("wakePacket", {}) as Dictionary
@@ -1748,7 +1750,7 @@ func _test_conversation_turn_preempts_ordinary_life_requests() -> void:
 	gateway.set("_avatar_person_id", "player_avatar")
 	gateway.set("_session_active", true)
 
-	_expect_equal(gateway.call("pump"), 6, "town-scale request group is bounded")
+	_expect_equal(gateway.call("pump"), 3, "town-scale request group is bounded")
 	_expect_equal(
 		agent.requested_resident_ids[0],
 		"resident-g",

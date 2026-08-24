@@ -30,7 +30,7 @@ const REQUIRED_PROVIDER_SERVICE_METHODS: Array[String] = [
 # Fifteen residents sharing two slots can leave most of the town visibly idle
 # for several model round trips after a synchronized action boundary. Keep the
 # burst bounded, but give a normal town enough lanes to keep living.
-const MAX_CONCURRENT_MODEL_REQUESTS := 6
+const MAX_CONCURRENT_MODEL_REQUESTS := 3
 const RESERVED_AVATAR_CONVERSATION_REQUEST_SLOTS := 1
 # 本地推理通常由一张显卡或一颗 CPU 串行处理。允许两个普通居民继续推进，
 # 再给玩家对话留一个独立位置；其余请求保留在 World 待处理队列中，
