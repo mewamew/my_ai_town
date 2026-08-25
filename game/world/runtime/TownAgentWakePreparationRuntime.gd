@@ -471,6 +471,28 @@ func _advance_preparation(
 					"conflict_tension_options": (conflict_snapshot.get("conflict_tension_options", []) as Array).duplicate(true),
 					"medical_follow_up": (conflict_snapshot.get("medical_follow_up", {}) as Dictionary).duplicate(true),
 					"post_injury_reaction": preparation.get("postInjuryReaction", {}) as Dictionary,
+					# 狼人杀附件(迁移注入, 与 TownAgentWakeContextRuntime.wake_packet 同源):
+					# 真实游戏 wake 由本模块 finalize 直接拼装, 不经过 wake_packet,
+					# 缺失这些键会导致投票/夜间技能/警察侦查装备在真实游戏里全部不注入。
+					"exile_vote": world.WEREWOLF_RUNTIME.vote_snapshot(
+						world, resident_id,
+					),
+					"night_skill": world.ROLE_SKILL_RUNTIME.night_skill_snapshot(
+						world, resident_id,
+					),
+					"undercover_kill_quota_exhausted": (
+						world._undercover_resident_ids().has(resident_id)
+						and world.WEREWOLF_RUNTIME.undercover_kill_quota_exhausted(
+							world,
+							int(preparation.get("absoluteMinute", 0)),
+						)
+					),
+					"town_death_cases": world._police_death_cases(
+						resident_id,
+					),
+					"police_intel": AGENT_WAKE_CONTEXT_RUNTIME._police_intel_context(
+						world, resident_id,
+					),
 				},
 				"events": preparation.get("publicEvents", []) as Array,
 				"action_results": preparation.get("publicResults", []) as Array,
