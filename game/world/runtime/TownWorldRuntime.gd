@@ -3036,6 +3036,47 @@ func _activate_assassination_action(
 		_schedule_decision(resident_id, true)
 		_emit_resident_state_changed(resident_id)
 		return
+	# 警察警觉护盾:警察每局有一次警觉免死。暗杀警察被警觉挡下时,
+	# 消耗全队当晚配额(同医生守诊,不能换目标继续杀),卧底收到失败
+	# 反馈,警察收到"暗杀未遂"线索事件(可据此警惕身边人)。
+	if _resident_is_police(target_id) and WEREWOLF_RUNTIME.consume_police_alert(self):
+		WEREWOLF_RUNTIME.record_night_kill(self, kill_minute)
+		TOWN_LOG.line(
+			"CATMOUSE",
+			"%s | %s 暗杀 %s 未遂：警察警觉，护盾挡下" % [
+				_time_label(),
+				_resident_display_name(resident_id),
+				target_name,
+			],
+		)
+		var alert_event := {
+			"event_id": "police-alert:%d:%s" % [
+				int(_authoritative_absolute_minute()),
+				target_id,
+			],
+			"type": "暗杀未遂",
+			"time": get_time(),
+			"victim_resident_id": target_id,
+			"victim_name": target_name,
+			"summary": (
+				"昨夜有人试图对你不利——动手的人就潜伏在镇上，"
+				+ "注意身边接近你的人，尤其是夜里。"
+			),
+		}
+		var target_resident := _residents.get(target_id, {}) as Dictionary
+		_append_pending_world_event(target_resident, alert_event)
+		_append_action_result_without_schedule(
+			resident_id,
+			String(action.get("action_id", "")),
+			"completed",
+			"你试图对%s下手，但%s警觉了，暗杀没有得手。" % [
+				target_name,
+				target_name,
+			],
+		)
+		_schedule_decision(resident_id, true)
+		_emit_resident_state_changed(resident_id)
+		return
 	var death_reason := "被%s暗杀" % _resident_display_name(resident_id)
 	var witnesses: Array[String] = []
 	if _resident_is_alive(target_id):
@@ -3055,6 +3096,31 @@ func _activate_assassination_action(
 	var ok := bool(death_result.get("ok", false))
 	if ok:
 		WEREWOLF_RUNTIME.record_night_kill(self, kill_minute)
+		# 警察死亡强线索:警察是全镇唯一执法者,遇害信息必须传开,
+		# 目击者在场与否都写入公共事件日志,给镇民盘问方向。
+		if _resident_is_police(target_id):
+			_append_public_event_log(
+				"police-death:%d:%s"
+				% [int(_authoritative_absolute_minute()), target_id],
+				"警察遇害",
+				target_id,
+				target_name,
+				String(action.get("placeId", "")),
+				{
+					"summary": (
+						"%s 遇害。%s"
+						% [
+							target_name,
+							(
+								"据传%s当时在附近，也许看到了什么。"
+								% _witness_names(witnesses)
+								if not witnesses.is_empty()
+								else "现场没有目击者，线索寥寥。"
+							),
+						]
+					),
+				},
+			)
 		var actor_log_name := _resident_display_name(resident_id)
 		var victim_log_name := _resident_display_name(target_id)
 		TOWN_LOG.line(

@@ -50,6 +50,20 @@ static func record_night_kill(world, absolute_minute: int) -> void:
 	)
 
 
+## 警察警觉护盾剩余次数:警察每局有一次警觉免死(暗杀警察被挡下)。
+static func police_alert_charges(world) -> int:
+	return int(world._werewolf_state.get("policeAlertCharges", 0))
+
+
+## 消耗一次警察警觉护盾。返回是否成功消耗(剩余次数 > 0 才消耗)。
+static func consume_police_alert(world) -> bool:
+	var charges := police_alert_charges(world)
+	if charges <= 0:
+		return false
+	world._werewolf_state["policeAlertCharges"] = charges - 1
+	return true
+
+
 ## 卧底夜间击杀额度是否已用尽(今晚已有人动过手或被医生挡下)。
 ## 供 wake 快照注入: 提示卧底今晚不能再提交暗杀。
 static func undercover_kill_quota_exhausted(
@@ -88,6 +102,7 @@ static func default_state() -> Dictionary:
 		"winnerAnnounced": false,         # 胜负公告是否已发出(夜间终局压到天亮)
 		"roleSkills": ROLE_SKILL_RUNTIME.default_role_skills(),
 		"undercoverKillLastNight": -1,    # 全卧底阵营每晚最多 1 杀（-1=未杀过）
+		"policeAlertCharges": 1,          # 警察每局 1 次警觉免死(暗杀被挡下)
 	}
 
 
