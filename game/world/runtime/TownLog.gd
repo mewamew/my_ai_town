@@ -10,20 +10,29 @@ extends RefCounted
 static var _last_category := ""
 
 
+static func _wall_clock() -> String:
+	# 现实墙钟时间戳(含毫秒), 用于与 API 平台调用记录(如 tokenrhythm CSV 的
+	# requestAt, 精度也是毫秒)精确对齐, 反推限流窗口与请求率。
+	var now := Time.get_unix_time_from_system()
+	var dt := Time.get_datetime_dict_from_unix_time(now)
+	var ms := int(fmod(now, 1.0) * 1000.0)
+	return "%02d:%02d:%02d.%03d" % [dt.hour, dt.minute, dt.second, ms]
+
+
 static func line(category: String, message: String) -> void:
 	var normalized := category.strip_edges().to_upper()
 	if normalized.is_empty():
 		normalized = "INFO"
 	if _last_category != "" and _last_category != normalized:
 		print("")
-	print("[%s] %s" % [normalized, message])
+	print("[%s] %s | %s" % [normalized, _wall_clock(), message])
 	_last_category = normalized
 
 
 static func section(title: String) -> void:
 	# 阶段横幅永远独占一段：前后各空一行，连续两个阶段也不会粘在一起。
 	print("")
-	print("============ %s ============" % title)
+	print("============ [%s] %s ============" % [_wall_clock(), title])
 	print("")
 	_last_category = ""
 
