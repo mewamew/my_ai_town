@@ -454,6 +454,9 @@ static func submit_night_skill(world, resident_id: String, value: Dictionary) ->
 	var target_id := String(
 		value.get("target_resident_id", ""),
 	).strip_edges()
+	# 容错: 模型有时从选项里抄到 "ID｜名字" 混合格式, 截取 ID 部分再校验。
+	if target_id.contains("｜"):
+		target_id = target_id.split("｜")[0].strip_edges()
 	if skill_id.is_empty():
 		return "技能 skill_id 必须是非空文本"
 	if target_id.is_empty():

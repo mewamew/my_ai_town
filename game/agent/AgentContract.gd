@@ -58,6 +58,9 @@ const EVENT_TYPES := [
 	"查验结果",
 	"被救",
 	"暗杀失败",
+	"暗杀未遂",
+	"追踪情报",
+	"查案线索",
 ]
 const ACTION_RESULT_STATUSES := [
 	"completed", "interrupted", "rejected", "replaced", "failed",
