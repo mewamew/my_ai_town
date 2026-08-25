@@ -258,8 +258,22 @@ func _build_request_body(model_request: Dictionary) -> Dictionary:
 	# Ollama 与 LM Studio 的 OpenAI-compatible 端点支持 reasoning_effort=none。
 	# 居民决策需要把输出预算留给最终 JSON，避免思考模型只返回推理过程。
 	if _should_disable_thinking():
-		body["reasoning_effort"] = "none"
+		if _api_model_is_mimo():
+			# 小米 MiMo 系与内置 XiaomiMiMo provider 保持一致，用 OpenAI 格式的
+			# 思考开关（实测 opencode go 网关 mimo-v2.5 支持 thinking=disabled，
+			# 关掉后 reasoning_content 归零、直接输出最终 JSON）。
+			body.erase("reasoning_effort")
+			body["thinking"] = {"type": "disabled"}
+		else:
+			body["reasoning_effort"] = "none"
 	return body
+
+
+func _api_model_is_mimo() -> bool:
+	var model_id := _api_model().to_lower()
+	# mimo-v2.5 / mimo-v2.5-pro / mimo-v2-pro / mimo-v2-omni 等小米 MiMo 系；
+	# minimax-m3 等 MiniMax 系不含该子串，不受影响。
+	return "mimo" in model_id
 
 
 func _should_disable_thinking() -> bool:
