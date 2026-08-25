@@ -256,6 +256,16 @@ func _test_long_restore_transaction_cleanup(suffix: String) -> void:
 		"恢复事务结束后不残留临时 owner.json",
 	)
 	_expect_ok(
+		store.call("discard_unpublished_revision", context) as Dictionary,
+		"超长身份的未发布 World 修订可清理",
+	)
+	_expect(
+		not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(
+			String(store.call("_revision_root", context)),
+		)),
+		"超长身份的 World 修订目录已删除",
+	)
+	_expect_ok(
 		store.call("cleanup_test_root") as Dictionary,
 		"包含超长恢复日志的测试目录可完整清理",
 	)
@@ -540,6 +550,14 @@ func _test_agent_store_long_staging(suffix: String) -> void:
 	_expect_ok(
 		store.call("load_snapshot", context) as Dictionary,
 		"超长 Agent 快照提交后可以重新读取",
+	)
+	_expect_ok(
+		store.call("discard_snapshot", context) as Dictionary,
+		"超长 Agent 快照可按离线失败清理契约删除",
+	)
+	_expect(
+		not bool((store.call("load_snapshot", context) as Dictionary).get("ok", false)),
+		"超长 Agent 快照清理后不可再读取",
 	)
 	_expect_ok(
 		store.call("cleanup_test_root") as Dictionary,

@@ -663,6 +663,36 @@
       "func": "_published_pair_is_complete",
       "call": "string:.call( \"read_world_log_snapshot\", String(world_log.get(\"snapshot_ref\", \"\")), String(world_log.get(\"snapshot_sha256\", \"\")), )",
       "reason": "事务协调服务通过固定 Store 契约恢复分段 world log，并交给正式日志 Store 校验完整结构。"
+    },
+    {
+      "path": "game/world/presentation/game_flow/GameFlowHost.gd",
+      "func": "_open_startup_save_model_assignment",
+      "call": "string:Callable(self, \"_apply_startup_save_model_draft\")",
+      "reason": "模型分配服务通过固定 Callable 提交离线存档改绑事务；方法名不来自存档或外部输入。"
+    },
+    {
+      "path": "game/world/presentation/game_flow/GameFlowHost.gd",
+      "func": "_open_startup_save_model_assignment",
+      "call": "string:Callable(self, \"_on_startup_action_blocked\")",
+      "reason": "离线模型页面复用宿主固定的操作阻止反馈回调；方法名不来自存档或外部输入。"
+    },
+    {
+      "path": "game/world/presentation/game_flow/GameFlowHost.gd",
+      "func": "_open_startup_save_model_assignment",
+      "call": "string:Callable(self, \"_on_startup_save_model_back_requested\")",
+      "reason": "离线模型分配服务通过固定信号回调保留草稿并返回加载页。"
+    },
+    {
+      "path": "game/world/presentation/game_flow/GameFlowHost.gd",
+      "func": "_open_startup_save_model_assignment",
+      "call": "string:Callable(self, \"_on_startup_save_model_draft_applied\")",
+      "reason": "离线模型分配服务通过固定信号回调在新修订发布后返回加载页。"
+    },
+    {
+      "path": "game/world/presentation/session/TownOfflineResidentModelRebindService.gd",
+      "func": "apply_bindings",
+      "call": "string:.call( \"validate_resident_bindings\", bindings, )",
+      "reason": "离线提交点复核当前 Provider 配置，兼容正式服务与隔离测试替身，防止目录变化后写入失效目标绑定。"
     }
   ]
 }

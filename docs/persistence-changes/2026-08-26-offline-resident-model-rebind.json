@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "decision": "no_migration",
+  "summary": "加载页离线改绑会复制同一完整修订的 World、world log 与 Agent 快照，仅在新修订中替换居民模型绑定；磁盘格式、版本号、路径和既有字段含义均不变。",
+  "affectedModules": [
+    "session_manifest",
+    "session_config",
+    "world_snapshot",
+    "world_log",
+    "agent_snapshot"
+  ],
+  "migrationIds": [],
+  "samples": [
+    "game/tests/fixtures/historical_saves/catalog.json"
+  ],
+  "tests": [
+    "game/tests/offline_resident_model_rebind_test.gd",
+    "game/tests/session_save_continue_roundtrip_test.gd",
+    "game/tests/windows_directory_cleanup_test.gd"
+  ],
+  "docs": [
+    "docs/persistence-changes/2026-08-26-offline-resident-model-rebind.json"
+  ]
+}

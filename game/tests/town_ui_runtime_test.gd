@@ -6319,6 +6319,11 @@ func _startup_load_focus_view_model(revision: int) -> Dictionary:
 				"enabled": true,
 				"disabledReason": "",
 			},
+			"editResidentModels": {
+				"intent": "save.edit_resident_models",
+				"enabled": false,
+				"disabledReason": "SESSION_SAVE_NO_COMPLETE_REVISION",
+			},
 		},
 		"operation": {
 			"requestId": "",

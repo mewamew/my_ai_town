@@ -195,6 +195,8 @@ static func player_reason(reason: Variant) -> String:
 			return "存档目录暂时无法读取，请稍后重试"
 		"SESSION_SAVE_STORE_WRITE_FAILED":
 			return "存档暂时无法写入，请稍后重试"
+		"SESSION_SAVE_MANIFEST_PUBLISH_FAILED":
+			return "存档新修订尚未发布，请检查磁盘后重试"
 		"SESSION_SAVE_STORE_JSON_INVALID":
 			return "存档索引损坏，请检查后重试"
 		"SESSION_SAVE_SLOT_BUSY":

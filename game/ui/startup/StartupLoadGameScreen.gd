@@ -20,6 +20,7 @@ const BACK_INTENT := "startup.close_load_game"
 const CONTINUE_SLOT_INTENT := "session.continue_slot"
 const SELECT_OVERWRITE_SLOT_INTENT := "startup.select_overwrite_slot"
 const REQUEST_DELETE_SLOT_INTENT := "save.request_delete_slot"
+const EDIT_RESIDENT_MODELS_INTENT := "save.edit_resident_models"
 const VISUAL_STATE_HEALTHY := "healthy"
 const VISUAL_STATE_RECOVERABLE := "recoverable"
 const VISUAL_STATE_DISABLED := "disabled"
@@ -130,6 +131,7 @@ func get_contract_snapshot() -> Dictionary:
 			"continueSlot": CONTINUE_SLOT_INTENT,
 			"selectOverwriteSlot": SELECT_OVERWRITE_SLOT_INTENT,
 			"deleteSlot": REQUEST_DELETE_SLOT_INTENT,
+			"editResidentModels": EDIT_RESIDENT_MODELS_INTENT,
 		},
 		"ownsOverwriteSelection": true,
 		"ownsOverwriteConfirmation": false,
@@ -172,6 +174,18 @@ func debug_request_delete_slot(slot_id: String) -> bool:
 	return _block(&"save.request_delete_slot", "STARTUP_SAVE_SLOT_ID_INVALID")
 
 
+func debug_request_edit_resident_models(slot_id: String) -> bool:
+	for slot_value: Variant in (
+		(_view_model.get("data", {}) as Dictionary).get("slots", []) as Array
+	):
+		if (
+			slot_value is Dictionary
+			and String((slot_value as Dictionary).get("slotId", "")) == slot_id
+		):
+			return _request_edit_resident_models(slot_value as Dictionary)
+	return _block(&"save.edit_resident_models", "STARTUP_SAVE_SLOT_ID_INVALID")
+
+
 func _validate_view_model(view_model: Dictionary) -> PackedStringArray:
 	var issues := PackedStringArray()
 	if String(view_model.get("scope", "")) != "save":
@@ -208,6 +222,7 @@ func _validate_view_model(view_model: Dictionary) -> PackedStringArray:
 	else:
 		expected_intents["continueSlot"] = CONTINUE_SLOT_INTENT
 		expected_intents["deleteSlot"] = REQUEST_DELETE_SLOT_INTENT
+		expected_intents["editResidentModels"] = EDIT_RESIDENT_MODELS_INTENT
 	for action_key: String in expected_intents:
 		var action_value: Variant = actions.get(action_key)
 		if not action_value is Dictionary:
@@ -432,7 +447,7 @@ func _build_slot_card(index: int, slot: Dictionary) -> void:
 		else &"StartupLoadHealthyAction"
 	)
 	var primary_action_rect := (
-		Rect2(1044.0, 311.0 + float(index) * 159.0, 162.0, 79.0)
+		Rect2(1012.0, 311.0 + float(index) * 159.0, 132.0, 79.0)
 		if not _is_overwrite_selection_mode()
 		else Rect2(1044.0, 311.0 + float(index) * 159.0, 162.0, 79.0)
 	)
@@ -474,10 +489,10 @@ func _build_slot_card(index: int, slot: Dictionary) -> void:
 			"%sDeleteAction" % slot_id,
 			"",
 			_source_rect(Rect2(
-				1228.0,
-				322.0 + float(index) * 159.0,
-				60.0,
-				58.0,
+				1150.0,
+				282.0 + float(index) * 159.0,
+				138.0,
+				64.0,
 			)),
 			&"StartupLoadDeleteBadgeAction",
 			_request_delete_slot.bind(slot.duplicate(true)),
@@ -501,6 +516,38 @@ func _build_slot_card(index: int, slot: Dictionary) -> void:
 					"SESSION_SAVE_NO_PUBLISHED_REVISION",
 				))
 			)
+		)
+		var edit_contract := _action("editResidentModels")
+		var edit_button := _button(
+			"%sModelEditAction" % slot_id,
+			"更改居民模型",
+			_source_rect(Rect2(
+				1150.0,
+				348.0 + float(index) * 159.0,
+				138.0,
+				64.0,
+			)),
+			&"StartupLoadHealthyAction",
+			_request_edit_resident_models.bind(slot.duplicate(true)),
+			_slot_layer,
+		)
+		edit_button.set_meta("slot_id", slot_id)
+		edit_button.set_meta("action_key", "editResidentModels")
+		edit_button.add_theme_font_size_override(&"font_size", 18)
+		edit_button.disabled = (
+			not bool(edit_contract.get("enabled", false))
+			or not bool(slot.get("modelEditAvailable", false))
+		)
+		edit_button.tooltip_text = (
+			"编辑完整修订 %d" % int(slot.get(
+				"modelEditSaveRevision",
+				slot.get("saveRevision", 0),
+			))
+			if not edit_button.disabled
+			else UiViewModel.player_reason(String(slot.get(
+				"modelEditDisabledReason",
+				edit_contract.get("disabledReason", "ACTION_NOT_AVAILABLE"),
+			)))
 		)
 
 
@@ -733,6 +780,41 @@ func _request_delete_slot(slot: Dictionary) -> bool:
 	return true
 
 
+func _request_edit_resident_models(slot: Dictionary) -> bool:
+	var action := _action("editResidentModels")
+	var intent := StringName(String(action.get("intent", "")))
+	if _is_overwrite_selection_mode():
+		return _block(intent, "ACTION_NOT_AVAILABLE_IN_MODE")
+	if not bool(action.get("enabled", false)):
+		return _block(
+			intent,
+			String(action.get("disabledReason", "ACTION_NOT_AVAILABLE")),
+		)
+	if not bool(slot.get("modelEditAvailable", false)):
+		return _block(
+			intent,
+			String(slot.get(
+				"modelEditDisabledReason",
+				"SESSION_SAVE_NO_COMPLETE_REVISION",
+			)),
+		)
+	intent_requested.emit(intent, {
+		"scope": "save",
+		"actionKey": "editResidentModels",
+		"revision": _revision,
+		"routeOrigin": "startup_load_game",
+		"slotId": String(slot.get("slotId", "")),
+		"sessionId": String(slot.get("sessionId", "")),
+		"saveRevision": int(slot.get(
+			"modelEditSaveRevision",
+			slot.get("saveRevision", 0),
+		)),
+		"state": String(slot.get("state", "")),
+		"recoveryState": String(slot.get("recoveryState", "none")),
+	})
+	return true
+
+
 func _request_back() -> bool:
 	var action := _action("back")
 	var intent := StringName(String(action.get("intent", "")))
@@ -762,6 +844,8 @@ func _block(intent: StringName, reason: String) -> bool:
 			if _is_overwrite_selection_mode()
 			else "当前存档无法删除。"
 			if intent == &"save.request_delete_slot"
+			else "当前存档没有可编辑的完整修订。"
+			if intent == &"save.edit_resident_models"
 			else "当前存档无法进入。"
 		)
 	return false

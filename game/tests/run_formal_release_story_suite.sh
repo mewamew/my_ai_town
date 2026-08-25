@@ -49,7 +49,8 @@ checks=(
 	"res://tests/save_reconciliation_test.gd|SAVE_RECONCILIATION_PASS|119"
 	"res://tests/save_recovery_confirmation_test.gd|SAVE_RECOVERY_CONFIRMATION_PASS|14"
 	"res://tests/town_save_compatibility_registry_test.gd|TOWN_SAVE_COMPATIBILITY_REGISTRY_PASS|60"
-	"res://tests/windows_directory_cleanup_test.gd|WINDOWS_DIRECTORY_CLEANUP_PASS|56"
+	"res://tests/offline_resident_model_rebind_test.gd|OFFLINE_RESIDENT_MODEL_REBIND_PASS|55"
+	"res://tests/windows_directory_cleanup_test.gd|WINDOWS_DIRECTORY_CLEANUP_PASS|79"
 	"res://tests/startup_social_feedback_test.gd|STARTUP_SOCIAL_FEEDBACK_PASS|65"
 	"res://ui/startup/tests/StartupTypographyContractTest.gd|STARTUP_TYPOGRAPHY_CONTRACT_PASS|54"
 )

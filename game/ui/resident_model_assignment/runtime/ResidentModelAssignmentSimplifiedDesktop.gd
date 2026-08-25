@@ -67,6 +67,7 @@ const MODEL_SCROLL_RECT := Rect2(1555, 450, 24, 316)
 
 var in_session_mode := false
 var single_resident_mode := false
+var save_slot_mode := false
 var _font: Font
 var _data: Dictionary = {}
 var _actions: Dictionary = {}
@@ -659,7 +660,11 @@ func _build_completion_modal() -> void:
 		(
 			"确认后会立即进入小镇。"
 			if single_resident_mode
-			else "保存后会立即用于当前小镇。" if in_session_mode else "现在可以开始游戏。"
+			else "保存后会立即用于当前小镇。"
+			if in_session_mode
+			else "保存后会写入此存档的新修订。"
+			if save_slot_mode
+			else "现在可以开始游戏。"
 		),
 		18,
 		HORIZONTAL_ALIGNMENT_CENTER,
@@ -680,7 +685,11 @@ func _build_completion_modal() -> void:
 		(
 			"确认入镇"
 			if single_resident_mode
-			else "保存修改" if in_session_mode else "开始游戏"
+			else "保存修改"
+			if in_session_mode
+			else "保存到此存档"
+			if save_slot_mode
+			else "开始游戏"
 		),
 		func() -> void: completion_modal_start_pressed.emit(),
 	)
@@ -909,6 +918,8 @@ func _render_action_states(batch_mode: bool) -> void:
 				if _return_to_provider_settings()
 				else "已全部分配 · 保存修改"
 				if in_session_mode
+				else "已全部分配 · 保存到存档"
+				if save_slot_mode
 				else "已全部分配 · 开始游戏"
 			)
 			if ready_to_start
@@ -1346,13 +1357,32 @@ func _operation_copy(view_model: Dictionary) -> String:
 	var operation := view_model.get("operation", {}) as Dictionary
 	var status := String(operation.get("status", "idle"))
 	var error_message := UiViewModel.error_message(view_model)
+	var error_value: Variant = view_model.get("error", null)
+	var error_code := (
+		String((error_value as Dictionary).get("code", ""))
+		if error_value is Dictionary
+		else ""
+	)
 	match status:
 		"loading":
 			return "正在更新居民模型分配…"
 		"success":
 			return "分配已更新，确认全部后即可继续"
 		"rejected", "error":
-			return error_message if not error_message.is_empty() else "操作未完成，原分配已保留"
+			var message := error_message if not error_message.is_empty() else "操作未完成，原分配已保留"
+			return (
+				"%s；可返回加载存档，从主菜单打开“模型设置”" % message
+				if save_slot_mode and error_code in [
+					"SESSION_LLM_BINDINGS_INVALID",
+					"LLM_PROVIDER_UNAVAILABLE",
+					"LLM_MODEL_UNAVAILABLE",
+					"LLM_MODEL_UNKNOWN",
+					"PROVIDER_HEALTH_UNAVAILABLE",
+					"PROVIDER_HEALTH_QUERY_FAILED",
+					"PROVIDER_CATALOG_UNAVAILABLE",
+				]
+				else message
+			)
 		"disabled":
 			return "当前没有可用模型"
 	if has_pending_rebind(_data):
@@ -1367,6 +1397,8 @@ func _operation_copy(view_model: Dictionary) -> String:
 			if _return_to_provider_settings()
 			else "全部居民均已完成模型分配，可以保存修改"
 			if in_session_mode
+			else "全部居民均已完成模型分配，可以保存到此存档"
+			if save_slot_mode
 			else "全部居民均已完成模型分配，可以开始游戏"
 		)
 	return "模型来自已连接服务；此处只负责分配"

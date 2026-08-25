@@ -126,6 +126,33 @@ func save_snapshot(context: Variant, resident_payloads: Variant) -> Dictionary:
 	return {"ok": true, "context": context_data}
 
 
+func discard_snapshot(context: Variant) -> Dictionary:
+	var errors := _validate_context(context)
+	if not errors.is_empty():
+		return {"ok": false, "errors": errors}
+	var context_data := (context as Dictionary).duplicate(true)
+	if int(context_data.get("save_revision", 0)) <= 0:
+		return {
+			"ok": false,
+			"errors": ["只能清理尚未发布的非初始 Agent 修订"],
+		}
+	var slot_result := _read_and_validate_slot(context_data)
+	if not bool(slot_result.get("ok", false)):
+		return slot_result
+	var snapshot_root := _snapshot_root(context_data)
+	if not DirAccess.dir_exists_absolute(_absolute(snapshot_root)):
+		return {"ok": true}
+	var remove_error := AgentFileSystemScript.remove_tree(snapshot_root)
+	if remove_error != OK:
+		return {
+			"ok": false,
+			"errors": [
+				"清理未发布 Agent 修订失败：%s" % error_string(remove_error),
+			],
+		}
+	return {"ok": true}
+
+
 func load_snapshot(context: Variant) -> Dictionary:
 	var errors := _validate_context(context)
 	if not errors.is_empty():

@@ -41,6 +41,9 @@ const SAVE_RECONCILIATION_SERVICE := preload(
 const SAVE_RECOVERY_PLANNER := preload(
 	"res://world/presentation/session/TownSaveRecoveryPlanner.gd"
 )
+const OFFLINE_RESIDENT_MODEL_REBIND := preload(
+	"res://world/presentation/session/TownOfflineResidentModelRebindService.gd"
+)
 const AUDIO_DISPLAY_SETTINGS_SERVICE := preload(
 	"res://world/presentation/ui/TownAudioDisplaySettingsService.gd"
 )
@@ -226,6 +229,11 @@ var _startup_settings_page: Control
 var _startup_load_game_page: Control
 var _startup_load_game_mode := ""
 var _pending_load_game_new_game_payload: Dictionary = {}
+var _startup_save_model_page: ResidentModelAssignmentScreen
+var _startup_save_model_assignment_service: RESIDENT_MODEL_ASSIGNMENT_SERVICE
+var _startup_save_model_rebind_service: TownOfflineResidentModelRebindService
+var _startup_save_model_target: Dictionary = {}
+var _startup_save_model_preserved_draft: Dictionary = {}
 var _startup_overwrite_page: Control
 var _custom_resident_creator_page: Control
 var _custom_resident_creator_service: RefCounted
@@ -1769,6 +1777,13 @@ func _bind_current_scene() -> void:
 	_startup_load_game_page = null
 	_startup_load_game_mode = ""
 	_pending_load_game_new_game_payload.clear()
+	if _startup_save_model_assignment_service != null and _startup_ui_adapter is TownUiAdapter:
+		(_startup_ui_adapter as TownUiAdapter).bind_resident_model_assignment_service(null)
+	_startup_save_model_page = null
+	_startup_save_model_assignment_service = null
+	_startup_save_model_rebind_service = null
+	_startup_save_model_target.clear()
+	_startup_save_model_preserved_draft.clear()
 	_custom_resident_creator_page = null
 	_resident_model_assignment_page = null
 	_resident_selection = null
@@ -2165,6 +2180,32 @@ func _on_startup_load_game_intent_requested(
 			var delete_discovery := _startup_delete_discovery(delete_slot)
 			_close_startup_load_game()
 			_open_save_handling("delete_save", {}, delete_discovery)
+		"save.edit_resident_models":
+			if _startup_load_game_mode != "load":
+				_last_result = _failure(
+					"STARTUP_SAVE_MODEL_EDIT_NOT_AUTHORIZED",
+					false,
+				)
+				return
+			var edit_slot_id := String(payload.get("slotId", "")).strip_edges()
+			var edit_catalog := _startup_catalog_snapshot()
+			var edit_slot := _startup_slot_by_id(edit_catalog, edit_slot_id)
+			var edit_projection := _startup_slot_projection(edit_slot)
+			if (
+				edit_slot.is_empty()
+				or not bool(edit_projection.get("modelEditAvailable", false))
+				or int(payload.get("saveRevision", -1))
+				!= int(edit_projection.get("modelEditSaveRevision", -2))
+			):
+				_last_result = _failure(
+					String(edit_projection.get(
+						"modelEditDisabledReason",
+						"STARTUP_SAVE_MODEL_EDIT_TARGET_STALE",
+					)),
+					false,
+				)
+				return
+			_open_startup_save_model_assignment(edit_slot)
 		"startup.select_overwrite_slot":
 			if _startup_load_game_mode != "overwrite_selection":
 				_last_result = _failure(
@@ -2201,6 +2242,166 @@ func _on_startup_load_game_intent_requested(
 			_on_startup_intent_requested(&"session.new_game", route_payload)
 		_:
 			_last_result = _failure("STARTUP_LOAD_GAME_INTENT_UNSUPPORTED", false)
+
+
+func _open_startup_save_model_assignment(slot: Dictionary) -> void:
+	if is_instance_valid(_startup_save_model_page):
+		return
+	var startup := get_tree().current_scene as Control
+	if startup == null or startup.name != "StartupScreen":
+		_record_route_open_failure(
+			"STARTUP_SAVE_MODEL_EDIT_HOST_UNAVAILABLE",
+			"居民模型页面暂时打不开，请稍后再试。",
+		)
+		return
+	var rebind_service := (
+		OFFLINE_RESIDENT_MODEL_REBIND.new()
+		as TownOfflineResidentModelRebindService
+	)
+	var configured := rebind_service.configure(
+		_startup_save_store,
+		AGENT_SAVE_STORE.new(),
+		_startup_provider_service,
+	) as Dictionary
+	if not bool(configured.get("ok", false)):
+		_publish_startup_action_failure(&"save.edit_resident_models", configured)
+		return
+	var prepared := rebind_service.prepare(
+		slot,
+		FORMAL_CATALOG.load_catalog(),
+	) as Dictionary
+	if not bool(prepared.get("ok", false)):
+		_publish_startup_action_failure(&"save.edit_resident_models", prepared)
+		return
+	var target := prepared.get("target", {}) as Dictionary
+	var draft := (prepared.get("draft", {}) as Dictionary).duplicate(true)
+	if (
+		String(_startup_save_model_preserved_draft.get("slotId", ""))
+		== String(target.get("slotId", ""))
+		and int(_startup_save_model_preserved_draft.get("saveRevision", -1))
+		== int(target.get("saveRevision", -2))
+	):
+		draft = (
+			_startup_save_model_preserved_draft.get("draft", {}) as Dictionary
+		).duplicate(true)
+	var assignment := RESIDENT_MODEL_ASSIGNMENT_SERVICE.new()
+	configured = assignment.configure(
+		_startup_provider_service,
+		prepared.get("residentCatalog", {}) as Dictionary,
+		draft,
+		{
+			"revision": maxi(int(draft.get("draftRevision", 1)), 1),
+			"applyHandler": Callable(self, "_apply_startup_save_model_draft"),
+		},
+	) as Dictionary
+	if not bool(configured.get("ok", false)):
+		_publish_startup_action_failure(&"save.edit_resident_models", configured)
+		return
+	var adapter := _startup_ui_adapter as TownUiAdapter
+	if adapter == null:
+		_publish_startup_action_failure(
+			&"save.edit_resident_models",
+			_failure("STARTUP_UI_ADAPTER_NOT_BOUND", false),
+		)
+		return
+	var bound := adapter.bind_resident_model_assignment_service(assignment)
+	if not bool(bound.get("ok", false)):
+		_publish_startup_action_failure(&"save.edit_resident_models", bound)
+		return
+	var page := (
+		_instantiate_control_scene(RESIDENT_MODEL_ASSIGNMENT_SCENE_PATH)
+		as ResidentModelAssignmentScreen
+	)
+	if page == null:
+		adapter.bind_resident_model_assignment_service(null)
+		_record_route_open_failure(
+			"STARTUP_SAVE_MODEL_EDIT_ROUTE_FAILED",
+			"居民模型页面暂时打不开，请稍后再试。",
+		)
+		return
+	_startup_save_model_rebind_service = rebind_service
+	_startup_save_model_assignment_service = assignment
+	_startup_save_model_target = target.duplicate(true)
+	_connect_once(
+		assignment,
+		"draft_applied",
+		Callable(self, "_on_startup_save_model_draft_applied"),
+	)
+	_connect_once(
+		assignment,
+		"back_requested",
+		Callable(self, "_on_startup_save_model_back_requested"),
+	)
+	page.name = "StartupSaveModelAssignmentRoute"
+	page.process_mode = Node.PROCESS_MODE_ALWAYS
+	page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	page.z_index = 2300
+	page.apply_route_payload({"mode": "save_slot"})
+	page.bind_town_ui_adapter(adapter)
+	_connect_once(page, "action_blocked", Callable(self, "_on_startup_action_blocked"))
+	_close_startup_load_game()
+	_startup_save_model_page = page
+	startup.add_child(page)
+	startup.set_process_unhandled_input(false)
+	_last_result = {
+		"ok": true,
+		"errorCode": "",
+		"retryable": false,
+		"target": target.duplicate(true),
+	}
+
+
+func _apply_startup_save_model_draft(
+	_draft: Dictionary,
+	bindings: Array,
+) -> Dictionary:
+	if _startup_save_model_rebind_service == null:
+		return _failure("OFFLINE_RESIDENT_MODEL_REBIND_NOT_CONFIGURED", false)
+	var result := _startup_save_model_rebind_service.apply_bindings(bindings)
+	_last_result = result.duplicate(true)
+	return result
+
+
+func _on_startup_save_model_draft_applied(
+	_draft: Dictionary,
+	_revision: int,
+) -> void:
+	_startup_save_model_preserved_draft.clear()
+	call_deferred("_finish_startup_save_model_assignment", true)
+
+
+func _on_startup_save_model_back_requested(
+	draft: Dictionary,
+	_revision: int,
+) -> void:
+	_startup_save_model_preserved_draft = {
+		"slotId": String(_startup_save_model_target.get("slotId", "")),
+		"saveRevision": int(_startup_save_model_target.get("saveRevision", 0)),
+		"draft": draft.duplicate(true),
+	}
+	call_deferred("_finish_startup_save_model_assignment", false)
+
+
+func _finish_startup_save_model_assignment(saved: bool) -> void:
+	_close_startup_save_model_assignment()
+	_open_startup_load_game("load")
+	if saved:
+		_last_result["routeReturnedToLoadGame"] = true
+
+
+func _close_startup_save_model_assignment() -> void:
+	if is_instance_valid(_startup_save_model_page):
+		_startup_save_model_page.unbind_town_ui_adapter()
+		UI_NODE_RETIREMENT.retire(_startup_save_model_page)
+	_startup_save_model_page = null
+	if _startup_ui_adapter is TownUiAdapter:
+		(_startup_ui_adapter as TownUiAdapter).bind_resident_model_assignment_service(null)
+	_startup_save_model_assignment_service = null
+	_startup_save_model_rebind_service = null
+	_startup_save_model_target.clear()
+	var startup := get_tree().current_scene as Control
+	if startup != null and startup.name == "StartupScreen":
+		startup.set_process_unhandled_input(true)
 
 
 func _open_new_game_overwrite(
@@ -6634,6 +6835,21 @@ func _build_startup_view_models() -> Dictionary:
 
 func _startup_slot_projection(slot: Dictionary) -> Dictionary:
 	var summary := slot.get("summary", {}) as Dictionary
+	var save_blockers := slot.get("saveBlockers", []) as Array
+	var restore_blockers := slot.get("restoreBlockers", []) as Array
+	var model_edit_available := (
+		not summary.is_empty()
+		and save_blockers.is_empty()
+		and restore_blockers.is_empty()
+	)
+	var model_edit_reason := ""
+	if not model_edit_available:
+		model_edit_reason = "SESSION_SAVE_NO_COMPLETE_REVISION"
+		var blockers := save_blockers if not save_blockers.is_empty() else restore_blockers
+		if not blockers.is_empty() and blockers[0] is Dictionary:
+			model_edit_reason = String(
+				(blockers[0] as Dictionary).get("errorCode", model_edit_reason),
+			)
 	return {
 		"slotId": String(slot.get("slotId", "")),
 		"displayName": String(slot.get("displayName", "")),
@@ -6657,6 +6873,9 @@ func _startup_slot_projection(slot: Dictionary) -> Dictionary:
 			else ""
 		),
 		"saveRevision": int(summary.get("saveRevision", 0)),
+		"modelEditAvailable": model_edit_available,
+		"modelEditSaveRevision": int(summary.get("saveRevision", 0)),
+		"modelEditDisabledReason": model_edit_reason,
 		"savedAt": String(summary.get("savedAt", "")),
 		"residentCount": int(summary.get("residentCount", 0)),
 		"day": int(summary.get("day", 0)),
@@ -6680,10 +6899,12 @@ func get_startup_load_game_view_model(mode := "load") -> Dictionary:
 			if slot_value is Dictionary:
 				slots.append(_startup_slot_projection(slot_value as Dictionary))
 	var delete_available := false
+	var model_edit_available := false
 	for projected_slot: Dictionary in slots:
 		if String(projected_slot.get("state", "empty")) != "empty":
 			delete_available = true
-			break
+		if bool(projected_slot.get("modelEditAvailable", false)):
+			model_edit_available = true
 	var error_code := String(catalog.get("errorCode", ""))
 	return {
 		"scope": "save",
@@ -6726,6 +6947,17 @@ func get_startup_load_game_view_model(mode := "load") -> Dictionary:
 					""
 					if String(mode) == "load" and delete_available
 					else "SESSION_SAVE_NO_PUBLISHED_REVISION"
+					if String(mode) == "load"
+					else "ACTION_NOT_AVAILABLE_IN_MODE"
+				),
+			},
+			"editResidentModels": {
+				"intent": "save.edit_resident_models",
+				"enabled": String(mode) == "load" and model_edit_available,
+				"disabledReason": (
+					""
+					if String(mode) == "load" and model_edit_available
+					else "SESSION_SAVE_NO_COMPLETE_REVISION"
 					if String(mode) == "load"
 					else "ACTION_NOT_AVAILABLE_IN_MODE"
 				),

@@ -83,8 +83,12 @@
     "min_checks": 14
   },
   {
+    "id": "res://tests/offline_resident_model_rebind_test.gd",
+    "min_checks": 55
+  },
+  {
     "id": "res://tests/windows_directory_cleanup_test.gd",
-    "min_checks": 56
+    "min_checks": 79
   },
   {
     "id": "res://tests/startup_social_feedback_test.gd",

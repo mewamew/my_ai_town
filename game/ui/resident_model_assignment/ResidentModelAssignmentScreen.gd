@@ -81,6 +81,7 @@ const REQUIRED_ACTIONS: Array[String] = [
 
 var in_session_mode := false
 var single_resident_mode := false
+var save_slot_mode := false
 var _adapter: Object
 var _view_model: Dictionary = {}
 var _render_data: Dictionary = {}
@@ -174,6 +175,7 @@ func apply_route_payload(payload: Dictionary) -> void:
 	var route_mode := String(payload.get("mode", ""))
 	in_session_mode = route_mode in ["in_session", "resident_admission"]
 	single_resident_mode = route_mode == "resident_admission"
+	save_slot_mode = route_mode == "save_slot"
 	return_to_provider_settings = bool(
 		payload.get("returnToProviderSettings", false)
 	)
@@ -200,6 +202,8 @@ func _build_exit_confirmation() -> void:
 		if return_to_provider_settings
 		else "返回暂停菜单？"
 		if in_session_mode
+		else "返回加载存档？"
+		if save_slot_mode
 		else "返回居民选择？"
 	)
 	_exit_confirmation.dialog_text = "当前模型分配还没有应用，返回后仍会保留草稿。"
@@ -352,6 +356,7 @@ func runtime_gate_snapshot() -> Dictionary:
 		"wholePageScale": false,
 		"formalReady": bool(_render_data.get("formalReady", false)),
 		"residentCount": int(_render_data.get("residentCount", 0)),
+		"saveSlotMode": save_slot_mode,
 		"textSlots": text_slots,
 		"touchTargets": touch_targets,
 		"borderOwners": border_owners,
@@ -456,6 +461,7 @@ func _build_interface() -> void:
 	_composite_desktop = CompositeDesktop.new()
 	_composite_desktop.set("in_session_mode", in_session_mode)
 	_composite_desktop.set("single_resident_mode", single_resident_mode)
+	_composite_desktop.set("save_slot_mode", save_slot_mode)
 	_composite_frame.add_child(_composite_desktop)
 	_composite_desktop.connect("action_requested", Callable(self, "_request_action"))
 	_composite_desktop.connect("back_pressed", Callable(self, "_request_back"))
@@ -523,6 +529,8 @@ func _build_native_completion_modal() -> void:
 			if return_to_provider_settings
 			else "全部居民的模型均已配置完成，可以保存到当前小镇。"
 			if in_session_mode
+			else "全部居民的模型均已配置完成，可以保存到此存档。"
+			if save_slot_mode
 			else "全部居民的模型均已配置完成，现在可以开始游戏。"
 		),
 		20,
@@ -550,6 +558,8 @@ func _build_native_completion_modal() -> void:
 			if return_to_provider_settings
 			else "保存修改"
 			if in_session_mode
+			else "保存到此存档"
+			if save_slot_mode
 			else "开始游戏"
 		),
 		22,
@@ -730,7 +740,11 @@ func _build_header() -> void:
 	header_stack.add_child(_header_top)
 
 	_back_button = _button(
-		"← 返回模型设置" if return_to_provider_settings else "← 返回居民选择",
+		"← 返回模型设置"
+		if return_to_provider_settings
+		else "← 返回加载存档"
+		if save_slot_mode
+		else "← 返回居民选择",
 		20,
 		"paper",
 		"BackButton",
@@ -1226,6 +1240,12 @@ func _render_inspector() -> void:
 		var operation := _view_model.get("operation", {}) as Dictionary
 		var operation_status := String(operation.get("status", "idle"))
 		var error_message := UiViewModel.error_message(_view_model)
+		var error_value: Variant = _view_model.get("error", null)
+		var error_code := (
+			String((error_value as Dictionary).get("code", ""))
+			if error_value is Dictionary
+			else ""
+		)
 		match operation_status:
 			"loading":
 				_operation_label.text = "正在更新正式分配状态…"
@@ -1236,9 +1256,15 @@ func _render_inspector() -> void:
 					else "操作完成，草稿与完成数已更新。"
 				)
 			"rejected":
-				_operation_label.text = error_message if not error_message.is_empty() else "操作被拒绝，原数据已保留。"
+				_operation_label.text = _save_slot_error_copy(
+					error_message if not error_message.is_empty() else "操作被拒绝，原数据已保留。",
+					error_code,
+				)
 			"error":
-				_operation_label.text = error_message if not error_message.is_empty() else "连接异常，原数据已保留。"
+				_operation_label.text = _save_slot_error_copy(
+					error_message if not error_message.is_empty() else "连接异常，原数据已保留。",
+					error_code,
+				)
 			"disabled":
 				_operation_label.text = "正式接口不可用。"
 			_:
@@ -1256,8 +1282,27 @@ func _render_inspector() -> void:
 		if return_to_provider_settings
 		else "保存模型分配"
 		if in_session_mode
+		else "保存到此存档"
+		if save_slot_mode
 		else "确认 %d 人模型分配" % int(_render_data.get("residentCount", SLOT_COUNT))
 	)
+
+
+func _save_slot_error_copy(message: String, error_code: String) -> String:
+	if (
+		not save_slot_mode
+		or error_code not in [
+			"SESSION_LLM_BINDINGS_INVALID",
+			"LLM_PROVIDER_UNAVAILABLE",
+			"LLM_MODEL_UNAVAILABLE",
+			"LLM_MODEL_UNKNOWN",
+			"PROVIDER_HEALTH_UNAVAILABLE",
+			"PROVIDER_HEALTH_QUERY_FAILED",
+			"PROVIDER_CATALOG_UNAVAILABLE",
+		]
+	):
+		return message
+	return "%s 草稿已保留；可返回加载存档，从主菜单打开“模型设置”。" % message
 
 
 func _render_action_states() -> void:
@@ -1471,6 +1516,8 @@ func _open_completion_modal() -> void:
 			if return_to_provider_settings
 			else "%d 位居民的模型均已配置完成\n保存后会立即用于当前小镇。" % resident_count
 			if in_session_mode
+			else "%d 位居民的模型均已配置完成\n保存后会写入此存档的新修订。" % resident_count
+			if save_slot_mode
 			else "%d 位居民的模型均已配置完成\n现在可以开始游戏。" % resident_count
 		)
 	)

@@ -474,6 +474,38 @@ func reserve_revision(
 	return _failure("SESSION_SAVE_REVISION_EXHAUSTED", false)
 
 
+func discard_unpublished_revision(context_value: Variant) -> Dictionary:
+	var checked := MANIFEST.validate_context(context_value)
+	if checked.get("ok") != true:
+		return checked
+	var context := (
+		checked.get("context", {}) as Dictionary
+	).duplicate(true)
+	if FileAccess.file_exists(_manifest_path(context)):
+		return _failure("SESSION_SAVE_REVISION_ALREADY_PUBLISHED", false)
+	var allocation_path := _join(
+		_slot_root(String(context.get("slot_id", ""))),
+		"allocations/%020d.json" % int(context.get("save_revision", 0)),
+	)
+	if (
+		FileAccess.file_exists(allocation_path)
+		and not _revision_allocation_matches(context)
+	):
+		return _failure("SESSION_SAVE_REVISION_ALLOCATION_MISMATCH", false)
+	var revision_root := _revision_root(context)
+	if DirAccess.dir_exists_absolute(_absolute(revision_root)):
+		var remove_error := _remove_tree(revision_root)
+		if remove_error != OK:
+			return _failure("SESSION_SAVE_STORE_WRITE_FAILED", true)
+	if FileAccess.file_exists(allocation_path):
+		var allocation_error := DirAccess.remove_absolute(
+			_absolute(allocation_path),
+		)
+		if allocation_error != OK:
+			return _failure("SESSION_SAVE_STORE_WRITE_FAILED", true)
+	return _success()
+
+
 func check_legacy_slot_ephemeral_state(slot_id_value: Variant) -> Dictionary:
 	var slot_check := _validated_slot_id(slot_id_value)
 	if slot_check.get("ok") != true:
@@ -1023,7 +1055,10 @@ func publish_manifest(manifest_value: Variant) -> Dictionary:
 	})
 	var written := _atomic_create_json(path, manifest)
 	if written.get("ok") != true:
-		return _failure("SESSION_SAVE_MANIFEST_PUBLISH_FAILED", false)
+		return _failure(
+			"SESSION_SAVE_MANIFEST_PUBLISH_FAILED",
+			bool(written.get("retryable", true)),
+		)
 	return {
 		"ok": true,
 		"errorCode": "",
