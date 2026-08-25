@@ -324,6 +324,24 @@ static func submit_valid(
 		return AGENT_DECISION_ACTION_RUNTIME.submit_conflict_intent(
 			host, resident, action, conflict_intent, context
 		)
+	if action_type == "投票放逐":
+		# 方案A: 投票放逐作为即时动作直接提交(不写 currentAction、不进推进循环)。
+		# 目标按名字校验(候选名单=名字),失败反馈模型重试;附件 exile_vote 通道仍保留。
+		var vote_error: String = host.WEREWOLF_RUNTIME.submit_vote(host, resident_id, {
+			"target_resident_name": String(action.get("target_resident_name", "")),
+			"line": String(action.get("line", "")),
+		})
+		if not vote_error.is_empty():
+			return host._complete_agent_submission(
+				ACTION_RESULT_RUNTIME.reject_invalid(
+					host, resident_id, resident, action, vote_error
+				)
+			)
+		return host._complete_agent_submission({
+			"ok": true,
+			"consumed": true,
+			"stale": false,
+		})
 	if action_type in ["暗杀", "制服", "发布公告"]:
 		# 狼人杀即时动作:提交即校验(prepare),通过后立即结算(activate),
 		# 不写 currentAction、不进推进循环。

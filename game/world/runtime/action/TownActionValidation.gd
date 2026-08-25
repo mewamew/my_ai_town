@@ -54,6 +54,12 @@ const ACTION_FIELDS := {
 		"target_resident_id",
 		"line",
 	],
+	"投票放逐": [
+		"action_id",
+		"type",
+		"target_resident_name",
+		"line",
+	],
 	"回应冲突": [
 		"action_id",
 		"type",
@@ -147,6 +153,14 @@ static func validate_action_shape(action: Dictionary) -> String:
 			return ""
 		"待着":
 			return require_action_texts(action, ["line"], action_type)
+		"投票放逐":
+			# 方案A: 投票放逐作为即时动作(模型对动作遵守度高,附件 exile_vote 常被省略)。
+			# target_resident_name 用名字(与 vote_snapshot 候选名单一致,submit_vote 按名校验)。
+			return require_action_texts(
+				action,
+				["target_resident_name", "line"],
+				action_type,
+			)
 		"搭话":
 			var target_id_present := action.has("target_resident_id")
 			var target_name_present := action.has("target")

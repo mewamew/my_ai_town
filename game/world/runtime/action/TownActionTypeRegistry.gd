@@ -31,6 +31,7 @@ const ALL_TYPES: Array[String] = [
 	"攻击",
 	"暗杀",
 	"制服",
+	"投票放逐",
 	"回应冲突",
 	"介入冲突",
 	"离开冲突",
@@ -71,6 +72,7 @@ const TABLE_TYPES := {
 		"待着",
 		"搭话",
 		"答话",
+		"投票放逐",
 	],
 	"T7_default_doing": [
 		"去",

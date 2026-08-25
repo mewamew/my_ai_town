@@ -1568,6 +1568,8 @@ func _render_constraints(constraints: Dictionary) -> String:
 			_safe(action_type),
 			_join(data.get("fields", [])),
 		]
+		if bool(data.get("required", false)):
+			text += "（本轮必填）"
 		if data.has("places"):
 			text += "；地点：%s" % _join(data["places"])
 		if data.has("targets"):
@@ -1632,6 +1634,10 @@ func _render_constraints(constraints: Dictionary) -> String:
 		if String(action_type) == "制服":
 			# 警察制服提交模板(效果等同暗杀,目标直接出局)。
 			text += "\n  提交格式(唯一合法,type必须写'制服'两字): {\"action_id\":\"当前决定编号-制服\",\"type\":\"制服\",\"target_resident_id\":\"上面某个目标的ID\",\"line\":\"符合警察身份的短台词\"}; 不要加其他字段"
+		if String(action_type) == "投票放逐":
+			# 方案A: 投票放逐提交模板。投票不需要去任何地方,直接在本轮决策里提交。
+			# 目标用候选人名单里的名字(不是 ID,名单里已排除警察、死者和自己)。
+			text += "\n  提交格式(唯一合法,type必须写'投票放逐'两字): {\"action_id\":\"当前决定编号-投票放逐\",\"type\":\"投票放逐\",\"target_resident_name\":\"上面某个候选人的名字\",\"line\":\"短台词\"}; 不要加其他字段; 投票不需要去任何地方,直接在决策里提交即可"
 		lines.append(text)
 	return "\n".join(lines)
 
@@ -1920,6 +1926,14 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 	var exile_vote := _exile_vote_constraints(snapshot)
 	if not exile_vote.is_empty():
 		constraints["exile_vote"] = exile_vote
+		# 方案A: 投票放逐同时作为动作选项注入(模型对动作遵守度高,附件字段常被省略)。
+		# 与 exile_vote 附件双通道兼容: 模型输出"投票放逐"动作或 exile_vote 附件均被接受。
+		(constraints["actions"] as Dictionary)["投票放逐"] = {
+			"fields": ["action_id", "type", "target_resident_name", "line"],
+			"targets": (exile_vote.get("candidate_names", []) as Array).duplicate(),
+			"required": bool(exile_vote.get("required", false)),
+			"max_line_characters": int(exile_vote.get("max_line_characters", 80)),
+		}
 	var night_skill := _night_skill_constraints(snapshot)
 	if not night_skill.is_empty():
 		constraints["night_skill"] = night_skill

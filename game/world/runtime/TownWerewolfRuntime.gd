@@ -367,25 +367,28 @@ static func _vote_forced(world) -> bool:
 
 
 ## 居民提交 exile_vote(TWR 决策提交链调用)。
-static func submit_vote(world, resident_id: String, value: Dictionary) -> void:
+## 返回错误字符串,空串=投票已记录(方案A: 即时动作分支需把失败反馈给模型重试)。
+static func submit_vote(world, resident_id: String, value: Dictionary) -> String:
 	if not feature_active(world):
-		return
+		return "当前没有进行中的镇民大会投票"
 	var vote := world._werewolf_state.get("vote", {}) as Dictionary
 	if vote.is_empty() or world._werewolf_state.get("gameOver", false):
-		return
+		return "本轮投票未在进行"
 	if not world._resident_is_alive(resident_id):
-		return
+		return "你已不在镇上，无法投票"
 	var votes := vote.get("votes", {}) as Dictionary
 	if votes.has(resident_id):
-		return
+		return "你已经投过票了，一票不能改"
 	var target_name := String(
 		value.get("target_resident_name", "")
 	).strip_edges()
+	if target_name.is_empty():
+		return "投票目标 target_resident_name 必须是非空文本"
 	var candidate_names: Array[String] = []
 	for name_value: Variant in vote.get("candidateNames", []) as Array:
 		candidate_names.append(String(name_value))
 	if not candidate_names.has(target_name):
-		return
+		return "投票目标 %s 不在候选人名单中" % target_name
 	votes[resident_id] = {
 		"target_resident_name": target_name,
 		"line": String(value.get("line", "")).strip_edges(),
@@ -401,6 +404,7 @@ static func submit_vote(world, resident_id: String, value: Dictionary) -> void:
 			String(value.get("line", "")),
 		],
 	)
+	return ""
 
 
 ## 12:30:开票。得票最高者放逐(平票无人出局),公告并查胜负。
