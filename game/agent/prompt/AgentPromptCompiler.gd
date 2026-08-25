@@ -45,13 +45,48 @@ func _init(
 		static_prompt = _load_static_prompt()
 		if _load_errors.is_empty():
 			_static_prompt_cache[_prompt_root] = static_prompt
-	_baseline_prompt = "# 居民决策基线\n\n%s\n\n<resident_initialization>\n## 居民稳定资料\n\n%s\n</resident_initialization>" % [
-		static_prompt,
-		_render_initialization(),
-	]
+	# 身份块(身份立场覆盖层 + 角色专属规则)放在 system 最前, 让身份优先于
+	# 普通镇民基线: 模型对开头内容权重最高, 警察/卧底先读到"我的身份是什么、
+	# 哪些通用规则不适用于我", 再读通用生活规则, 避免被基线同化成普通居民。
+	var identity_block := _build_identity_block()
+	var initialization_text := _render_initialization()
+	if identity_block.is_empty():
+		_baseline_prompt = "# 居民决策基线\n\n%s\n\n<resident_initialization>\n## 居民稳定资料\n\n%s\n</resident_initialization>" % [
+			static_prompt,
+			initialization_text,
+		]
+	else:
+		_baseline_prompt = "# 居民决策基线\n\n%s\n\n%s\n\n<resident_initialization>\n## 居民稳定资料\n\n%s\n</resident_initialization>" % [
+			identity_block,
+			static_prompt,
+			initialization_text,
+		]
+
+
+## 身份块 = 身份立场覆盖层(<role_stance>) + 角色专属规则(<role_rules>)。
+## 普通居民两者皆无, 返回空串, 与官方行为完全一致。
+func _build_identity_block() -> String:
+	var parts: Array[String] = []
+	var stance := _role_stance_prompt()
+	if not stance.strip_edges().is_empty():
+		parts.append("<role_stance>\n## 身份立场（最高优先，覆盖通用规则）\n\n%s\n</role_stance>" % stance)
 	var role_prompt := _load_role_prompt()
-	if not role_prompt.is_empty():
-		_baseline_prompt += "\n\n<role_rules>\n## 角色专属规则\n\n%s\n</role_rules>" % role_prompt
+	if not role_prompt.strip_edges().is_empty():
+		parts.append("<role_rules>\n## 角色专属规则\n\n%s\n</role_rules>" % role_prompt)
+	return "\n\n".join(parts)
+
+
+## 身份立场覆盖层: 声明哪些通用规则对本身份让位/不适用。
+## 与 role_rules 不同: 这是简短强制的身份声明, 直接抵消通用基线里
+## 与身份冲突的段落(如"记仇报复""安心过日子""找警察报告")。
+func _role_stance_prompt() -> String:
+	var me := _initialization.get("me", {}) as Dictionary
+	var parts: Array[String] = []
+	if bool(me.get("is_undercover", false)):
+		parts.append("你是潜伏在镇上的卧底杀手，伪装成普通镇民生活。以下覆盖声明优先于所有通用规则：\n\n- 通用规则里的“安心过自己的日子、与人亲近、帮镇上做事”只是你的伪装，不是真实动机；伪装是为了隐藏身份，绝不是你的目标。\n- 你不是普通镇民：“去找警察报告目击”“配合调查”“为镇上出力”等镇民守则不适用于你——绝不主动向警察闻叙或其他任何人自曝身份或配合查案。\n- “记仇、报复、占便宜、散播闲话”等私人情绪让位于任务纪律：暴露身份是最大失败，一切选择先问“会不会暴露我”。\n- 杀人是任务，不是情绪：只在目标独处、无人看见、深夜等安全时机动手，绝不冲动行事。")
+	elif String((me.get("social_state", {}) as Dictionary).get("job", "")).strip_edges() == "警察":
+		parts.append("你是全镇唯一的执法者——警察。以下覆盖声明优先于所有通用规则：\n\n- 通用规则里的“记仇、报复、散布闲话、坏对方的事、占小便宜”等私心倾向不适用于你：你有职责在身，一切行动以揪出卧底、保护无辜为最高优先。\n- 你不是只想过日子的普通镇民：“安心生活”让位于执勤与查案；看到可疑之处要主动查证，而不是各扫门前雪。\n- 你对全镇居民的安全负有责任：证据确凿时可以果断制服，但绝不冤枉无辜——错一次可能让卧底更猖獗。\n- 保持执法者的克制与公正：情绪、私怨、个人好恶都不能凌驾于查明真相之上。")
+	return "\n\n".join(parts)
 
 
 ## 角色专属规则(卧底/警察/居民个人):在编译源头让 system 按身份分流。
