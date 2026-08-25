@@ -45,6 +45,16 @@ const MAX_DECISION_ATTEMPTS := 2
 # 退避期间整体请求率自然回落。attempt 1 -> 2s, attempt 2 -> 4s。
 const RATE_LIMIT_RETRY_DELAY_SECONDS := 2.0
 const RATE_LIMIT_RETRY_DELAY_MAX_SECONDS := 4.0
+# 智能节流(方案 A): 平台按请求速率限流, 实测令牌桶容量 4-6、补充 ~1/s(60/min),
+# 429 不产生调用记录、无 Retry-After 头, 脉冲批量重试会整批撞窗口。
+# 平时按 DISPATCH_RATE_PER_SECOND 补充预算(低于平台补充速率, 不撞 429),
+# 命中 429 后进入节流态 RATE_LIMIT_THROTTLE_DURATION_MS, 期间按节流速率补充。
+# 预算不足的普通居民请求进 overflow 还回 world pending, 下帧补充后重取——
+# 请求不丢, 只是排队。玩家对话请求绕过预算, 保证即时响应。
+const DISPATCH_RATE_PER_SECOND := 0.8
+const THROTTLED_DISPATCH_RATE_PER_SECOND := 0.5
+const RATE_LIMIT_THROTTLE_DURATION_MS := 30000
+const MAX_DISPATCH_BUDGET := 3.0
 const MAX_ERROR_HISTORY := 128
 const BACKGROUND_DEPARTURE_INITIAL_DELAY_SECONDS := 20.0
 const BACKGROUND_DEPARTURE_RETRY_DELAY_SECONDS := 8.0
@@ -127,6 +137,9 @@ var _request_metrics: Dictionary = {
 	"providerComplete": 0,
 }
 var _background_departure_probe_id := 0
+var _throttle_until_ms := 0
+var _dispatch_budget := MAX_DISPATCH_BUDGET
+var _last_budget_refill_ms := 0
 var _background_departure_operation_id := ""
 var _background_departure_pending := false
 var _background_departure_messages: Array[Dictionary] = []
@@ -709,6 +722,23 @@ func _probe_record_lap(key: String, lap_started_usec: int) -> int:
 	return now_usec
 
 
+func _refill_dispatch_budget(now_ms: int) -> void:
+	if _last_budget_refill_ms == 0:
+		_last_budget_refill_ms = now_ms
+		return
+	var rate := (
+		THROTTLED_DISPATCH_RATE_PER_SECOND
+		if now_ms < _throttle_until_ms
+		else DISPATCH_RATE_PER_SECOND
+	)
+	var elapsed_seconds := float(now_ms - _last_budget_refill_ms) / 1000.0
+	_dispatch_budget = minf(
+		MAX_DISPATCH_BUDGET,
+		_dispatch_budget + elapsed_seconds * rate,
+	)
+	_last_budget_refill_ms = now_ms
+
+
 func _select_dispatchable_requests(
 	requests: Array[Dictionary],
 	max_requests: int,
@@ -716,6 +746,8 @@ func _select_dispatchable_requests(
 ) -> Dictionary:
 	var selected: Array[Dictionary] = []
 	var overflow: Array[Dictionary] = []
+	if is_inside_tree():
+		_refill_dispatch_budget(Time.get_ticks_msec())
 	# 容量投影只需要在途 decision_id 集合，不需要复制 wake packet 本体。
 	var projected := {}
 	for inflight_decision_id: Variant in _inflight:
@@ -754,6 +786,16 @@ func _select_dispatchable_requests(
 		var request_is_ordinary := not _wake_is_avatar_conversation_turn(
 			wake_packet
 		)
+		# 智能节流: 预算不足的普通居民请求进 overflow, 由 pump 还回 world
+		# pending, 下帧补充预算后再取回——天然限速且不丢请求。
+		# 玩家对话请求绕过预算(必须即时响应); 测试环境不在场景树内, 不节流。
+		if (
+			is_inside_tree()
+			and request_is_ordinary
+			and _dispatch_budget < 1.0
+		):
+			overflow.append(request)
+			continue
 		var next_ordinary_count := (
 			projected_ordinary_count
 			+ (1 if request_is_ordinary else 0)
@@ -790,6 +832,8 @@ func _select_dispatchable_requests(
 		projected_local_count = next_local_count
 		projected_local_ordinary_count = next_local_ordinary_count
 		selected.append(request)
+		if is_inside_tree() and request_is_ordinary:
+			_dispatch_budget -= 1.0
 	return {
 		"selected": selected,
 		"overflow": overflow,
@@ -3193,6 +3237,12 @@ func _schedule_rate_limit_redispatch(
 		# 测试环境 gateway 不在场景树内, create_timer 不可用, 退化为立即重发。
 		_redispatch(resident_id, decision_id)
 		return
+	# 命中 429: 进入节流态, 预算压到节流速率, 避免脉冲重试再撞同一限流窗口。
+	_throttle_until_ms = Time.get_ticks_msec() + RATE_LIMIT_THROTTLE_DURATION_MS
+	_dispatch_budget = minf(
+		_dispatch_budget,
+		THROTTLED_DISPATCH_RATE_PER_SECOND,
+	)
 	var delay := minf(
 		RATE_LIMIT_RETRY_DELAY_SECONDS * attempt,
 		RATE_LIMIT_RETRY_DELAY_MAX_SECONDS,
