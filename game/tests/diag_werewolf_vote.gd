@@ -2,7 +2,7 @@ extends "res://tests/support/TownWorldTestCase.gd"
 ## diag_werewolf_vote.gd — 狼人杀化 MVP 验证
 ## 1) is_night 昼夜窗口
 ## 2) 夜间暗杀死亡不即时公告,08:00 天亮统一公布
-## 3) 11:00 镇民大会投票回合 / 手动投票 / 12:30 开票放逐最高票
+## 3) 8:00 镇民大会投票回合 / 手动投票 / 12:30 开票放逐最高票
 ## 4) 契约层:exile_vote 字段白名单/校验/canonicalize
 ## 5) 胜负判定:卧底全灭 → 镇民胜
 ## 6) 存档快照含 werewolfState
@@ -107,11 +107,11 @@ func _verify_feature_inactive_without_undercover() -> void:
 	_expect_equal(started.get("ok"), true, "world starts")
 	if started.get("ok") != true:
 		return
-	# 无卧底世界推到第1天 11:00 也不开会
-	_advance_to_minute_of_day(world, 660)
+	# 无卧底世界推到第1天 8:00 也不开会
+	_advance_to_minute_of_day(world, 480)
 	var current_day := int(world.get("_environment").call("get_absolute_minute")) / 1440
 	if current_day < 1:
-		_advance_to_minute_of_day(world, 660)
+		_advance_to_minute_of_day(world, 480)
 	_expect_equal(
 		((world.get("_werewolf_state") as Dictionary).get("vote", {}) as Dictionary).is_empty(),
 		true,
@@ -149,11 +149,11 @@ func _verify_vote_round() -> void:
 	if started.get("ok") != true:
 		return
 	_inject_undercover_stub(world, UNDERCOVER_IDS[0])
-	_advance_to_minute_of_day(world, 660)  # 11:00
-	# 第0天(开局日)不开镇民大会,推到第1天 11:00
+	_advance_to_minute_of_day(world, 480)  # 08:00
+	# 第0天(开局日)不开镇民大会,推到第1天 8:00
 	var current_day := int(world.get("_environment").call("get_absolute_minute")) / 1440
 	if current_day < 1:
-		_advance_to_minute_of_day(world, 660)
+		_advance_to_minute_of_day(world, 480)
 	var state: Dictionary = world.get("_werewolf_state") as Dictionary
 	var vote: Dictionary = state.get("vote", {}) as Dictionary
 	var day := int(world.get("_environment").call("get_absolute_minute")) / 1440
@@ -212,10 +212,10 @@ func _verify_settle_skipped_after_game_over() -> void:
 	if started.get("ok") != true:
 		return
 	_inject_undercover_stub(world, UNDERCOVER_IDS[0])
-	_advance_to_minute_of_day(world, 660)  # 11:00
+	_advance_to_minute_of_day(world, 480)  # 08:00
 	var current_day := int(world.get("_environment").call("get_absolute_minute")) / 1440
 	if current_day < 1:
-		_advance_to_minute_of_day(world, 660)
+		_advance_to_minute_of_day(world, 480)
 	var vote: Dictionary = (world.get("_werewolf_state") as Dictionary).get(
 		"vote",
 		{},

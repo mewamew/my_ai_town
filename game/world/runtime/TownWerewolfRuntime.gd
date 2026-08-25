@@ -10,7 +10,7 @@ extends RefCounted
 
 const NIGHT_START_MINUTE := 1200  # 20:00
 const DAWN_MINUTE := 480          # 08:00 天亮公布昨夜死讯
-const VOTE_START_MINUTE := 660    # 11:00 镇民大会开始
+const VOTE_START_MINUTE := 480    # 08:00 天亮后镇民大会开始
 const VOTE_REMIND_MINUTE := 720   # 12:00 强制唤醒未投票居民投票
 const VOTE_SETTLE_MINUTE := 750   # 12:30 开票放逐
 const EXILE_REASON := "被镇民大会投票放逐"

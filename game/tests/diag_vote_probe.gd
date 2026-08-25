@@ -1,6 +1,6 @@
 extends "res://tests/support/TownWorldTestCase.gd"
 ## diag_vote_probe.gd — 投票链路探针（注入狼人杀角色版）：
-## 注入 3 卧底+警察+医生 → feature_active=true → 推进到第2天 11:00 开大会
+## 注入 3 卧底+警察+医生 → feature_active=true → 推进到第2天 8:00 开大会
 ## → 检查 vote 状态 / vote_snapshot / wake.snapshot.exile_vote → 直接 submit_vote
 ## → 推进 12:30 开票清空回合 → 夜间 20:00 白芷 wake.night_skill + "使用技能"动作提交链。
 ## 纯本地、不调 API。
@@ -36,14 +36,14 @@ func _verify_vote_chain() -> void:
 			str(WEREWOLF.feature_active(world)),
 		]
 	)
-	# 第1天 11:00 (day_index=0 不开会) → 第2天 11:00 开会
-	_advance_to_minute_of_day(world, 660)
-	print("  第1天 11:00 后 absolute_minute=%d" % int(env.call("get_absolute_minute")))
-	_advance_to_minute_of_day(world, 660)
-	print("  第2天 11:00 后 absolute_minute=%d" % int(env.call("get_absolute_minute")))
+	# 第1天 8:00 (day_index=0 不开会) → 第2天 8:00 开会
+	_advance_to_minute_of_day(world, 480)
+	print("  第1天 8:00 后 absolute_minute=%d" % int(env.call("get_absolute_minute")))
+	_advance_to_minute_of_day(world, 480)
+	print("  第2天 8:00 后 absolute_minute=%d" % int(env.call("get_absolute_minute")))
 	var state: Dictionary = world.get("_werewolf_state")
 	var vote := state.get("vote", {}) as Dictionary
-	_expect_equal(vote.is_empty(), false, "第2天 11:00 后 vote 回合已开启")
+	_expect_equal(vote.is_empty(), false, "第2天 8:00 后 vote 回合已开启")
 	if vote.is_empty():
 		world.call("stop")
 		return

@@ -7,7 +7,7 @@ extends SceneTree
 ## 流程：
 ##   1) 读用户存档 provider（302-ai）→ configure + health check（真实 API）
 ##   2) 世界 start_formal（catalog 狼人杀版 16 居民，含 3 卧底+警察）
-##   3) 大步 advance 推进到第2天 11:00（start_vote_round 开启投票并唤醒全镇）
+##   3) 大步 advance 推进到第2天 8:00（start_vote_round 开启投票并唤醒全镇）
 ##   4) 停止推进时钟，持续 pump 消化所有居民的投票决策（window 内 forced=true）
 ##   5) 统计：模型输出 exile_vote 次数 / submit_vote 记录数 / settle 结果
 ##
@@ -46,7 +46,7 @@ const DATA_CLEANER := preload(
 )
 
 const MODEL_TIMEOUT_MSEC := 90000
-const VOTE_DAY2_11_00_MINUTE := 1440 + 660  # 2100
+const VOTE_DAY2_11_00_MINUTE := 1440 + 480  # 1920
 const VOTE_DAY2_12_30_MINUTE := 1440 + 750  # 2190
 
 var _health_result: Dictionary = {}
@@ -259,7 +259,7 @@ func _run() -> void:
 		quit(1)
 		return
 
-	# —— 主循环：推进到第2天 11:00 → 停钟等投票 → 12:30 开票 ——
+	# —— 主循环：推进到第2天 8:00 → 停钟等投票 → 12:30 开票 ——
 	var started_ms := Time.get_ticks_msec()
 	var total_end_ms := started_ms + total_seconds * 1000
 	var reached_vote_window := false
@@ -290,7 +290,7 @@ func _run() -> void:
 				) as Dictionary
 			)
 			print(
-				"VOTE_LIVE_WINDOW: 第2天 11:00 到达, 候选 %d 人, 唤醒全镇"
+				"VOTE_LIVE_WINDOW: 第2天 8:00 到达, 候选 %d 人, 唤醒全镇"
 				% (vote.get("candidateIds", []) as Array).size()
 			)
 		elif not settle_done:
