@@ -73,6 +73,11 @@ const ACTION_FIELDS := {
 		"target_resident_id",
 		"line",
 	],
+	"查案": [
+		"action_id",
+		"type",
+		"line",
+	],
 	"回应冲突": [
 		"action_id",
 		"type",
@@ -190,6 +195,10 @@ static func validate_action_shape(action: Dictionary) -> String:
 				["target_resident_id", "line"],
 				action_type,
 			)
+		"查案":
+			# 警察查案即时动作: 在镇公所查阅档案, 获取死亡案件与行踪疑点
+			# 线索(每天限 2 次)。只需要 line, 不需要目标。
+			return require_action_texts(action, ["line"], action_type)
 		"搭话":
 			var target_id_present := action.has("target_resident_id")
 			var target_name_present := action.has("target")

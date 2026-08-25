@@ -25,6 +25,8 @@ const SCHOLAR_CHARGES_MAX := 3
 const POLICE_CHARGES_MAX := 2
 # 警察追踪装置额度(每局): 合并后的追踪器 3 次(原窃听器 2 + 定位器 3 合并)。
 const TRACKER_CHARGES_MAX := 3
+# 警察镇公所查案每日次数(跨天自动重置): 防止反复刷档案。
+const INVESTIGATE_DAILY_LIMIT := 2
 # 警察错杀平民的停职时长(分钟): 3 小时, 期满恢复 1 次额度。
 const SUBDUE_SUSPENSION_MINUTES := 180
 const NIGHT_START_MINUTE := 1200
@@ -54,6 +56,8 @@ static func default_role_skills() -> Dictionary:
 			"charges": POLICE_CHARGES_MAX,
 			"disarmed": false,
 			"trackerCharges": TRACKER_CHARGES_MAX,
+			"investigateDay": -1,
+			"investigateCount": 0,
 		},
 		"nightRoundDay": -1,
 	}
@@ -601,6 +605,36 @@ static func consume_police_tracker(world) -> bool:
 	if remaining <= 0:
 		return false
 	police["trackerCharges"] = remaining - 1
+	skills["police"] = police
+	world._werewolf_state["roleSkills"] = skills
+	return true
+
+
+## 警察查案当日剩余次数（每天 INVESTIGATE_DAILY_LIMIT 次，跨天自动重置）。
+static func police_investigate_remaining(world) -> int:
+	var skills := _skills(world)
+	var police := skills.get("police", {}) as Dictionary
+	var day_index := int(world._authoritative_absolute_minute()) / 1440
+	if int(police.get("investigateDay", -1)) != day_index:
+		return INVESTIGATE_DAILY_LIMIT
+	return maxi(
+		0,
+		INVESTIGATE_DAILY_LIMIT - int(police.get("investigateCount", 0)),
+	)
+
+
+## 消耗一次查案（当日配额内返回 true；跨天自动重置后计 1 次）。
+static func consume_police_investigate(world) -> bool:
+	var skills := _skills(world)
+	var police := skills.get("police", {}) as Dictionary
+	var day_index := int(world._authoritative_absolute_minute()) / 1440
+	var count := int(police.get("investigateCount", 0))
+	if int(police.get("investigateDay", -1)) != day_index:
+		count = 0
+	if count >= INVESTIGATE_DAILY_LIMIT:
+		return false
+	police["investigateDay"] = day_index
+	police["investigateCount"] = count + 1
 	skills["police"] = police
 	world._werewolf_state["roleSkills"] = skills
 	return true

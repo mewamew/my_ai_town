@@ -409,6 +409,9 @@ func _verify_night_only_team_cap() -> void:
 		"白天拒绝原因说明只能在夜间动手",
 	)
 	_advance_to_minute_of_day(world, 1200)  # 进入第一晚
+	# 巡逻威慑: 把警察移到远处(镇公所室内, 与目标不同区域), 避免"附近有
+	# 警察"拦截本场景的暗杀判定(巡逻威慑机制由 diag_police_patrol 单独验证)。
+	_move_police_away(residents)
 	var target := residents.get(CIVILIAN_ID, {}) as Dictionary
 	actor["spaceId"] = target.get("spaceId", "")
 	actor["regionId"] = target.get("regionId", "")
@@ -455,6 +458,7 @@ func _verify_night_only_team_cap() -> void:
 		"同夜拒绝原因包含全队配额说明",
 	)
 	_advance_to_minute_of_day(world, 1200)  # 下一晚，配额重置
+	_move_police_away(residents)
 	var next_night_prepared := world.call(
 		"_prepare_assassination_action",
 		UNDERCOVER_ID,
@@ -508,6 +512,16 @@ func _verify_subdue_option_injection() -> void:
 
 
 # --- 辅助 ---
+
+## 把警察移到远处(镇公所室内, 与目标不同 space), 隔离巡逻威慑机制。
+func _move_police_away(residents: Dictionary) -> void:
+	var police_res: Variant = residents.get(POLICE_ID, {})
+	if police_res is Dictionary:
+		(police_res as Dictionary)["spaceId"] = "indoor_town_hall"
+		(police_res as Dictionary)["regionId"] = "region_portal_town_hall_entry"
+		(police_res as Dictionary)["currentPlace"] = "镇公所"
+		(police_res as Dictionary)["currentAction"] = {}
+
 
 func _new_skill_world(label: String) -> RefCounted:
 	var data := _build_data()

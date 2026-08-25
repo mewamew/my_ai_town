@@ -1702,6 +1702,10 @@ func _render_constraints(constraints: Dictionary) -> String:
 			# 警察追踪装置提交模板: 必须靠近目标(能感知到对方)才能偷偷装上,
 			# 装好后 1 天内目标参与对话/要去哪/深夜重大行动(暗杀等)都会实时上报给你。
 			text += "\n  提交格式(唯一合法,type必须写'追踪'两字): {\"action_id\":\"当前决定编号-追踪\",\"type\":\"追踪\",\"target_resident_id\":\"上面某个候选人的ID\",\"line\":\"短台词\"}; 不要加其他字段; 安装必须靠近目标(能感知到对方),每次使用消耗一次追踪装置,一局共3次; 装好后1天内她/他的对话、行踪和重要行动你都会实时收到"
+		if String(action_type) == "查案":
+			# 警察镇公所查案提交模板: 只有你在镇公所时才会出现; 查阅档案获取
+			# 死亡案件与夜间行踪疑点线索, 每天限 2 次(跨天重置)。
+			text += "\n  提交格式(唯一合法,type必须写'查案'两字): {\"action_id\":\"当前决定编号-查案\",\"type\":\"查案\",\"line\":\"短台词\"}; 不要加其他字段; 只能在镇公所使用,每次消耗一次当日查案额度(每天2次),档案会告诉你死亡案件记录和深夜行踪异常的人"
 		lines.append(text)
 	return "\n".join(lines)
 
@@ -2018,6 +2022,16 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 			(constraints["actions"] as Dictionary)["追踪"] = {
 				"fields": ["action_id", "type", "target_resident_id", "line"],
 				"targets": intel_targets.duplicate(),
+				"required": false,
+				"max_line_characters": 80,
+			}
+		# 警察镇公所查案动作: 在镇公所时可用, 每天限 2 次, 无需目标。
+		if (
+			bool(police_intel.get("inTownHall", false))
+			and int(police_intel.get("investigateRemaining", 0)) > 0
+		):
+			(constraints["actions"] as Dictionary)["查案"] = {
+				"fields": ["action_id", "type", "line"],
 				"required": false,
 				"max_line_characters": 80,
 			}

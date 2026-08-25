@@ -481,10 +481,17 @@ static func _police_intel_context(host, resident_name: String) -> Dictionary:
 				0, int(tracker.get("expireMinute", -1)) - minute,
 			),
 		}
+	var in_town_hall := String(
+		actor_resident.get("currentPlace", ""),
+	).strip_edges() == "镇公所"
 	return {
 		"trackerCharges": host.ROLE_SKILL_RUNTIME.police_tracker_charges(
 			host
 		),
 		"targets": targets,
 		"devices": devices,
+		"inTownHall": in_town_hall,
+		"investigateRemaining": host.ROLE_SKILL_RUNTIME.police_investigate_remaining(
+			host
+		),
 	}

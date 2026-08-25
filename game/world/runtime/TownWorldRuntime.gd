@@ -2694,6 +2694,9 @@ func _decorate_conflict_tension_options(
 				continue
 			# 暗杀永远注入:卧底本职,不受"目标已有人设 attack 选项"影响——
 			# 否则卧底杀意人格(生成 profile-attack)反而让自己失去暗杀选项。
+			# 唯一例外:目标感知范围内有清醒警察(巡逻威慑)时,卧底不敢当着
+			# 警察的面动手,暗杀选项不注入(与 _prepare_assassination_action
+			# 的执行校验一致,保证"选项里出现的目标 = 提交时能通过的目标")。
 			var undercover_assassinate := {
 				"option_id": "assassinate:%s:%s" % [resident_id, candidate_id],
 				"kind": "assassinate",
@@ -2711,7 +2714,7 @@ func _decorate_conflict_tension_options(
 					+ "表面身份与说话方式，不能当众暴露卧底身份。"
 				),
 			}
-			if kill_available:
+			if kill_available and not _target_has_awake_police_nearby(candidate_id):
 				result.append(undercover_assassinate)
 			# attack 仅在目标还没有 attack 选项时注入(避免重复);
 			# seen_targets 里已有该目标说明 profile-attack 已存在。
@@ -2829,6 +2832,12 @@ func _prepare_assassination_action(
 	var target := _residents[target_id] as Dictionary
 	if not _resident_is_present(target):
 		return {"ok": false, "errors": ["暗杀目标不在场"]}
+	# 巡逻威慑:目标感知范围内有清醒警察时不敢动手(有人看着不好下手)。
+	if _target_has_awake_police_nearby(target_id):
+		return {
+			"ok": false,
+			"errors": ["附近有警察，有人看着不好下手。等警察离开再说。"],
+		}
 	# 空间判定:必须同 spaceId + 同 regionId(同屋/同区域)。
 	var actor_space := String(resident.get("spaceId", "")).strip_edges()
 	var target_space := String(target.get("spaceId", "")).strip_edges()
@@ -3345,6 +3354,119 @@ func _activate_police_tracker_action(
 	return {"ok": true, "summary": summary}
 
 
+## 警察查案即时动作(镇公所限定): 在镇公所翻阅档案, 获取死亡案件档案
+## 与夜间行踪疑点线索。每天限 INVESTIGATE_DAILY_LIMIT 次(跨天重置)。
+func _activate_police_investigate_action(
+	resident_id: String,
+	resident: Dictionary,
+	action: Dictionary,
+) -> Dictionary:
+	if not _resident_is_police(resident_id):
+		return {"ok": false, "errors": ["本人没有查案能力：只有警察能查阅档案"]}
+	var place_name := String(resident.get("currentPlace", "")).strip_edges()
+	if place_name != "镇公所":
+		var where_text := "（你现在在%s）" % place_name
+		if place_name.is_empty():
+			where_text = ""
+		return {
+			"ok": false,
+			"errors": ["查案需要回到镇公所翻阅档案%s" % where_text],
+		}
+	var line := String(action.get("line", "")).strip_edges()
+	if line.is_empty():
+		return {"ok": false, "errors": ["查案动作必须包含非空 line"]}
+	if not ROLE_SKILL_RUNTIME.consume_police_investigate(self):
+		return {
+			"ok": false,
+			"errors": [
+				"今天的查案次数已用完（每天 %d 次），先靠追踪装置和盘问，明天再来"
+				% ROLE_SKILL_RUNTIME.INVESTIGATE_DAILY_LIMIT,
+			],
+		}
+	# 线索包: 死亡案件档案(_police_death_cases, 暗杀死因已脱敏) + 夜间行踪疑点。
+	var parts: Array[String] = []
+	var cases := _police_death_cases(resident_id)
+	if cases.is_empty():
+		parts.append("档案室里暂时没有新的死亡案件记录。")
+	else:
+		for case: Dictionary in cases:
+			var clue := String(case.get("clue", ""))
+			var case_text := "第%d天 %s %s在%s%s。" % [
+				int(case.get("day", 0)),
+				String(case.get("clock", "")),
+				String(case.get("deceased_resident_name", "某人")),
+				String(case.get("place_name", "镇上")),
+				String(case.get("reason", "死亡")),
+			]
+			if not clue.is_empty():
+				case_text += " %s" % clue
+			parts.append(case_text)
+	var minute := _authoritative_absolute_minute()
+	if WEREWOLF_RUNTIME.is_night(minute):
+		var night_walkers: Array[String] = []
+		var away_from_home: Array[String] = []
+		for other_id: String in _resident_order:
+			var candidate_id := _resident_key(other_id)
+			if (
+				candidate_id.is_empty()
+				or candidate_id == resident_id
+				or candidate_id == _player_avatar_id()
+				or not _resident_is_alive(candidate_id)
+			):
+				continue
+			var other := _residents.get(candidate_id, {}) as Dictionary
+			if other.is_empty() or not _resident_is_present(other):
+				continue
+			if _resident_is_sleeping(other):
+				continue
+			var display := _resident_display_name(candidate_id)
+			if display.is_empty():
+				continue
+			if String(other.get("spaceId", "")).strip_edges() == "town_outdoor":
+				night_walkers.append(display)
+			var social_state := other.get("socialState", {}) as Dictionary
+			var home := String(social_state.get("home", "")).strip_edges()
+			var other_place := String(other.get("currentPlace", "")).strip_edges()
+			if not home.is_empty() and not other_place.is_empty() and other_place != home:
+				away_from_home.append("%s（在%s）" % [display, other_place])
+		if not night_walkers.is_empty():
+			parts.append("深夜还在外面游荡：%s。" % "、".join(night_walkers))
+		if not away_from_home.is_empty():
+			parts.append("深夜不在自己家：%s。" % "、".join(away_from_home))
+		if night_walkers.is_empty() and away_from_home.is_empty():
+			parts.append("深夜全镇都在安睡，没有异常。")
+	else:
+		parts.append(
+			"现在是白天，档案能查的就这些。晚上巡逻时留意深夜出门的人，或给可疑者装追踪装置。",
+		)
+	var summary := "镇公所档案：" + " ".join(parts)
+	var intel_event := {
+		"event_id": "police-investigate:%d" % minute,
+		"type": "查案线索",
+		"time": get_time(),
+		"target_resident_id": "",
+		"target_resident_name": "",
+		"summary": summary,
+	}
+	_append_pending_world_event(resident, intel_event)
+	_append_action_result_without_schedule(
+		resident_id,
+		String(action.get("action_id", "")),
+		"completed",
+		summary,
+	)
+	TOWN_LOG.line(
+		"CATMOUSE",
+		"%s | %s 查案：%s" % [
+			_time_label(), _resident_display_name(resident_id), summary,
+		],
+	)
+	_schedule_decision(resident_id, true)
+	_emit_resident_state_changed(resident_id)
+	_bump_world_revision()
+	return {"ok": true, "summary": summary}
+
+
 ## 感知范围判定(与暗杀目标判定一致): 同 spaceId+regionId, 室内同屋放行, 户外距离≤感知范围。
 func _resident_within_perception(actor_resident: Dictionary, target_id: String) -> bool:
 	var actor_space := String(actor_resident.get("spaceId", "")).strip_edges()
@@ -3367,6 +3489,33 @@ func _resident_within_perception(actor_resident: Dictionary, target_id: String) 
 		):
 			return false
 	return true
+
+
+## 巡逻威慑判定: 目标感知范围内是否有清醒的警察(在场、活着、没在睡觉)。
+## 卧底暗杀时目标身边有清醒警察则不敢动手——警察巡逻到哪家,哪家当晚
+## 安全; 也倒逼卧底挑警察不在的地方动手或先解决警察。睡觉的警察不算
+## (警察晚上在家睡觉时依然可被杀,所以 police.md 引导警察晚上巡逻不回家)。
+func _target_has_awake_police_nearby(target_id: String) -> bool:
+	if target_id.is_empty() or not _residents.has(target_id):
+		return false
+	if not _resident_is_alive(target_id):
+		return false
+	for other_id: String in _resident_order:
+		var police_id := _resident_key(other_id)
+		if police_id.is_empty() or police_id == target_id:
+			continue
+		if not _resident_is_police(police_id):
+			continue
+		var police_resident := _residents.get(police_id, {}) as Dictionary
+		if police_resident.is_empty() or not _resident_is_alive(police_id):
+			continue
+		if not _resident_is_present(police_resident):
+			continue
+		if _resident_is_sleeping(police_resident):
+			continue
+		if _resident_within_perception(police_resident, target_id):
+			return true
+	return false
 
 
 ## 追踪装置对话钩子(ConversationRuntime 每轮对话产生时调用): 目标被追踪且未到期

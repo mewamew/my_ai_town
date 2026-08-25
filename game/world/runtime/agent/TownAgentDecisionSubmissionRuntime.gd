@@ -384,6 +384,29 @@ static func submit_valid(
 			"consumed": true,
 			"stale": false,
 		})
+	if action_type == "查案":
+		# 警察镇公所查案即时动作: 在镇公所查阅档案, 获取死亡案件与夜间
+		# 行踪疑点线索(每天限 2 次)。失败反馈模型重试。
+		var investigate_result: Dictionary = host._activate_police_investigate_action(
+			resident_id, resident, action,
+		)
+		if not bool(investigate_result.get("ok", false)):
+			var investigate_errors := investigate_result.get("errors", []) as Array
+			var investigate_error: String = (
+				"查案失败"
+				if investigate_errors.is_empty()
+				else String(investigate_errors[0])
+			)
+			return host._complete_agent_submission(
+				ACTION_RESULT_RUNTIME.reject_invalid(
+					host, resident_id, resident, action, investigate_error
+				)
+			)
+		return host._complete_agent_submission({
+			"ok": true,
+			"consumed": true,
+			"stale": false,
+		})
 	if action_type in ["暗杀", "制服", "发布公告"]:
 		# 狼人杀即时动作:提交即校验(prepare),通过后立即结算(activate),
 		# 不写 currentAction、不进推进循环。

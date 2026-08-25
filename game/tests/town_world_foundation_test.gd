@@ -5867,7 +5867,7 @@ func _test_full_set_matches_field_whitelist() -> void:
 		registry_types,
 		"字段白名单(T1)与登记表全集逐项一致",
 	)
-	_expect_equal(REGISTRY.ALL_TYPES.size(), 19, "动作类型全集为 19 种")
+	_expect_equal(REGISTRY.ALL_TYPES.size(), 20, "动作类型全集为 20 种")
 
 
 
