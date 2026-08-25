@@ -1384,7 +1384,7 @@ func _render_constraints(constraints: Dictionary) -> String:
 			% [
 				_join(announcement_reactions.get("fields", [])),
 				_join(announcement_reactions.get("source_event_ids", [])),
-				int(announcement_reactions.get("max_characters", 64)),
+				int(announcement_reactions.get("max_characters", 32)),
 			]
 		)
 	var social_response := constraints.get(
@@ -1775,7 +1775,7 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 			reply_constraints["announcement_reactions"] = {
 				"fields": ["source_event_id", "text"],
 				"source_event_ids": reply_announcement_event_ids,
-				"max_characters": 64,
+				"max_characters": 32,
 				"required": true,
 			}
 		var reply_follow_up := _conversation_follow_up_constraints(snapshot)

@@ -443,7 +443,14 @@ static func available_activities(
 
 ## 警察侦查装备上下文：仅警察注入（余量 + 可侦查目标名单=在世居民ID + 装置状态）。
 static func _police_intel_context(host, resident_name: String) -> Dictionary:
-	if not host._resident_is_police(resident_name):
+	var is_police := bool(host._resident_is_police(resident_name))
+	TOWN_LOG.line(
+		"WEREWOLF",
+		"police-intel check: resident=%s is_police=%s" % [
+			resident_name, is_police,
+		],
+	)
+	if not is_police:
 		return {}
 	var targets: Array[String] = []
 	var player_id := String(host._player_avatar_id())

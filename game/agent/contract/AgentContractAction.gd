@@ -207,11 +207,17 @@ static func _validate_traveler_relationship_beat(
 	wake_packet: Dictionary,
 	errors: Array[String],
 ) -> void:
-	var conversation := (
-		(wake_packet.get("snapshot", {}) as Dictionary).get("conversation", {})
-		as Dictionary
-	)
-	var relationship := conversation.get("traveler_relationship", {}) as Dictionary
+	var snapshot_value: Variant = wake_packet.get("snapshot")
+	if not snapshot_value is Dictionary:
+		return
+	var conversation_value: Variant = (snapshot_value as Dictionary).get("conversation")
+	if not conversation_value is Dictionary:
+		return
+	var conversation := conversation_value as Dictionary
+	var relationship_value: Variant = conversation.get("traveler_relationship")
+	if not relationship_value is Dictionary:
+		return
+	var relationship := relationship_value as Dictionary
 	var affinity := int(relationship.get("affinity", 50))
 	if relationship.is_empty() or affinity < 53:
 		return

@@ -73,6 +73,15 @@ static func ensure_state(world) -> void:
 	for key: Variant in defaults:
 		if not skills.has(key):
 			skills[key] = defaults[key]
+	# 深补: 旧档的 police 子键可能缺 eavesdropCharges/trackerCharges(侦查装备上线前的档)。
+	var police_value: Variant = skills.get("police")
+	if police_value is Dictionary:
+		var police := police_value as Dictionary
+		var default_police := defaults.get("police", {}) as Dictionary
+		for sub_key: Variant in default_police:
+			if not police.has(sub_key):
+				police[sub_key] = default_police[sub_key]
+		skills["police"] = police
 	werewolf_state["roleSkills"] = skills
 
 
