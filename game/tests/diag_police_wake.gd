@@ -30,6 +30,8 @@ const PROMPT_COMPILER := preload(
 )
 
 const POLICE_ID := "resident_wen_xu_01"
+const TARGET_ID := "resident_lin_lan_01"
+const FAR_ID := "resident_tang_xiaoman_01"
 
 var _checks := 0
 var _failed := 0
@@ -87,7 +89,12 @@ func _run() -> void:
 		"police.trackerCharges 存在且 > 0",
 	)
 
-	# 3) _police_intel_context 直接调用
+	# 3) _police_intel_context 直接调用 —— targets 只列感知范围内的人
+	#    林岚移到闻叙旁边(距离 50), 唐小满移到远处(距离 900 > 320)
+	var residents_now: Dictionary = world.call("residents")
+	_place_test(residents_now, POLICE_ID, Vector2(100, 100))
+	_place_test(residents_now, TARGET_ID, Vector2(150, 100))
+	_place_test(residents_now, FAR_ID, Vector2(1000, 100))
 	var intel: Dictionary = WAKE_CONTEXT._police_intel_context(
 		world, POLICE_ID
 	)
@@ -97,9 +104,14 @@ func _run() -> void:
 		int(intel.get("eavesdropCharges", 0)) > 0,
 		"intel.eavesdropCharges > 0",
 	)
+	var intel_targets := intel.get("targets", []) as Array
 	_expect(
-		(intel.get("targets", []) as Array).size() > 0,
-		"intel.targets 非空（在世居民名单）",
+		intel_targets.has(TARGET_ID),
+		"intel.targets 含近处目标（林岚, 距离50）",
+	)
+	_expect(
+		not intel_targets.has(FAR_ID),
+		"intel.targets 不含远处目标（唐小满, 距离900）",
 	)
 
 	# 4) 完整 wake_packet 链路（手动构造 pendingWake）
@@ -149,6 +161,27 @@ func _run() -> void:
 		% [_checks, _failed]
 	)
 	quit(1 if _failed > 0 else 0)
+
+
+func _place_test(
+	residents: Dictionary, resident_id: String, pos: Vector2,
+) -> void:
+	var r: Variant = residents.get(resident_id)
+	if not r is Dictionary:
+		print("  [FAIL] %s 存在" % resident_id)
+		_failed += 1
+		_checks += 1
+		return
+	(r as Dictionary)["spaceId"] = "town_outdoor"
+	(r as Dictionary)["regionId"] = "outdoor_plaza_01"
+	(r as Dictionary)["currentPlace"] = "中心广场"
+	(r as Dictionary)["position"] = pos
+	(r as Dictionary)["currentAction"] = {}
+	var arrival: Dictionary = (r as Dictionary).get(
+		"arrivalState", {}
+	) as Dictionary
+	arrival["status"] = "arrived"
+	(r as Dictionary)["arrivalState"] = arrival
 
 
 func _build_world() -> RefCounted:

@@ -454,10 +454,15 @@ static func _police_intel_context(host, resident_name: String) -> Dictionary:
 		return {}
 	var targets: Array[String] = []
 	var player_id := String(host._player_avatar_id())
+	# 与制服/暗杀同判定: 只有感知范围内(同 spaceId+regionId, 户外距离≤感知范围)
+	# 的目标才列进"能对谁装", 避免模型对全镇居民发起远距安装被拒。
+	var actor_resident := host._residents.get(resident_name, {}) as Dictionary
 	for other_id: String in host._resident_order:
 		if other_id == resident_name or other_id == player_id:
 			continue
 		if not host._resident_is_alive(other_id):
+			continue
+		if not host._resident_within_perception(actor_resident, other_id):
 			continue
 		if not host._resident_display_name(other_id).is_empty():
 			targets.append(other_id)
