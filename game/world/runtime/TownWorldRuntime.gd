@@ -2658,6 +2658,9 @@ func _decorate_conflict_tension_options(
 		var actor_region := String(resident.get("regionId", "")).strip_edges()
 		var actor_position := resident.get("position", Vector2.ZERO) as Vector2
 		var perception_range := float(world_definition.world_data.get("perceptionRange", 320.0))
+		# 同伙(其他卧底)不出现在暗杀/攻击候选里:卧底之间不互相残杀,
+		# 与 prompts/roles/undercover.md 的"不杀同伙"规则保持一致。
+		var undercover_ids := _undercover_resident_ids()
 		for other_id: String in _resident_order:
 			var candidate_id := _resident_key(other_id)
 			if (
@@ -2665,6 +2668,7 @@ func _decorate_conflict_tension_options(
 				or candidate_id == resident_id
 				or candidate_id == _player_avatar_id()
 				or not _resident_is_alive(candidate_id)
+				or undercover_ids.has(candidate_id)
 			):
 				continue
 			var other := _residents.get(candidate_id, {}) as Dictionary
@@ -2820,6 +2824,8 @@ func _prepare_assassination_action(
 		return {"ok": false, "errors": ["永远不能把玩家本人（化身）当作暗杀目标"]}
 	if not _residents.has(target_id) or not _resident_is_alive(target_id):
 		return {"ok": false, "errors": ["暗杀目标不存在或已经死亡"]}
+	if _undercover_resident_ids().has(target_id):
+		return {"ok": false, "errors": ["不能暗杀同伙：卧底之间不互相残杀"]}
 	var target := _residents[target_id] as Dictionary
 	if not _resident_is_present(target):
 		return {"ok": false, "errors": ["暗杀目标不在场"]}
