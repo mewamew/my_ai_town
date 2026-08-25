@@ -23,6 +23,9 @@ const NIGHT_SKILLS: Array[String] = [
 
 const SCHOLAR_CHARGES_MAX := 3
 const POLICE_CHARGES_MAX := 2
+# 警察侦查装备额度(每局): 窃听器 2 次 / 定位器 3 次。
+const EAVESDROP_CHARGES_MAX := 2
+const TRACKER_CHARGES_MAX := 3
 # 警察错杀平民的停职时长(分钟): 3 小时, 期满恢复 1 次额度。
 const SUBDUE_SUSPENSION_MINUTES := 180
 const NIGHT_START_MINUTE := 1200
@@ -51,6 +54,8 @@ static func default_role_skills() -> Dictionary:
 		"police": {
 			"charges": POLICE_CHARGES_MAX,
 			"disarmed": false,
+			"eavesdropCharges": EAVESDROP_CHARGES_MAX,
+			"trackerCharges": TRACKER_CHARGES_MAX,
 		},
 		"nightRoundDay": -1,
 	}
@@ -563,6 +568,46 @@ static func police_can_subdue(world) -> bool:
 static func police_charges_remaining(world) -> int:
 	var skills := _skills(world)
 	return int((skills.get("police", {}) as Dictionary).get("charges", 0))
+
+
+## 警察侦查装备余量（窃听器/定位器）。
+static func police_eavesdrop_charges(world) -> int:
+	var skills := _skills(world)
+	return int(
+		(skills.get("police", {}) as Dictionary).get("eavesdropCharges", 0)
+	)
+
+
+static func police_tracker_charges(world) -> int:
+	var skills := _skills(world)
+	return int(
+		(skills.get("police", {}) as Dictionary).get("trackerCharges", 0)
+	)
+
+
+## 消耗一次窃听器/定位器（余量 > 0 才消耗，返回是否成功）。
+static func consume_police_eavesdrop(world) -> bool:
+	var skills := _skills(world)
+	var police := skills.get("police", {}) as Dictionary
+	var remaining := int(police.get("eavesdropCharges", 0))
+	if remaining <= 0:
+		return false
+	police["eavesdropCharges"] = remaining - 1
+	skills["police"] = police
+	world._werewolf_state["roleSkills"] = skills
+	return true
+
+
+static func consume_police_tracker(world) -> bool:
+	var skills := _skills(world)
+	var police := skills.get("police", {}) as Dictionary
+	var remaining := int(police.get("trackerCharges", 0))
+	if remaining <= 0:
+		return false
+	police["trackerCharges"] = remaining - 1
+	skills["police"] = police
+	world._werewolf_state["roleSkills"] = skills
+	return true
 
 
 ## 制服结算：正确制服扣 1 次额度；错杀平民立即停职并清零额度。

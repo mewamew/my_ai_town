@@ -89,6 +89,7 @@ static func packet(
 				context.get("undercoverKillQuotaExhausted", false)
 			),
 			"town_death_cases": context.get("townDeathCases", []) as Array,
+			"police_intel": context.get("policeIntel", {}) as Dictionary,
 		},
 		"events": events,
 		"action_results": results,

@@ -67,6 +67,18 @@ const ACTION_FIELDS := {
 		"target_resident_name",
 		"line",
 	],
+	"窃听": [
+		"action_id",
+		"type",
+		"target_resident_name",
+		"line",
+	],
+	"定位": [
+		"action_id",
+		"type",
+		"target_resident_name",
+		"line",
+	],
 	"回应冲突": [
 		"action_id",
 		"type",
@@ -174,6 +186,20 @@ static func validate_action_shape(action: Dictionary) -> String:
 			return require_action_texts(
 				action,
 				["skill_id", "target_resident_name", "line"],
+				action_type,
+			)
+		"窃听":
+			# 警察侦查即时动作: 获取目标近期对话, target_resident_name 用名字。
+			return require_action_texts(
+				action,
+				["target_resident_name", "line"],
+				action_type,
+			)
+		"定位":
+			# 警察侦查即时动作: 获取目标位置行踪, target_resident_name 用名字。
+			return require_action_texts(
+				action,
+				["target_resident_name", "line"],
 				action_type,
 			)
 		"搭话":

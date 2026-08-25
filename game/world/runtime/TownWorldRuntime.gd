@@ -3282,6 +3282,175 @@ func _activate_subdue_action(
 		_bump_world_revision()
 
 
+## 警察侦查即时动作：窃听器——获取目标近期对话情报。
+func _activate_police_eavesdrop_action(
+	resident_id: String,
+	resident: Dictionary,
+	action: Dictionary,
+) -> Dictionary:
+	var target_name := String(action.get("target_resident_name", "")).strip_edges()
+	var target_id := _resident_key(target_name)
+	if not _resident_is_police(resident_id):
+		return {"ok": false, "errors": ["本人没有侦查能力：只有警察能使用窃听器"]}
+	if target_id.is_empty():
+		return {"ok": false, "errors": ["窃听目标 target_resident_name 必须是非空居民名"]}
+	if target_id == resident_id:
+		return {"ok": false, "errors": ["不能窃听自己"]}
+	if not _resident_is_alive(target_id):
+		return {"ok": false, "errors": ["窃听目标 %s 已不在镇上" % _resident_display_name(target_id)]}
+	if not ROLE_SKILL_RUNTIME.consume_police_eavesdrop(self):
+		return {"ok": false, "errors": ["窃听器次数已用完（每局 %d 次）" % ROLE_SKILL_RUNTIME.EAVESDROP_CHARGES_MAX]}
+	var summary := _collect_eavesdrop_intel(target_id)
+	var intel_event := {
+		"event_id": "police-eavesdrop:%d:%s" % [_world_revision + 1, target_id],
+		"type": "窃听情报",
+		"time": get_time(),
+		"target_resident_id": target_id,
+		"target_resident_name": _resident_display_name(target_id),
+		"summary": summary,
+	}
+	_append_pending_world_event(resident, intel_event)
+	TOWN_LOG.line(
+		"CATMOUSE",
+		"%s | %s 窃听 %s：%s" % [
+			_time_label(),
+			_resident_display_name(resident_id),
+			_resident_display_name(target_id),
+			summary,
+		],
+	)
+	_append_action_result_without_schedule(
+		resident_id,
+		String(action.get("action_id", "")),
+		"completed",
+		"你窃听了%s的对话：%s" % [_resident_display_name(target_id), summary],
+	)
+	_schedule_decision(resident_id, true)
+	_emit_resident_state_changed(resident_id)
+	_bump_world_revision()
+	return {"ok": true, "summary": summary}
+
+
+## 警察侦查即时动作：定位器——获取目标当前位置与近期行踪。
+func _activate_police_tracker_action(
+	resident_id: String,
+	resident: Dictionary,
+	action: Dictionary,
+) -> Dictionary:
+	var target_name := String(action.get("target_resident_name", "")).strip_edges()
+	var target_id := _resident_key(target_name)
+	if not _resident_is_police(resident_id):
+		return {"ok": false, "errors": ["本人没有侦查能力：只有警察能使用定位器"]}
+	if target_id.is_empty():
+		return {"ok": false, "errors": ["定位目标 target_resident_name 必须是非空居民名"]}
+	if target_id == resident_id:
+		return {"ok": false, "errors": ["不能定位自己"]}
+	if not _resident_is_alive(target_id):
+		return {"ok": false, "errors": ["定位目标 %s 已不在镇上" % _resident_display_name(target_id)]}
+	if not ROLE_SKILL_RUNTIME.consume_police_tracker(self):
+		return {"ok": false, "errors": ["定位器次数已用完（每局 %d 次）" % ROLE_SKILL_RUNTIME.TRACKER_CHARGES_MAX]}
+	var summary := _collect_tracker_intel(target_id)
+	var intel_event := {
+		"event_id": "police-tracker:%d:%s" % [_world_revision + 1, target_id],
+		"type": "定位情报",
+		"time": get_time(),
+		"target_resident_id": target_id,
+		"target_resident_name": _resident_display_name(target_id),
+		"summary": summary,
+	}
+	_append_pending_world_event(resident, intel_event)
+	TOWN_LOG.line(
+		"CATMOUSE",
+		"%s | %s 定位 %s：%s" % [
+			_time_label(),
+			_resident_display_name(resident_id),
+			_resident_display_name(target_id),
+			summary,
+		],
+	)
+	_append_action_result_without_schedule(
+		resident_id,
+		String(action.get("action_id", "")),
+		"completed",
+		"你定位了%s：%s" % [_resident_display_name(target_id), summary],
+	)
+	_schedule_decision(resident_id, true)
+	_emit_resident_state_changed(resident_id)
+	_bump_world_revision()
+	return {"ok": true, "summary": summary}
+
+
+## 窃听情报收集：目标参与过的最近对话（最多 3 条，取对话 turn 台词）。
+func _collect_eavesdrop_intel(target_id: String) -> String:
+	var target_display := _resident_display_name(target_id)
+	var target_ref := target_display
+	if target_ref.is_empty():
+		target_ref = target_id
+	var lines: Array[String] = []
+	var count := 0
+	for conv_id: Variant in conversation_state.records:
+		if count >= 3:
+			break
+		var conv := conversation_state.records[conv_id] as Dictionary
+		var participants := conv.get("participants", []) as Array
+		if not participants.has(target_ref):
+			continue
+		var turns := conv.get("turns", []) as Array
+		var dialogue: Array[String] = []
+		for turn_value: Variant in turns:
+			var turn := turn_value as Dictionary
+			var say := String(turn.get("say", ""))
+			if not say.is_empty():
+				dialogue.append(
+					"%s：「%s」" % [String(turn.get("speaker", "")), say]
+				)
+		if dialogue.is_empty():
+			continue
+		var place := String(conv.get("placeName", "")).strip_edges()
+		var header := target_ref
+		if not place.is_empty():
+			header = "%s(%s)" % [target_ref, place]
+		lines.append("%s的对话：%s" % [header, " ".join(dialogue)])
+		count += 1
+	if lines.is_empty():
+		return "%s 最近没有与任何人对话的记录。" % target_display
+	return " ".join(lines)
+
+
+## 定位情报收集：目标当前位置 + 正在做的事 + 最近出入地点。
+func _collect_tracker_intel(target_id: String) -> String:
+	var target_display := _resident_display_name(target_id)
+	var resident := resident_registry.records.get(target_id, {}) as Dictionary
+	var parts: Array[String] = []
+	var current_place := String(resident.get("currentPlace", "")).strip_edges()
+	if not current_place.is_empty():
+		parts.append("现在在%s" % current_place)
+	else:
+		parts.append("行踪不定")
+	var doing := String(resident.get("doing", "")).strip_edges()
+	if not doing.is_empty():
+		parts.append("正在%s" % doing)
+	var target_ref := target_display
+	if target_ref.is_empty():
+		target_ref = target_id
+	var recent_places: Array[String] = []
+	var seen: Dictionary = {}
+	for conv_id: Variant in conversation_state.records:
+		var conv := conversation_state.records[conv_id] as Dictionary
+		var participants := conv.get("participants", []) as Array
+		if not participants.has(target_ref):
+			continue
+		var place := String(conv.get("placeName", "")).strip_edges()
+		if not place.is_empty() and not seen.has(place):
+			seen[place] = true
+			recent_places.append(place)
+		if recent_places.size() >= 3:
+			break
+	if not recent_places.is_empty():
+		parts.append("最近出入过%s" % "、".join(recent_places))
+	return "%s：%s" % [target_display, "，".join(parts)]
+
+
 func _activate_announcement_action(
 	resident_id: String,
 	resident: Dictionary,

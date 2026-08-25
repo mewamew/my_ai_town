@@ -361,6 +361,35 @@ static func submit_valid(
 			"consumed": true,
 			"stale": false,
 		})
+	if action_type == "窃听" or action_type == "定位":
+		# 警察侦查装备即时动作: 窃听器(近期对话)/定位器(位置行踪), 即时生成情报投递,
+		# 不写 currentAction、不进推进循环。失败反馈模型重试。
+		var intel_result: Dictionary
+		if action_type == "窃听":
+			intel_result = host._activate_police_eavesdrop_action(
+				resident_id, resident, action,
+			)
+		else:
+			intel_result = host._activate_police_tracker_action(
+				resident_id, resident, action,
+			)
+		if not bool(intel_result.get("ok", false)):
+			var intel_errors := intel_result.get("errors", []) as Array
+			var intel_error: String = (
+				"侦查失败"
+				if intel_errors.is_empty()
+				else String(intel_errors[0])
+			)
+			return host._complete_agent_submission(
+				ACTION_RESULT_RUNTIME.reject_invalid(
+					host, resident_id, resident, action, intel_error
+				)
+			)
+		return host._complete_agent_submission({
+			"ok": true,
+			"consumed": true,
+			"stale": false,
+		})
 	if action_type in ["暗杀", "制服", "发布公告"]:
 		# 狼人杀即时动作:提交即校验(prepare),通过后立即结算(activate),
 		# 不写 currentAction、不进推进循环。

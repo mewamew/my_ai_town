@@ -210,6 +210,7 @@ static func wake_packet(
 				)
 			),
 			"townDeathCases": host._police_death_cases(resident_name),
+			"policeIntel": _police_intel_context(host, resident_name),
 		},
 		public_events,
 		public_results,
@@ -438,3 +439,28 @@ static func available_activities(
 		)
 	)
 	return result
+
+
+## 警察侦查装备上下文：仅警察注入（余量 + 可侦查目标名单=在世居民名）。
+static func _police_intel_context(host, resident_name: String) -> Dictionary:
+	if not host._resident_is_police(resident_name):
+		return {}
+	var targets: Array[String] = []
+	var player_id := String(host._player_avatar_id())
+	for other_id: String in host._resident_order:
+		if other_id == resident_name or other_id == player_id:
+			continue
+		if not host._resident_is_alive(other_id):
+			continue
+		var other_name: String = host._resident_display_name(other_id)
+		if not other_name.is_empty():
+			targets.append(other_name)
+	return {
+		"eavesdropCharges": host.ROLE_SKILL_RUNTIME.police_eavesdrop_charges(
+			host
+		),
+		"trackerCharges": host.ROLE_SKILL_RUNTIME.police_tracker_charges(
+			host
+		),
+		"targets": targets,
+	}

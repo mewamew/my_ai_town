@@ -1644,6 +1644,12 @@ func _render_constraints(constraints: Dictionary) -> String:
 			# 夜间技能提交模板(医生守诊/学者查验/卧底嫁祸共用,用 skill_id 区分)。
 			# 目标用候选名单里的名字; 不用技能时选普通动作即可,不必提交。
 			text += "\n  提交格式(唯一合法,type必须写'使用技能'两字): {\"action_id\":\"当前决定编号-使用技能\",\"type\":\"使用技能\",\"skill_id\":\"上面某个可用技能的ID\",\"target_resident_name\":\"上面某个候选人的名字\",\"line\":\"短台词\"}; 不要加其他字段; 只能在夜间行动阶段使用"
+		if String(action_type) == "窃听":
+			# 警察窃听器提交模板: 偷听目标近期对话, 获取情报(每次消耗一次窃听器)。
+			text += "\n  提交格式(唯一合法,type必须写'窃听'两字): {\"action_id\":\"当前决定编号-窃听\",\"type\":\"窃听\",\"target_resident_name\":\"上面某个候选人的名字\",\"line\":\"短台词\"}; 不要加其他字段; 每次使用消耗一次窃听器,一局共2次,省着用"
+		if String(action_type) == "定位":
+			# 警察定位器提交模板: 追踪目标当前位置与行踪, 获取情报(每次消耗一次定位器)。
+			text += "\n  提交格式(唯一合法,type必须写'定位'两字): {\"action_id\":\"当前决定编号-定位\",\"type\":\"定位\",\"target_resident_name\":\"上面某个候选人的名字\",\"line\":\"短台词\"}; 不要加其他字段; 每次使用消耗一次定位器,一局共3次,省着用"
 		lines.append(text)
 	return "\n".join(lines)
 
@@ -1952,6 +1958,24 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 			"required": false,
 			"max_line_characters": int(night_skill.get("max_line_characters", 80)),
 		}
+	var police_intel := snapshot.get("police_intel", {}) as Dictionary
+	if not police_intel.is_empty():
+		# 警察侦查装备动作选项(仅警察注入): 窃听器/定位器, 有次数限制, 目标=在世居民。
+		var intel_targets := (police_intel.get("targets", []) as Array).duplicate()
+		if int(police_intel.get("eavesdropCharges", 0)) > 0:
+			(constraints["actions"] as Dictionary)["窃听"] = {
+				"fields": ["action_id", "type", "target_resident_name", "line"],
+				"targets": intel_targets.duplicate(),
+				"required": false,
+				"max_line_characters": 80,
+			}
+		if int(police_intel.get("trackerCharges", 0)) > 0:
+			(constraints["actions"] as Dictionary)["定位"] = {
+				"fields": ["action_id", "type", "target_resident_name", "line"],
+				"targets": intel_targets.duplicate(),
+				"required": false,
+				"max_line_characters": 80,
+			}
 	var social_attention := _social_attention_constraints(snapshot)
 	if not social_attention.is_empty():
 		constraints["social_attention"] = social_attention
