@@ -52,8 +52,9 @@ static var RATE_LIMIT_RETRY_DELAY_MAX_SECONDS := 4.0
 # 智能节流(方案 A): 平台按请求速率限流, 实测令牌桶容量 4-6、补充 ~1/s(60/min),
 # 429 不产生调用记录、无 Retry-After 头, 脉冲批量重试会整批撞窗口。
 # 平时按 DISPATCH_RATE_PER_SECOND 补充预算; 实测 0.8/s 恰好顶在平台上限
-# (090835 局 214 次 429, 40s 好窗+8-15s 坏窗周期), 降到 0.5/s 给平台留 37% 余量,
-# 真实需求仅 ~0.28/s(16.6/min), 30/min 预算仍有 80% 富余。
+# (090835 局 214 次 429, 40s 好窗+8-15s 坏窗周期), 0.5/s 给平台留 37% 余量,
+# 真实需求仅 ~0.28/s(16.6/min)。012220 局 0.5/s 零限流后放宽到 0.65/s
+# (较 0.5 提高 30%, 离 0.8 撞墙点仍留 19% 余量), 30/min 预算仍有富余。
 # 命中 429 后进入节流态 RATE_LIMIT_THROTTLE_DURATION_MS, 期间按节流速率补充。
 # 预算不足的普通居民请求进 overflow 还回 world pending, 下帧补充后重取——
 # 请求不丢, 只是排队。玩家对话请求绕过预算, 保证即时响应。
@@ -61,10 +62,10 @@ static var RATE_LIMIT_RETRY_DELAY_MAX_SECONDS := 4.0
 # (键 dispatch_rate_per_second / throttled_dispatch_rate_per_second /
 # rate_limit_throttle_duration_ms / max_dispatch_budget), 或设环境变量
 # AI_TOWN_THROTTLE_CONFIG 指向自定义 JSON 文件; --script 测试模式跳过配置。
-static var DISPATCH_RATE_PER_SECOND := 0.5
-static var THROTTLED_DISPATCH_RATE_PER_SECOND := 0.35
+static var DISPATCH_RATE_PER_SECOND := 0.65
+static var THROTTLED_DISPATCH_RATE_PER_SECOND := 0.5
 static var RATE_LIMIT_THROTTLE_DURATION_MS := 30000
-static var MAX_DISPATCH_BUDGET := 3.0
+static var MAX_DISPATCH_BUDGET := 4.0
 # 角色请求留档: 警察 + 3 卧底的全部模型请求(提示词 + 输出 JSON)成对写盘,
 # 便于复盘这些关键角色到底收到了什么、做了什么决策。落点在 DecisionExecution,
 # 由 configure_session 装配到 AgentSystem; 路径可用环境变量
