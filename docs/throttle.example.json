@@ -1,0 +1,10 @@
+{
+	"comment": "限流参数可编辑配置示例。把本文件内容复制到 user://config/throttle.json 即可生效（游戏数据目录 %APPDATA%\\Godot\\app_userdata\\我的ai小镇\\config\\throttle.json），修改后重启游戏生效。也可以设置环境变量 AI_TOWN_THROTTLE_CONFIG 指向任意 JSON 文件路径（优先级更高）。所有键都可省略，省略的键用内置默认值。",
+	"max_concurrent_model_requests": 3,
+	"rate_limit_retry_delay_seconds": 2.0,
+	"rate_limit_retry_delay_max_seconds": 4.0,
+	"dispatch_rate_per_second": 0.5,
+	"throttled_dispatch_rate_per_second": 0.35,
+	"rate_limit_throttle_duration_ms": 30000,
+	"max_dispatch_budget": 3.0
+}
