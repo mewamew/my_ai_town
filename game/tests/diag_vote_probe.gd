@@ -2,7 +2,8 @@ extends "res://tests/support/TownWorldTestCase.gd"
 ## diag_vote_probe.gd — 投票链路探针（注入狼人杀角色版）：
 ## 注入 3 卧底+警察+医生 → feature_active=true → 推进到第2天 11:00 开大会
 ## → 检查 vote 状态 / vote_snapshot / wake.snapshot.exile_vote → 直接 submit_vote
-## → 推进 12:30 开票清空回合。纯本地、不调 API。
+## → 推进 12:30 开票清空回合 → 夜间 20:00 白芷 wake.night_skill + "使用技能"动作提交链。
+## 纯本地、不调 API。
 ## 运行: Godot --headless --path game --script res://tests/diag_vote_probe.gd
 
 const WEREWOLF := preload("res://world/runtime/TownWerewolfRuntime.gd")
@@ -241,6 +242,126 @@ func _verify_vote_chain() -> void:
 		(world.get("_werewolf_state") as Dictionary).get("vote", {}) as Dictionary
 	)
 	_expect_equal(settled.is_empty(), true, "开票后 vote 回合清空")
+	# 5) 夜间技能场景: 推进到第2天 20:00 → 白芷 wake.night_skill → prompt 含"使用技能"动作
+	#    → submit_agent_decision 走完整提交链 (action.type==使用技能)
+	_advance_to_minute_of_day(world, 1200)
+	world.call("_schedule_decision", DOCTOR_ID, true)
+	var envelopes_night: Array = world.call(
+		"take_pending_decision_requests_by_ids", [DOCTOR_ID]
+	) as Array
+	var wake_night: Dictionary = {}
+	var night_skill_in_wake: Dictionary = {}
+	for envelope_value: Variant in envelopes_night:
+		var envelope := envelope_value as Dictionary
+		if String(envelope.get("residentId", "")) != DOCTOR_ID:
+			continue
+		wake_night = envelope.get("wakePacket", {}) as Dictionary
+		night_skill_in_wake = (
+			(wake_night.get("snapshot", {}) as Dictionary).get("night_skill", {}) as Dictionary
+		)
+		break
+	_expect_equal(
+		night_skill_in_wake.is_empty(),
+		false,
+		"wake.snapshot.night_skill 非空(白芷 20:00)",
+	)
+	if not night_skill_in_wake.is_empty():
+		print(
+			"  wake.night_skill: skills=%s 候选=%d" % [
+				", ".join(night_skill_in_wake.get("skills", []) as Array),
+				(night_skill_in_wake.get("candidate_names", []) as Array).size(),
+			]
+		)
+		if not wake_night.is_empty():
+			var initialization_night: Dictionary = world.call(
+				"get_agent_initialization", DOCTOR_ID
+			)
+			var compiler_night := PROMPT_COMPILER.new(initialization_night)
+			var compiled_night := compiler_night.compile(wake_night, "", "") as Dictionary
+			var night_user := ""
+			var night_messages := compiled_night.get("messages", []) as Array
+			for message_value: Variant in night_messages:
+				if message_value is Dictionary:
+					night_user += String((message_value as Dictionary).get("content", ""))
+			var has_skill_action := night_user.contains("使用技能")
+			var has_skill_id := night_user.contains("skill_id")
+			var has_skill_name := night_user.contains("doctor_protect")
+			_expect_equal(has_skill_action, true, "prompt 含使用技能动作选项")
+			_expect_equal(has_skill_id, true, "prompt 含 skill_id 字段")
+			_expect_equal(has_skill_name, true, "prompt 列出可用技能 doctor_protect")
+			print(
+				"  prompt(night): 含使用技能=%s 含skill_id=%s 含doctor_protect=%s 长度=%d" % [
+					str(has_skill_action),
+					str(has_skill_id),
+					str(has_skill_name),
+					night_user.length(),
+				]
+			)
+			# 提交链: 无效 skill_id 应拒绝且不落账
+			var night_decision_id := String(wake_night.get("decision_id", ""))
+			var bad_skill: Dictionary = world.call(
+				"submit_agent_decision",
+				DOCTOR_ID,
+				{
+					"decision_id": night_decision_id,
+					"handling": "replace_current",
+					"action": {
+						"action_id": night_decision_id + "-使用技能",
+						"type": "使用技能",
+						"skill_id": "no_such_skill",
+						"target_resident_name": "林岚",
+						"line": "守护林岚",
+					},
+				},
+			)
+			_expect_equal(
+				bool(bad_skill.get("ok", false)),
+				false,
+				"使用技能无效 skill_id 被拒绝",
+			)
+			if not bool(bad_skill.get("ok", false)):
+				var bad_skill_errors := bad_skill.get("errors", []) as Array
+				if not bad_skill_errors.is_empty():
+					print("  无效技能拒绝: %s" % String(bad_skill_errors[0]))
+			# 有效提交: 需重新取 wake(第一次 reject 后同 decision_id 已失效)
+			world.call("_schedule_decision", DOCTOR_ID, true)
+			var envelopes_night2: Array = world.call(
+				"take_pending_decision_requests_by_ids", [DOCTOR_ID]
+			) as Array
+			var wake_night2: Dictionary = {}
+			for envelope_value: Variant in envelopes_night2:
+				var envelope := envelope_value as Dictionary
+				if String(envelope.get("residentId", "")) != DOCTOR_ID:
+					continue
+				wake_night2 = envelope.get("wakePacket", {}) as Dictionary
+				break
+			var night_decision_id2 := String(wake_night2.get("decision_id", ""))
+			var ok_skill: Dictionary = world.call(
+				"submit_agent_decision",
+				DOCTOR_ID,
+				{
+					"decision_id": night_decision_id2,
+					"handling": "replace_current",
+					"action": {
+						"action_id": night_decision_id2 + "-使用技能",
+						"type": "使用技能",
+						"skill_id": "doctor_protect",
+						"target_resident_name": "林岚",
+						"line": "守护林岚",
+					},
+				},
+			)
+			_expect_equal(bool(ok_skill.get("ok", false)), true, "使用技能有效提交已记录")
+			if bool(ok_skill.get("ok", false)):
+				var role_skills: Dictionary = (
+					(world.get("_werewolf_state") as Dictionary).get("roleSkills", {}) as Dictionary
+				)
+				var doctor: Dictionary = role_skills.get("doctor", {}) as Dictionary
+				_expect_equal(
+					String(doctor.get("submissionTargetId", "")),
+					"resident_lin_lan_01",
+					"白芷守诊林岚已落账",
+				)
 	world.call("stop")
 
 

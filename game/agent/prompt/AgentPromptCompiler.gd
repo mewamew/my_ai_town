@@ -1574,6 +1574,8 @@ func _render_constraints(constraints: Dictionary) -> String:
 			text += "；地点：%s" % _join(data["places"])
 		if data.has("targets"):
 			text += "；对象：%s" % _join_people(data["targets"])
+		if data.has("skills"):
+			text += "；可用技能：%s" % _join(data["skills"])
 		if data.has("conversation_id"):
 			text += "；对话：%s；对方：%s" % [
 				_safe(data["conversation_id"]),
@@ -1638,6 +1640,10 @@ func _render_constraints(constraints: Dictionary) -> String:
 			# 方案A: 投票放逐提交模板。投票不需要去任何地方,直接在本轮决策里提交。
 			# 目标用候选人名单里的名字(不是 ID,名单里已排除警察、死者和自己)。
 			text += "\n  提交格式(唯一合法,type必须写'投票放逐'两字): {\"action_id\":\"当前决定编号-投票放逐\",\"type\":\"投票放逐\",\"target_resident_name\":\"上面某个候选人的名字\",\"line\":\"短台词\"}; 不要加其他字段; 投票不需要去任何地方,直接在决策里提交即可"
+		if String(action_type) == "使用技能":
+			# 夜间技能提交模板(医生守诊/学者查验/卧底嫁祸共用,用 skill_id 区分)。
+			# 目标用候选名单里的名字; 不用技能时选普通动作即可,不必提交。
+			text += "\n  提交格式(唯一合法,type必须写'使用技能'两字): {\"action_id\":\"当前决定编号-使用技能\",\"type\":\"使用技能\",\"skill_id\":\"上面某个可用技能的ID\",\"target_resident_name\":\"上面某个候选人的名字\",\"line\":\"短台词\"}; 不要加其他字段; 只能在夜间行动阶段使用"
 		lines.append(text)
 	return "\n".join(lines)
 
@@ -1937,6 +1943,15 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 	var night_skill := _night_skill_constraints(snapshot)
 	if not night_skill.is_empty():
 		constraints["night_skill"] = night_skill
+		# 夜间技能同时作为动作选项注入(模型对动作遵守度高,附件 night_skill 常被省略)。
+		# 与 night_skill 附件双通道兼容: 模型输出"使用技能"动作或 night_skill 附件均被接受。
+		(constraints["actions"] as Dictionary)["使用技能"] = {
+			"fields": ["action_id", "type", "skill_id", "target_resident_name", "line"],
+			"skills": (night_skill.get("skills", []) as Array).duplicate(),
+			"targets": (night_skill.get("candidate_names", []) as Array).duplicate(),
+			"required": false,
+			"max_line_characters": int(night_skill.get("max_line_characters", 80)),
+		}
 	var social_attention := _social_attention_constraints(snapshot)
 	if not social_attention.is_empty():
 		constraints["social_attention"] = social_attention

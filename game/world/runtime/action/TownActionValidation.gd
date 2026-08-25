@@ -60,6 +60,13 @@ const ACTION_FIELDS := {
 		"target_resident_name",
 		"line",
 	],
+	"使用技能": [
+		"action_id",
+		"type",
+		"skill_id",
+		"target_resident_name",
+		"line",
+	],
 	"回应冲突": [
 		"action_id",
 		"type",
@@ -159,6 +166,14 @@ static func validate_action_shape(action: Dictionary) -> String:
 			return require_action_texts(
 				action,
 				["target_resident_name", "line"],
+				action_type,
+			)
+		"使用技能":
+			# 夜间技能即时动作: skill_id 用 skill 列表里的技能 id,
+			# target_resident_name 用名字(与 night_skill_snapshot 候选名单一致)。
+			return require_action_texts(
+				action,
+				["skill_id", "target_resident_name", "line"],
 				action_type,
 			)
 		"搭话":

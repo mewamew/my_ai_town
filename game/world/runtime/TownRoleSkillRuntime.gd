@@ -1,7 +1,8 @@
 class_name TownRoleSkillRuntime
 extends RefCounted
 ## 狼人杀化·身份技能运行时（第一批：医生守诊 / 图书管理员查验 / 卧底嫁祸 / 警察制服额度）。
-## 技能以决策附件 night_skill 提交（仿 exile_vote，不新增动作类型）：
+## 技能以决策附件 night_skill 提交（仿 exile_vote），同时支持"使用技能"动作类型
+## （模型对动作遵守度高，动作通道为主、附件通道兼容）：
 ## - 20:00 夜间行动开始（唤醒技能持有者）
 ## - 08:00 统一结算（医生守护在死亡 flush 之前处理，查验线索/嫁祸线索在死亡公告后可见）
 ## 状态全部挂在 world._werewolf_state["roleSkills"]，随 werewolfState 存档走。
@@ -411,22 +412,43 @@ static func _resident_id_for_name(world, target_name: String) -> String:
 	return ""
 
 
-## 居民提交 night_skill（TWR 决策提交链调用）。
-static func submit_night_skill(world, resident_id: String, value: Dictionary) -> void:
+## 居民提交 night_skill（TWR 决策提交链调用）。返回错误串，空串=成功。
+## 既支持附件通道（决策里带 night_skill 键），也支持"使用技能"动作通道。
+static func submit_night_skill(world, resident_id: String, value: Dictionary) -> String:
 	var snapshot := night_skill_snapshot(world, resident_id)
 	if snapshot.is_empty():
-		return
+		# 细分空快照原因，给模型可行动的反馈（而不是静默忽略）。
+		if not feature_active(world) or bool(world._werewolf_state.get("gameOver", false)):
+			return "当前没有进行中的夜间技能行动"
+		if not world._resident_is_alive(resident_id):
+			return "你已不在镇上，无法使用夜间技能"
+		var skills := _skills(world)
+		if int(skills.get("nightRoundDay", -1)) < 0:
+			return "夜间行动尚未开始，20:00 后才会开放"
+		if resident_id == DOCTOR_ID:
+			var doctor := skills.get("doctor", {}) as Dictionary
+			if not String(doctor.get("submissionTargetId", "")).is_empty():
+				return "你已经提交过守诊了，一晚只能守护一个人"
+		elif resident_id == SCHOLAR_ID:
+			var scholar := skills.get("scholar", {}) as Dictionary
+			if int(scholar.get("charges", 0)) <= 0:
+				return "你的查验次数已用完"
+		return "夜间技能行动窗口已结束"
 	var skill_id := String(value.get("skill_id", "")).strip_edges()
 	var target_name := String(
 		value.get("target_resident_name", ""),
 	).strip_edges()
+	if skill_id.is_empty():
+		return "技能 skill_id 必须是非空文本"
+	if target_name.is_empty():
+		return "目标 target_resident_name 必须是非空文本"
 	if not (snapshot.get("skills", []) as Array).has(skill_id):
-		return
+		return "技能 %s 不在可用技能列表中" % skill_id
 	if not (snapshot.get("candidate_names", []) as Array).has(target_name):
-		return
+		return "目标 %s 不在候选名单中" % target_name
 	var target_id := _resident_id_for_name(world, target_name)
 	if target_id.is_empty() or not world._resident_is_alive(target_id):
-		return
+		return "目标 %s 当前不在镇上" % target_name
 	var skills := _skills(world)
 	match skill_id:
 		SKILL_DOCTOR:
@@ -466,6 +488,7 @@ static func submit_night_skill(world, resident_id: String, value: Dictionary) ->
 			String(value.get("line", "")),
 		],
 	)
+	return ""
 
 
 ## 暗杀执行前的守护判定：医生已提交守护该目标时，暗杀直接失败。
