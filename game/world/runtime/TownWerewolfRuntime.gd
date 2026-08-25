@@ -103,13 +103,13 @@ static func default_state() -> Dictionary:
 		"roleSkills": ROLE_SKILL_RUNTIME.default_role_skills(),
 		"undercoverKillLastNight": -1,    # 全卧底阵营每晚最多 1 杀（-1=未杀过）
 		"policeAlertCharges": 1,          # 警察每局 1 次警觉免死(暗杀被挡下)
-		"policeDevices": {},              # 警察侦查装置(窃听器/定位器)安装状态
+		"policeDevices": {},              # 警察追踪装置安装状态(单一槽位,监听/定位/重大行动一体)
 	}
 
 
-## 警察侦查装置: 每类 1 个槽位,装新目标覆盖旧的,监听时长 1 天(游戏时间)。
+## 警察追踪装置: 1 个槽位,装新目标覆盖旧的,时长 1 天(游戏时间)。
+## 一次安装同时获得: 目标对话(原窃听) + 行踪目的地(原定位) + 重大行动上报。
 const POLICE_DEVICE_DURATION_MINUTES := 1440
-const POLICE_DEVICE_EAVESDROP := "eavesdrop"
 const POLICE_DEVICE_TRACKER := "tracker"
 
 

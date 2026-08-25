@@ -70,8 +70,8 @@ func _run() -> void:
 		% [JSON.stringify(police_intel)]
 	)
 	_expect(
-		not police_intel.is_empty() and int(police_intel.get("eavesdropCharges", 0)) > 0,
-		"闻叙 police_intel 非空且 eavesdropCharges > 0",
+		not police_intel.is_empty() and int(police_intel.get("trackerCharges", 0)) > 0,
+		"闻叙 police_intel 非空且 trackerCharges > 0",
 	)
 
 	# 2) 普通居民林岚: 键存在但 police_intel 为空

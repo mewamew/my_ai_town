@@ -67,13 +67,7 @@ const ACTION_FIELDS := {
 		"target_resident_id",
 		"line",
 	],
-	"窃听": [
-		"action_id",
-		"type",
-		"target_resident_id",
-		"line",
-	],
-	"定位": [
+	"追踪": [
 		"action_id",
 		"type",
 		"target_resident_id",
@@ -188,15 +182,9 @@ static func validate_action_shape(action: Dictionary) -> String:
 				["skill_id", "target_resident_id", "line"],
 				action_type,
 			)
-		"窃听":
-			# 警察侦查即时动作: 获取目标近期对话, target_resident_id 用居民ID。
-			return require_action_texts(
-				action,
-				["target_resident_id", "line"],
-				action_type,
-			)
-		"定位":
-			# 警察侦查即时动作: 获取目标位置行踪, target_resident_id 用居民ID。
+		"追踪":
+			# 警察侦查即时动作: 靠近目标装上追踪装置, 之后 1 天实时上报
+			# 目标的对话/行踪/重大行动(与目击者机制联动)。
 			return require_action_texts(
 				action,
 				["target_resident_id", "line"],

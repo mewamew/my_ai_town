@@ -469,18 +469,6 @@ static func _police_intel_context(host, resident_name: String) -> Dictionary:
 	# 装置状态: 正在监听谁 + 剩余分钟(让警察知道监听对象, 决策时心里有数)。
 	var devices := {}
 	var minute := int(host._authoritative_absolute_minute())
-	var eavesdrop: Dictionary = host.WEREWOLF_RUNTIME.police_device_state(
-		host, host.WEREWOLF_RUNTIME.POLICE_DEVICE_EAVESDROP,
-	)
-	if not eavesdrop.is_empty():
-		var eavesdrop_target := String(eavesdrop.get("targetId", ""))
-		devices["eavesdrop"] = {
-			"targetId": eavesdrop_target,
-			"targetName": host._resident_display_name(eavesdrop_target),
-			"remainingMinutes": maxi(
-				0, int(eavesdrop.get("expireMinute", -1)) - minute,
-			),
-		}
 	var tracker: Dictionary = host.WEREWOLF_RUNTIME.police_device_state(
 		host, host.WEREWOLF_RUNTIME.POLICE_DEVICE_TRACKER,
 	)
@@ -494,9 +482,6 @@ static func _police_intel_context(host, resident_name: String) -> Dictionary:
 			),
 		}
 	return {
-		"eavesdropCharges": host.ROLE_SKILL_RUNTIME.police_eavesdrop_charges(
-			host
-		),
 		"trackerCharges": host.ROLE_SKILL_RUNTIME.police_tracker_charges(
 			host
 		),

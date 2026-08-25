@@ -23,8 +23,7 @@ const NIGHT_SKILLS: Array[String] = [
 
 const SCHOLAR_CHARGES_MAX := 3
 const POLICE_CHARGES_MAX := 2
-# 警察侦查装备额度(每局): 窃听器 2 次 / 定位器 3 次。
-const EAVESDROP_CHARGES_MAX := 2
+# 警察追踪装置额度(每局): 合并后的追踪器 3 次(原窃听器 2 + 定位器 3 合并)。
 const TRACKER_CHARGES_MAX := 3
 # 警察错杀平民的停职时长(分钟): 3 小时, 期满恢复 1 次额度。
 const SUBDUE_SUSPENSION_MINUTES := 180
@@ -54,7 +53,6 @@ static func default_role_skills() -> Dictionary:
 		"police": {
 			"charges": POLICE_CHARGES_MAX,
 			"disarmed": false,
-			"eavesdropCharges": EAVESDROP_CHARGES_MAX,
 			"trackerCharges": TRACKER_CHARGES_MAX,
 		},
 		"nightRoundDay": -1,
@@ -73,7 +71,7 @@ static func ensure_state(world) -> void:
 	for key: Variant in defaults:
 		if not skills.has(key):
 			skills[key] = defaults[key]
-	# 深补: 旧档的 police 子键可能缺 eavesdropCharges/trackerCharges(侦查装备上线前的档)。
+	# 深补: 旧档的 police 子键可能缺 trackerCharges(追踪装置上线前的档)。
 	var police_value: Variant = skills.get("police")
 	if police_value is Dictionary:
 		var police := police_value as Dictionary
@@ -502,6 +500,14 @@ static func submit_night_skill(world, resident_id: String, value: Dictionary) ->
 			String(value.get("line", "")),
 		],
 	)
+	# 追踪装置: 被追踪目标提交夜间技能时实时上报安装者(警察)。
+	if world.has_method("_record_police_device_action_intel"):
+		world._record_police_device_action_intel(
+			resident_id,
+			"夜间技能",
+			"深夜对 %s 施展技能 %s" % [target_name, skill_id],
+			[],
+		)
 	return ""
 
 
@@ -579,14 +585,7 @@ static func police_charges_remaining(world) -> int:
 	return int((skills.get("police", {}) as Dictionary).get("charges", 0))
 
 
-## 警察侦查装备余量（窃听器/定位器）。
-static func police_eavesdrop_charges(world) -> int:
-	var skills := _skills(world)
-	return int(
-		(skills.get("police", {}) as Dictionary).get("eavesdropCharges", 0)
-	)
-
-
+## 警察追踪装置余量。
 static func police_tracker_charges(world) -> int:
 	var skills := _skills(world)
 	return int(
@@ -594,19 +593,7 @@ static func police_tracker_charges(world) -> int:
 	)
 
 
-## 消耗一次窃听器/定位器（余量 > 0 才消耗，返回是否成功）。
-static func consume_police_eavesdrop(world) -> bool:
-	var skills := _skills(world)
-	var police := skills.get("police", {}) as Dictionary
-	var remaining := int(police.get("eavesdropCharges", 0))
-	if remaining <= 0:
-		return false
-	police["eavesdropCharges"] = remaining - 1
-	skills["police"] = police
-	world._werewolf_state["roleSkills"] = skills
-	return true
-
-
+## 消耗一次追踪装置（余量 > 0 才消耗，返回是否成功）。
 static func consume_police_tracker(world) -> bool:
 	var skills := _skills(world)
 	var police := skills.get("police", {}) as Dictionary

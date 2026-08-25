@@ -1663,14 +1663,10 @@ func _render_constraints(constraints: Dictionary) -> String:
 			# 夜间技能提交模板(医生守诊/学者查验/卧底嫁祸共用,用 skill_id 区分)。
 			# 目标用候选名单里的 ID; 不用技能时选普通动作即可,不必提交。
 			text += "\n  提交格式(唯一合法,type必须写'使用技能'两字): {\"action_id\":\"当前决定编号-使用技能\",\"type\":\"使用技能\",\"skill_id\":\"上面某个可用技能的ID\",\"target_resident_id\":\"上面某个候选人的ID\",\"line\":\"短台词\"}; 不要加其他字段; 只能在夜间行动阶段使用"
-		if String(action_type) == "窃听":
-			# 警察窃听器提交模板: 必须靠近目标(能感知到对方)才能偷偷装上,
-			# 装好后 1 天内目标参与的对话会实时上报给你。
-			text += "\n  提交格式(唯一合法,type必须写'窃听'两字): {\"action_id\":\"当前决定编号-窃听\",\"type\":\"窃听\",\"target_resident_id\":\"上面某个候选人的ID\",\"line\":\"短台词\"}; 不要加其他字段; 安装必须靠近目标(能感知到对方),每次使用消耗一次窃听器,一局共2次; 装好后1天内她/他的对话你会实时收到"
-		if String(action_type) == "定位":
-			# 警察定位器提交模板: 必须靠近目标才能偷偷装上,
-			# 装好后 1 天内目标每次要去哪会实时上报给你。
-			text += "\n  提交格式(唯一合法,type必须写'定位'两字): {\"action_id\":\"当前决定编号-定位\",\"type\":\"定位\",\"target_resident_id\":\"上面某个候选人的ID\",\"line\":\"短台词\"}; 不要加其他字段; 安装必须靠近目标(能感知到对方),每次使用消耗一次定位器,一局共3次; 装好后1天内她/他要去哪你会实时知道"
+		if String(action_type) == "追踪":
+			# 警察追踪装置提交模板: 必须靠近目标(能感知到对方)才能偷偷装上,
+			# 装好后 1 天内目标参与对话/要去哪/深夜重大行动(暗杀等)都会实时上报给你。
+			text += "\n  提交格式(唯一合法,type必须写'追踪'两字): {\"action_id\":\"当前决定编号-追踪\",\"type\":\"追踪\",\"target_resident_id\":\"上面某个候选人的ID\",\"line\":\"短台词\"}; 不要加其他字段; 安装必须靠近目标(能感知到对方),每次使用消耗一次追踪装置,一局共3次; 装好后1天内她/他的对话、行踪和重要行动你都会实时收到"
 		lines.append(text)
 	return "\n".join(lines)
 
@@ -1981,17 +1977,10 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 		}
 	var police_intel := snapshot.get("police_intel", {}) as Dictionary
 	if not police_intel.is_empty():
-		# 警察侦查装备动作选项(仅警察注入): 窃听器/定位器, 有次数限制, 目标=在世居民。
+		# 警察追踪装置动作选项(仅警察注入): 原窃听+定位合并, 有次数限制, 目标=感知范围内的在世居民。
 		var intel_targets := (police_intel.get("targets", []) as Array).duplicate()
-		if int(police_intel.get("eavesdropCharges", 0)) > 0:
-			(constraints["actions"] as Dictionary)["窃听"] = {
-				"fields": ["action_id", "type", "target_resident_id", "line"],
-				"targets": intel_targets.duplicate(),
-				"required": false,
-				"max_line_characters": 80,
-			}
 		if int(police_intel.get("trackerCharges", 0)) > 0:
-			(constraints["actions"] as Dictionary)["定位"] = {
+			(constraints["actions"] as Dictionary)["追踪"] = {
 				"fields": ["action_id", "type", "target_resident_id", "line"],
 				"targets": intel_targets.duplicate(),
 				"required": false,

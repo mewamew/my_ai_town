@@ -3,10 +3,10 @@ extends SceneTree
 ##
 ## 目标：用真实 catalog（狼人杀版 16 居民）建 world，直接检查：
 ##   1) 闻叙(resident_wen_xu_01) 的 socialState.job 是不是"警察"
-##   2) world._werewolf_state.roleSkills.police 里有没有 eavesdropCharges/trackerCharges
+##   2) world._werewolf_state.roleSkills.police 里有没有 trackerCharges
 ##   3) _police_intel_context(world, "resident_wen_xu_01") 返回什么
 ##   4) 走完整 wake_packet 链路后 snapshot.police_intel 是否有值
-##   5) AgentPromptCompiler 编译后 prompt 是否含"窃听"/"定位"动作
+##   5) AgentPromptCompiler 编译后 prompt 是否含"追踪"动作
 ## 全程不调用 API（fake provider 不可用则跳过决策编译步骤）。
 
 const SOURCE_DIR := "res://world/data/town/source"
@@ -81,10 +81,6 @@ func _run() -> void:
 		"roleSkills.police = %s" % [JSON.stringify(police_skills)]
 	)
 	_expect(
-		int(police_skills.get("eavesdropCharges", -1)) > 0,
-		"police.eavesdropCharges 存在且 > 0",
-	)
-	_expect(
 		int(police_skills.get("trackerCharges", -1)) > 0,
 		"police.trackerCharges 存在且 > 0",
 	)
@@ -101,8 +97,8 @@ func _run() -> void:
 	print("_police_intel_context = %s" % [JSON.stringify(intel)])
 	_expect(not intel.is_empty(), "_police_intel_context 非空")
 	_expect(
-		int(intel.get("eavesdropCharges", 0)) > 0,
-		"intel.eavesdropCharges > 0",
+		int(intel.get("trackerCharges", 0)) > 0,
+		"intel.trackerCharges > 0",
 	)
 	var intel_targets := intel.get("targets", []) as Array
 	_expect(
@@ -147,14 +143,12 @@ func _run() -> void:
 	for message: Variant in messages:
 		var text := String((message as Dictionary).get("content", ""))
 		full_content += text
-	var has_eavesdrop := full_content.contains("窃听")
-	var has_tracker := full_content.contains("定位")
+	var has_tracker := full_content.contains("追踪")
 	print(
-		"prompt 含窃听=%s 含定位=%s（messages=%d）"
-		% [has_eavesdrop, has_tracker, messages.size()]
+		"prompt 含追踪=%s（messages=%d）"
+		% [has_tracker, messages.size()]
 	)
-	_expect(has_eavesdrop, "prompt 含「窃听」动作与说明")
-	_expect(has_tracker, "prompt 含「定位」动作与说明")
+	_expect(has_tracker, "prompt 含「追踪」动作与说明")
 
 	print(
 		"\nPOLICE_WAKE_RESULT: checks=%d failed=%d"

@@ -361,18 +361,12 @@ static func submit_valid(
 			"consumed": true,
 			"stale": false,
 		})
-	if action_type == "窃听" or action_type == "定位":
-		# 警察侦查装备即时动作: 窃听器(近期对话)/定位器(位置行踪), 即时生成情报投递,
-		# 不写 currentAction、不进推进循环。失败反馈模型重试。
-		var intel_result: Dictionary
-		if action_type == "窃听":
-			intel_result = host._activate_police_eavesdrop_action(
-				resident_id, resident, action,
-			)
-		else:
-			intel_result = host._activate_police_tracker_action(
-				resident_id, resident, action,
-			)
+	if action_type == "追踪":
+		# 警察侦查装备即时动作: 靠近目标装追踪装置(原窃听+定位合并),
+		# 之后 1 天实时上报目标的对话/行踪/重大行动。失败反馈模型重试。
+		var intel_result: Dictionary = host._activate_police_tracker_action(
+			resident_id, resident, action,
+		)
 		if not bool(intel_result.get("ok", false)):
 			var intel_errors := intel_result.get("errors", []) as Array
 			var intel_error: String = (
