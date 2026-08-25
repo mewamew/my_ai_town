@@ -39,6 +39,12 @@ const MAX_CONCURRENT_LOCAL_MODEL_REQUESTS := 3
 const MAX_CONCURRENT_LOCAL_ORDINARY_REQUESTS := 2
 const LOCAL_MODEL_PROVIDER_IDS: Array[String] = ["ollama", "lm-studio"]
 const MAX_DECISION_ATTEMPTS := 2
+# 429 限流退避: 实测 tokenrhythm 网关按请求速率限流(5.4/min 全过, 72/min 拒 85%),
+# 且被拒请求不产生调用记录、无 Retry-After 头。立即重发会撞同一限流窗口
+# (438 次 429 ≈ 2×219 轮, 每轮 2 次尝试同窗全灭)。延迟到窗口滑过再重试,
+# 退避期间整体请求率自然回落。attempt 1 -> 2s, attempt 2 -> 4s。
+const RATE_LIMIT_RETRY_DELAY_SECONDS := 2.0
+const RATE_LIMIT_RETRY_DELAY_MAX_SECONDS := 4.0
 const MAX_ERROR_HISTORY := 128
 const BACKGROUND_DEPARTURE_INITIAL_DELAY_SECONDS := 20.0
 const BACKGROUND_DEPARTURE_RETRY_DELAY_SECONDS := 8.0
@@ -2448,7 +2454,14 @@ func _on_agent_result(
 				),
 				String(diagnostic.get("error_type", "")),
 			)
-			_redispatch(resident_id, decision_id)
+			if error_type == "rate_limit":
+				_schedule_rate_limit_redispatch(
+					resident_id,
+					decision_id,
+					attempt,
+				)
+			else:
+				_redispatch(resident_id, decision_id)
 		else:
 			fallback_applied = _submit_continuity_fallback(
 				resident_id,
@@ -3167,6 +3180,46 @@ func _redispatch(resident_id: String, decision_id: String) -> void:
 	if _world == null or resident_id.is_empty() or decision_id.is_empty():
 		return
 	_world.redispatch_decision_request_by_id(resident_id, decision_id)
+
+
+func _schedule_rate_limit_redispatch(
+	resident_id: String,
+	decision_id: String,
+	attempt: int,
+) -> void:
+	if _world == null or resident_id.is_empty() or decision_id.is_empty():
+		return
+	if not is_inside_tree():
+		# 测试环境 gateway 不在场景树内, create_timer 不可用, 退化为立即重发。
+		_redispatch(resident_id, decision_id)
+		return
+	var delay := minf(
+		RATE_LIMIT_RETRY_DELAY_SECONDS * attempt,
+		RATE_LIMIT_RETRY_DELAY_MAX_SECONDS,
+	)
+	# 退避期间居民可能已被其它路径处理(新 decision/fallback/stale),
+	# redispatch 在 world 侧校验 decisionPending + validDecisionId, 幂等安全。
+	get_tree().create_timer(
+		delay,
+		false,
+		false,
+		true,
+	).timeout.connect(
+		_on_rate_limit_redispatch_timeout.bind(
+			resident_id,
+			decision_id,
+		),
+		CONNECT_ONE_SHOT,
+	)
+
+
+func _on_rate_limit_redispatch_timeout(
+	resident_id: String,
+	decision_id: String,
+) -> void:
+	if not _session_active or _world == null:
+		return
+	_redispatch(resident_id, decision_id)
 
 
 func _cancel_resident_model_request(resident_id: String, request_id: String) -> bool:
