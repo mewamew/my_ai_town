@@ -722,16 +722,18 @@ func pump(
 	# 再做容量投影；旧请求随后仍可返回，但不再占用逻辑槽位。
 	_mark_superseded_inflight_for_pending_requests(requests)
 	var has_pending_avatar_conversation := false
+	var has_pending_vote := false
 	for request in requests:
-		if _wake_is_avatar_conversation_turn(
-			request.get("wakePacket", {}) as Dictionary
-		):
+		var request_wake := request.get("wakePacket", {}) as Dictionary
+		if _wake_is_avatar_conversation_turn(request_wake):
 			has_pending_avatar_conversation = true
-			break
+		if _wake_is_vote_request(request_wake):
+			has_pending_vote = true
 	var selection := _select_dispatchable_requests(
 		requests,
 		max_requests,
 		has_pending_avatar_conversation,
+		has_pending_vote,
 	)
 	requests = selection.get("selected", []) as Array[Dictionary]
 	var overflow := selection.get("overflow", []) as Array[Dictionary]
@@ -826,6 +828,7 @@ func _select_dispatchable_requests(
 	requests: Array[Dictionary],
 	max_requests: int,
 	has_pending_avatar_conversation: bool,
+	has_pending_vote: bool,
 ) -> Dictionary:
 	var selected: Array[Dictionary] = []
 	var overflow: Array[Dictionary] = []
@@ -849,6 +852,8 @@ func _select_dispatchable_requests(
 		projected_local_count += 1
 		if not _wake_is_avatar_conversation_turn(
 			inflight.get("wakePacket", {}) as Dictionary
+		) and not _wake_is_vote_request(
+			inflight.get("wakePacket", {}) as Dictionary
 		):
 			projected_local_ordinary_count += 1
 	var request_limit := requests.size()
@@ -866,12 +871,14 @@ func _select_dispatchable_requests(
 			overflow.append(request)
 			continue
 		var next_total := projected.size() + 1
-		var request_is_ordinary := not _wake_is_avatar_conversation_turn(
+		var request_is_avatar := _wake_is_avatar_conversation_turn(
 			wake_packet
 		)
+		var request_is_vote := _wake_is_vote_request(wake_packet)
+		var request_is_ordinary := not request_is_avatar and not request_is_vote
 		# 智能节流: 预算不足的普通居民请求进 overflow, 由 pump 还回 world
 		# pending, 下帧补充预算后再取回——天然限速且不丢请求。
-		# 玩家对话请求绕过预算(必须即时响应); 测试环境不在场景树内, 不节流。
+		# 玩家对话与投票请求绕过预算(必须即时响应); 测试环境不在场景树内, 不节流。
 		if (
 			is_inside_tree()
 			and request_is_ordinary
@@ -907,6 +914,9 @@ func _select_dispatchable_requests(
 				> MAX_CONCURRENT_MODEL_REQUESTS
 				- RESERVED_AVATAR_CONVERSATION_REQUEST_SLOTS
 			)
+			# 投票快速通道: 有投票请求在等时, 普通生活请求一律让路(还回
+			# world pending), 在飞的自然完成后 3 个槽位全部让给投票。
+			or (has_pending_vote and request_is_ordinary)
 		):
 			overflow.append(request)
 			continue
@@ -2896,16 +2906,21 @@ func _prioritize_conversation_requests(
 	if requests.size() <= 1:
 		return requests
 	var avatar_conversation_requests: Array[Dictionary] = []
+	var vote_requests: Array[Dictionary] = []
 	var conversation_requests: Array[Dictionary] = []
 	var ordinary_requests: Array[Dictionary] = []
 	for request in requests:
 		var wake := request.get("wakePacket", {}) as Dictionary
 		if _wake_is_avatar_conversation_turn(wake):
 			avatar_conversation_requests.append(request)
+		elif _wake_is_vote_request(wake):
+			vote_requests.append(request)
 		elif _wake_requires_conversation_turn(wake):
 			conversation_requests.append(request)
 		else:
 			ordinary_requests.append(request)
+	# 投票窗口时间紧(90 游戏分钟), 投票请求排在普通社交回合之前。
+	avatar_conversation_requests.append_array(vote_requests)
 	avatar_conversation_requests.append_array(conversation_requests)
 	avatar_conversation_requests.append_array(ordinary_requests)
 	return avatar_conversation_requests
@@ -2921,7 +2936,10 @@ func _ordinary_inflight_count() -> int:
 		var wake := (
 			(inflight_value as Dictionary).get("wakePacket", {}) as Dictionary
 		)
-		if not _wake_is_avatar_conversation_turn(wake):
+		if (
+			not _wake_is_avatar_conversation_turn(wake)
+			and not _wake_is_vote_request(wake)
+		):
 			count += 1
 	return count
 
@@ -2975,6 +2993,20 @@ func _wake_requires_conversation_turn(wake: Dictionary) -> bool:
 		]:
 			return true
 	return false
+
+
+## 投票快速通道(方案C): 11:00-12:30 投票窗口内 wake.snapshot.exile_vote 非空
+## 且 forced=true。此类请求跳过智能节流预算、不占普通居民 2 槽(可占满
+## MAX 槽)、排队靠前, 并在存在投票请求时暂停派发普通新请求, 保证每人必投。
+func _wake_is_vote_request(wake: Dictionary) -> bool:
+	var snapshot_value: Variant = wake.get("snapshot")
+	if not snapshot_value is Dictionary:
+		return false
+	var exile_vote := (snapshot_value as Dictionary).get(
+		"exile_vote",
+		{},
+	) as Dictionary
+	return not exile_vote.is_empty() and bool(exile_vote.get("forced", false))
 
 
 func _submit_continuity_fallback(

@@ -8,6 +8,8 @@ extends SceneTree
 ##   2. 非树内 _select_dispatchable_requests 容量投影(MAX=3, 对话优先)
 ##   3. 非树内 429 退化为立即重发(假 world 断言 redispatch 调用)
 ##   4. 非树内 429 不设置节流态(树内才设)
+##   5. 投票快速通道(方案C): 投票请求绕过普通 2 槽占满 MAX=3;
+##      有投票 pending 时普通请求全部让路; 玩家对话仍优先
 ## 运行: Godot --headless --path game --script res://tests/diag_throttle.gd
 
 const GATEWAY_SCRIPT := preload("res://world/integration/TownWorldAgentGateway.gd")
@@ -80,7 +82,7 @@ func _initialize() -> void:
 	var avatar_id: String = String(gateway._avatar_person_id)
 	var requests := _make_requests(10, avatar_id, false)
 	var selection: Dictionary = gateway._select_dispatchable_requests(
-		requests, 10, false,
+		requests, 10, false, false,
 	)
 	_expect_equal(
 		(selection["selected"] as Array).size(),
@@ -95,7 +97,7 @@ func _initialize() -> void:
 
 	# 3. 有对话时普通居民可用全部 MAX=3 槽(has_pending=true 放开 RESERVED)
 	selection = gateway._select_dispatchable_requests(
-		requests, 10, true,
+		requests, 10, true, false,
 	)
 	_expect_equal(
 		(selection["selected"] as Array).size(),
@@ -111,7 +113,7 @@ func _initialize() -> void:
 	# 4. 对话请求优先(非树内容量同样适用)
 	var conversation_requests := _make_requests(3, avatar_id, true)
 	selection = gateway._select_dispatchable_requests(
-		conversation_requests, 3, true,
+		conversation_requests, 3, true, false,
 	)
 	_expect_equal(
 		(selection["selected"] as Array).size(),
@@ -122,6 +124,53 @@ func _initialize() -> void:
 		(selection["overflow"] as Array).size(),
 		0,
 		"对话请求无 overflow",
+	)
+
+	# 5. 投票快速通道(方案C): 投票请求绕过普通 2 槽限制占满 MAX=3
+	var vote_requests := _make_requests(10, avatar_id, false, true)
+	selection = gateway._select_dispatchable_requests(
+		vote_requests, 10, false, true,
+	)
+	_expect_equal(
+		(selection["selected"] as Array).size(),
+		3,
+		"投票请求占满 MAX=3(绕过普通 2 槽)",
+	)
+	_expect_equal(
+		(selection["overflow"] as Array).size(),
+		7,
+		"其余 7 个投票请求进 overflow",
+	)
+	# 5b. 有投票 pending 时普通生活请求全部让路
+	selection = gateway._select_dispatchable_requests(
+		requests, 10, false, true,
+	)
+	_expect_equal(
+		(selection["selected"] as Array).size(),
+		0,
+		"有投票请求时普通请求 0 放行",
+	)
+	_expect_equal(
+		(selection["overflow"] as Array).size(),
+		10,
+		"普通请求全部进 overflow 让路",
+	)
+	# 5c. 混合: 玩家对话仍优先, 投票次之, 不互相挤占
+	var mixed_requests: Array[Dictionary] = []
+	mixed_requests.append_array(conversation_requests)
+	mixed_requests.append_array(vote_requests)
+	selection = gateway._select_dispatchable_requests(
+		mixed_requests, 10, true, true,
+	)
+	_expect_equal(
+		(selection["selected"] as Array).size(),
+		3,
+		"对话优先占满 MAX=3",
+	)
+	_expect_equal(
+		(selection["overflow"] as Array).size(),
+		10,
+		"投票请求排队等槽",
 	)
 
 	# 4. 非树内 429 → 立即重发(退化路径), 假 world 收到 redispatch
@@ -154,6 +203,7 @@ func _make_requests(
 	count: int,
 	avatar_id: String,
 	conversation: bool,
+	vote: bool = false,
 ) -> Array[Dictionary]:
 	var requests: Array[Dictionary] = []
 	for i in count:
@@ -165,6 +215,13 @@ func _make_requests(
 				"type": "对话",
 				"participant_resident_ids": [avatar_id],
 			}]
+		if vote:
+			wake["snapshot"] = {
+				"exile_vote": {
+					"forced": true,
+					"candidate_names": ["林岚"],
+				},
+			}
 		requests.append({
 			"residentId": "resident_%d" % i,
 			"wakePacket": wake,
