@@ -27,6 +27,7 @@ const GO_ACTION_PREFETCH_RUNTIME := preload(
 const AGENT_WAKE_CONTEXT_RUNTIME := preload(
 	"res://world/runtime/agent/TownAgentWakeContextRuntime.gd"
 )
+const TOWN_LOG := preload("res://world/runtime/TownLog.gd")
 
 var _preparations: Dictionary = {}
 var _visible_props_cache: Dictionary = {}
@@ -498,6 +499,52 @@ func _advance_preparation(
 				"action_results": preparation.get("publicResults", []) as Array,
 				"social_response_results": preparation.get("socialResults", []) as Array,
 			}
+			# 行为流日志(与 TownAgentWakeContextRuntime.wake_packet 同源):
+			# 真实游戏 wake 由本模块 finalize 拼装, 感知到/收到选项日志点补在这里,
+			# 否则真实链路永远看不到这两行(此前只有"可选:"轮询日志)。
+			var wake_actor_name: String = world._resident_display_name(resident_id)
+			if wake_actor_name.is_empty():
+				wake_actor_name = resident_id
+			var nearby_people := preparation.get("nearby", []) as Array
+			if not nearby_people.is_empty():
+				var nearby_lines: Array[String] = []
+				for nearby_value: Variant in nearby_people:
+					var nearby_person := nearby_value as Dictionary
+					var person_name := String(nearby_person.get("name", ""))
+					var person_doing := String(nearby_person.get("doing", ""))
+					if person_doing.is_empty():
+						person_doing = "空闲"
+					nearby_lines.append("%s(%s)" % [person_name, person_doing])
+				TOWN_LOG.line(
+					"AGENT",
+					"%s | %s 感知到: %s" % [
+						world._time_label(),
+						wake_actor_name,
+						"、".join(nearby_lines),
+					],
+				)
+			var tension_options := conflict_snapshot.get("conflict_tension_options", []) as Array
+			if not tension_options.is_empty():
+				var option_lines: Array[String] = []
+				for option_value: Variant in tension_options:
+					var option := option_value as Dictionary
+					var kind := String(option.get("kind", ""))
+					var target_id := String(option.get("target_resident_id", ""))
+					var option_label := kind
+					if not target_id.is_empty():
+						var target_name: String = world._resident_display_name(target_id)
+						if target_name.is_empty():
+							target_name = target_id
+						option_label += "→%s" % target_name
+					option_lines.append(option_label)
+				TOWN_LOG.line(
+					"AGENT",
+					"%s | %s 收到选项: %s" % [
+						world._time_label(),
+						wake_actor_name,
+						"、".join(option_lines),
+					],
+				)
 			return {"ready": true}
 		_:
 			preparation["stage"] = "nearby"

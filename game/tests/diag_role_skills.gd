@@ -166,6 +166,27 @@ func _verify_night_snapshot_and_submit() -> void:
 		true,
 		"已提交技能的居民不再重复拿到 night_skill",
 	)
+	var second_doctor_error := ROLE_SKILL.submit_night_skill(world, DOCTOR_ID, {
+		"skill_id": "doctor_protect",
+		"target_resident_id": TANG_ID,
+		"line": "再守一个。",
+	})
+	_expect_equal(
+		second_doctor_error.contains("一晚只能守护一个人"),
+		true,
+		"同晚第二次守诊提交被拒(一晚只能守护一个人)",
+	)
+	var second_doctor_snapshot := ROLE_SKILL.night_skill_snapshot(world, DOCTOR_ID)
+	_expect_equal(
+		second_doctor_snapshot.is_empty(),
+		true,
+		"被拒后快照仍为空(未覆盖第一次提交)",
+	)
+	_expect_equal(
+		String((skills.get("doctor", {}) as Dictionary).get("submissionTargetId", "")),
+		CIVILIAN_ID,
+		"第一次守诊目标未被覆盖",
+	)
 	world.call("stop")
 
 
