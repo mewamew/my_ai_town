@@ -45,7 +45,7 @@ func _verify_police_intel() -> void:
 		"_activate_police_eavesdrop_action",
 		POLICE_ID,
 		police,
-		{"action_id": "intel-0", "target_resident_name": "林岚", "line": "太远了够不着"},
+		{"action_id": "intel-0", "target_resident_id": TARGET_ID, "line": "太远了够不着"},
 	) as Dictionary
 	_expect_equal(
 		bool(far.get("ok", false)),
@@ -57,7 +57,7 @@ func _verify_police_intel() -> void:
 		"_activate_police_eavesdrop_action",
 		TARGET_ID,
 		lin,
-		{"action_id": "intel-1", "target_resident_name": "闻叙", "line": "测试"},
+		{"action_id": "intel-1", "target_resident_id": POLICE_ID, "line": "测试"},
 	) as Dictionary
 	_expect_equal(
 		bool(rejected.get("ok", false)),
@@ -68,7 +68,7 @@ func _verify_police_intel() -> void:
 		"_activate_police_eavesdrop_action",
 		POLICE_ID,
 		police,
-		{"action_id": "intel-2", "target_resident_name": "", "line": "测试"},
+		{"action_id": "intel-2", "target_resident_id": "", "line": "测试"},
 	) as Dictionary
 	_expect_equal(
 		bool(empty_target.get("ok", false)),
@@ -81,7 +81,7 @@ func _verify_police_intel() -> void:
 		"_activate_police_eavesdrop_action",
 		POLICE_ID,
 		police,
-		{"action_id": "intel-3", "target_resident_name": "林岚", "line": "让我悄悄给你装上"},
+		{"action_id": "intel-3", "target_resident_id": TARGET_ID, "line": "让我悄悄给你装上"},
 	) as Dictionary
 	_expect_equal(
 		bool(install.get("ok", false)),
@@ -118,7 +118,7 @@ func _verify_police_intel() -> void:
 		"_activate_police_tracker_action",
 		POLICE_ID,
 		police,
-		{"action_id": "intel-4", "target_resident_name": "唐小满", "line": "看看你之后要去哪"},
+		{"action_id": "intel-4", "target_resident_id": PARTNER_ID, "line": "看看你之后要去哪"},
 	) as Dictionary
 	_expect_equal(
 		bool(tracker_install.get("ok", false)),
@@ -166,7 +166,7 @@ func _verify_police_intel() -> void:
 		"_activate_police_tracker_action",
 		POLICE_ID,
 		police,
-		{"action_id": "intel-5", "target_resident_name": "林岚", "line": "换个目标"},
+		{"action_id": "intel-5", "target_resident_id": TARGET_ID, "line": "换个目标"},
 	)
 	var devices3: Dictionary = world.get("_werewolf_state").get("policeDevices", {})
 	_expect_equal(
@@ -184,13 +184,13 @@ func _verify_police_intel() -> void:
 		"_activate_police_eavesdrop_action",
 		POLICE_ID,
 		police,
-		{"action_id": "intel-6", "target_resident_name": "唐小满", "line": "再装一个"},
+		{"action_id": "intel-6", "target_resident_id": PARTNER_ID, "line": "再装一个"},
 	)
 	var exhausted := world.call(
 		"_activate_police_eavesdrop_action",
 		POLICE_ID,
 		police,
-		{"action_id": "intel-7", "target_resident_name": "林岚", "line": "还想装"},
+		{"action_id": "intel-7", "target_resident_id": TARGET_ID, "line": "还想装"},
 	) as Dictionary
 	_expect_equal(
 		bool(exhausted.get("ok", false)),

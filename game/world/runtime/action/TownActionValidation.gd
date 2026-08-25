@@ -57,26 +57,26 @@ const ACTION_FIELDS := {
 	"投票放逐": [
 		"action_id",
 		"type",
-		"target_resident_name",
+		"target_resident_id",
 		"line",
 	],
 	"使用技能": [
 		"action_id",
 		"type",
 		"skill_id",
-		"target_resident_name",
+		"target_resident_id",
 		"line",
 	],
 	"窃听": [
 		"action_id",
 		"type",
-		"target_resident_name",
+		"target_resident_id",
 		"line",
 	],
 	"定位": [
 		"action_id",
 		"type",
-		"target_resident_name",
+		"target_resident_id",
 		"line",
 	],
 	"回应冲突": [
@@ -174,32 +174,32 @@ static func validate_action_shape(action: Dictionary) -> String:
 			return require_action_texts(action, ["line"], action_type)
 		"投票放逐":
 			# 方案A: 投票放逐作为即时动作(模型对动作遵守度高,附件 exile_vote 常被省略)。
-			# target_resident_name 用名字(与 vote_snapshot 候选名单一致,submit_vote 按名校验)。
+			# target_resident_id 用居民ID(与 vote_snapshot 候选名单一致,submit_vote 按ID校验)。
 			return require_action_texts(
 				action,
-				["target_resident_name", "line"],
+				["target_resident_id", "line"],
 				action_type,
 			)
 		"使用技能":
 			# 夜间技能即时动作: skill_id 用 skill 列表里的技能 id,
-			# target_resident_name 用名字(与 night_skill_snapshot 候选名单一致)。
+			# target_resident_id 用居民ID(与 night_skill_snapshot 候选名单一致)。
 			return require_action_texts(
 				action,
-				["skill_id", "target_resident_name", "line"],
+				["skill_id", "target_resident_id", "line"],
 				action_type,
 			)
 		"窃听":
-			# 警察侦查即时动作: 获取目标近期对话, target_resident_name 用名字。
+			# 警察侦查即时动作: 获取目标近期对话, target_resident_id 用居民ID。
 			return require_action_texts(
 				action,
-				["target_resident_name", "line"],
+				["target_resident_id", "line"],
 				action_type,
 			)
 		"定位":
-			# 警察侦查即时动作: 获取目标位置行踪, target_resident_name 用名字。
+			# 警察侦查即时动作: 获取目标位置行踪, target_resident_id 用居民ID。
 			return require_action_texts(
 				action,
-				["target_resident_name", "line"],
+				["target_resident_id", "line"],
 				action_type,
 			)
 		"搭话":

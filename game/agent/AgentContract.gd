@@ -79,13 +79,13 @@ const SOCIAL_RESPONSE_FIELDS := [
 ]
 const SOCIAL_RESPONSE_TEXT_MAX_LENGTH := 80
 const EXILE_VOTE_FIELDS := [
-	"target_resident_name",
+	"target_resident_id",
 	"line",
 ]
 const EXILE_VOTE_TEXT_MAX_LENGTH := 80
 const NIGHT_SKILL_FIELDS := [
 	"skill_id",
-	"target_resident_name",
+	"target_resident_id",
 	"line",
 ]
 const NIGHT_SKILL_TEXT_MAX_LENGTH := 80
@@ -144,10 +144,10 @@ const ACTION_FIELDS := {
 	"攻击": ["action_id", "type", "target_resident_id", "attack_kind", "cause_id", "line"],
 	"暗杀": ["action_id", "type", "target_resident_id", "line"],
 	"制服": ["action_id", "type", "target_resident_id", "line"],
-	"投票放逐": ["action_id", "type", "target_resident_name", "line"],
-	"使用技能": ["action_id", "type", "skill_id", "target_resident_name", "line"],
-	"窃听": ["action_id", "type", "target_resident_name", "line"],
-	"定位": ["action_id", "type", "target_resident_name", "line"],
+	"投票放逐": ["action_id", "type", "target_resident_id", "line"],
+	"使用技能": ["action_id", "type", "skill_id", "target_resident_id", "line"],
+	"窃听": ["action_id", "type", "target_resident_id", "line"],
+	"定位": ["action_id", "type", "target_resident_id", "line"],
 	"回应冲突": ["action_id", "type", "conflict_id", "response_kind", "line"],
 	"介入冲突": ["action_id", "type", "conflict_id", "intervention_kind", "line"],
 	"离开冲突": ["action_id", "type", "conflict_id", "reason", "line"],

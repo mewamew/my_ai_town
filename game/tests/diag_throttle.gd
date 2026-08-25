@@ -219,7 +219,7 @@ func _make_requests(
 			wake["snapshot"] = {
 				"exile_vote": {
 					"forced": true,
-					"candidate_names": ["林岚"],
+					"candidate_ids": ["resident_lin_lan_01"],
 				},
 			}
 		requests.append({

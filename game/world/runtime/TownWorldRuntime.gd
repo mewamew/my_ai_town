@@ -3288,12 +3288,11 @@ func _activate_police_eavesdrop_action(
 	resident: Dictionary,
 	action: Dictionary,
 ) -> Dictionary:
-	var target_name := String(action.get("target_resident_name", "")).strip_edges()
-	var target_id := _resident_key(target_name)
+	var target_id := String(action.get("target_resident_id", "")).strip_edges()
 	if not _resident_is_police(resident_id):
 		return {"ok": false, "errors": ["本人没有侦查能力：只有警察能使用窃听器"]}
 	if target_id.is_empty():
-		return {"ok": false, "errors": ["窃听目标 target_resident_name 必须是非空居民名"]}
+		return {"ok": false, "errors": ["窃听目标 target_resident_id 必须是非空居民ID"]}
 	if target_id == resident_id:
 		return {"ok": false, "errors": ["不能窃听自己"]}
 	if not _resident_is_alive(target_id):
@@ -3336,12 +3335,11 @@ func _activate_police_tracker_action(
 	resident: Dictionary,
 	action: Dictionary,
 ) -> Dictionary:
-	var target_name := String(action.get("target_resident_name", "")).strip_edges()
-	var target_id := _resident_key(target_name)
+	var target_id := String(action.get("target_resident_id", "")).strip_edges()
 	if not _resident_is_police(resident_id):
 		return {"ok": false, "errors": ["本人没有侦查能力：只有警察能使用定位器"]}
 	if target_id.is_empty():
-		return {"ok": false, "errors": ["定位目标 target_resident_name 必须是非空居民名"]}
+		return {"ok": false, "errors": ["定位目标 target_resident_id 必须是非空居民ID"]}
 	if target_id == resident_id:
 		return {"ok": false, "errors": ["不能定位自己"]}
 	if not _resident_is_alive(target_id):

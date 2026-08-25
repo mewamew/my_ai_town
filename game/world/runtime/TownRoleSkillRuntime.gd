@@ -344,19 +344,19 @@ static func night_skill_snapshot(world, resident_id: String) -> Dictionary:
 		return {}
 	var undercover_ids: Array[String] = world._undercover_resident_ids()
 	var skill_ids: Array[String] = []
-	var candidate_names: Array[String] = []
+	var candidate_ids: Array[String] = []
 	if resident_id == DOCTOR_ID:
 		var doctor := skills.get("doctor", {}) as Dictionary
 		if not String(doctor.get("submissionTargetId", "")).is_empty():
 			return {}
 		skill_ids.append(SKILL_DOCTOR)
-		candidate_names = _alive_candidate_names(world, "")
+		candidate_ids = _alive_candidate_ids(world, "")
 		var last_protected_id := String(doctor.get("lastProtectedId", ""))
 		if (
 			not last_protected_id.is_empty()
 			and int(doctor.get("lastProtectedDay", -1)) == round_day - 1
 		):
-			candidate_names.erase(world._resident_display_name(last_protected_id))
+			candidate_ids.erase(last_protected_id)
 	elif resident_id == SCHOLAR_ID:
 		var scholar := skills.get("scholar", {}) as Dictionary
 		if int(scholar.get("charges", 0)) <= 0:
@@ -364,7 +364,7 @@ static func night_skill_snapshot(world, resident_id: String) -> Dictionary:
 		if not (scholar.get("submission", {}) as Dictionary).is_empty():
 			return {}
 		skill_ids.append(SKILL_SCHOLAR)
-		candidate_names = _alive_candidate_names(world, resident_id)
+		candidate_ids = _alive_candidate_ids(world, resident_id)
 	elif undercover_ids.has(resident_id):
 		var frame := skills.get("frame", {}) as Dictionary
 		if bool(frame.get("used", false)):
@@ -372,42 +372,42 @@ static func night_skill_snapshot(world, resident_id: String) -> Dictionary:
 		if not String(frame.get("pendingTargetId", "")).is_empty():
 			return {}
 		skill_ids.append(SKILL_FRAME)
-		candidate_names = _alive_non_undercover_names(world, undercover_ids)
+		candidate_ids = _alive_non_undercover_ids(world, undercover_ids)
 	else:
 		return {}
-	if skill_ids.is_empty() or candidate_names.is_empty():
+	if skill_ids.is_empty() or candidate_ids.is_empty():
 		return {}
 	return {
 		"round_day": round_day,
 		"settle_clock": "次日 08:00",
 		"skills": skill_ids,
-		"candidate_names": candidate_names,
+		"candidate_ids": candidate_ids,
 	}
 
 
-static func _alive_candidate_names(world, exclude_id: String) -> Array[String]:
-	var names: Array[String] = []
+static func _alive_candidate_ids(world, exclude_id: String) -> Array[String]:
+	var ids: Array[String] = []
 	for resident_id: String in world._resident_order:
 		if resident_id == exclude_id or not world._resident_is_alive(resident_id):
 			continue
-		var name: String = world._resident_display_name(resident_id)
-		if not name.is_empty() and not names.has(name):
-			names.append(name)
-	return names
+		if world._resident_display_name(resident_id).is_empty():
+			continue
+		ids.append(resident_id)
+	return ids
 
 
-static func _alive_non_undercover_names(
+static func _alive_non_undercover_ids(
 	world,
 	undercover_ids: Array[String],
 ) -> Array[String]:
-	var names: Array[String] = []
+	var ids: Array[String] = []
 	for resident_id: String in world._resident_order:
 		if undercover_ids.has(resident_id) or not world._resident_is_alive(resident_id):
 			continue
-		var name: String = world._resident_display_name(resident_id)
-		if not name.is_empty() and not names.has(name):
-			names.append(name)
-	return names
+		if world._resident_display_name(resident_id).is_empty():
+			continue
+		ids.append(resident_id)
+	return ids
 
 
 static func _resident_id_for_name(world, target_name: String) -> String:
@@ -440,20 +440,20 @@ static func submit_night_skill(world, resident_id: String, value: Dictionary) ->
 				return "你的查验次数已用完"
 		return "夜间技能行动窗口已结束"
 	var skill_id := String(value.get("skill_id", "")).strip_edges()
-	var target_name := String(
-		value.get("target_resident_name", ""),
+	var target_id := String(
+		value.get("target_resident_id", ""),
 	).strip_edges()
 	if skill_id.is_empty():
 		return "技能 skill_id 必须是非空文本"
-	if target_name.is_empty():
-		return "目标 target_resident_name 必须是非空文本"
+	if target_id.is_empty():
+		return "目标 target_resident_id 必须是非空居民ID"
 	if not (snapshot.get("skills", []) as Array).has(skill_id):
 		return "技能 %s 不在可用技能列表中" % skill_id
-	if not (snapshot.get("candidate_names", []) as Array).has(target_name):
-		return "目标 %s 不在候选名单中" % target_name
-	var target_id := _resident_id_for_name(world, target_name)
-	if target_id.is_empty() or not world._resident_is_alive(target_id):
-		return "目标 %s 当前不在镇上" % target_name
+	if not (snapshot.get("candidate_ids", []) as Array).has(target_id):
+		return "目标 %s 不在候选名单中" % world._resident_display_name(target_id)
+	if not world._resident_is_alive(target_id):
+		return "目标 %s 当前不在镇上" % world._resident_display_name(target_id)
+	var target_name: String = world._resident_display_name(target_id)
 	var skills := _skills(world)
 	match skill_id:
 		SKILL_DOCTOR:

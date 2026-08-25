@@ -326,9 +326,9 @@ static func submit_valid(
 		)
 	if action_type == "投票放逐":
 		# 方案A: 投票放逐作为即时动作直接提交(不写 currentAction、不进推进循环)。
-		# 目标按名字校验(候选名单=名字),失败反馈模型重试;附件 exile_vote 通道仍保留。
+		# 目标按ID校验(候选名单=ID),失败反馈模型重试;附件 exile_vote 通道仍保留。
 		var vote_error: String = host.WEREWOLF_RUNTIME.submit_vote(host, resident_id, {
-			"target_resident_name": String(action.get("target_resident_name", "")),
+			"target_resident_id": String(action.get("target_resident_id", "")),
 			"line": String(action.get("line", "")),
 		})
 		if not vote_error.is_empty():
@@ -344,10 +344,10 @@ static func submit_valid(
 		})
 	if action_type == "使用技能":
 		# 夜间技能作为即时动作直接提交(不写 currentAction、不进推进循环)。
-		# 目标按名字校验(候选名单=名字),失败反馈模型重试;附件 night_skill 通道仍保留。
+		# 目标按ID校验(候选名单=ID),失败反馈模型重试;附件 night_skill 通道仍保留。
 		var skill_error: String = host.ROLE_SKILL_RUNTIME.submit_night_skill(host, resident_id, {
 			"skill_id": String(action.get("skill_id", "")),
-			"target_resident_name": String(action.get("target_resident_name", "")),
+			"target_resident_id": String(action.get("target_resident_id", "")),
 			"line": String(action.get("line", "")),
 		})
 		if not skill_error.is_empty():

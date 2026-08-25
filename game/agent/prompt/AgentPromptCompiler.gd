@@ -1420,7 +1420,7 @@ func _render_constraints(constraints: Dictionary) -> String:
 				(
 					"必填放逐投票 exile_vote：镇民大会投票即将截止，今天 %s 开票，"
 					+ "你还没有投票，本轮必须提交 exile_vote；字段 %s；"
-					+ "target_resident_name 必须从候选人中选：%s；"
+					+ "target_resident_id 必须从候选人中选：%s；"
 					+ "line 用一句话说明你的怀疑理由。你只能投一票，"
 					+ "候选人已排除警察、死者和你自己，警察绝不是卧底、不要投他；"
 					+ "本轮除了投票不再做其他行动"
@@ -1428,7 +1428,7 @@ func _render_constraints(constraints: Dictionary) -> String:
 				% [
 					_safe(exile_vote.get("settle_clock", "")),
 					_join(exile_vote.get("fields", [])),
-					_join(exile_vote.get("candidate_names", [])),
+					_join_people(exile_vote.get("candidate_ids", [])),
 				]
 			)
 		else:
@@ -1436,14 +1436,14 @@ func _render_constraints(constraints: Dictionary) -> String:
 				(
 					"可选放逐投票 exile_vote：镇民大会正在进行，今天 %s 开票，"
 					+ "得票最高者将被放逐出镇并公布身份；字段 %s；"
-					+ "target_resident_name 必须从候选人中选：%s；"
+					+ "target_resident_id 必须从候选人中选：%s；"
 					+ "line 用一句话说明你的怀疑理由。候选人已排除警察、死者和你自己，"
 					+ "警察绝不是卧底、不要投他。凭线索投票，可以故意不投或弃权（省略字段即可）"
 				)
 				% [
 					_safe(exile_vote.get("settle_clock", "")),
 					_join(exile_vote.get("fields", [])),
-					_join(exile_vote.get("candidate_names", [])),
+					_join_people(exile_vote.get("candidate_ids", [])),
 				]
 			)
 	var night_skill := constraints.get(
@@ -1455,14 +1455,14 @@ func _render_constraints(constraints: Dictionary) -> String:
 			(
 				"可选夜间技能 night_skill：今晚是夜间行动阶段，%s 结算；"
 				+ "字段 %s；可用技能：%s；"
-				+ "target_resident_name 必须从候选名单中选：%s；"
+				+ "target_resident_id 必须从候选名单中选：%s；"
 				+ "line 写一句你的行动理由。不想使用或没有可用技能时省略字段即可"
 			)
 			% [
 				_safe(night_skill.get("settle_clock", "")),
 				_join(night_skill.get("fields", [])),
 				_join(night_skill.get("skills", [])),
-				_join(night_skill.get("candidate_names", [])),
+				_join_people(night_skill.get("candidate_ids", [])),
 			]
 		)
 	var social_attention := constraints.get(
@@ -1638,20 +1638,20 @@ func _render_constraints(constraints: Dictionary) -> String:
 			text += "\n  提交格式(唯一合法,type必须写'制服'两字): {\"action_id\":\"当前决定编号-制服\",\"type\":\"制服\",\"target_resident_id\":\"上面某个目标的ID\",\"line\":\"符合警察身份的短台词\"}; 不要加其他字段"
 		if String(action_type) == "投票放逐":
 			# 方案A: 投票放逐提交模板。投票不需要去任何地方,直接在本轮决策里提交。
-			# 目标用候选人名单里的名字(不是 ID,名单里已排除警察、死者和自己)。
-			text += "\n  提交格式(唯一合法,type必须写'投票放逐'两字): {\"action_id\":\"当前决定编号-投票放逐\",\"type\":\"投票放逐\",\"target_resident_name\":\"上面某个候选人的名字\",\"line\":\"短台词\"}; 不要加其他字段; 投票不需要去任何地方,直接在决策里提交即可"
+			# 目标用候选人名单里的 ID(名单已排除警察、死者和自己)。
+			text += "\n  提交格式(唯一合法,type必须写'投票放逐'两字): {\"action_id\":\"当前决定编号-投票放逐\",\"type\":\"投票放逐\",\"target_resident_id\":\"上面某个候选人的ID\",\"line\":\"短台词\"}; 不要加其他字段; 投票不需要去任何地方,直接在决策里提交即可"
 		if String(action_type) == "使用技能":
 			# 夜间技能提交模板(医生守诊/学者查验/卧底嫁祸共用,用 skill_id 区分)。
-			# 目标用候选名单里的名字; 不用技能时选普通动作即可,不必提交。
-			text += "\n  提交格式(唯一合法,type必须写'使用技能'两字): {\"action_id\":\"当前决定编号-使用技能\",\"type\":\"使用技能\",\"skill_id\":\"上面某个可用技能的ID\",\"target_resident_name\":\"上面某个候选人的名字\",\"line\":\"短台词\"}; 不要加其他字段; 只能在夜间行动阶段使用"
+			# 目标用候选名单里的 ID; 不用技能时选普通动作即可,不必提交。
+			text += "\n  提交格式(唯一合法,type必须写'使用技能'两字): {\"action_id\":\"当前决定编号-使用技能\",\"type\":\"使用技能\",\"skill_id\":\"上面某个可用技能的ID\",\"target_resident_id\":\"上面某个候选人的ID\",\"line\":\"短台词\"}; 不要加其他字段; 只能在夜间行动阶段使用"
 		if String(action_type) == "窃听":
 			# 警察窃听器提交模板: 必须靠近目标(能感知到对方)才能偷偷装上,
 			# 装好后 1 天内目标参与的对话会实时上报给你。
-			text += "\n  提交格式(唯一合法,type必须写'窃听'两字): {\"action_id\":\"当前决定编号-窃听\",\"type\":\"窃听\",\"target_resident_name\":\"上面某个候选人的名字\",\"line\":\"短台词\"}; 不要加其他字段; 安装必须靠近目标(能感知到对方),每次使用消耗一次窃听器,一局共2次; 装好后1天内她/他的对话你会实时收到"
+			text += "\n  提交格式(唯一合法,type必须写'窃听'两字): {\"action_id\":\"当前决定编号-窃听\",\"type\":\"窃听\",\"target_resident_id\":\"上面某个候选人的ID\",\"line\":\"短台词\"}; 不要加其他字段; 安装必须靠近目标(能感知到对方),每次使用消耗一次窃听器,一局共2次; 装好后1天内她/他的对话你会实时收到"
 		if String(action_type) == "定位":
 			# 警察定位器提交模板: 必须靠近目标才能偷偷装上,
 			# 装好后 1 天内目标每次要去哪会实时上报给你。
-			text += "\n  提交格式(唯一合法,type必须写'定位'两字): {\"action_id\":\"当前决定编号-定位\",\"type\":\"定位\",\"target_resident_name\":\"上面某个候选人的名字\",\"line\":\"短台词\"}; 不要加其他字段; 安装必须靠近目标(能感知到对方),每次使用消耗一次定位器,一局共3次; 装好后1天内她/他要去哪你会实时知道"
+			text += "\n  提交格式(唯一合法,type必须写'定位'两字): {\"action_id\":\"当前决定编号-定位\",\"type\":\"定位\",\"target_resident_id\":\"上面某个候选人的ID\",\"line\":\"短台词\"}; 不要加其他字段; 安装必须靠近目标(能感知到对方),每次使用消耗一次定位器,一局共3次; 装好后1天内她/他要去哪你会实时知道"
 		lines.append(text)
 	return "\n".join(lines)
 
@@ -1943,8 +1943,8 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 		# 方案A: 投票放逐同时作为动作选项注入(模型对动作遵守度高,附件字段常被省略)。
 		# 与 exile_vote 附件双通道兼容: 模型输出"投票放逐"动作或 exile_vote 附件均被接受。
 		(constraints["actions"] as Dictionary)["投票放逐"] = {
-			"fields": ["action_id", "type", "target_resident_name", "line"],
-			"targets": (exile_vote.get("candidate_names", []) as Array).duplicate(),
+			"fields": ["action_id", "type", "target_resident_id", "line"],
+			"targets": (exile_vote.get("candidate_ids", []) as Array).duplicate(),
 			"required": bool(exile_vote.get("required", false)),
 			"max_line_characters": int(exile_vote.get("max_line_characters", 80)),
 		}
@@ -1954,9 +1954,9 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 		# 夜间技能同时作为动作选项注入(模型对动作遵守度高,附件 night_skill 常被省略)。
 		# 与 night_skill 附件双通道兼容: 模型输出"使用技能"动作或 night_skill 附件均被接受。
 		(constraints["actions"] as Dictionary)["使用技能"] = {
-			"fields": ["action_id", "type", "skill_id", "target_resident_name", "line"],
+			"fields": ["action_id", "type", "skill_id", "target_resident_id", "line"],
 			"skills": (night_skill.get("skills", []) as Array).duplicate(),
-			"targets": (night_skill.get("candidate_names", []) as Array).duplicate(),
+			"targets": (night_skill.get("candidate_ids", []) as Array).duplicate(),
 			"required": false,
 			"max_line_characters": int(night_skill.get("max_line_characters", 80)),
 		}
@@ -1966,14 +1966,14 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 		var intel_targets := (police_intel.get("targets", []) as Array).duplicate()
 		if int(police_intel.get("eavesdropCharges", 0)) > 0:
 			(constraints["actions"] as Dictionary)["窃听"] = {
-				"fields": ["action_id", "type", "target_resident_name", "line"],
+				"fields": ["action_id", "type", "target_resident_id", "line"],
 				"targets": intel_targets.duplicate(),
 				"required": false,
 				"max_line_characters": 80,
 			}
 		if int(police_intel.get("trackerCharges", 0)) > 0:
 			(constraints["actions"] as Dictionary)["定位"] = {
-				"fields": ["action_id", "type", "target_resident_name", "line"],
+				"fields": ["action_id", "type", "target_resident_id", "line"],
 				"targets": intel_targets.duplicate(),
 				"required": false,
 				"max_line_characters": 80,
@@ -2153,16 +2153,16 @@ func _exile_vote_constraints(
 	var vote := snapshot.get("exile_vote", {}) as Dictionary
 	if vote.is_empty():
 		return {}
-	var candidate_names: Array[String] = []
-	for name_value: Variant in vote.get("candidate_names", []) as Array:
-		candidate_names.append(String(name_value))
-	if candidate_names.is_empty():
+	var candidate_ids: Array[String] = []
+	for id_value: Variant in vote.get("candidate_ids", []) as Array:
+		candidate_ids.append(String(id_value))
+	if candidate_ids.is_empty():
 		return {}
 	return {
 		"fields": (
 			AgentContractScript.EXILE_VOTE_FIELDS as Array
 		).duplicate(),
-		"candidate_names": candidate_names,
+		"candidate_ids": candidate_ids,
 		"round_day": int(vote.get("round_day", 0)),
 		"settle_clock": String(vote.get("settle_clock", "")),
 		"max_line_characters": 80,
@@ -2179,17 +2179,17 @@ func _night_skill_constraints(
 	var skill_ids: Array[String] = []
 	for skill_value: Variant in skill.get("skills", []) as Array:
 		skill_ids.append(String(skill_value))
-	var candidate_names: Array[String] = []
-	for name_value: Variant in skill.get("candidate_names", []) as Array:
-		candidate_names.append(String(name_value))
-	if skill_ids.is_empty() or candidate_names.is_empty():
+	var candidate_ids: Array[String] = []
+	for id_value: Variant in skill.get("candidate_ids", []) as Array:
+		candidate_ids.append(String(id_value))
+	if skill_ids.is_empty() or candidate_ids.is_empty():
 		return {}
 	return {
 		"fields": (
 			AgentContractScript.NIGHT_SKILL_FIELDS as Array
 		).duplicate(),
 		"skills": skill_ids,
-		"candidate_names": candidate_names,
+		"candidate_ids": candidate_ids,
 		"round_day": int(skill.get("round_day", 0)),
 		"settle_clock": String(skill.get("settle_clock", "")),
 		"max_line_characters": 80,

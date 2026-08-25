@@ -318,17 +318,17 @@ static func start_vote_round(world, absolute_minute: int) -> void:
 			alive_ids.append(resident_id)
 	if alive_ids.size() < 3:
 		return
-	var candidate_names: Array[String] = []
+	var candidate_ids: Array[String] = []
 	for resident_id: String in alive_ids:
 		# 警察不参与放逐候选: 警察是镇民阵营对抗卧底的核心力量,
 		# 不能让居民投票把他放逐掉(他仍可投票,只是不能被投)。
 		if world._resident_is_police(resident_id):
 			continue
-		candidate_names.append(world._resident_display_name(resident_id))
+		candidate_ids.append(resident_id)
 	world._werewolf_state["vote"] = {
 		"day": day_index,
-		"votes": {},  # voter_id -> {"target_resident_name": String, "line": String}
-		"candidateNames": candidate_names,
+		"votes": {},  # voter_id -> {"target_resident_id": String, "target_resident_name": String, "line": String}
+		"candidateIds": candidate_ids,
 	}
 	TOWN_LOG.section(
 		"%s · 镇民大会开始" % _label_for_minute(absolute_minute),
@@ -342,7 +342,7 @@ static func start_vote_round(world, absolute_minute: int) -> void:
 		"%s | 第%d天镇民大会开始，候选人 %d 人" % [
 			_label_for_minute(absolute_minute),
 			day_index,
-			candidate_names.size(),
+			candidate_ids.size(),
 		],
 	)
 	for resident_id: String in alive_ids:
@@ -391,21 +391,20 @@ static func vote_snapshot(world, resident_id: String) -> Dictionary:
 		return {}
 	if not world._resident_is_alive(resident_id):
 		return {}
-	var candidate_names: Array[String] = []
-	var voter_name: String = String(world._resident_display_name(resident_id))
-	for name_value: Variant in vote.get("candidateNames", []) as Array:
-		var candidate_name := String(name_value)
+	var candidate_ids: Array[String] = []
+	for candidate_value: Variant in vote.get("candidateIds", []) as Array:
+		var candidate_id := String(candidate_value)
 		# 不能投自己: 全局候选名单已排除警察与死者, 这里再排除投票者本人。
-		if candidate_name == voter_name:
+		if candidate_id == resident_id:
 			continue
-		candidate_names.append(candidate_name)
+		candidate_ids.append(candidate_id)
 	# 已投票的居民本轮不再重复投票
 	if (vote.get("votes", {}) as Dictionary).has(resident_id):
 		return {}
 	return {
 		"round_day": int(vote.get("day", 0)),
 		"settle_clock": "12:30",
-		"candidate_names": candidate_names,
+		"candidate_ids": candidate_ids,
 		"forced": _vote_forced(world),
 	}
 
@@ -437,18 +436,19 @@ static func submit_vote(world, resident_id: String, value: Dictionary) -> String
 	var votes := vote.get("votes", {}) as Dictionary
 	if votes.has(resident_id):
 		return "你已经投过票了，一票不能改"
-	var target_name := String(
-		value.get("target_resident_name", "")
+	var target_id := String(
+		value.get("target_resident_id", "")
 	).strip_edges()
-	if target_name.is_empty():
-		return "投票目标 target_resident_name 必须是非空文本"
-	var candidate_names: Array[String] = []
-	for name_value: Variant in vote.get("candidateNames", []) as Array:
-		candidate_names.append(String(name_value))
-	if not candidate_names.has(target_name):
-		return "投票目标 %s 不在候选人名单中" % target_name
+	if target_id.is_empty():
+		return "投票目标 target_resident_id 必须是非空居民ID"
+	var candidate_ids: Array[String] = []
+	for candidate_value: Variant in vote.get("candidateIds", []) as Array:
+		candidate_ids.append(String(candidate_value))
+	if not candidate_ids.has(target_id):
+		return "投票目标 %s 不在候选人名单中" % world._resident_display_name(target_id)
 	votes[resident_id] = {
-		"target_resident_name": target_name,
+		"target_resident_id": target_id,
+		"target_resident_name": world._resident_display_name(target_id),
 		"line": String(value.get("line", "")).strip_edges(),
 	}
 	vote["votes"] = votes
@@ -458,7 +458,7 @@ static func submit_vote(world, resident_id: String, value: Dictionary) -> String
 		"%s | %s 投票放逐 %s：%s" % [
 			world._time_label(),
 			world._resident_display_name(resident_id),
-			target_name,
+			world._resident_display_name(target_id),
 			String(value.get("line", "")),
 		],
 	)
@@ -487,46 +487,42 @@ static func settle_vote_round(world, absolute_minute: int) -> void:
 		"%s · 镇民大会开票" % _label_for_minute(absolute_minute),
 	)
 	var votes := vote.get("votes", {}) as Dictionary
-	# 按得票目标名计数
+	# 按得票目标ID计数
 	var tally: Dictionary = {}
 	for voter_value: Variant in votes:
 		var ballot := votes[voter_value] as Dictionary
-		var target_name := String(
-			ballot.get("target_resident_name", "")
+		var target_id := String(
+			ballot.get("target_resident_id", "")
 		).strip_edges()
-		if target_name.is_empty():
+		if target_id.is_empty():
 			continue
-		tally[target_name] = int(tally.get(target_name, 0)) + 1
+		tally[target_id] = int(tally.get(target_id, 0)) + 1
 	if tally.is_empty():
 		world.broadcast_announcement(
 			"镇民大会流会：没有人投出有效票，今晚无人被放逐。",
 		)
 		return
 	# 找出唯一最高票(并列最高=平票,无人出局)
-	var top_name := ""
+	var top_id := ""
 	var top_count := 0
 	var tie := false
-	for target_name: String in tally:
-		var count := int(tally[target_name])
+	for target_id: String in tally:
+		var count := int(tally[target_id])
 		if count > top_count:
 			top_count = count
-			top_name = target_name
+			top_id = target_id
 			tie = false
 		elif count == top_count:
 			tie = true
-	if tie or top_name.is_empty():
+	if tie or top_id.is_empty():
 		world.broadcast_announcement(
 			"镇民大会开票：出现平票，今晚无人被放逐。",
 		)
 		return
-	# 名字反查居民
-	var exile_id := ""
-	for resident_id: String in world._resident_order:
-		if world._resident_display_name(resident_id) == top_name:
-			exile_id = resident_id
-			break
+	var exile_id := top_id
 	if exile_id.is_empty() or not world._resident_is_alive(exile_id):
 		return
+	var top_name: String = world._resident_display_name(exile_id)
 	var summary := "镇民大会开票：%s 以 %d 票被放逐出镇。" % [top_name, top_count]
 	if world._undercover_resident_ids().has(exile_id):
 		summary += "离开时身份曝光——他竟是潜伏在镇上的卧底！"

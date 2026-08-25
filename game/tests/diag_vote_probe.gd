@@ -15,7 +15,7 @@ const QIAO_ID := "resident_qiao_yiming_01"
 const HANAKO_ID := "resident_hanako_01"
 const POLICE_ID := "resident_wen_xu_01"
 const DOCTOR_ID := "resident_bai_zhi_01"
-const TARGET_NAME := "唐小满"
+const TARGET_ID := "resident_tang_xiaoman_01"
 
 
 func _initialize() -> void:
@@ -50,8 +50,8 @@ func _verify_vote_chain() -> void:
 	print(
 		"  回合 day=%d 候选 %d 人: %s" % [
 			int(vote.get("day", -1)),
-			(vote.get("candidateNames", []) as Array).size(),
-			", ".join(vote.get("candidateNames", []) as Array),
+			(vote.get("candidateIds", []) as Array).size(),
+			", ".join(vote.get("candidateIds", []) as Array),
 		]
 	)
 	# 1) vote_snapshot 对在世普通居民应非空
@@ -63,7 +63,7 @@ func _verify_vote_chain() -> void:
 				int(snapshot.get("round_day", 0)),
 				String(snapshot.get("settle_clock", "")),
 				str(bool(snapshot.get("forced", false))),
-				(snapshot.get("candidate_names", []) as Array).size(),
+				(snapshot.get("candidate_ids", []) as Array).size(),
 			]
 		)
 	# 2) wake 链: 唤醒林岚 → take → snapshot.exile_vote
@@ -87,7 +87,7 @@ func _verify_vote_chain() -> void:
 		print(
 			"  wake.exile_vote: forced=%s 候选=%d" % [
 				str(bool(exile_in_wake.get("forced", false))),
-				(exile_in_wake.get("candidate_names", []) as Array).size(),
+				(exile_in_wake.get("candidate_ids", []) as Array).size(),
 			]
 		)
 	# 2.5) prompt 渲染: compile 后检查 exile_vote 约束文本 + 方案A 投票放逐动作
@@ -137,7 +137,7 @@ func _verify_vote_chain() -> void:
 	var submit_error := WEREWOLF.submit_vote(
 		world,
 		CIVILIAN_ID,
-		{"target_resident_name": TARGET_NAME, "line": "我觉得谢眠可疑"},
+		{"target_resident_id": TARGET_ID, "line": "我觉得谢眠可疑"},
 	)
 	_expect_equal(submit_error, "", "submit_vote 返回空(记录成功)")
 	var after_state: Dictionary = world.get("_werewolf_state")
@@ -171,7 +171,7 @@ func _verify_vote_chain() -> void:
 			"action": {
 				"action_id": decision_id2 + "-投票放逐",
 				"type": "投票放逐",
-				"target_resident_name": "不存在的人",
+				"target_resident_id": "不存在的人",
 				"line": "试一下",
 			},
 		},
@@ -216,7 +216,7 @@ func _verify_vote_chain() -> void:
 			"action": {
 				"action_id": decision_id3 + "-投票放逐",
 				"type": "投票放逐",
-				"target_resident_name": "林岚",
+				"target_resident_id": "resident_lin_lan_01",
 				"line": "我投林岚一票",
 			},
 		},
@@ -232,8 +232,8 @@ func _verify_vote_chain() -> void:
 			).get("votes", {}) as Dictionary
 		var recorded: Dictionary = votes_final.get(resident2, {}) as Dictionary
 		_expect_equal(
-			String(recorded.get("target_resident_name", "")),
-			"林岚",
+			String(recorded.get("target_resident_id", "")),
+			"resident_lin_lan_01",
 			"唐小满投票放逐林岚已落账",
 		)
 	# 4) 推进 12:30 开票 → vote 回合清空
@@ -269,7 +269,7 @@ func _verify_vote_chain() -> void:
 		print(
 			"  wake.night_skill: skills=%s 候选=%d" % [
 				", ".join(night_skill_in_wake.get("skills", []) as Array),
-				(night_skill_in_wake.get("candidate_names", []) as Array).size(),
+				(night_skill_in_wake.get("candidate_ids", []) as Array).size(),
 			]
 		)
 		if not wake_night.is_empty():
@@ -309,7 +309,7 @@ func _verify_vote_chain() -> void:
 						"action_id": night_decision_id + "-使用技能",
 						"type": "使用技能",
 						"skill_id": "no_such_skill",
-						"target_resident_name": "林岚",
+						"target_resident_id": "resident_lin_lan_01",
 						"line": "守护林岚",
 					},
 				},
@@ -346,7 +346,7 @@ func _verify_vote_chain() -> void:
 						"action_id": night_decision_id2 + "-使用技能",
 						"type": "使用技能",
 						"skill_id": "doctor_protect",
-						"target_resident_name": "林岚",
+						"target_resident_id": "resident_lin_lan_01",
 						"line": "守护林岚",
 					},
 				},

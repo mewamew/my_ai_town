@@ -441,7 +441,7 @@ static func available_activities(
 	return result
 
 
-## 警察侦查装备上下文：仅警察注入（余量 + 可侦查目标名单=在世居民名 + 装置状态）。
+## 警察侦查装备上下文：仅警察注入（余量 + 可侦查目标名单=在世居民ID + 装置状态）。
 static func _police_intel_context(host, resident_name: String) -> Dictionary:
 	if not host._resident_is_police(resident_name):
 		return {}
@@ -452,9 +452,8 @@ static func _police_intel_context(host, resident_name: String) -> Dictionary:
 			continue
 		if not host._resident_is_alive(other_id):
 			continue
-		var other_name: String = host._resident_display_name(other_id)
-		if not other_name.is_empty():
-			targets.append(other_name)
+		if not host._resident_display_name(other_id).is_empty():
+			targets.append(other_id)
 	# 装置状态: 正在监听谁 + 剩余分钟(让警察知道监听对象, 决策时心里有数)。
 	var devices := {}
 	var minute := int(host._authoritative_absolute_minute())

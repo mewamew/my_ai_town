@@ -41,7 +41,7 @@ func _verify_night_skill_contract() -> void:
 		"handling": "continue_current",
 		"night_skill": {
 			"skill_id": "doctor_protect",
-			"target_resident_name": "林岚",
+			"target_resident_id": "resident_lin_lan_01",
 			"line": "我担心他。",
 		},
 	}
@@ -56,7 +56,7 @@ func _verify_night_skill_contract() -> void:
 				"round_day": 1,
 				"settle_clock": "次日 08:00",
 				"skills": ["doctor_protect", "scholar_inspect"],
-				"candidate_names": ["林岚", "唐小满"],
+				"candidate_ids": ["resident_lin_lan_01", "resident_tang_xiaoman_01"],
 			},
 		},
 	}
@@ -71,7 +71,7 @@ func _verify_night_skill_contract() -> void:
 	CONTRACT_SNAPSHOT._validate_night_skill(
 		{
 			"skill_id": "undercover_frame",
-			"target_resident_name": "林岚",
+			"target_resident_id": "resident_lin_lan_01",
 			"line": "让他背锅。",
 		},
 		wake,
@@ -90,7 +90,7 @@ func _verify_night_skill_contract() -> void:
 		"handling": "continue_current",
 		"night_skill": {
 			"skill_id": "doctor_protect",
-			"target_resident_name": "林岚",
+			"target_resident_id": "resident_lin_lan_01",
 			"line": "我担心他。",
 			"extra_field": "应被剥离",
 		},
@@ -130,17 +130,17 @@ func _verify_night_snapshot_and_submit() -> void:
 	var tang_name := String(world.call("_resident_display_name", TANG_ID))
 	ROLE_SKILL.submit_night_skill(world, DOCTOR_ID, {
 		"skill_id": "doctor_protect",
-		"target_resident_name": lin_name,
+		"target_resident_id": CIVILIAN_ID,
 		"line": "今晚守着他。",
 	})
 	ROLE_SKILL.submit_night_skill(world, SCHOLAR_ID, {
 		"skill_id": "scholar_inspect",
-		"target_resident_name": tang_name,
+		"target_resident_id": TANG_ID,
 		"line": "查查她夜里在哪。",
 	})
 	ROLE_SKILL.submit_night_skill(world, UNDERCOVER_ID, {
 		"skill_id": "undercover_frame",
-		"target_resident_name": lin_name,
+		"target_resident_id": CIVILIAN_ID,
 		"line": "让他背锅。",
 	})
 	var skills: Dictionary = (
@@ -176,7 +176,7 @@ func _verify_doctor_blocks_assassination() -> void:
 	var lin_name := String(world.call("_resident_display_name", CIVILIAN_ID))
 	ROLE_SKILL.submit_night_skill(world, DOCTOR_ID, {
 		"skill_id": "doctor_protect",
-		"target_resident_name": lin_name,
+		"target_resident_id": CIVILIAN_ID,
 		"line": "今晚守着他。",
 	})
 	_advance_to_minute_of_day(world, 1260)  # 21:00 夜深
@@ -240,12 +240,12 @@ func _verify_night_resolution() -> void:
 	var tang_name := String(world.call("_resident_display_name", TANG_ID))
 	ROLE_SKILL.submit_night_skill(world, DOCTOR_ID, {
 		"skill_id": "doctor_protect",
-		"target_resident_name": lin_name,
+		"target_resident_id": CIVILIAN_ID,
 		"line": "今晚守着他。",
 	})
 	ROLE_SKILL.submit_night_skill(world, SCHOLAR_ID, {
 		"skill_id": "scholar_inspect",
-		"target_resident_name": tang_name,
+		"target_resident_id": TANG_ID,
 		"line": "查查她夜里在哪。",
 	})
 	# 模拟夜里林岚被暗杀、已进入待公布队列（医生守护应在天亮前摘除）。
@@ -304,7 +304,7 @@ func _verify_frame_and_police_case() -> void:
 	var lin_name := String(world.call("_resident_display_name", CIVILIAN_ID))
 	ROLE_SKILL.submit_night_skill(world, UNDERCOVER_ID, {
 		"skill_id": "undercover_frame",
-		"target_resident_name": lin_name,
+		"target_resident_id": CIVILIAN_ID,
 		"line": "让他背锅。",
 	})
 	_advance_to_minute_of_day(world, 480)  # 天亮（本轮无凶案，嫁祸保持待用）

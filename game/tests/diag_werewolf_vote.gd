@@ -158,10 +158,9 @@ func _verify_vote_round() -> void:
 	var vote: Dictionary = state.get("vote", {}) as Dictionary
 	var day := int(world.get("_environment").call("get_absolute_minute")) / 1440
 	_expect_equal(int(vote.get("day", -1)), day, "投票回合开启 (day=%d)" % day)
-	var candidates: Array = vote.get("candidateNames", []) as Array
+	var candidates: Array = vote.get("candidateIds", []) as Array
 	_expect_equal(candidates.size() >= 3, true, "候选人名单非空 (%d人)" % candidates.size())
-	var target_name := String(world.call("_resident_display_name", CIVILIAN_ID))
-	_expect_equal(candidates.has(target_name), true, "林岚在候选人名单中")
+	_expect_equal(candidates.has(CIVILIAN_ID), true, "林岚在候选人名单中")
 	# 3 票投林岚,1 票投唐小满 → 林岚被放逐
 	var voters := _alive_voter_ids(world, [CIVILIAN_ID], 4)
 	_expect_equal(voters.size() >= 4, true, "有足够在世投票人 (%d)" % voters.size())
@@ -170,10 +169,8 @@ func _verify_vote_round() -> void:
 		return
 	for index: int in voters.size():
 		var ballot := {
-			"target_resident_name": (
-				target_name if index < 3 else String(
-					world.call("_resident_display_name", "resident_tang_xiaoman_01")
-				)
+			"target_resident_id": (
+				CIVILIAN_ID if index < 3 else "resident_tang_xiaoman_01"
 			),
 			"line": "案发那晚他的行踪说不清。",
 		}
@@ -224,14 +221,13 @@ func _verify_settle_skipped_after_game_over() -> void:
 		{},
 	) as Dictionary
 	_expect_equal(vote.is_empty(), false, "终局场景投票回合已开启")
-	var target_name := String(world.call("_resident_display_name", CIVILIAN_ID))
 	var voters := _alive_voter_ids(world, [CIVILIAN_ID], 1)
 	_expect_equal(voters.size() >= 1, true, "终局场景有投票人")
 	if voters.size() < 1:
 		world.call("stop")
 		return
 	WEREWOLF.submit_vote(world, voters[0], {
-		"target_resident_name": target_name,
+		"target_resident_id": CIVILIAN_ID,
 		"line": "开票前胜负已分。",
 	})
 	var state: Dictionary = world.get("_werewolf_state") as Dictionary
@@ -262,7 +258,7 @@ func _verify_contract() -> void:
 		"decision_id": "d1",
 		"handling": "continue_current",
 		"exile_vote": {
-			"target_resident_name": "林岚",
+			"target_resident_id": "resident_lin_lan_01",
 			"line": "我怀疑他。",
 		},
 	}
@@ -281,14 +277,14 @@ func _verify_contract() -> void:
 			"exile_vote": {
 				"round_day": 1,
 				"settle_clock": "12:30",
-				"candidate_names": ["林岚", "唐小满"],
+				"candidate_ids": ["resident_lin_lan_01", "resident_tang_xiaoman_01"],
 			},
 		},
 	}
 	var errors: Array[String] = []
 	CONTRACT_SNAPSHOT._validate_exile_vote(
 		{
-			"target_resident_name": "林岚",
+			"target_resident_id": "resident_lin_lan_01",
 			"line": "我怀疑他。",
 		},
 		wake,
@@ -298,7 +294,7 @@ func _verify_contract() -> void:
 	errors = []
 	CONTRACT_SNAPSHOT._validate_exile_vote(
 		{
-			"target_resident_name": "不存在的人",
+			"target_resident_id": "不存在的人",
 			"line": "我怀疑他。",
 		},
 		wake,
@@ -308,7 +304,7 @@ func _verify_contract() -> void:
 	errors = []
 	CONTRACT_SNAPSHOT._validate_exile_vote(
 		{
-			"target_resident_name": "林岚",
+			"target_resident_id": "resident_lin_lan_01",
 			"line": "我怀疑他。",
 		},
 		{"snapshot": {}},
@@ -319,7 +315,7 @@ func _verify_contract() -> void:
 		"decision_id": "d1",
 		"handling": "continue_current",
 		"exile_vote": {
-			"target_resident_name": "林岚",
+			"target_resident_id": "resident_lin_lan_01",
 			"line": "我怀疑他。",
 			"extra_field": "应被剥离",
 		},
@@ -327,8 +323,8 @@ func _verify_contract() -> void:
 	var canonical_vote: Dictionary = canonical.get("exile_vote", {}) as Dictionary
 	_expect_equal(canonical_vote.has("extra_field"), false, "canonicalize 剥离多余字段")
 	_expect_equal(
-		String(canonical_vote.get("target_resident_name", "")),
-		"林岚",
+		String(canonical_vote.get("target_resident_id", "")),
+		"resident_lin_lan_01",
 		"canonicalize 保留合法字段",
 	)
 

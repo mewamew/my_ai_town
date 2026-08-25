@@ -291,7 +291,7 @@ func _run() -> void:
 			)
 			print(
 				"VOTE_LIVE_WINDOW: 第2天 11:00 到达, 候选 %d 人, 唤醒全镇"
-				% (vote.get("candidateNames", []) as Array).size()
+				% (vote.get("candidateIds", []) as Array).size()
 			)
 		elif not settle_done:
 			# 投票窗口：停钟，泵完全部决策（模型无节流压力，纯看是否输出 exile_vote）
@@ -338,7 +338,7 @@ func _report(provider_id: String, model_id: String) -> void:
 			exile_in_decisions += 1
 			var vote_value := decision.get("exile_vote", {}) as Dictionary
 			exile_targets.append(
-				String(vote_value.get("target_resident_name", ""))
+				String(vote_value.get("target_resident_id", ""))
 			)
 	var report := {
 		"provider": provider_id,
@@ -384,7 +384,7 @@ func _on_decision_completed(trace: Dictionary) -> void:
 	if has_exile:
 		exile_target = String(
 			(decision.get("exile_vote", {}) as Dictionary).get(
-				"target_resident_name",
+				"target_resident_id",
 				"",
 			)
 		)

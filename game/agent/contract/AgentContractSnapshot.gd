@@ -105,10 +105,10 @@ static func _validate_exile_vote(
 		"exile_vote",
 		errors,
 	)
-	var target_name := AgentContract._require_non_empty_string(
+	var target_id := AgentContract._require_non_empty_string(
 		value,
-		"target_resident_name",
-		"exile_vote.target_resident_name",
+		"target_resident_id",
+		"exile_vote.target_resident_id",
 		errors,
 	)
 	var line := AgentContract._require_non_empty_string(
@@ -133,9 +133,9 @@ static func _validate_exile_vote(
 	if vote.is_empty():
 		errors.append("本轮没有进行中的镇民大会投票，不允许 exile_vote")
 		return
-	var candidate_names: Array = vote.get("candidate_names", [])
-	if not target_name.is_empty() and not candidate_names.has(target_name):
-		errors.append("exile_vote.target_resident_name 必须来自本轮候选人名单")
+	var candidate_ids: Array = vote.get("candidate_ids", [])
+	if not target_id.is_empty() and not candidate_ids.has(target_id):
+		errors.append("exile_vote.target_resident_id 必须来自本轮候选人名单")
 
 
 static func _validate_night_skill(
@@ -157,10 +157,10 @@ static func _validate_night_skill(
 		"night_skill.skill_id",
 		errors,
 	)
-	var target_name := AgentContract._require_non_empty_string(
+	var target_id := AgentContract._require_non_empty_string(
 		value,
-		"target_resident_name",
-		"night_skill.target_resident_name",
+		"target_resident_id",
+		"night_skill.target_resident_id",
 		errors,
 	)
 	var line := AgentContract._require_non_empty_string(
@@ -188,10 +188,10 @@ static func _validate_night_skill(
 	if not skill_id.is_empty() and not (skill.get("skills", []) as Array).has(skill_id):
 		errors.append("night_skill.skill_id 不是当前可用的夜间技能")
 	if (
-		not target_name.is_empty()
-		and not (skill.get("candidate_names", []) as Array).has(target_name)
+		not target_id.is_empty()
+		and not (skill.get("candidate_ids", []) as Array).has(target_id)
 	):
-		errors.append("night_skill.target_resident_name 必须来自本轮候选名单")
+		errors.append("night_skill.target_resident_id 必须来自本轮候选名单")
 
 
 static func _validate_snapshot(snapshot: Dictionary, errors: Array[String]) -> void:
@@ -314,14 +314,14 @@ static func _validate_snapshot(snapshot: Dictionary, errors: Array[String]) -> v
 				errors.append("snapshot.exile_vote.round_day 必须是整数")
 			if typeof(vote.get("settle_clock")) != TYPE_STRING:
 				errors.append("snapshot.exile_vote.settle_clock 必须是文本")
-			var candidate_values: Variant = vote.get("candidate_names")
+			var candidate_values: Variant = vote.get("candidate_ids")
 			if candidate_values is not Array:
-				errors.append("snapshot.exile_vote.candidate_names 必须是数组")
+				errors.append("snapshot.exile_vote.candidate_ids 必须是数组")
 			else:
 				for candidate_value: Variant in candidate_values as Array:
 					if typeof(candidate_value) != TYPE_STRING:
 						errors.append(
-							"snapshot.exile_vote.candidate_names 必须全是文本"
+							"snapshot.exile_vote.candidate_ids 必须全是文本"
 						)
 						break
 	if snapshot.has("night_skill"):
@@ -343,14 +343,14 @@ static func _validate_snapshot(snapshot: Dictionary, errors: Array[String]) -> v
 							"snapshot.night_skill.skills 必须全是文本"
 						)
 						break
-			var candidate_values: Variant = skill.get("candidate_names")
+			var candidate_values: Variant = skill.get("candidate_ids")
 			if candidate_values is not Array:
-				errors.append("snapshot.night_skill.candidate_names 必须是数组")
+				errors.append("snapshot.night_skill.candidate_ids 必须是数组")
 			else:
 				for candidate_value: Variant in candidate_values as Array:
 					if typeof(candidate_value) != TYPE_STRING:
 						errors.append(
-							"snapshot.night_skill.candidate_names 必须全是文本"
+							"snapshot.night_skill.candidate_ids 必须全是文本"
 						)
 						break
 	if snapshot.has("known_announcements"):
