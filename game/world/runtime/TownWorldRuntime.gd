@@ -3282,7 +3282,7 @@ func _activate_subdue_action(
 		_bump_world_revision()
 
 
-## 警察侦查即时动作：窃听器——获取目标近期对话情报。
+## 警察侦查即时动作：窃听器——靠近目标偷偷装上, 之后 1 天监听到的对话实时上报。
 func _activate_police_eavesdrop_action(
 	resident_id: String,
 	resident: Dictionary,
@@ -3298,32 +3298,31 @@ func _activate_police_eavesdrop_action(
 		return {"ok": false, "errors": ["不能窃听自己"]}
 	if not _resident_is_alive(target_id):
 		return {"ok": false, "errors": ["窃听目标 %s 已不在镇上" % _resident_display_name(target_id)]}
+	if not _resident_within_perception(resident, target_id):
+		return {"ok": false, "errors": ["距离太远，必须靠近 %s（能感知到对方）才能偷偷装上窃听器" % _resident_display_name(target_id)]}
 	if not ROLE_SKILL_RUNTIME.consume_police_eavesdrop(self):
 		return {"ok": false, "errors": ["窃听器次数已用完（每局 %d 次）" % ROLE_SKILL_RUNTIME.EAVESDROP_CHARGES_MAX]}
-	var summary := _collect_eavesdrop_intel(target_id)
-	var intel_event := {
-		"event_id": "police-eavesdrop:%d:%s" % [_world_revision + 1, target_id],
-		"type": "窃听情报",
-		"time": get_time(),
-		"target_resident_id": target_id,
-		"target_resident_name": _resident_display_name(target_id),
-		"summary": summary,
-	}
-	_append_pending_world_event(resident, intel_event)
-	TOWN_LOG.line(
-		"CATMOUSE",
-		"%s | %s 窃听 %s：%s" % [
-			_time_label(),
-			_resident_display_name(resident_id),
-			_resident_display_name(target_id),
-			summary,
-		],
+	var minute := _authoritative_absolute_minute()
+	WEREWOLF_RUNTIME.install_police_device(
+		self, WEREWOLF_RUNTIME.POLICE_DEVICE_EAVESDROP, target_id, resident_id, minute,
 	)
+	var summary := "你偷偷在%s身上装了窃听器，接下来 1 天她/他和别人的对话你都能实时听到" % _resident_display_name(target_id)
 	_append_action_result_without_schedule(
 		resident_id,
 		String(action.get("action_id", "")),
 		"completed",
-		"你窃听了%s的对话：%s" % [_resident_display_name(target_id), summary],
+		summary,
+	)
+	TOWN_LOG.line(
+		"CATMOUSE",
+		"%s | %s 在 %s 身上装了窃听器（第%d天 %02d:%02d 到期）" % [
+			_time_label(),
+			_resident_display_name(resident_id),
+			_resident_display_name(target_id),
+			(minute + WEREWOLF_RUNTIME.POLICE_DEVICE_DURATION_MINUTES) / 1440 + 1,
+			posmod(minute + WEREWOLF_RUNTIME.POLICE_DEVICE_DURATION_MINUTES, 1440) / 60,
+			posmod(minute + WEREWOLF_RUNTIME.POLICE_DEVICE_DURATION_MINUTES, 1440) % 60,
+		],
 	)
 	_schedule_decision(resident_id, true)
 	_emit_resident_state_changed(resident_id)
@@ -3331,7 +3330,7 @@ func _activate_police_eavesdrop_action(
 	return {"ok": true, "summary": summary}
 
 
-## 警察侦查即时动作：定位器——获取目标当前位置与近期行踪。
+## 警察侦查即时动作：定位器——靠近目标偷偷装上, 之后 1 天目标每次要去哪实时上报。
 func _activate_police_tracker_action(
 	resident_id: String,
 	resident: Dictionary,
@@ -3347,32 +3346,31 @@ func _activate_police_tracker_action(
 		return {"ok": false, "errors": ["不能定位自己"]}
 	if not _resident_is_alive(target_id):
 		return {"ok": false, "errors": ["定位目标 %s 已不在镇上" % _resident_display_name(target_id)]}
+	if not _resident_within_perception(resident, target_id):
+		return {"ok": false, "errors": ["距离太远，必须靠近 %s（能感知到对方）才能偷偷装上定位器" % _resident_display_name(target_id)]}
 	if not ROLE_SKILL_RUNTIME.consume_police_tracker(self):
 		return {"ok": false, "errors": ["定位器次数已用完（每局 %d 次）" % ROLE_SKILL_RUNTIME.TRACKER_CHARGES_MAX]}
-	var summary := _collect_tracker_intel(target_id)
-	var intel_event := {
-		"event_id": "police-tracker:%d:%s" % [_world_revision + 1, target_id],
-		"type": "定位情报",
-		"time": get_time(),
-		"target_resident_id": target_id,
-		"target_resident_name": _resident_display_name(target_id),
-		"summary": summary,
-	}
-	_append_pending_world_event(resident, intel_event)
-	TOWN_LOG.line(
-		"CATMOUSE",
-		"%s | %s 定位 %s：%s" % [
-			_time_label(),
-			_resident_display_name(resident_id),
-			_resident_display_name(target_id),
-			summary,
-		],
+	var minute := _authoritative_absolute_minute()
+	WEREWOLF_RUNTIME.install_police_device(
+		self, WEREWOLF_RUNTIME.POLICE_DEVICE_TRACKER, target_id, resident_id, minute,
 	)
+	var summary := "你偷偷在%s身上装了定位器，接下来 1 天她/他要去哪你都能实时知道" % _resident_display_name(target_id)
 	_append_action_result_without_schedule(
 		resident_id,
 		String(action.get("action_id", "")),
 		"completed",
-		"你定位了%s：%s" % [_resident_display_name(target_id), summary],
+		summary,
+	)
+	TOWN_LOG.line(
+		"CATMOUSE",
+		"%s | %s 在 %s 身上装了定位器（第%d天 %02d:%02d 到期）" % [
+			_time_label(),
+			_resident_display_name(resident_id),
+			_resident_display_name(target_id),
+			(minute + WEREWOLF_RUNTIME.POLICE_DEVICE_DURATION_MINUTES) / 1440 + 1,
+			posmod(minute + WEREWOLF_RUNTIME.POLICE_DEVICE_DURATION_MINUTES, 1440) / 60,
+			posmod(minute + WEREWOLF_RUNTIME.POLICE_DEVICE_DURATION_MINUTES, 1440) % 60,
+		],
 	)
 	_schedule_decision(resident_id, true)
 	_emit_resident_state_changed(resident_id)
@@ -3380,75 +3378,119 @@ func _activate_police_tracker_action(
 	return {"ok": true, "summary": summary}
 
 
-## 窃听情报收集：目标参与过的最近对话（最多 3 条，取对话 turn 台词）。
-func _collect_eavesdrop_intel(target_id: String) -> String:
-	var target_display := _resident_display_name(target_id)
-	var target_ref := target_display
-	if target_ref.is_empty():
-		target_ref = target_id
-	var lines: Array[String] = []
-	var count := 0
-	for conv_id: Variant in conversation_state.records:
-		if count >= 3:
-			break
-		var conv := conversation_state.records[conv_id] as Dictionary
-		var participants := conv.get("participants", []) as Array
-		if not participants.has(target_ref):
-			continue
-		var turns := conv.get("turns", []) as Array
-		var dialogue: Array[String] = []
-		for turn_value: Variant in turns:
-			var turn := turn_value as Dictionary
-			var say := String(turn.get("say", ""))
-			if not say.is_empty():
-				dialogue.append(
-					"%s：「%s」" % [String(turn.get("speaker", "")), say]
-				)
-		if dialogue.is_empty():
-			continue
-		var place := String(conv.get("placeName", "")).strip_edges()
-		var header := target_ref
-		if not place.is_empty():
-			header = "%s(%s)" % [target_ref, place]
-		lines.append("%s的对话：%s" % [header, " ".join(dialogue)])
-		count += 1
-	if lines.is_empty():
-		return "%s 最近没有与任何人对话的记录。" % target_display
-	return " ".join(lines)
+## 感知范围判定(与暗杀目标判定一致): 同 spaceId+regionId, 室内同屋放行, 户外距离≤感知范围。
+func _resident_within_perception(actor_resident: Dictionary, target_id: String) -> bool:
+	var actor_space := String(actor_resident.get("spaceId", "")).strip_edges()
+	var actor_region := String(actor_resident.get("regionId", "")).strip_edges()
+	var actor_position := actor_resident.get("position", Vector2.ZERO) as Vector2
+	var perception_range := float(world_definition.world_data.get("perceptionRange", 320.0))
+	var target := _residents.get(target_id, {}) as Dictionary
+	if target.is_empty() or not _resident_is_alive(target_id) or not _resident_is_present(target):
+		return false
+	if String(target.get("spaceId", "")).strip_edges() != actor_space:
+		return false
+	if String(target.get("regionId", "")).strip_edges() != actor_region:
+		return false
+	if actor_space == "town_outdoor":
+		var target_position := target.get("position", Vector2.ZERO) as Vector2
+		if (
+			not actor_position.is_finite()
+			or not target_position.is_finite()
+			or actor_position.distance_to(target_position) > perception_range
+		):
+			return false
+	return true
 
 
-## 定位情报收集：目标当前位置 + 正在做的事 + 最近出入地点。
-func _collect_tracker_intel(target_id: String) -> String:
+## 窃听器监听钩子(ConversationRuntime 每轮对话产生时调用): 目标被监听且未到期
+## 则把该轮对话实时投递给安装者(警察)。target_name 用居民名(participants 存名字)。
+func _record_police_eavesdrop_turn(
+	target_name: String,
+	speaker_name: String,
+	say_text: String,
+	place_name: String,
+) -> bool:
+	if say_text.is_empty():
+		return false
+	var target_id := _resident_key(target_name)
+	if target_id.is_empty():
+		return false
+	var minute := _authoritative_absolute_minute()
+	if not WEREWOLF_RUNTIME.police_device_active(
+		self, WEREWOLF_RUNTIME.POLICE_DEVICE_EAVESDROP, target_id, minute,
+	):
+		return false
+	var device := WEREWOLF_RUNTIME.police_device_state(
+		self, WEREWOLF_RUNTIME.POLICE_DEVICE_EAVESDROP,
+	)
+	var police_id := String(device.get("installedBy", ""))
+	var police_resident := _residents.get(police_id, {}) as Dictionary
+	if police_resident.is_empty():
+		return false
 	var target_display := _resident_display_name(target_id)
-	var resident := resident_registry.records.get(target_id, {}) as Dictionary
-	var parts: Array[String] = []
-	var current_place := String(resident.get("currentPlace", "")).strip_edges()
-	if not current_place.is_empty():
-		parts.append("现在在%s" % current_place)
-	else:
-		parts.append("行踪不定")
-	var doing := String(resident.get("doing", "")).strip_edges()
-	if not doing.is_empty():
-		parts.append("正在%s" % doing)
-	var target_ref := target_display
-	if target_ref.is_empty():
-		target_ref = target_id
-	var recent_places: Array[String] = []
-	var seen: Dictionary = {}
-	for conv_id: Variant in conversation_state.records:
-		var conv := conversation_state.records[conv_id] as Dictionary
-		var participants := conv.get("participants", []) as Array
-		if not participants.has(target_ref):
-			continue
-		var place := String(conv.get("placeName", "")).strip_edges()
-		if not place.is_empty() and not seen.has(place):
-			seen[place] = true
-			recent_places.append(place)
-		if recent_places.size() >= 3:
-			break
-	if not recent_places.is_empty():
-		parts.append("最近出入过%s" % "、".join(recent_places))
-	return "%s：%s" % [target_display, "，".join(parts)]
+	var speaker_display := _resident_display_name(speaker_name)
+	if speaker_display.is_empty():
+		speaker_display = speaker_name
+	var place_display := place_name
+	if place_display.is_empty():
+		place_display = "镇上"
+	var intel_event := {
+		"event_id": "police-eavesdrop:%d:%s" % [minute, target_id],
+		"type": "窃听情报",
+		"time": get_time(),
+		"target_resident_id": target_id,
+		"target_resident_name": target_display,
+		"summary": "窃听器传来 %s 的对话（%s）：%s：「%s」" % [
+			target_display, place_display, speaker_display, say_text,
+		],
+	}
+	_append_pending_world_event(police_resident, intel_event)
+	TOWN_LOG.line(
+		"CATMOUSE",
+		"%s | 窃听情报 | %s：%s「%s」" % [
+			_time_label(), target_display, speaker_display, say_text,
+		],
+	)
+	return true
+
+
+## 定位器监听钩子(居民"去"动作准备成功时调用): 目标被监听且未到期
+## 则把目的地实时投递给安装者(警察)。
+func _record_police_tracker_visit(
+	target_id: String,
+	target_place: String,
+	minute: int,
+) -> bool:
+	if target_id.is_empty() or target_place.is_empty():
+		return false
+	if not WEREWOLF_RUNTIME.police_device_active(
+		self, WEREWOLF_RUNTIME.POLICE_DEVICE_TRACKER, target_id, minute,
+	):
+		return false
+	var device := WEREWOLF_RUNTIME.police_device_state(
+		self, WEREWOLF_RUNTIME.POLICE_DEVICE_TRACKER,
+	)
+	var police_id := String(device.get("installedBy", ""))
+	var police_resident := _residents.get(police_id, {}) as Dictionary
+	if police_resident.is_empty():
+		return false
+	var target_display := _resident_display_name(target_id)
+	var intel_event := {
+		"event_id": "police-tracker:%d:%s" % [minute, target_id],
+		"type": "定位情报",
+		"time": get_time(),
+		"target_resident_id": target_id,
+		"target_resident_name": target_display,
+		"summary": "定位器显示 %s 准备前往 %s" % [target_display, target_place],
+	}
+	_append_pending_world_event(police_resident, intel_event)
+	TOWN_LOG.line(
+		"CATMOUSE",
+		"%s | 定位情报 | %s 准备前往 %s" % [
+			_time_label(), target_display, target_place,
+		],
+	)
+	return true
 
 
 func _activate_announcement_action(

@@ -441,7 +441,7 @@ static func available_activities(
 	return result
 
 
-## 警察侦查装备上下文：仅警察注入（余量 + 可侦查目标名单=在世居民名）。
+## 警察侦查装备上下文：仅警察注入（余量 + 可侦查目标名单=在世居民名 + 装置状态）。
 static func _police_intel_context(host, resident_name: String) -> Dictionary:
 	if not host._resident_is_police(resident_name):
 		return {}
@@ -455,6 +455,33 @@ static func _police_intel_context(host, resident_name: String) -> Dictionary:
 		var other_name: String = host._resident_display_name(other_id)
 		if not other_name.is_empty():
 			targets.append(other_name)
+	# 装置状态: 正在监听谁 + 剩余分钟(让警察知道监听对象, 决策时心里有数)。
+	var devices := {}
+	var minute := int(host._authoritative_absolute_minute())
+	var eavesdrop: Dictionary = host.WEREWOLF_RUNTIME.police_device_state(
+		host, host.WEREWOLF_RUNTIME.POLICE_DEVICE_EAVESDROP,
+	)
+	if not eavesdrop.is_empty():
+		var eavesdrop_target := String(eavesdrop.get("targetId", ""))
+		devices["eavesdrop"] = {
+			"targetId": eavesdrop_target,
+			"targetName": host._resident_display_name(eavesdrop_target),
+			"remainingMinutes": maxi(
+				0, int(eavesdrop.get("expireMinute", -1)) - minute,
+			),
+		}
+	var tracker: Dictionary = host.WEREWOLF_RUNTIME.police_device_state(
+		host, host.WEREWOLF_RUNTIME.POLICE_DEVICE_TRACKER,
+	)
+	if not tracker.is_empty():
+		var tracker_target := String(tracker.get("targetId", ""))
+		devices["tracker"] = {
+			"targetId": tracker_target,
+			"targetName": host._resident_display_name(tracker_target),
+			"remainingMinutes": maxi(
+				0, int(tracker.get("expireMinute", -1)) - minute,
+			),
+		}
 	return {
 		"eavesdropCharges": host.ROLE_SKILL_RUNTIME.police_eavesdrop_charges(
 			host
@@ -463,4 +490,5 @@ static func _police_intel_context(host, resident_name: String) -> Dictionary:
 			host
 		),
 		"targets": targets,
+		"devices": devices,
 	}

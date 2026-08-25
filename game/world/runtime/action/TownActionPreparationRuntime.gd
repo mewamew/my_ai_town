@@ -185,6 +185,13 @@ static func prepare_go_action(
 		route.get("completionEffects", route.get("effects", {})) as Dictionary
 	).duplicate(true)
 	prepared["consumeRouteConnector"] = not (resident.get("routeConnector", []) as Array).is_empty()
+	# 狼人杀: 警察定位器监听——目标"去"动作准备成功时上报目的地。
+	if host.has_method("_record_police_tracker_visit"):
+		host._record_police_tracker_visit(
+			String(resident.get("residentId", "")),
+			target_place,
+			int(host._environment.get_absolute_minute()),
+		)
 	return {"ok": true, "action": prepared}
 
 

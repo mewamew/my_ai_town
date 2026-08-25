@@ -94,6 +94,17 @@ static func _start_conversation(
 	world.conversation_state.autonomous_idle_seconds[conversation_id] = 0.0
 	_hold_conversation_invitation_target(world, target_name)
 	_update_conversation_snapshots(world, traveler_relationship_state, conversation)
+	# 狼人杀: 警察窃听器监听——对话双方任一被监听则实时上报该轮对话。
+	if world.has_method("_record_police_eavesdrop_turn"):
+		var eavesdrop_say := String(turn.get("say", ""))
+		if not eavesdrop_say.is_empty():
+			for participant: Variant in [initiator_name, target_name]:
+				world._record_police_eavesdrop_turn(
+					String(participant),
+					String(turn.get("speaker", "")),
+					eavesdrop_say,
+					conversation_place,
+				)
 	world.conversation_changed.emit(conversation_id, conversation.duplicate(true))
 	var action_story: Variant = world.event_journal.action_story_context(
 		String(action.get("action_id", ""))
@@ -166,6 +177,17 @@ static func _apply_conversation_reply(
 	world.conversation_state.autonomous_idle_seconds[conversation_id] = 0.0
 	_complete_conversation_action(world, other_name, "completed", "对方已经答话")
 	_queue_overhear_events(world, conversation, turn)
+	# 狼人杀: 警察窃听器监听——回复轮次同样实时上报。
+	if world.has_method("_record_police_eavesdrop_turn"):
+		var eavesdrop_say := String(turn.get("say", ""))
+		if not eavesdrop_say.is_empty():
+			for participant: Variant in [speaker_name, other_name]:
+				world._record_police_eavesdrop_turn(
+					String(participant),
+					String(turn.get("speaker", "")),
+					eavesdrop_say,
+					String(conversation.get("placeName", "")),
+				)
 	if bool(action.get("end", false)):
 		# Publish the final turn and ended state atomically. Exposing an active
 		# snapshot first briefly tells the UI that it is the other person's turn,

@@ -103,7 +103,50 @@ static func default_state() -> Dictionary:
 		"roleSkills": ROLE_SKILL_RUNTIME.default_role_skills(),
 		"undercoverKillLastNight": -1,    # 全卧底阵营每晚最多 1 杀（-1=未杀过）
 		"policeAlertCharges": 1,          # 警察每局 1 次警觉免死(暗杀被挡下)
+		"policeDevices": {},              # 警察侦查装置(窃听器/定位器)安装状态
 	}
+
+
+## 警察侦查装置: 每类 1 个槽位,装新目标覆盖旧的,监听时长 1 天(游戏时间)。
+const POLICE_DEVICE_DURATION_MINUTES := 1440
+const POLICE_DEVICE_EAVESDROP := "eavesdrop"
+const POLICE_DEVICE_TRACKER := "tracker"
+
+
+static func police_device_state(world, device_key: String) -> Dictionary:
+	var devices := world._werewolf_state.get("policeDevices", {}) as Dictionary
+	return (devices.get(device_key, {}) as Dictionary).duplicate()
+
+
+static func install_police_device(
+	world,
+	device_key: String,
+	target_id: String,
+	installed_by: String,
+	minute: int,
+) -> void:
+	var devices := world._werewolf_state.get("policeDevices", {}) as Dictionary
+	devices[device_key] = {
+		"targetId": target_id,
+		"installedBy": installed_by,
+		"installedMinute": minute,
+		"expireMinute": minute + POLICE_DEVICE_DURATION_MINUTES,
+	}
+	world._werewolf_state["policeDevices"] = devices
+
+
+## 装置是否正在监听指定目标(未过期)。
+static func police_device_active(
+	world,
+	device_key: String,
+	target_id: String,
+	minute: int,
+) -> bool:
+	var device := police_device_state(world, device_key)
+	return (
+		String(device.get("targetId", "")) == target_id
+		and int(device.get("expireMinute", -1)) > minute
+	)
 
 
 ## 世界每分钟推进入口(与 check_deadline 同链)。
