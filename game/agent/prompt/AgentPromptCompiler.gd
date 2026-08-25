@@ -1924,14 +1924,14 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 		constraints["reaction"] = {
 			"fields": ["source_action_id", "text"],
 			"source_action_id": reaction_source_action_id,
-			"max_characters": 64,
+			"max_characters": 32,
 			"required": true,
 		}
 	if not announcement_reaction_event_ids.is_empty():
 		constraints["announcement_reactions"] = {
 			"fields": ["source_event_id", "text"],
 			"source_event_ids": announcement_reaction_event_ids,
-			"max_characters": 64,
+			"max_characters": 32,
 			"required": true,
 		}
 	var social_response := _social_response_constraints(snapshot)
