@@ -47,12 +47,14 @@ const RATE_LIMIT_RETRY_DELAY_SECONDS := 2.0
 const RATE_LIMIT_RETRY_DELAY_MAX_SECONDS := 4.0
 # 智能节流(方案 A): 平台按请求速率限流, 实测令牌桶容量 4-6、补充 ~1/s(60/min),
 # 429 不产生调用记录、无 Retry-After 头, 脉冲批量重试会整批撞窗口。
-# 平时按 DISPATCH_RATE_PER_SECOND 补充预算(低于平台补充速率, 不撞 429),
+# 平时按 DISPATCH_RATE_PER_SECOND 补充预算; 实测 0.8/s 恰好顶在平台上限
+# (090835 局 214 次 429, 40s 好窗+8-15s 坏窗周期), 降到 0.5/s 给平台留 37% 余量,
+# 真实需求仅 ~0.28/s(16.6/min), 30/min 预算仍有 80% 富余。
 # 命中 429 后进入节流态 RATE_LIMIT_THROTTLE_DURATION_MS, 期间按节流速率补充。
 # 预算不足的普通居民请求进 overflow 还回 world pending, 下帧补充后重取——
 # 请求不丢, 只是排队。玩家对话请求绕过预算, 保证即时响应。
-const DISPATCH_RATE_PER_SECOND := 0.8
-const THROTTLED_DISPATCH_RATE_PER_SECOND := 0.5
+const DISPATCH_RATE_PER_SECOND := 0.5
+const THROTTLED_DISPATCH_RATE_PER_SECOND := 0.35
 const RATE_LIMIT_THROTTLE_DURATION_MS := 30000
 const MAX_DISPATCH_BUDGET := 3.0
 const MAX_ERROR_HISTORY := 128
