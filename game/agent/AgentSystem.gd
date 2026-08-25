@@ -44,6 +44,9 @@ var _avatar_name := DEFAULT_AVATAR_NAME
 var _departure_operations: Dictionary = {}
 var _decision_retry_feedback: Dictionary = {}
 var _event_memory_claim_roots: Dictionary = {}
+var _role_archive_enabled := false
+var _role_archive_ids: Array[String] = []
+var _role_archive_root := ""
 
 
 func _init(save_store: RefCounted = null) -> void:
@@ -122,6 +125,7 @@ func finish_new_game() -> Dictionary:
 		resident.call("mark_new_game_state_ready")
 		resident.call("attach_session_epoch", _session_epoch)
 		_residents[resident_id] = resident
+		_apply_role_archive_to_resident(resident)
 	return {
 		"ok": true,
 		"status": "started",
@@ -634,16 +638,30 @@ func configure_role_archive(
 	resident_ids: Array,
 	root: String,
 ) -> void:
+	# 存为实例配置: 居民运行时在 start_new_game / restore 时才创建,
+	# configure_session 注入时 _residents 通常还是空的, 配置必须留存,
+	# 等居民创建后由 _apply_role_archive_to_resident 补发。
+	_role_archive_enabled = enabled
+	_role_archive_ids.clear()
+	for resident_value: Variant in resident_ids:
+		var candidate := String(resident_value).strip_edges()
+		if not candidate.is_empty():
+			_role_archive_ids.append(candidate)
+	_role_archive_root = root.strip_edges()
 	for resident_value: Variant in _residents.values():
-		if resident_value == null:
-			continue
-		if resident_value.has_method("configure_role_archive"):
-			resident_value.call(
-				"configure_role_archive",
-				enabled,
-				resident_ids,
-				root,
-			)
+		_apply_role_archive_to_resident(resident_value)
+
+
+func _apply_role_archive_to_resident(resident_value: Variant) -> void:
+	if resident_value == null:
+		return
+	if resident_value.has_method("configure_role_archive"):
+		resident_value.call(
+			"configure_role_archive",
+			_role_archive_enabled,
+			_role_archive_ids,
+			_role_archive_root,
+		)
 
 
 func request_decision(
@@ -1093,6 +1111,7 @@ func _commit_restore_transaction(transaction: Dictionary) -> Dictionary:
 		var resident := hydrated_runtimes[resident_id] as RefCounted
 		resident.call("attach_session_epoch", _session_epoch)
 		_residents[resident_id] = resident
+		_apply_role_archive_to_resident(resident)
 	return {
 		"ok": true,
 		"status": "restored",
