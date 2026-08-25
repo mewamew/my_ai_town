@@ -115,7 +115,26 @@ func _log_available_actions(derived_constraints: Dictionary) -> void:
 		if data.has("targets"):
 			var targets := data["targets"] as Array
 			if not targets.is_empty():
-				extras.append("对%s" % "、".join(targets))
+				var target_names: Array[String] = []
+				for target_value: Variant in targets:
+					var target_key := ""
+					if target_value is Dictionary:
+						target_key = String(
+							(target_value as Dictionary).get(
+								"target_resident_id",
+								(target_value as Dictionary).get("id", ""),
+							),
+						)
+					else:
+						target_key = String(target_value)
+					var tname := String(_resident_names.get(target_key, "")).strip_edges()
+					if tname.is_empty():
+						# 查不到名字时回退显示 ID, 避免空括号。
+						tname = target_key
+					if not target_names.has(tname):
+						target_names.append(tname)
+				if not target_names.is_empty():
+					extras.append("对%s" % "、".join(target_names))
 		if data.has("causes"):
 			var causes := data["causes"] as Array
 			if not causes.is_empty():
