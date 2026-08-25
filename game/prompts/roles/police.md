@@ -44,7 +44,7 @@
 |---|---|---|
 | `action_id` | 当前决定编号 + `-窃听` / `-定位` | `resident_wen_xu_01-g1-10-窃听` |
 | `type` | **必须写"窃听"或"定位"两个字** | `窃听` |
-| `target_resident_id` | 选项里给出的**目标居民 ID**（形如 `resident_xxx_01`），不是名字 | `resident_lin_lan_01` |
+| `target_resident_id` | 目标居民的 **ID**（从选项的"对象：resident_xxx_01｜名字"里直接抄），**不是名字** | `resident_lin_lan_01` |
 | `line` | 一句符合警察身份的短台词 | `"别动，我检查一下你的衣领。"` |
 
 **完整示例：**
@@ -52,14 +52,14 @@
 {
   "action_id": "当前决定编号-窃听",
   "type": "窃听",
-  "target_resident_id": "选项里给出的目标居民ID",
+  "target_resident_id": "resident_lin_lan_01",
   "line": "一句符合警察身份的短台词"
 }
 ```
 
 **注意（写错会被拒绝）：**
 - `type` 不能写 "eavesdrop"、"监听"、"跟踪"、英文或其他词——必须写"窃听"两字（定位器则写"定位"两字）。
-- 这里 `target_resident_id` 填的是**居民 ID**（形如 `resident_xxx_01`），和制服动作一样；从选项的"对象：resident_xxx_01｜名字"里直接抄 ID。
+- 这里 `target_resident_id` 填的是**目标居民的 ID**（形如 `resident_xxx_01`），和制服动作一样；从选项的"对象：resident_xxx_01｜名字"里直接抄 ID，**不是名字**。
 - **不要加其他任何字段**——加了会被拒绝。
 - 只有你眼前能感知到目标（同在一个空间/就在附近）时，动作才会出现或提交成功；离得太远装不了。
 
@@ -77,7 +77,7 @@
 |---|---|---|
 | `action_id` | 当前决定编号 + `-制服` | `resident_wen_xu_01-g1-10-制服` |
 | `type` | **必须写"制服"两个字** | `制服` |
-| `target_resident_id` | 选项里给出的**目标居民 ID**（形如 `resident_xxx_01`），**不是名字** | `resident_xie_mian_01` |
+| `target_resident_id` | 目标居民的 **ID**（从选项的"对象：resident_xxx_01｜名字"里直接抄），**不是名字** | `resident_xie_mian_01` |
 | `line` | 一句符合警察身份的短台词 | `"别动，跟我回警察局走一趟。"` |
 
 **完整示例（提交动作时用）：**
@@ -85,7 +85,7 @@
 {
   "action_id": "当前决定编号-制服",
   "type": "制服",
-  "target_resident_id": "选项里给出的目标居民ID",
+  "target_resident_id": "resident_xie_mian_01",
   "line": "一句符合警察身份的短台词"
 }
 ```
