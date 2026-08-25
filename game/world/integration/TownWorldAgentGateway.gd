@@ -65,6 +65,17 @@ static var DISPATCH_RATE_PER_SECOND := 0.5
 static var THROTTLED_DISPATCH_RATE_PER_SECOND := 0.35
 static var RATE_LIMIT_THROTTLE_DURATION_MS := 30000
 static var MAX_DISPATCH_BUDGET := 3.0
+# 角色请求留档: 警察 + 3 卧底的全部模型请求(提示词 + 输出 JSON)成对写盘,
+# 便于复盘这些关键角色到底收到了什么、做了什么决策。落点在 DecisionExecution,
+# 由 configure_session 装配到 AgentSystem; 路径可用环境变量
+# AI_TOWN_ROLE_ARCHIVE_ROOT 覆盖(默认游戏仓库外的固定目录)。
+const ROLE_ARCHIVE_RESIDENT_IDS: Array[String] = [
+	"resident_wen_xu_01",  # 警察 闻叙
+	"resident_xie_mian_01",  # 卧底 谢眠
+	"resident_qiao_yiming_01",  # 卧底 乔一鸣
+	"resident_hanako_01",  # 卧底 花子
+]
+const ROLE_ARCHIVE_ROOT := "F:/my_ai_town_upstream/logs/requests/role"
 const MAX_ERROR_HISTORY := 128
 const BACKGROUND_DEPARTURE_INITIAL_DELAY_SECONDS := 20.0
 const BACKGROUND_DEPARTURE_RETRY_DELAY_SECONDS := 8.0
@@ -529,6 +540,16 @@ func configure_session(
 			"configure_avatar_identity",
 			"",
 			avatar_identity,
+		)
+	var role_archive_root := OS.get_environment("AI_TOWN_ROLE_ARCHIVE_ROOT")
+	if role_archive_root.is_empty():
+		role_archive_root = ROLE_ARCHIVE_ROOT
+	if _agent_system != null and _agent_system.has_method("configure_role_archive"):
+		_agent_system.call(
+			"configure_role_archive",
+			true,
+			ROLE_ARCHIVE_RESIDENT_IDS,
+			role_archive_root,
 		)
 	return {
 		"ok": true,

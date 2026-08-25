@@ -629,6 +629,23 @@ func configure_test_runtime_storage(root: String) -> Dictionary:
 	)
 
 
+func configure_role_archive(
+	enabled: bool,
+	resident_ids: Array,
+	root: String,
+) -> void:
+	for resident_value: Variant in _residents.values():
+		if resident_value == null:
+			continue
+		if resident_value.has_method("configure_role_archive"):
+			resident_value.call(
+				"configure_role_archive",
+				enabled,
+				resident_ids,
+				root,
+			)
+
+
 func request_decision(
 	resident_id: String,
 	wake_packet: Variant,
