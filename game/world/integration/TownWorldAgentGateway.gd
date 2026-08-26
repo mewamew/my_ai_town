@@ -42,6 +42,13 @@ const MAX_CONCURRENT_LOCAL_MODEL_REQUESTS := 3
 const MAX_CONCURRENT_LOCAL_ORDINARY_REQUESTS := 2
 const LOCAL_MODEL_PROVIDER_IDS: Array[String] = ["ollama", "lm-studio"]
 const MAX_DECISION_ATTEMPTS := 2
+# refresh 阶段看门狗: 世界侧 wake 准备正常约 15-50 帧完成(conversation_services
+# 逐服务遍历, 最慢路径亦 <300 帧)。若队首条目无限 preparationPending 重排,
+# pump_frame_budgeted 会在 while 里每帧 return 1 而永远执行不到 pump(1),
+# 全部新请求被饿死(断点日志第 5-7 天大会候选恒 11 人无票可计即此形态)。
+# 停留超过此帧数判定卡死: 丢弃该条目并走 continuity fallback, 让世界侧
+# 结算 pending decision, 避免条目永久占住泵头。
+const REFRESH_PREPARATION_STALL_FRAMES := 300
 # 429 限流退避: 实测 tokenrhythm 网关按请求速率限流(5.4/min 全过, 72/min 拒 85%),
 # 且被拒请求不产生调用记录、无 Retry-After 头。立即重发会撞同一限流窗口
 # (438 次 429 ≈ 2×219 轮, 每轮 2 次尝试同窗全灭)。延迟到窗口滑过再重试,
@@ -2289,6 +2296,15 @@ func _queue_agent_preparation(request: Dictionary) -> void:
 	var resident_name := String(request.get("residentName", ""))
 	var wake := request.get("wakePacket", {}) as Dictionary
 	var decision_id := String(wake.get("decision_id", ""))
+	# 看门狗计时起点: 首次入队即开始计帧; 若该 decision 仍在队列中等待
+	# (重复 take 覆盖 _inflight 的场景), 保留已有起点, 否则重排会把计时
+	# 归零, 看门狗永远不触发(卡死条目无限刷新循环饿死全泵)。
+	var existing := _inflight.get(decision_id, {}) as Dictionary
+	var refresh_started_at_frame := (
+		int(existing.get("refreshStartedAtFrame", -1))
+		if _agent_preparation_queue.has(decision_id)
+		else Engine.get_process_frames()
+	)
 	_inflight[decision_id] = {
 		"residentId": resident_id,
 		"residentName": resident_name,
@@ -2298,6 +2314,9 @@ func _queue_agent_preparation(request: Dictionary) -> void:
 		"preparationStage": "refresh",
 		"readyAfterProcessFrame": Engine.get_process_frames() + 1,
 		"startedAtMsec": Time.get_ticks_msec(),
+		# refresh 看门狗计时起点: 世界侧准备首次入队即开始计帧, 重排不重置,
+		# 超过 REFRESH_PREPARATION_STALL_FRAMES 判定卡死(见 _advance_agent_preparation)。
+		"refreshStartedAtFrame": refresh_started_at_frame,
 	}
 	if not _agent_preparation_queue.has(decision_id):
 		if _wake_is_avatar_conversation_turn(wake):
@@ -2346,6 +2365,16 @@ func _advance_agent_preparation() -> bool:
 					"agentPrepareStage_%sUsec" % stage_key,
 					Time.get_ticks_usec() - probe_started_usec,
 				)
+			# refresh 看门狗: 世界侧准备停留超限即判定卡死。否则该条目会
+			# 无限重排回队尾, pump_frame_budgeted 每帧 return 1 永不执行
+			# pump(1), 全部新请求被饿死(断点局第 5-7 天大会候选恒 11 人)。
+			var refresh_elapsed_frames := (
+				Engine.get_process_frames()
+				- int(pending.get("refreshStartedAtFrame", 0))
+			)
+			if refresh_elapsed_frames > REFRESH_PREPARATION_STALL_FRAMES:
+				_abandon_stalled_preparation(decision_id, pending)
+				return true
 			pending["readyAfterProcessFrame"] = Engine.get_process_frames() + 1
 			_inflight[decision_id] = pending
 			_agent_preparation_queue.append(decision_id)
@@ -2371,6 +2400,65 @@ func _advance_agent_preparation() -> bool:
 	_inflight.erase(decision_id)
 	_redispatch(String(pending.get("residentId", "")), decision_id)
 	return true
+
+
+func _abandon_stalled_preparation(
+	decision_id: String,
+	pending: Dictionary,
+) -> void:
+	# refresh 看门狗出口: 世界侧准备卡死超限时调用。清除 Gateway 队列占位,
+	# 记录诊断日志(用户排查"没日志"问题的关键留档), 并提交 continuity
+	# fallback 让世界侧结算这块 pending decision——绝不能 redispatch 回队,
+	# 否则下次入队后再次卡死 300 帧, 无限循环占用泵头饿死全队。
+	var resident_id := String(pending.get("residentId", ""))
+	var resident_name := String(pending.get("residentName", ""))
+	var wake := (pending.get("wakePacket", {}) as Dictionary).duplicate(true)
+	var attempt := int(pending.get("attempt", 0))
+	_inflight.erase(decision_id)
+	TOWN_LOG.line(
+		"AGENT",
+		"准备卡死看门狗 | %s | decision=%s | stall>%d帧, 丢弃并走 continuity fallback" % [
+			resident_name,
+			decision_id,
+			REFRESH_PREPARATION_STALL_FRAMES,
+		],
+	)
+	var fallback_applied := _submit_continuity_fallback(
+		resident_id,
+		resident_name,
+		decision_id,
+		wake,
+		"AGENT_DECISION_PREPARATION_STALLED",
+	)
+	_record_error(
+		resident_id,
+		resident_name,
+		decision_id,
+		"AGENT_DECISION_PREPARATION_STALLED",
+		false,
+		{
+			"error_type": "preparation_stalled",
+			"attempt": attempt,
+			"stallFrameThreshold": REFRESH_PREPARATION_STALL_FRAMES,
+			"recoveredByFallback": fallback_applied,
+			"final": not fallback_applied,
+		},
+	)
+	if not debug_decision_completed.get_connections().is_empty():
+		debug_decision_completed.emit({
+			"residentId": resident_id,
+			"residentName": resident_name,
+			"decisionId": decision_id,
+			"ok": fallback_applied,
+			"ignored": fallback_applied,
+			"recovered": fallback_applied,
+			"wakePacket": wake.duplicate(true),
+			"agentResult": {
+				"ok": false,
+				"errorCode": "AGENT_DECISION_PREPARATION_STALLED",
+				"retryable": false,
+			},
+		})
 
 
 func _refresh_agent_decision_request(request: Dictionary) -> Dictionary:
