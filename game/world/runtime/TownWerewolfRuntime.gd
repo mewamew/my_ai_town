@@ -490,7 +490,7 @@ static func settle_vote_round(world, absolute_minute: int) -> void:
 		"%s · 镇民大会开票" % _label_for_minute(absolute_minute),
 	)
 	var votes := vote.get("votes", {}) as Dictionary
-	# 按得票目标ID计数
+	# 按被投目标聚计: count=得票数, reasons=去重后的投票理由(不公开投票人)。
 	var tally: Dictionary = {}
 	for voter_value: Variant in votes:
 		var ballot := votes[voter_value] as Dictionary
@@ -499,18 +499,27 @@ static func settle_vote_round(world, absolute_minute: int) -> void:
 		).strip_edges()
 		if target_id.is_empty():
 			continue
-		tally[target_id] = int(tally.get(target_id, 0)) + 1
+		var entry := tally.get(target_id, {
+			"count": 0,
+			"reasons": [],
+		}) as Dictionary
+		entry["count"] = int(entry["count"]) + 1
+		var line := String(ballot.get("line", "")).strip_edges()
+		if not line.is_empty() and not (entry["reasons"] as Array).has(line):
+			(entry["reasons"] as Array).append(line)
+		tally[target_id] = entry
 	if tally.is_empty():
 		world.broadcast_announcement(
 			"镇民大会流会：没有人投出有效票，今晚无人被放逐。",
 		)
 		return
+	var detail := _format_vote_tally_detail(world, tally)
 	# 找出唯一最高票(并列最高=平票,无人出局)
 	var top_id := ""
 	var top_count := 0
 	var tie := false
 	for target_id: String in tally:
-		var count := int(tally[target_id])
+		var count := int((tally[target_id] as Dictionary).get("count", 0))
 		if count > top_count:
 			top_count = count
 			top_id = target_id
@@ -519,7 +528,7 @@ static func settle_vote_round(world, absolute_minute: int) -> void:
 			tie = true
 	if tie or top_id.is_empty():
 		world.broadcast_announcement(
-			"镇民大会开票：出现平票，今晚无人被放逐。",
+			_attach_vote_detail("镇民大会开票：出现平票，今晚无人被放逐。", detail),
 		)
 		return
 	var exile_id := top_id
@@ -531,12 +540,52 @@ static func settle_vote_round(world, absolute_minute: int) -> void:
 		summary += "离开时身份曝光——他竟是潜伏在镇上的卧底！"
 	else:
 		summary += "他只是个普通居民，小镇错放了一位无辜者。"
-	world.broadcast_announcement(summary)
+	world.broadcast_announcement(_attach_vote_detail(summary, detail))
 	TOWN_LOG.line(
 		"WEREWOLF",
 		"%s | %s" % [_label_for_minute(absolute_minute), summary],
 	)
 	world.confirm_resident_death(exile_id, EXILE_REASON)
+
+
+# 开票公告附加"票型明细"(每人得票数 + 去重理由,不点名投票人)。
+# 社区公告栏单条长度上限 280, 明细过长时优先保正文、裁掉尾部理由。
+static func _attach_vote_detail(base: String, detail: String) -> String:
+	if detail.is_empty():
+		return base
+	var combined := "%s　票型：%s" % [base, detail]
+	if combined.length() <= 280:
+		return combined
+	var budget := 280 - base.length() - "　票型：".length()
+	if budget <= 0:
+		return base
+	return "%s　票型：%s…" % [base, detail.substr(0, budget - 1)]
+
+
+static func _format_vote_tally_detail(world, tally: Dictionary) -> String:
+	var parts: Array[String] = []
+	var target_ids := tally.keys() as Array
+	target_ids.sort_custom(
+		func(left: String, right: String) -> bool:
+			var left_count := int((tally[left] as Dictionary).get("count", 0))
+			var right_count := int((tally[right] as Dictionary).get("count", 0))
+			if left_count != right_count:
+				return left_count > right_count
+			return left < right
+	)
+	for target_id: String in target_ids:
+		var entry := tally[target_id] as Dictionary
+		var count := int(entry.get("count", 0))
+		var reasons := entry.get("reasons", []) as Array
+		var name: String = world._resident_display_name(target_id)
+		if reasons.is_empty():
+			parts.append("%s %d票" % [name, count])
+		else:
+			var reason_text := "；".join(
+				PackedStringArray(reasons.map(func(r: Variant) -> String: return String(r)))
+			)
+			parts.append("%s %d票（%s）" % [name, count, reason_text])
+	return "；".join(parts)
 
 
 ## 胜负判定(由 confirm_resident_death 末尾调用)。返回 true 表示已出结果。
