@@ -3235,6 +3235,7 @@ func _activate_subdue_action(
 			target_id,
 			resident_id,
 		)
+	var target_is_undercover := false
 	var death_result := confirm_resident_death(
 		target_id,
 		death_reason,
@@ -3261,7 +3262,7 @@ func _activate_subdue_action(
 			],
 		)
 		# 制服额度制：正确制服扣 1 次；错杀平民立即停职并公告。
-		var target_is_undercover := _undercover_resident_ids().has(target_id)
+		target_is_undercover = _undercover_resident_ids().has(target_id)
 		ROLE_SKILL_RUNTIME.record_subdue_result(
 			self,
 			target_id,
@@ -3282,6 +3283,8 @@ func _activate_subdue_action(
 	var feedback := "制服没有得手"
 	if ok:
 		feedback = "已制服%s" % target_name
+		if target_is_undercover:
+			feedback += "，你确认他正是潜伏的卧底"
 		if witnesses.is_empty():
 			feedback += "，顺利带走，无人察觉"
 		else:
