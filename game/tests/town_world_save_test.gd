@@ -11,6 +11,10 @@ extends "res://tests/support/TownWorldTestCase.gd"
 ## 世界构建、唤醒取用、决定构造与断言收尾统一由 TownWorldTestCase 提供。
 
 const SAVE_CODEC := preload("res://world/runtime/persistence/TownWorldSaveCodec.gd")
+const WORLD_LOG_STORE := preload("res://world/runtime/log/TownWorldLogStore.gd")
+const SESSION_MANIFEST := preload(
+	"res://world/presentation/session/TownSessionSaveManifest.gd"
+)
 const FORMAL_OPENING := preload("res://tests/support/TownWorldFormalOpeningTestHelper.gd")
 
 ## 往返等价的允许变化字段清单（state 内的斜杠路径；* 匹配单层任意键）。
@@ -33,11 +37,77 @@ func _initialize() -> void:
 	_scenario_restore_corruption()
 	_scenario_activity_save_roundtrip()
 	_scenario_save_participant()
+	_scenario_bounded_log_timeline_branch()
 	_finish_suite("TOWN_WORLD_SAVE_PASS")
 
 
 func _on_world_restored(summary: Dictionary) -> void:
 	_restore_events.append(summary.duplicate(true))
+
+
+func _scenario_bounded_log_timeline_branch() -> void:
+	var parent_timeline := "p".repeat(128)
+	var log_store: RefCounted = WORLD_LOG_STORE.new()
+	var restored := log_store.call("restore_save_snapshot", {
+		"schema": "town-world-log-snapshot",
+		"schemaVersion": 1,
+		"timelineId": parent_timeline,
+		"parentTimelineId": "",
+		"maxSequence": 157,
+		"worldRevision": 1965,
+		"records": [],
+		"readState": {},
+	}) as Dictionary
+	_expect_equal(
+		restored.get("ok"),
+		true,
+		"超长世界日志时间线仍可恢复",
+	)
+	var timeline_id := String(log_store.call("get_timeline_id"))
+	_expect(
+		timeline_id.length() <= 128,
+		"恢复后的世界日志时间线保持在存档清单安全边界内",
+	)
+	_expect(
+		timeline_id != "%s-branch-158" % parent_timeline,
+		"超长分支不再继续拼接完整父时间线",
+	)
+	var context := {
+		"slot_id": "timeline-slot",
+		"session_id": "timeline-session",
+		"save_revision": 1,
+	}
+	var revision_root := "slots/timeline-slot/sessions/timeline-session/revisions/00000000000000000001"
+	var manifest := SESSION_MANIFEST.build(
+		context,
+		"2026-08-26T19:15:19",
+		"%s/session_config.json" % revision_root,
+		"a".repeat(64),
+		["resident_a"],
+		{
+			"snapshotRef": "%s/world_snapshot.json" % revision_root,
+			"worldRevision": 1966,
+			"schema": "town-world-save",
+			"schemaVersion": 2,
+			"worldDataVersion": 4,
+			"day": 1,
+		},
+		"b".repeat(64),
+		[],
+		{
+			"snapshotRef": "%s/world_log_snapshot.json" % revision_root,
+			"snapshotSha256": "c".repeat(64),
+			"schema": "town-world-log-snapshot",
+			"schemaVersion": 1,
+			"timelineId": timeline_id,
+			"maxSequence": 157,
+			"worldRevision": 1966,
+		},
+	) as Dictionary
+	_expect(
+		not manifest.is_empty(),
+		"超长恢复分支仍能生成完整存档清单",
+	)
 
 
 # —— 场景一：存档与恢复保真 ——

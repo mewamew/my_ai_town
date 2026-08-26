@@ -17,6 +17,10 @@ const PRESENTATION := preload(
 const SCHEMA := "town-world-log-snapshot"
 const SCHEMA_VERSION := 1
 const DEFAULT_TIMELINE_ID := "world-log-timeline-1"
+# 会写入 session manifest 的 timelineId 必须保持在安全标识符边界内。
+# 恢复分支仍保留完整 parentTimelineId 作为证据，但子时间线不能无限拼接
+# `-branch-数字`，否则多次恢复后会让 manifest 无法发布。
+const MAX_TIMELINE_ID_LENGTH := 128
 # 聚集线程判定为"热闹"的最小到场人数(与表现层影子引擎 isHot 阈值一致)。
 const GATHERING_HOT_PARTICIPANT_COUNT := 3
 
@@ -699,10 +703,10 @@ func restore_save_snapshot(
 			restored_read_through[thread_id] = next_sequence
 	var parent := String(snapshot.get("timelineId", DEFAULT_TIMELINE_ID))
 	_parent_timeline_id = parent
-	_timeline_id = "%s-branch-%d" % [
+	_timeline_id = _branch_timeline_id(
 		parent,
 		int(snapshot.get("maxSequence", restored_records.size())) + 1,
-	]
+	)
 	_sequence = restored_records.size()
 	_records = restored_records
 	_log_item_ids = restored_ids
@@ -718,6 +722,18 @@ func restore_save_snapshot(
 		"parentTimelineId": _parent_timeline_id,
 		"recordCount": _records.size(),
 	}
+
+
+func _branch_timeline_id(parent: String, branch_sequence: int) -> String:
+	var expanded := "%s-branch-%d" % [parent, branch_sequence]
+	if expanded.length() <= MAX_TIMELINE_ID_LENGTH:
+		return expanded
+	# 保留 parentTimelineId 原文用于追溯；新的活动时间线用完整摘要建立
+	# 稳定且有界的身份，避免恢复次数继续增长导致存档清单无法发布。
+	return "world-log-branch-%s-%d" % [
+		parent.sha256_text(),
+		branch_sequence,
+	]
 
 
 func migrate_legacy_world_state(state: Dictionary) -> Dictionary:
