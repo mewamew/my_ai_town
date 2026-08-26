@@ -444,12 +444,12 @@ static func available_activities(
 ## 警察侦查装备上下文：仅警察注入（余量 + 可侦查目标名单=在世居民ID + 装置状态）。
 static func _police_intel_context(host, resident_name: String) -> Dictionary:
 	var is_police := bool(host._resident_is_police(resident_name))
-	TOWN_LOG.line(
-		"WEREWOLF",
-		"police-intel check: resident=%s is_police=%s" % [
-			resident_name, is_police,
-		],
-	)
+	# 诊断日志只对警察打印(每轮 1 行), 非警察的 false 行纯噪音刷屏。
+	if is_police:
+		TOWN_LOG.line(
+			"WEREWOLF",
+			"police-intel check: resident=%s is_police=true" % [resident_name],
+		)
 	if not is_police:
 		return {}
 	var targets: Array[String] = []

@@ -874,9 +874,13 @@ func _begin_world_run() -> void:
 	_connect_work_task_log_source()
 	_connect_production_task_schedule_source()
 	OCCUPATION_RESIDENT_CONTEXT_RUNTIME.sync_staffing_matters(self)
-	# 性能诊断: AI_TOWN_ADVANCE_PROFILE=1 开启 advance 分步计时(慢 tick
+	# 性能诊断: AI_TOWN_ADVANCE_PROFILE 开启 advance 分步计时(慢 tick
 	# 自动打印, 见 TownWorldTelemetryRuntime.finish_advance_profile)。
-	if OS.get_environment("AI_TOWN_ADVANCE_PROFILE") == "1":
+	# 兼容 "1"/"true"/"yes" 等常见写法, 避免设成 True 却看不到记录。
+	var advance_profile_flag := OS.get_environment(
+		"AI_TOWN_ADVANCE_PROFILE",
+	).strip_edges().to_lower()
+	if advance_profile_flag in ["1", "true", "yes", "on"]:
 		telemetry.set_advance_profile_enabled(true)
 
 func _announce_world_lifecycle(speed_was_reset: bool) -> Dictionary:

@@ -424,7 +424,15 @@ func _persist_role_archive(
 	DirAccess.make_dir_recursive_absolute(root)
 	var game_time := ""
 	var snapshot := wake_packet.get("snapshot", {}) as Dictionary
-	if snapshot.has("clock"):
+	# 真实 wake 的 snapshot 时间在 "time" 键内({day, clock}),
+	# 旧实现查顶层 "clock" 永远为空 → game_time 恒为 ""。
+	# 兼容两种形态: 优先 time.day+clock, 回退顶层 clock 字符串。
+	var time_snapshot := snapshot.get("time", {}) as Dictionary
+	var time_day := int(time_snapshot.get("day", 0))
+	var time_clock := String(time_snapshot.get("clock", "")).strip_edges()
+	if time_day > 0 or not time_clock.is_empty():
+		game_time = "第%d天 %s" % [time_day, time_clock]
+	elif snapshot.has("clock"):
 		game_time = JSON.stringify(snapshot.get("clock"))
 	var now := Time.get_unix_time_from_system()
 	var dt := Time.get_datetime_dict_from_unix_time(now)
