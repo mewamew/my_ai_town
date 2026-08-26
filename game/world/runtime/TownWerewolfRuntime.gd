@@ -131,6 +131,9 @@ static func install_police_device(
 		"installedBy": installed_by,
 		"installedMinute": minute,
 		"expireMinute": minute + POLICE_DEVICE_DURATION_MINUTES,
+		# 追踪档案: 装置监听期间收集的情报(对话/行踪/重大行动)。
+		# 装新目标覆盖旧装置时随之重置; 过期后仍保留直到被覆盖。
+		"log": [],
 	}
 	world._werewolf_state["policeDevices"] = devices
 
@@ -147,6 +150,36 @@ static func police_device_active(
 		String(device.get("targetId", "")) == target_id
 		and int(device.get("expireMinute", -1)) > minute
 	)
+
+
+## 追踪装置档案: 已记录的情报列表(含过期记录, 直到装新目标覆盖)。
+## 一条 = {minute: 记录时刻(绝对分钟), text: 情报文本}。
+static func police_tracker_log(world) -> Array:
+	var device := police_device_state(world, POLICE_DEVICE_TRACKER)
+	return (device.get("log", []) as Array).duplicate()
+
+
+## 把一条情报记入追踪档案。仅当装置正在监听该目标(未过期)时才记录,
+## 返回是否已记入。对话/行踪/重大行动三个情报钩子共用; 不再实时投递
+## 事件给警察, 警察只能去镇公所查案阅读档案。
+static func append_police_tracker_log(
+	world,
+	target_id: String,
+	minute: int,
+	text: String,
+) -> bool:
+	if not police_device_active(world, POLICE_DEVICE_TRACKER, target_id, minute):
+		return false
+	var devices := world._werewolf_state.get("policeDevices", {}) as Dictionary
+	var device := devices.get(POLICE_DEVICE_TRACKER, {}) as Dictionary
+	if device.is_empty():
+		return false
+	var log := device.get("log", []) as Array
+	log.append({"minute": minute, "text": text})
+	device["log"] = log
+	devices[POLICE_DEVICE_TRACKER] = device
+	world._werewolf_state["policeDevices"] = devices
+	return true
 
 
 ## 世界每分钟推进入口(与 check_deadline 同链)。

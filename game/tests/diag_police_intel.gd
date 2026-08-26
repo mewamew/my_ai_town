@@ -2,13 +2,15 @@ extends "res://tests/support/TownWorldTestCase.gd"
 ## diag_police_intel.gd — 警察追踪装置(原窃听器+定位器合并)持续监听验证:
 ## 1) 安装必须靠近目标(感知范围内, 同暗杀判定): 距离太远被拒
 ## 2) 靠近后安装成功, 扣次数, 装置状态写入 werewolfState
-## 3) 对话钩子: 被追踪目标参与的对话(turn)实时上报, 未追踪目标不报
-## 4) 行踪钩子: 被追踪目标"去"动作准备时上报目的地
-## 5) 重大行动钩子: 被追踪目标深夜对别人动手(暗杀等)实时上报, 带目击者线索
-## 6) 追踪 1 天后过期, 钩子不再上报; 装新目标覆盖旧的; 次数用完拒绝
+## 3) 对话钩子: 被追踪目标参与的对话(turn)记入追踪档案, 未追踪目标不记
+## 4) 行踪钩子: 被追踪目标"去"动作准备时记入目的地
+## 5) 重大行动钩子: 被追踪目标深夜对别人动手(暗杀等)记入, 带目击者线索
+## 6) 警察在镇公所查案一次读到全部追踪档案, 每条带"第几天"时间标注
+## 7) 追踪 1 天后过期, 钩子不再记入, 但已记档案保留(直到装新目标覆盖)
+## 8) 装新目标覆盖旧的(档案重置); 次数用完拒绝
 ## 运行: Godot --headless --path game --script res://tests/diag_police_intel.gd
 
-const WEREWOLF := preload("res://world/runtime/TownWerewolfRuntime.gd")
+const WEREWOLF_RUNTIME := preload("res://world/runtime/TownWerewolfRuntime.gd")
 const POLICE_ID := "resident_wen_xu_01"
 const TARGET_ID := "resident_lin_lan_01"
 const PARTNER_ID := "resident_tang_xiaoman_01"
@@ -99,42 +101,104 @@ func _verify_police_intel() -> void:
 		2,
 		"追踪后余量 2",
 	)
-	# 3) 对话钩子: 林岚(被追踪)参与对话 → 上报; 唐小满(未追踪) → 不上报
+	# 3) 对话钩子: 林岚(被追踪)说的话 → 记入档案; 唐小满(未追踪) → 不记
 	var env: Object = world.get("_environment")
 	var minute := int(env.call("get_absolute_minute"))
 	var hit := world.call(
 		"_record_police_eavesdrop_turn",
-		"林岚", "唐小满", "我看到有人深夜在镇公所附近徘徊", "中心广场",
+		"林岚", "林岚", "我看到有人深夜在镇公所附近徘徊", "中心广场",
 	) as bool
-	_expect_equal(hit, true, "被追踪目标的对话被实时上报")
+	_expect_equal(hit, true, "被追踪目标的对话记入追踪档案")
 	var miss := world.call(
 		"_record_police_eavesdrop_turn",
 		"唐小满", "林岚", "昨晚你看到什么了吗", "中心广场",
 	) as bool
-	_expect_equal(miss, false, "未追踪目标的对话不上报")
-	# 4) 行踪钩子: 林岚(被追踪)"去"目的地 → 上报; 唐小满 → 不上报
+	_expect_equal(miss, false, "未追踪目标的对话不记入")
+	var log := WEREWOLF_RUNTIME.police_tracker_log(world)
+	_expect_equal(log.size(), 1, "对话钩子记入 1 条档案")
+	_expect(
+		String((log[0] as Dictionary).get("text", "")).contains(
+			"对话（中心广场）：林岚：「我看到有人深夜在镇公所附近徘徊」"
+		),
+		"档案第 1 条为对话情报(地点/说话人/原话)",
+	)
+	# 4) 行踪钩子: 林岚(被追踪)"去"目的地 → 记入; 唐小满 → 不记
 	var visit := world.call(
 		"_record_police_tracker_visit",
 		TARGET_ID, "镇公所", minute,
 	) as bool
-	_expect_equal(visit, true, "被追踪目标的目的地被上报")
+	_expect_equal(visit, true, "被追踪目标的目的地记入档案")
 	var visit_miss := world.call(
 		"_record_police_tracker_visit",
 		PARTNER_ID, "镇公所", minute,
 	) as bool
-	_expect_equal(visit_miss, false, "未被追踪的目标不上报行踪")
-	# 5) 重大行动钩子: 林岚(被追踪)深夜暗杀 → 上报(带目击者线索); 唐小满 → 不上报
+	_expect_equal(visit_miss, false, "未被追踪的目标行踪不记入")
+	log = WEREWOLF_RUNTIME.police_tracker_log(world)
+	_expect_equal(log.size(), 2, "行踪钩子追加后档案 2 条")
+	_expect_equal(
+		String((log[1] as Dictionary).get("text", "")),
+		"准备前往 镇公所",
+		"档案第 2 条为行踪情报(目的地)",
+	)
+	# 5) 重大行动钩子: 林岚(被追踪)深夜暗杀 → 记入(带目击者线索); 唐小满 → 不记
 	var action_hit := world.call(
 		"_record_police_device_action_intel",
 		TARGET_ID, "暗杀", "深夜对 唐小满 动手", [PARTNER_ID],
 	) as bool
-	_expect_equal(action_hit, true, "被追踪目标的重大行动被实时上报")
+	_expect_equal(action_hit, true, "被追踪目标的重大行动记入档案")
 	var action_miss := world.call(
 		"_record_police_device_action_intel",
 		PARTNER_ID, "暗杀", "深夜对 林岚 动手", [TARGET_ID],
 	) as bool
-	_expect_equal(action_miss, false, "未被追踪的目标不上报重大行动")
-	# 6) 追踪 1 天后过期 → 三类钩子都不再上报
+	_expect_equal(action_miss, false, "未被追踪的目标重大行动不记入")
+	log = WEREWOLF_RUNTIME.police_tracker_log(world)
+	_expect_equal(log.size(), 3, "重大行动钩子追加后档案 3 条")
+	_expect(
+		String((log[2] as Dictionary).get("text", "")).contains("深夜对 唐小满 动手（暗杀）"),
+		"档案第 3 条为重大行动情报",
+	)
+	_expect(
+		String((log[2] as Dictionary).get("text", "")).contains("据说唐小满当时在附近，可找他们问话"),
+		"重大行动情报带目击者线索",
+	)
+	# 6) 镇公所查案 → 一次读到全部追踪档案, 每条带"第几天"时间标注
+	_set_town_hall(residents, POLICE_ID)
+	police = residents[POLICE_ID] as Dictionary
+	var archive := world.call(
+		"_activate_police_investigate_action",
+		POLICE_ID,
+		police,
+		{"action_id": "intel-4", "type": "查案", "line": "把追踪档案调出来看看"},
+	) as Dictionary
+	_expect_equal(bool(archive.get("ok", false)), true, "镇公所查案成功")
+	var archive_summary := String(archive.get("summary", ""))
+	_expect(
+		archive_summary.contains("追踪装置档案"),
+		"查案文案含追踪装置档案段落",
+	)
+	_expect(
+		archive_summary.contains("对话（中心广场）：林岚"),
+		"查案档案含对话情报",
+	)
+	_expect(
+		archive_summary.contains("准备前往 镇公所"),
+		"查案档案含行踪情报",
+	)
+	_expect(
+		archive_summary.contains("深夜对 唐小满 动手（暗杀）"),
+		"查案档案含重大行动情报",
+	)
+	var record_minute := int((log[0] as Dictionary).get("minute", -1))
+	var archive_label := "第%d天 %02d:%02d" % [
+		record_minute / 1440 + 1,
+		posmod(record_minute, 1440) / 60,
+		posmod(record_minute, 1440) % 60,
+	]
+	_expect(
+		archive_summary.contains(archive_label),
+		"查案档案每条带游戏时间标注(%s)" % archive_label,
+	)
+	# 7) 追踪 1 天后过期 → 三类钩子都不再记入
 	_advance_minutes(world, 1441)
 	env = world.get("_environment")
 	minute = int(env.call("get_absolute_minute"))
@@ -142,18 +206,20 @@ func _verify_police_intel() -> void:
 		"_record_police_eavesdrop_turn",
 		"林岚", "唐小满", "过期后的话", "中心广场",
 	) as bool
-	_expect_equal(expired, false, "追踪 1 天后过期, 对话不再上报")
+	_expect_equal(expired, false, "追踪 1 天后过期, 对话不再记入")
 	var expired_visit := world.call(
 		"_record_police_tracker_visit",
 		TARGET_ID, "镇公所", minute,
 	) as bool
-	_expect_equal(expired_visit, false, "追踪 1 天后过期, 行踪不再上报")
+	_expect_equal(expired_visit, false, "追踪 1 天后过期, 行踪不再记入")
 	var expired_action := world.call(
 		"_record_police_device_action_intel",
 		TARGET_ID, "暗杀", "深夜对 唐小满 动手", [PARTNER_ID],
 	) as bool
-	_expect_equal(expired_action, false, "追踪 1 天后过期, 重大行动不再上报")
-	# 7) 装新目标覆盖旧的
+	_expect_equal(expired_action, false, "追踪 1 天后过期, 重大行动不再记入")
+	log = WEREWOLF_RUNTIME.police_tracker_log(world)
+	_expect_equal(log.size(), 3, "过期后已记档案仍保留 3 条")
+	# 8) 装新目标覆盖旧的(档案重置)
 	_place(residents, PARTNER_ID, Vector2(110, 100))  # 靠近警察
 	world.call(
 		"_activate_police_tracker_action",
@@ -172,7 +238,9 @@ func _verify_police_intel() -> void:
 		1,
 		"覆盖后余量 1",
 	)
-	# 8) 最后 1 次用掉后, 次数用完拒绝
+	log = WEREWOLF_RUNTIME.police_tracker_log(world)
+	_expect_equal(log.size(), 0, "装新目标后追踪档案重置为空")
+	# 8) 续: 最后 1 次用掉后, 次数用完拒绝
 	_place(residents, TARGET_ID, Vector2(115, 100))  # 靠近警察
 	world.call(
 		"_activate_police_tracker_action",
@@ -205,6 +273,15 @@ func _place(residents: Dictionary, resident_id: String, pos: Vector2) -> void:
 	(r as Dictionary)["currentPlace"] = "中心广场"
 	(r as Dictionary)["position"] = pos
 	(r as Dictionary)["currentAction"] = {}
+
+
+## 把警察放进镇公所(currentPlace 判定, 范式同 diag_police_investigate_action.gd)
+func _set_town_hall(residents: Dictionary, resident_id: String) -> void:
+	var r: Variant = residents.get(resident_id)
+	if not r is Dictionary:
+		_expect(false, "%s 存在" % resident_id)
+		return
+	(r as Dictionary)["currentPlace"] = "镇公所"
 
 
 func _advance_minutes(world: RefCounted, delta: int) -> void:
