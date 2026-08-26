@@ -30,10 +30,7 @@ const REQUIRED_PROVIDER_SERVICE_METHODS: Array[String] = [
 # Fifteen residents sharing two slots can leave most of the town visibly idle
 # for several model round trips after a synchronized action boundary. Keep the
 # burst bounded, but give a normal town enough lanes to keep living.
-# 限流参数可编辑: 默认值见下, 可在 user://config/throttle.json 覆盖
-# (键 max_concurrent_model_requests), 或设环境变量 AI_TOWN_THROTTLE_CONFIG
-# 指向自定义 JSON 文件; --script 测试模式跳过配置, 保持默认值。
-static var MAX_CONCURRENT_MODEL_REQUESTS := 3
+const MAX_CONCURRENT_MODEL_REQUESTS := 6
 const RESERVED_AVATAR_CONVERSATION_REQUEST_SLOTS := 1
 # 本地推理通常由一张显卡或一颗 CPU 串行处理。允许两个普通居民继续推进，
 # 再给玩家对话留一个独立位置；其余请求保留在 World 待处理队列中，
@@ -49,30 +46,6 @@ const MAX_DECISION_ATTEMPTS := 2
 # 停留超过此帧数判定卡死: 丢弃该条目并走 continuity fallback, 让世界侧
 # 结算 pending decision, 避免条目永久占住泵头。
 const REFRESH_PREPARATION_STALL_FRAMES := 300
-# 429 限流退避: 实测 tokenrhythm 网关按请求速率限流(5.4/min 全过, 72/min 拒 85%),
-# 且被拒请求不产生调用记录、无 Retry-After 头。立即重发会撞同一限流窗口
-# (438 次 429 ≈ 2×219 轮, 每轮 2 次尝试同窗全灭)。延迟到窗口滑过再重试,
-# 退避期间整体请求率自然回落。attempt 1 -> 2s, attempt 2 -> 4s。
-# 可编辑: throttle.json 键 rate_limit_retry_delay_seconds / rate_limit_retry_delay_max_seconds。
-static var RATE_LIMIT_RETRY_DELAY_SECONDS := 2.0
-static var RATE_LIMIT_RETRY_DELAY_MAX_SECONDS := 4.0
-# 智能节流(方案 A): 平台按请求速率限流, 实测令牌桶容量 4-6、补充 ~1/s(60/min),
-# 429 不产生调用记录、无 Retry-After 头, 脉冲批量重试会整批撞窗口。
-# 平时按 DISPATCH_RATE_PER_SECOND 补充预算; 实测 0.8/s 恰好顶在平台上限
-# (090835 局 214 次 429, 40s 好窗+8-15s 坏窗周期), 0.5/s 给平台留 37% 余量,
-# 真实需求仅 ~0.28/s(16.6/min)。012220 局 0.5/s 零限流后放宽到 0.65/s
-# (较 0.5 提高 30%, 离 0.8 撞墙点仍留 19% 余量), 30/min 预算仍有富余。
-# 命中 429 后进入节流态 RATE_LIMIT_THROTTLE_DURATION_MS, 期间按节流速率补充。
-# 预算不足的普通居民请求进 overflow 还回 world pending, 下帧补充后重取——
-# 请求不丢, 只是排队。玩家对话请求绕过预算, 保证即时响应。
-# 以上限流参数均可编辑: 默认值见下, 可在 user://config/throttle.json 覆盖
-# (键 dispatch_rate_per_second / throttled_dispatch_rate_per_second /
-# rate_limit_throttle_duration_ms / max_dispatch_budget), 或设环境变量
-# AI_TOWN_THROTTLE_CONFIG 指向自定义 JSON 文件; --script 测试模式跳过配置。
-static var DISPATCH_RATE_PER_SECOND := 0.65
-static var THROTTLED_DISPATCH_RATE_PER_SECOND := 0.5
-static var RATE_LIMIT_THROTTLE_DURATION_MS := 30000
-static var MAX_DISPATCH_BUDGET := 4.0
 # 角色请求留档: 警察 + 3 卧底的全部模型请求(提示词 + 输出 JSON)成对写盘,
 # 便于复盘这些关键角色到底收到了什么、做了什么决策。落点在 DecisionExecution,
 # 由 configure_session 装配到 AgentSystem; 路径可用环境变量
@@ -166,85 +139,9 @@ var _request_metrics: Dictionary = {
 	"providerComplete": 0,
 }
 var _background_departure_probe_id := 0
-var _throttle_until_ms := 0
-var _dispatch_budget := MAX_DISPATCH_BUDGET
-var _last_budget_refill_ms := 0
 var _background_departure_operation_id := ""
 var _background_departure_pending := false
 var _background_departure_messages: Array[Dictionary] = []
-
-
-# ===== 限流参数可编辑化 =====
-# 覆盖优先级: 环境变量 AI_TOWN_THROTTLE_CONFIG 指定的 JSON 文件 > 默认
-# user://config/throttle.json > 内置默认值(上方 static var)。--script 测试
-# 模式一律跳过(不读环境变量、不读文件), 保证测试进程用默认值、互不污染。
-# 配置文件 JSON 键:
-#   max_concurrent_model_requests          (int, 并发模型请求槽位)
-#   rate_limit_retry_delay_seconds         (float, 429 退避基础延迟)
-#   rate_limit_retry_delay_max_seconds     (float, 429 退避延迟上限)
-#   dispatch_rate_per_second               (float, 正常节流预算补充速率)
-#   throttled_dispatch_rate_per_second     (float, 命中 429 后节流态补充速率)
-#   rate_limit_throttle_duration_ms        (int, 命中 429 后节流态持续毫秒)
-#   max_dispatch_budget                    (float, 节流预算上限)
-const THROTTLE_CONFIG_KEYS: Array[String] = [
-	"max_concurrent_model_requests",
-	"rate_limit_retry_delay_seconds",
-	"rate_limit_retry_delay_max_seconds",
-	"dispatch_rate_per_second",
-	"throttled_dispatch_rate_per_second",
-	"rate_limit_throttle_duration_ms",
-	"max_dispatch_budget",
-]
-
-
-func _init() -> void:
-	var overrides := TownWorldAgentGateway._load_throttle_overrides()
-	_apply_throttle_overrides(overrides)
-	# 实例初始化器(_dispatch_budget := MAX_DISPATCH_BUDGET)在 _init 前运行,
-	# 配置覆盖 static var 后必须重赋, 否则首个实例预算仍是旧默认值。
-	_dispatch_budget = MAX_DISPATCH_BUDGET
-	_last_budget_refill_ms = 0
-	_throttle_until_ms = 0
-
-
-static func _load_throttle_overrides() -> Dictionary:
-	var overrides: Dictionary = {}
-	if "--script" in OS.get_cmdline_args():
-		return overrides
-	var config_path := String(OS.get_environment("AI_TOWN_THROTTLE_CONFIG")).strip_edges()
-	if config_path.is_empty():
-		config_path = ProjectSettings.globalize_path("user://config/throttle.json")
-	if not FileAccess.file_exists(config_path):
-		return overrides
-	var text := FileAccess.get_file_as_string(config_path)
-	var parsed: Variant = JSON.parse_string(text)
-	if parsed is Dictionary:
-		var config := parsed as Dictionary
-		for key in THROTTLE_CONFIG_KEYS:
-			if config.has(key):
-				overrides[key] = config[key]
-	else:
-		push_warning("[THROTTLE] 限流配置文件解析失败, 使用内置默认值: %s" % config_path)
-	return overrides
-
-
-func _apply_throttle_overrides(overrides: Dictionary) -> void:
-	if overrides.is_empty():
-		return
-	if overrides.has("max_concurrent_model_requests"):
-		MAX_CONCURRENT_MODEL_REQUESTS = int(overrides["max_concurrent_model_requests"])
-	if overrides.has("rate_limit_retry_delay_seconds"):
-		RATE_LIMIT_RETRY_DELAY_SECONDS = float(overrides["rate_limit_retry_delay_seconds"])
-	if overrides.has("rate_limit_retry_delay_max_seconds"):
-		RATE_LIMIT_RETRY_DELAY_MAX_SECONDS = float(overrides["rate_limit_retry_delay_max_seconds"])
-	if overrides.has("dispatch_rate_per_second"):
-		DISPATCH_RATE_PER_SECOND = float(overrides["dispatch_rate_per_second"])
-	if overrides.has("throttled_dispatch_rate_per_second"):
-		THROTTLED_DISPATCH_RATE_PER_SECOND = float(overrides["throttled_dispatch_rate_per_second"])
-	if overrides.has("rate_limit_throttle_duration_ms"):
-		RATE_LIMIT_THROTTLE_DURATION_MS = int(overrides["rate_limit_throttle_duration_ms"])
-	if overrides.has("max_dispatch_budget"):
-		MAX_DISPATCH_BUDGET = float(overrides["max_dispatch_budget"])
 
 
 func _ready() -> void:
@@ -836,23 +733,6 @@ func _probe_record_lap(key: String, lap_started_usec: int) -> int:
 	return now_usec
 
 
-func _refill_dispatch_budget(now_ms: int) -> void:
-	if _last_budget_refill_ms == 0:
-		_last_budget_refill_ms = now_ms
-		return
-	var rate := (
-		THROTTLED_DISPATCH_RATE_PER_SECOND
-		if now_ms < _throttle_until_ms
-		else DISPATCH_RATE_PER_SECOND
-	)
-	var elapsed_seconds := float(now_ms - _last_budget_refill_ms) / 1000.0
-	_dispatch_budget = minf(
-		MAX_DISPATCH_BUDGET,
-		_dispatch_budget + elapsed_seconds * rate,
-	)
-	_last_budget_refill_ms = now_ms
-
-
 func _select_dispatchable_requests(
 	requests: Array[Dictionary],
 	max_requests: int,
@@ -861,8 +741,6 @@ func _select_dispatchable_requests(
 ) -> Dictionary:
 	var selected: Array[Dictionary] = []
 	var overflow: Array[Dictionary] = []
-	if is_inside_tree():
-		_refill_dispatch_budget(Time.get_ticks_msec())
 	# 容量投影只需要在途 decision_id 集合，不需要复制 wake packet 本体。
 	var projected := {}
 	for inflight_decision_id: Variant in _inflight:
@@ -905,16 +783,6 @@ func _select_dispatchable_requests(
 		)
 		var request_is_vote := _wake_is_vote_request(wake_packet)
 		var request_is_ordinary := not request_is_avatar and not request_is_vote
-		# 智能节流: 预算不足的普通居民请求进 overflow, 由 pump 还回 world
-		# pending, 下帧补充预算后再取回——天然限速且不丢请求。
-		# 玩家对话与投票请求绕过预算(必须即时响应); 测试环境不在场景树内, 不节流。
-		if (
-			is_inside_tree()
-			and request_is_ordinary
-			and _dispatch_budget < 1.0
-		):
-			overflow.append(request)
-			continue
 		var next_ordinary_count := (
 			projected_ordinary_count
 			+ (1 if request_is_ordinary else 0)
@@ -954,8 +822,6 @@ func _select_dispatchable_requests(
 		projected_local_count = next_local_count
 		projected_local_ordinary_count = next_local_ordinary_count
 		selected.append(request)
-		if is_inside_tree() and request_is_ordinary:
-			_dispatch_budget -= 1.0
 	return {
 		"selected": selected,
 		"overflow": overflow,
@@ -2701,14 +2567,7 @@ func _on_agent_result(
 				),
 				String(diagnostic.get("error_type", "")),
 			)
-			if error_type == "rate_limit":
-				_schedule_rate_limit_redispatch(
-					resident_id,
-					decision_id,
-					attempt,
-				)
-			else:
-				_redispatch(resident_id, decision_id)
+			_redispatch(resident_id, decision_id)
 		else:
 			fallback_applied = _submit_continuity_fallback(
 				resident_id,
@@ -3449,52 +3308,6 @@ func _redispatch(resident_id: String, decision_id: String) -> void:
 	if _world == null or resident_id.is_empty() or decision_id.is_empty():
 		return
 	_world.redispatch_decision_request_by_id(resident_id, decision_id)
-
-
-func _schedule_rate_limit_redispatch(
-	resident_id: String,
-	decision_id: String,
-	attempt: int,
-) -> void:
-	if _world == null or resident_id.is_empty() or decision_id.is_empty():
-		return
-	if not is_inside_tree():
-		# 测试环境 gateway 不在场景树内, create_timer 不可用, 退化为立即重发。
-		_redispatch(resident_id, decision_id)
-		return
-	# 命中 429: 进入节流态, 预算压到节流速率, 避免脉冲重试再撞同一限流窗口。
-	_throttle_until_ms = Time.get_ticks_msec() + RATE_LIMIT_THROTTLE_DURATION_MS
-	_dispatch_budget = minf(
-		_dispatch_budget,
-		THROTTLED_DISPATCH_RATE_PER_SECOND,
-	)
-	var delay := minf(
-		RATE_LIMIT_RETRY_DELAY_SECONDS * attempt,
-		RATE_LIMIT_RETRY_DELAY_MAX_SECONDS,
-	)
-	# 退避期间居民可能已被其它路径处理(新 decision/fallback/stale),
-	# redispatch 在 world 侧校验 decisionPending + validDecisionId, 幂等安全。
-	get_tree().create_timer(
-		delay,
-		false,
-		false,
-		true,
-	).timeout.connect(
-		_on_rate_limit_redispatch_timeout.bind(
-			resident_id,
-			decision_id,
-		),
-		CONNECT_ONE_SHOT,
-	)
-
-
-func _on_rate_limit_redispatch_timeout(
-	resident_id: String,
-	decision_id: String,
-) -> void:
-	if not _session_active or _world == null:
-		return
-	_redispatch(resident_id, decision_id)
 
 
 func _cancel_resident_model_request(resident_id: String, request_id: String) -> bool:
