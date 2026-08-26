@@ -527,7 +527,16 @@ func _handle_transport_result(
 		_complete_failure(on_complete, ["模型回答的 choice 不是对象"], diagnostics)
 		return
 	var choice_data := choice as Dictionary
-	diagnostics["finish_reason"] = String(choice_data.get("finish_reason", ""))
+	# 302-ai 等网关有时把 finish_reason 返回成 custom 对象(嵌套 Dictionary/Array)
+	# 而非字符串；String(custom) 会抛 "Invalid call 'String' constructor" 运行时
+	# 错误中断本回调, 导致 on_complete 永不调用而该 decision 永久悬挂(曾经
+	# 05:41:40 两次 SCRIPT ERROR 饿死整条 Agent 派发链)。此处类型安全提取。
+	var finish_reason_value: Variant = choice_data.get("finish_reason", "")
+	diagnostics["finish_reason"] = (
+		String(finish_reason_value)
+		if typeof(finish_reason_value) in [TYPE_STRING, TYPE_STRING_NAME]
+		else ""
+	)
 	if diagnostics["finish_reason"] == "length":
 		diagnostics["error_type"] = "output_truncated"
 		_complete_failure(on_complete, ["模型回答因达到输出上限而被截断"], diagnostics)
