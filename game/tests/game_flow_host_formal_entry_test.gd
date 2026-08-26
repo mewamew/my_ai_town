@@ -510,11 +510,7 @@ func _run() -> void:
 	)
 
 	assignment.call("_open_completion_modal")
-	var modal_start := assignment.find_child(
-		"ModalStartButton",
-		true,
-		false,
-	) as Button
+	var modal_start := _visible_completion_start(assignment)
 	_expect(
 		modal_start != null and modal_start.visible and not modal_start.disabled,
 		"completion modal exposes Start Game",
@@ -570,11 +566,7 @@ func _run() -> void:
 	)
 
 	assignment.call("_open_completion_modal")
-	modal_start = assignment.find_child(
-		"ModalStartButton",
-		true,
-		false,
-	) as Button
+	modal_start = _visible_completion_start(assignment)
 	_expect(
 		modal_start != null and modal_start.visible and not modal_start.disabled,
 		"compensated failure can retry from the same formal page",
@@ -1064,6 +1056,14 @@ func _backup_contains_old_pair() -> bool:
 		):
 			return true
 	return false
+
+
+func _visible_completion_start(assignment: Control) -> Button:
+	for node_name: String in ["ResponsiveModalStart", "ModalStartButton"]:
+		var button := assignment.find_child(node_name, true, false) as Button
+		if button != null and button.is_visible_in_tree():
+			return button
+	return null
 
 
 func _wait_for_pending_availability(

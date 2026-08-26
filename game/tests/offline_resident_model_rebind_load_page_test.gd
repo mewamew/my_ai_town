@@ -67,6 +67,19 @@ func _test_slot_state_matrix(
 	var corrupt_slot := corrupt_case.get("slot", {}) as Dictionary
 	_expect_equal(fallback_slot.get("state"), "recoverable", "真实损坏样本分类为可回退")
 	_expect_equal(corrupt_slot.get("state"), "corrupt", "无旧完整修订的损坏样本分类为不可修复")
+	var fallback_fixture := fallback_case.get("fixture") as RefCounted
+	var fallback_service := OFFLINE_REBIND.new() as RefCounted
+	_expect_ok(fallback_service.call(
+		"configure",
+		fallback_fixture.get("save_store"),
+		fallback_fixture.get("agent_store"),
+		fallback_fixture.call("provider"),
+	) as Dictionary, "真实可回退槽位可配置离线改绑模块")
+	_expect_ok(fallback_service.call(
+		"prepare",
+		fallback_slot,
+		fallback_fixture.call("base_catalog"),
+	) as Dictionary, "离线改绑模块直接钉住已验证的旧完整修订")
 	var cases := [
 		{
 			"name": "健康槽位",
@@ -78,8 +91,13 @@ func _test_slot_state_matrix(
 		{
 			"name": "真实可回退槽位",
 			"slot": fallback_slot,
-			"editEnabled": false,
-			"editReason": "请先完成存档恢复，再重新选择完整修订",
+			"editEnabled": true,
+			"editReason": "编辑完整修订 %d，损坏修订不会被修改" % int(
+				(fallback_slot.get("summary", {}) as Dictionary).get(
+					"saveRevision",
+					0,
+				),
+			),
 			"description": "损坏修订",
 		},
 		{
@@ -100,6 +118,12 @@ func _test_slot_state_matrix(
 	var scene := load("res://ui/startup/StartupLoadGameScreen.tscn") as PackedScene
 	var screen := scene.instantiate() as Control
 	root.add_child(screen)
+	var edit_payloads: Array[Dictionary] = []
+	screen.intent_requested.connect(
+		func(intent: StringName, payload: Dictionary) -> void:
+			if intent == &"save.edit_resident_models":
+				edit_payloads.append(payload.duplicate(true)),
+	)
 	var revision := 10
 	for case_value: Variant in cases:
 		var state_case := case_value as Dictionary
@@ -140,6 +164,23 @@ func _test_slot_state_matrix(
 			and recovery.text.contains(String(state_case.get("description", ""))),
 			"%s 显示对应的存档状态说明" % String(state_case.get("name", "")),
 		)
+		if String(state_case.get("name", "")) == "真实可回退槽位":
+			var payload_count_before := edit_payloads.size()
+			_expect(
+				bool(screen.call("debug_request_edit_resident_models", slot_id)),
+				"真实可回退槽位可以发出改绑意图",
+			)
+			_expect_equal(
+				edit_payloads.size(),
+				payload_count_before + 1,
+				"真实可回退槽位只发出一次改绑意图",
+			)
+			var payload := edit_payloads[-1] if not edit_payloads.is_empty() else {}
+			_expect_equal(
+				(payload as Dictionary).get("saveRevision"),
+				(fallback_slot.get("summary", {}) as Dictionary).get("saveRevision"),
+				"改绑 payload 钉住旧完整修订，而不是损坏修订",
+			)
 	root.remove_child(screen)
 	screen.free()
 	_cleanup_case_fixture(fallback_case)
@@ -260,6 +301,7 @@ func _load_page_view_model(slots: Array, revision: int) -> Dictionary:
 func _test_load_page_action() -> void:
 	var scene := load("res://ui/startup/StartupLoadGameScreen.tscn") as PackedScene
 	var screen := scene.instantiate() as Control
+	screen.call("configure_runtime_layout", true)
 	root.add_child(screen)
 	var intents: Array[String] = []
 	var routed_payloads: Array[Dictionary] = []
@@ -313,8 +355,11 @@ func _test_load_page_action() -> void:
 			screen.find_child("slot-aModelEditAction", true, false) as Button,
 		]
 		for button: Button in compact_actions:
+			var physical_size := _physical_rect(button, screen).size
 			_expect(
-				button != null and button.size.x >= 48.0 and button.size.y >= 48.0,
+				button != null
+				and physical_size.x >= 48.0
+				and physical_size.y >= 48.0,
 				"%s 的 %s 真实触控区至少为 48×48" % [
 					String(layout[1]),
 					button.name if button != null else "missing",
@@ -326,11 +371,57 @@ func _test_load_page_action() -> void:
 					_expect(false, "%s 的关键操作按钮完整" % String(layout[1]))
 					continue
 				_expect(
-					not compact_actions[left_index].get_global_rect().intersects(
-						compact_actions[right_index].get_global_rect(),
+					not _physical_rect(compact_actions[left_index], screen).intersects(
+						_physical_rect(compact_actions[right_index], screen),
 					),
-					"%s 的主操作、删除和改绑按钮互不重叠" % String(layout[1]),
+					"%s 的 %s %s 互不重叠（left=%s right=%s）" % [
+						String(layout[1]),
+						compact_actions[left_index].name,
+						compact_actions[right_index].name,
+						_physical_rect(compact_actions[left_index], screen),
+						_physical_rect(compact_actions[right_index], screen),
+					],
 				)
+		var delete_button := compact_actions[1]
+		var edit_button := compact_actions[2]
+		_expect(
+			delete_button != null
+			and edit_button != null
+			and _physical_rect(edit_button, screen).position.y
+			>= _physical_rect(delete_button, screen).end.y,
+			"%s 的更改居民模型按钮位于删除按钮下方" % String(layout[1]),
+		)
+	screen.call("configure_runtime_layout", false)
+	root.size = Vector2i(960, 540)
+	for _index in 3:
+		await process_frame
+	var desktop_snapshot := screen.call("runtime_layout_snapshot") as Dictionary
+	var desktop_edit := screen.find_child("slot-aModelEditAction", true, false) as Button
+	_expect_equal(
+		desktop_snapshot.get("mode"),
+		"desktop_reference",
+		"桌面小窗口不会切换到移动触控布局",
+	)
+	_expect_equal(
+		desktop_edit.get_theme_font_size("font_size") if desktop_edit != null else -1,
+		18,
+		"桌面小窗口保留参考字号",
+	)
+	var compact_normalized_rect := _normalized_rect(desktop_edit, screen.size)
+	root.size = Vector2i(1920, 1080)
+	for _index in 3:
+		await process_frame
+	desktop_edit = screen.find_child("slot-aModelEditAction", true, false) as Button
+	_expect_equal(
+		_normalized_rect(desktop_edit, screen.size),
+		compact_normalized_rect,
+		"桌面窗口缩小再放大时恢复同一参考布局",
+	)
+	_expect_equal(
+		desktop_edit.get_theme_font_size("font_size") if desktop_edit != null else -1,
+		18,
+		"桌面窗口放大后仍保留原字号",
+	)
 	root.size = original_viewport_size
 	for _index in 3:
 		await process_frame
@@ -366,6 +457,21 @@ func _test_load_page_action() -> void:
 	)
 	root.remove_child(screen)
 	screen.free()
+
+
+func _normalized_rect(control: Control, viewport_size: Vector2) -> Rect2:
+	if control == null or viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
+		return Rect2()
+	var rect := control.get_global_rect()
+	return Rect2(rect.position / viewport_size, rect.size / viewport_size)
+
+
+func _physical_rect(control: Control, screen: Control) -> Rect2:
+	if control == null or screen == null or screen.size.x <= 0.0 or screen.size.y <= 0.0:
+		return Rect2()
+	var to_display := Vector2(root.size) / screen.size
+	var rect := control.get_global_rect()
+	return Rect2(rect.position * to_display, rect.size * to_display)
 
 
 

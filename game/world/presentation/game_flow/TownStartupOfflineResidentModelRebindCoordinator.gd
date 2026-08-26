@@ -226,24 +226,13 @@ static func project_slot_edit(slot: Dictionary) -> Dictionary:
 		and bool(reconciliation.get("repairable", false))
 		and String(reconciliation.get("action", "")) == RECONCILIATION.RECONCILE_ACTION
 	)
-	var recovery_plan := slot.get("recoveryPlan", {}) as Dictionary
-	var restore_before_edit := (
-		not recovery_required
-		and not recovery_plan.is_empty()
-		and not summary.is_empty()
-	)
 	var available := (
 		not summary.is_empty()
-		and not restore_before_edit
 		and (not has_blockers or recovery_required)
 	)
 	var reason := ""
 	if not available:
-		reason = (
-			"OFFLINE_RESIDENT_MODEL_REBIND_RECOVERY_REQUIRED"
-			if restore_before_edit
-			else "SESSION_SAVE_NO_COMPLETE_REVISION"
-		)
+		reason = "SESSION_SAVE_NO_COMPLETE_REVISION"
 	return {
 		"modelEditAvailable": available,
 		"modelEditSaveRevision": int(summary.get("saveRevision", 0)),

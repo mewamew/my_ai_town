@@ -9,6 +9,8 @@ signal action_blocked(intent: StringName, reason: String)
 const BUTTON_THEME := preload("res://ui/startup/StartupButtonImageTheme.gd")
 const UiViewModel := preload("res://ui/common/AiTownUiViewModel.gd")
 const UiNodeRetirement := preload("res://ui/common/AiTownUiNodeRetirement.gd")
+const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
+const MOBILE_LAYOUT := preload("res://ui/mobile/StartupLoadGameMobileLayout.gd")
 const LOAD_GAME_IMAGE_THEME := preload(
 	"res://ui/startup/StartupLoadGameImageTheme.gd"
 )
@@ -54,6 +56,7 @@ var _feedback: Label
 var _back_button: Button
 var _visual_atlas_texture: Texture2D
 var _delete_icon_texture: AtlasTexture
+var _force_mobile_runtime := false
 
 
 func _ready() -> void:
@@ -68,7 +71,22 @@ func _ready() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED and is_node_ready():
-		_layout_compact_slot_actions.call_deferred()
+		_apply_platform_slot_action_layout.call_deferred()
+
+
+func configure_runtime_layout(force_mobile_runtime := false) -> void:
+	_force_mobile_runtime = force_mobile_runtime
+	if is_node_ready():
+		_apply_platform_slot_action_layout.call_deferred()
+
+
+func runtime_layout_snapshot() -> Dictionary:
+	return {
+		"mode": "mobile" if _mobile_runtime_enabled() else "desktop_reference",
+		"usesPlatformAdapter": _mobile_runtime_enabled(),
+		"canvasSize": size,
+		"displaySize": _display_size(),
+	}
 
 
 func deactivate_modal_ownership() -> void:
@@ -339,7 +357,7 @@ func _render() -> void:
 		)
 	)
 	_restore_focus_identity(focus_identity)
-	_layout_compact_slot_actions.call_deferred()
+	_apply_platform_slot_action_layout.call_deferred()
 
 
 func _capture_focus_identity() -> String:
@@ -550,16 +568,27 @@ func _build_slot_card(index: int, slot: Dictionary) -> void:
 			or not bool(slot.get("modelEditAvailable", false))
 		)
 		edit_button.tooltip_text = (
-			"编辑完整修订 %d" % int(slot.get(
-				"modelEditSaveRevision",
-				slot.get("saveRevision", 0),
-			))
+			_model_edit_copy(slot)
 			if not edit_button.disabled
 			else UiViewModel.player_reason(String(slot.get(
 				"modelEditDisabledReason",
 				edit_contract.get("disabledReason", "ACTION_NOT_AVAILABLE"),
 			)))
 		)
+
+
+func _model_edit_copy(slot: Dictionary) -> String:
+	var revision := int(slot.get(
+		"modelEditSaveRevision",
+		slot.get("saveRevision", 0),
+	))
+	if (
+		String(slot.get("state", "")) == "recoverable"
+		and String(slot.get("recoveryState", ""))
+		== "older_complete_revision_available"
+	):
+		return "编辑完整修订 %d，损坏修订不会被修改" % revision
+	return "编辑完整修订 %d" % revision
 
 
 func _register_slot_action_layout(
@@ -571,9 +600,13 @@ func _register_slot_action_layout(
 	button.set_meta("slot_index", index)
 	button.set_meta("slot_action_role", role)
 	button.set_meta("slot_action_source_rect", source_rect)
+	button.set_meta(
+		"slot_action_source_font_size",
+		18 if role == "edit" else button.get_theme_font_size("font_size"),
+	)
 
 
-func _layout_compact_slot_actions() -> void:
+func _apply_platform_slot_action_layout() -> void:
 	if not is_instance_valid(_slot_layer) or size.x <= 0.0 or size.y <= 0.0:
 		return
 	var actions_by_slot: Dictionary = {}
@@ -588,64 +621,59 @@ func _layout_compact_slot_actions() -> void:
 		(actions_by_slot[index] as Dictionary)[String(
 			child.get_meta("slot_action_role", ""),
 		)] = child
-	if size.x > 1000.0:
-		for actions_value: Variant in actions_by_slot.values():
-			for button_value: Variant in (actions_value as Dictionary).values():
-				var button := button_value as Button
-				_apply_reference_rect(
-					button,
-					_source_rect(button.get_meta(
-						"slot_action_source_rect",
-						Rect2(),
-					) as Rect2),
-				)
-				if String(button.get_meta("slot_action_role", "")) == "edit":
-					button.add_theme_font_size_override(&"font_size", 18)
+	for actions_value: Variant in actions_by_slot.values():
+		for button_value: Variant in (actions_value as Dictionary).values():
+			var button := button_value as Button
+			_apply_reference_rect(
+				button,
+				_source_rect(button.get_meta(
+					"slot_action_source_rect",
+					Rect2(),
+				) as Rect2),
+			)
+			var role := String(button.get_meta("slot_action_role", ""))
+			if role == "primary":
+				button.remove_theme_font_size_override(&"font_size")
+			elif role == "edit":
+				button.add_theme_font_size_override(&"font_size", 18)
+	if not _mobile_runtime_enabled():
 		return
-	var text_right_reference := _source_rect(Rect2(512.0, 0.0, 492.0, 1.0)).end.x
-	var left := ceilf(text_right_reference / REFERENCE_VIEWPORT.x * size.x + 8.0)
-	var right := floorf(size.x - 8.0)
-	var available_width := right - left
-	var gap := 8.0
-	var delete_width := 48.0
-	var flexible_width := available_width - delete_width - gap * 2.0
-	var primary_width := clampf(flexible_width * 0.4, 48.0, 92.0)
-	var edit_width := flexible_width - primary_width
-	if edit_width < 48.0:
-		primary_width = maxf(48.0, primary_width - (48.0 - edit_width))
-		edit_width = 48.0
+	var row_count := actions_by_slot.size()
+	var display_size := _display_size()
+	var display_scale_y := display_size.y / maxf(size.y, 1.0)
 	for index_value: Variant in actions_by_slot.keys():
 		var index := int(index_value)
 		var actions := actions_by_slot[index] as Dictionary
 		if not actions.has("primary") or not actions.has("delete") or not actions.has("edit"):
 			continue
-		var card_rect := _source_rect(Rect2(
-			446.0,
-			274.0 + float(index) * 159.0,
-			842.0,
-			142.0,
-		))
-		var card_top := card_rect.position.y / REFERENCE_VIEWPORT.y * size.y
-		var card_height := card_rect.size.y / REFERENCE_VIEWPORT.y * size.y
-		var action_y := roundf(card_top + (card_height - 48.0) * 0.5)
-		var primary := actions.get("primary") as Button
-		var delete := actions.get("delete") as Button
-		var edit := actions.get("edit") as Button
-		_apply_absolute_rect(primary, Rect2(left, action_y, primary_width, 48.0))
-		_apply_absolute_rect(delete, Rect2(
-			left + primary_width + gap,
-			action_y,
-			delete_width,
-			48.0,
-		))
-		_apply_absolute_rect(edit, Rect2(
-			left + primary_width + gap + delete_width + gap,
-			action_y,
-			edit_width,
-			48.0,
-		))
-		primary.add_theme_font_size_override(&"font_size", 14)
-		edit.add_theme_font_size_override(&"font_size", 14)
+		var rects := MOBILE_LAYOUT.action_rects(
+			size,
+			display_size,
+			index,
+			row_count,
+		)
+		for role: String in ["primary", "delete", "edit"]:
+			var button := actions.get(role) as Button
+			_apply_absolute_rect(
+				button,
+				rects.get(role, Rect2()) as Rect2,
+			)
+			button.add_theme_font_size_override(
+				&"font_size",
+				maxi(1, roundi(
+					float(button.get_meta("slot_action_source_font_size", 18))
+					/ maxf(display_scale_y, 0.1),
+				)),
+			)
+
+
+func _mobile_runtime_enabled() -> bool:
+	return _force_mobile_runtime or MOBILE_UI_PROFILE.is_mobile_runtime()
+
+
+func _display_size() -> Vector2:
+	var window := get_tree().root if get_tree() != null else null
+	return Vector2(window.size) if window != null else size
 
 
 func _apply_absolute_rect(control: Control, rect: Rect2) -> void:

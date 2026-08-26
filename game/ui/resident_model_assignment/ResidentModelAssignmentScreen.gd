@@ -368,6 +368,8 @@ func runtime_gate_snapshot() -> Dictionary:
 		"scope": SCOPE,
 		"revision": _revision,
 		"profile": _layout_profile,
+		"canvasSize": size,
+		"displaySize": _runtime_display_size(),
 		"routeMode": route_mode,
 		"wholePageScale": false,
 		"formalReady": bool(_render_data.get("formalReady", false)),
@@ -1266,13 +1268,6 @@ func _render_inspector() -> void:
 	else:
 		var operation := _view_model.get("operation", {}) as Dictionary
 		var operation_status := String(operation.get("status", "idle"))
-		var error_message := UiViewModel.error_message(_view_model)
-		var error_value: Variant = _view_model.get("error", null)
-		var error_code := (
-			String((error_value as Dictionary).get("code", ""))
-			if error_value is Dictionary
-			else ""
-		)
 		match operation_status:
 			"loading":
 				_operation_label.text = "正在更新正式分配状态…"
@@ -1283,14 +1278,16 @@ func _render_inspector() -> void:
 					else "操作完成，草稿与完成数已更新。"
 				)
 			"rejected":
-				_operation_label.text = _save_slot_error_copy(
-					error_message if not error_message.is_empty() else "操作被拒绝，原数据已保留。",
-					error_code,
+				_operation_label.text = FeedbackPolicy.operation_failure_copy(
+					_view_model,
+					route_mode,
+					"操作被拒绝，原数据已保留。",
 				)
 			"error":
-				_operation_label.text = _save_slot_error_copy(
-					error_message if not error_message.is_empty() else "连接异常，原数据已保留。",
-					error_code,
+				_operation_label.text = FeedbackPolicy.operation_failure_copy(
+					_view_model,
+					route_mode,
+					"连接异常，原数据已保留。",
 				)
 			"disabled":
 				_operation_label.text = "正式接口不可用。"
@@ -1313,10 +1310,6 @@ func _render_inspector() -> void:
 		if _is_save_slot()
 		else "确认 %d 人模型分配" % int(_render_data.get("residentCount", SLOT_COUNT))
 	)
-
-
-func _save_slot_error_copy(message: String, error_code: String) -> String:
-	return FeedbackPolicy.save_slot_error(message, error_code, route_mode)
 
 
 func _render_action_states() -> void:
@@ -1643,7 +1636,7 @@ func _apply_responsive_layout() -> void:
 	if not is_node_ready():
 		_layout_queued = false
 		return
-	_apply_responsive_layout_for_size(get_viewport_rect().size)
+	_apply_responsive_layout_for_size(_runtime_display_size())
 	_layout_queued = false
 
 
@@ -1738,7 +1731,42 @@ func _apply_responsive_layout_for_size(viewport_size: Vector2) -> void:
 			if mobile_runtime
 			else ScrollContainer.SCROLL_MODE_AUTO
 		)
+	_apply_physical_touch_minimums(viewport_size)
 	_sync_completion_modal_visibility()
+
+
+func _runtime_display_size() -> Vector2:
+	var window := get_tree().root if get_tree() != null else null
+	return Vector2(window.size) if window != null else get_viewport_rect().size
+
+
+func _apply_physical_touch_minimums(display_size: Vector2) -> void:
+	if size.x <= 0.0 or size.y <= 0.0 or display_size.x <= 0.0 or display_size.y <= 0.0:
+		return
+	var canvas_per_display := size / display_size
+	var required := Vector2(
+		TOUCH_TARGET_MIN * canvas_per_display.x,
+		TOUCH_TARGET_MIN * canvas_per_display.y,
+	)
+	for node: Node in get_tree().get_nodes_in_group(
+		"resident_model_assignment_touch_target",
+	):
+		if not is_ancestor_of(node) or not node is Control:
+			continue
+		var control := node as Control
+		if not control.has_meta("resident_model_assignment_source_minimum"):
+			control.set_meta(
+				"resident_model_assignment_source_minimum",
+				control.custom_minimum_size,
+			)
+		var source := control.get_meta(
+			"resident_model_assignment_source_minimum",
+			Vector2.ZERO,
+		) as Vector2
+		control.custom_minimum_size = Vector2(
+			maxf(source.x, required.x),
+			maxf(source.y, required.y),
+		)
 
 
 func _apply_mobile_section_minimum_sizes() -> void:

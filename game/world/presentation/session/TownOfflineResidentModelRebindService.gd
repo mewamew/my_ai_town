@@ -85,14 +85,6 @@ func prepare(slot_value: Variant, base_catalog_value: Variant) -> Dictionary:
 		return _failure("OFFLINE_RESIDENT_MODEL_REBIND_TARGET_UNAVAILABLE", false)
 	var save_blockers := slot.get("saveBlockers", []) as Array
 	var restore_blockers := slot.get("restoreBlockers", []) as Array
-	var recovery_plan := slot.get("recoveryPlan", {}) as Dictionary
-	if not recovery_plan.is_empty():
-		return _failure(
-			"OFFLINE_RESIDENT_MODEL_REBIND_RECOVERY_REQUIRED",
-			false,
-			[],
-			{"recoveryPlan": recovery_plan.duplicate(true)},
-		)
 	if not save_blockers.is_empty() or not restore_blockers.is_empty():
 		var reconciliation := slot.get("reconciliationPlan", {}) as Dictionary
 		return _failure(

@@ -1410,21 +1410,17 @@ func _on_batch_select_all_pressed() -> void:
 func _operation_copy(view_model: Dictionary) -> String:
 	var operation := view_model.get("operation", {}) as Dictionary
 	var status := String(operation.get("status", "idle"))
-	var error_message := UiViewModel.error_message(view_model)
-	var error_value: Variant = view_model.get("error", null)
-	var error_code := (
-		String((error_value as Dictionary).get("code", ""))
-		if error_value is Dictionary
-		else ""
-	)
 	match status:
 		"loading":
 			return "正在更新居民模型分配…"
 		"success":
 			return "分配已更新，确认全部后即可继续"
 		"rejected", "error":
-			var message := error_message if not error_message.is_empty() else "操作未完成，原分配已保留"
-			return FeedbackPolicy.save_slot_error(message, error_code, route_mode)
+			return FeedbackPolicy.operation_failure_copy(
+				view_model,
+				route_mode,
+				"操作未完成，原分配已保留",
+			)
 		"disabled":
 			return "当前没有可用模型"
 	if has_pending_rebind(_data):

@@ -2187,19 +2187,35 @@ func _on_startup_load_game_intent_requested(
 			var edit_catalog := _startup_catalog_snapshot()
 			var edit_slot := _startup_slot_by_id(edit_catalog, edit_slot_id)
 			var edit_projection := _startup_slot_projection(edit_slot)
+			var selected_target := {
+				"slotId": edit_slot_id,
+				"sessionId": String(payload.get("sessionId", "")),
+				"saveRevision": int(payload.get("saveRevision", -1)),
+			}
+			var current_target := {
+				"slotId": String(edit_projection.get("slotId", "")),
+				"sessionId": String(edit_projection.get("sessionId", "")),
+				"saveRevision": int(edit_projection.get(
+					"modelEditSaveRevision",
+					-2,
+				)),
+			}
+			if edit_slot.is_empty() or selected_target != current_target:
+				_publish_startup_load_game_model_edit_failure(
+					_failure("STARTUP_SAVE_MODEL_EDIT_TARGET_STALE", false),
+					edit_slot_id,
+				)
+				return
 			if (
-				edit_slot.is_empty()
-				or not bool(edit_projection.get("modelEditAvailable", false))
-				or int(payload.get("saveRevision", -1))
-				!= int(edit_projection.get("modelEditSaveRevision", -2))
+				not bool(edit_projection.get("modelEditAvailable", false))
 			):
-				_last_result = _failure(
+				_publish_startup_load_game_model_edit_failure(_failure(
 					String(edit_projection.get(
 						"modelEditDisabledReason",
-						"STARTUP_SAVE_MODEL_EDIT_TARGET_STALE",
+						"SESSION_SAVE_NO_COMPLETE_REVISION",
 					)),
 					false,
-				)
+				), edit_slot_id)
 				return
 			var configured := _ensure_startup_save_model_coordinator()
 			if configured.get("ok") != true:
@@ -2841,6 +2857,14 @@ func _return_to_load_game_with_model_edit_failure(
 	_publish_startup_load_game_result(result, {
 		"slotId": String(target.get("slotId", "")),
 	})
+
+
+func _publish_startup_load_game_model_edit_failure(
+	result: Dictionary,
+	slot_id: String,
+) -> void:
+	_last_result = result.duplicate(true)
+	_publish_startup_load_game_result(result, {"slotId": slot_id})
 
 
 func _startup_new_game_payload_is_authorized(payload: Dictionary) -> bool:

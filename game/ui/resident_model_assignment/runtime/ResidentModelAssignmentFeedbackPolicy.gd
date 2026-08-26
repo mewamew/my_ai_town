@@ -2,6 +2,9 @@ class_name ResidentModelAssignmentFeedbackPolicy
 extends RefCounted
 
 
+const UI_VIEW_MODEL := preload("res://ui/common/AiTownUiViewModel.gd")
+
+
 const PROVIDER_CONFIGURATION_ERRORS: Array[String] = [
 	"SESSION_LLM_BINDINGS_INVALID",
 	"LLM_PROVIDER_UNAVAILABLE",
@@ -46,6 +49,23 @@ static func save_slot_error(
 	):
 		return message
 	return "%s 草稿已保留；可点击“返回模型配置”修复连接。" % message
+
+
+static func operation_failure_copy(
+	view_model: Dictionary,
+	route_mode: String,
+	fallback: String,
+) -> String:
+	var error_value: Variant = view_model.get("error")
+	var error_code := (
+		String((error_value as Dictionary).get("code", ""))
+		if error_value is Dictionary
+		else ""
+	)
+	var message := UI_VIEW_MODEL.error_message(view_model)
+	if message.is_empty():
+		message = fallback
+	return save_slot_error(message, error_code, route_mode)
 
 
 static func provider_settings_available(

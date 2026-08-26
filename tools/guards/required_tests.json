@@ -88,11 +88,15 @@
   },
   {
     "id": "res://tests/offline_resident_model_rebind_ui_route_test.gd",
-    "min_checks": 121
+    "min_checks": 45
+  },
+  {
+    "id": "res://tests/offline_resident_model_assignment_page_test.gd",
+    "min_checks": 95
   },
   {
     "id": "res://tests/offline_resident_model_rebind_load_page_test.gd",
-    "min_checks": 46
+    "min_checks": 57
   },
   {
     "id": "res://tests/windows_directory_cleanup_test.gd",
