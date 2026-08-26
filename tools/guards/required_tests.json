@@ -61,7 +61,7 @@
   },
   {
     "id": "res://tests/session_save_continue_roundtrip_test.gd",
-    "min_checks": 112
+    "min_checks": 126
   },
   {
     "id": "res://tests/save_reconciliation_test.gd",
@@ -84,11 +84,15 @@
   },
   {
     "id": "res://tests/offline_resident_model_rebind_test.gd",
-    "min_checks": 129
+    "min_checks": 32
+  },
+  {
+    "id": "res://tests/offline_resident_model_rebind_ui_route_test.gd",
+    "min_checks": 114
   },
   {
     "id": "res://tests/windows_directory_cleanup_test.gd",
-    "min_checks": 79
+    "min_checks": 102
   },
   {
     "id": "res://tests/startup_social_feedback_test.gd",

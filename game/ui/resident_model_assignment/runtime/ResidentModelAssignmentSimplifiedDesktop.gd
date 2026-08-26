@@ -15,8 +15,8 @@ const UiViewModel := preload("res://ui/common/AiTownUiViewModel.gd")
 const RouteMode := preload(
 	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentRouteMode.gd"
 )
-const AssignmentCopy := preload(
-	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentCopy.gd"
+const FeedbackPolicy := preload(
+	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentFeedbackPolicy.gd"
 )
 const SIZE := Vector2(1672, 941)
 const FONT_PATH := (
@@ -793,7 +793,7 @@ func _render(view_model: Dictionary) -> void:
 	_render_models()
 	_render_action_states(batch_mode)
 	_set_text("Operation", _operation_copy(view_model))
-	var provider_settings_visible := AssignmentCopy.provider_settings_available(
+	var provider_settings_visible := FeedbackPolicy.provider_settings_available(
 		view_model,
 		route_mode,
 	)
@@ -1443,7 +1443,7 @@ func _operation_copy(view_model: Dictionary) -> String:
 			return "分配已更新，确认全部后即可继续"
 		"rejected", "error":
 			var message := error_message if not error_message.is_empty() else "操作未完成，原分配已保留"
-			return AssignmentCopy.save_slot_error(message, error_code, route_mode)
+			return FeedbackPolicy.save_slot_error(message, error_code, route_mode)
 		"disabled":
 			return "当前没有可用模型"
 	if has_pending_rebind(_data):

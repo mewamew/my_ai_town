@@ -230,8 +230,6 @@ var _startup_save_catalog: RefCounted
 var _delete_archive_service_override: RefCounted
 var _formal_archive_service_override: RefCounted
 var _startup_settings_page: Control
-var _startup_settings_return_route := ""
-var _startup_settings_return_slot_id := ""
 var _startup_load_game_page: Control
 var _startup_load_game_mode := ""
 var _pending_load_game_new_game_payload: Dictionary = {}
@@ -2203,6 +2201,16 @@ func _on_startup_load_game_intent_requested(
 					false,
 				)
 				return
+			var configured := _ensure_startup_save_model_coordinator()
+			if configured.get("ok") != true:
+				_publish_startup_action_failure(intent, configured)
+				return
+			var selected := (
+				_startup_save_model_coordinator.select_target(edit_slot) as Dictionary
+			)
+			if selected.get("ok") != true:
+				_publish_startup_action_failure(intent, selected)
+				return
 			if bool(edit_projection.get("modelEditRecoveryRequired", false)):
 				var recovery := _catalog_slot_discovery(edit_slot, false)
 				if recovery.get("ok") != true:
@@ -2316,8 +2324,6 @@ func _on_startup_save_model_route_finished(
 ) -> void:
 	_last_result = result.duplicate(true)
 	if destination == "provider_settings":
-		_startup_settings_return_route = "offline_model_assignment"
-		_startup_settings_return_slot_id = String(result.get("slotId", ""))
 		_open_startup_settings(&"provider_settings")
 		return
 	_open_startup_load_game("load")
@@ -2469,17 +2475,11 @@ func _on_new_game_overwrite_intent_requested(
 					else configured
 				)
 				_last_result = reconciled.duplicate(true)
-				var reconciled_slot_id := String(
-					(
-						_pending_new_game_discovery.get("summary", {})
-						as Dictionary
-					).get("slotId", ""),
-				)
 				_close_new_game_overwrite()
 				if reconciled.get("ok") != true:
 					_publish_startup_action_failure(intent, reconciled)
 				elif pending_origin == "edit_resident_models":
-					_resume_startup_save_model_assignment(reconciled_slot_id)
+					_resume_startup_save_model_assignment()
 				else:
 					_refresh_startup_main_menu_view_models()
 				return
@@ -2798,21 +2798,26 @@ func _on_startup_settings_intent_requested(
 		"provider_settings.back",
 		"audio_display_settings.back",
 	]:
-		var return_route := _startup_settings_return_route
-		var return_slot_id := _startup_settings_return_slot_id
-		_startup_settings_return_route = ""
-		_startup_settings_return_slot_id = ""
+		var resume_offline_assignment := (
+			_startup_save_model_coordinator != null
+			and _startup_save_model_coordinator.awaiting_provider_settings()
+		)
 		_close_startup_settings()
-		if return_route == "offline_model_assignment":
-			call_deferred(
-				"_resume_startup_save_model_assignment",
-				return_slot_id,
-			)
+		if resume_offline_assignment:
+			call_deferred("_resume_startup_save_model_assignment")
 
 
-func _resume_startup_save_model_assignment(slot_id: String) -> void:
+func _resume_startup_save_model_assignment() -> void:
+	if _startup_save_model_coordinator == null:
+		_publish_startup_action_failure(
+			&"save.edit_resident_models",
+			_failure("STARTUP_SAVE_MODEL_EDIT_TARGET_STALE", false),
+		)
+		_open_startup_load_game("load")
+		return
+	var target := _startup_save_model_coordinator.target()
 	var catalog := _startup_catalog_snapshot()
-	var slot := _startup_slot_by_id(catalog, slot_id)
+	var slot := _startup_slot_by_id(catalog, String(target.get("slotId", "")))
 	if slot.is_empty():
 		_publish_startup_action_failure(
 			&"save.edit_resident_models",
@@ -2820,7 +2825,14 @@ func _resume_startup_save_model_assignment(slot_id: String) -> void:
 		)
 		_open_startup_load_game("load")
 		return
-	_open_startup_save_model_assignment(slot)
+	var startup := get_tree().current_scene as Control
+	var resumed := _startup_save_model_coordinator.resume(startup, slot)
+	if resumed.get("ok") != true:
+		_publish_startup_action_failure(&"save.edit_resident_models", resumed)
+		_open_startup_load_game("load")
+		return
+	_close_startup_load_game()
+	_last_result = resumed.duplicate(true)
 
 
 func _startup_new_game_payload_is_authorized(payload: Dictionary) -> bool:
@@ -5406,7 +5418,14 @@ func _start_formal_continue(
 			false,
 		))
 		return
-	_provider_service = PROVIDER_SERVICE.new()
+	# Startup already owns the provider instance configured by the settings page.
+	# Continue must use that same catalog and health state so returning from model
+	# settings cannot race a freshly constructed provider with stale configuration.
+	_provider_service = (
+		_startup_provider_service
+		if _startup_provider_service != null
+		else PROVIDER_SERVICE.new()
+	)
 	var provider_configuration := _provider_service.call("configure", {
 		"capabilityMode": "formal",
 		"source": "runtime",

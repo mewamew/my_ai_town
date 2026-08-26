@@ -11,6 +11,15 @@ const ARCHIVE_SERVICE := preload(
 	"res://world/integration/TownFormalSlotArchiveService.gd"
 )
 const AGENT_SAVE_STORE := preload("res://agent/lifecycle/AgentSaveStore.gd")
+const SAVE_MANIFEST := preload(
+	"res://world/presentation/session/TownSessionSaveManifest.gd"
+)
+const SAVE_CATALOG := preload(
+	"res://world/presentation/session/TownStartupSaveCatalog.gd"
+)
+const OFFLINE_REBIND := preload(
+	"res://world/presentation/session/TownOfflineResidentModelRebindService.gd"
+)
 const AGENT_FILE_SYSTEM := preload("res://agent/AgentFileSystem.gd")
 const RESIDENT_MEMORY_SYSTEM := preload(
 	"res://agent/memory/ResidentMemorySystem.gd"
@@ -28,6 +37,33 @@ var _failures: Array[String] = []
 var _checks := 0
 
 
+class AvailableProvider:
+	extends RefCounted
+
+	func get_health_snapshot() -> Dictionary:
+		return {"ok": true, "formalReady": true, "providers": []}
+
+	func list_available_models() -> Array:
+		return [{
+			"providerId": "windows-provider",
+			"modelId": "windows-model",
+			"label": "Windows Model",
+			"available": true,
+		}]
+
+	func validate_resident_bindings(bindings: Variant) -> Dictionary:
+		if not bindings is Array:
+			return {"ok": false, "errorCode": "SESSION_LLM_BINDINGS_INVALID"}
+		for value: Variant in bindings as Array:
+			var binding := (value as Dictionary).get("llmBinding", {}) as Dictionary
+			if (
+				String(binding.get("providerId", "")) != "windows-provider"
+				or String(binding.get("modelId", "")) != "windows-model"
+			):
+				return {"ok": false, "errorCode": "LLM_MODEL_UNAVAILABLE"}
+		return {"ok": true, "errorCode": "", "retryable": false}
+
+
 func _initialize() -> void:
 	call_deferred("_run")
 
@@ -41,6 +77,7 @@ func _run() -> void:
 	_test_photo_store_cleanup(suffix)
 	_test_archive_cleanup(suffix)
 	_test_agent_store_long_staging(suffix)
+	_test_offline_rebind_long_path_story(suffix)
 	_test_resident_runtime_memory_path()
 	_test_agent_filesystem_cleanup(suffix)
 	var audio := root.get_node_or_null("TownAudioController")
@@ -569,6 +606,138 @@ func _test_agent_store_long_staging(suffix: String) -> void:
 		),
 		"超长 Agent 快照测试根目录已删除",
 	)
+
+
+func _test_offline_rebind_long_path_story(suffix: String) -> void:
+	var world_root := "user://tests/town_session_saves/windows_offline_%s" % suffix
+	var agent_root := "user://agent_save_tests/windows_offline_%s" % suffix
+	var profile_path := "user://tests/town_startup_profile/windows_offline_%s.json" % suffix
+	var slot_id := "windows-offline-slot-%s" % "s".repeat(104)
+	var session_id := "windows-offline-session-%s" % "r".repeat(101)
+	var store := SESSION_STORE.new() as RefCounted
+	var agent_store := AGENT_SAVE_STORE.new() as RefCounted
+	_expect_ok(store.call("configure_test_root", world_root) as Dictionary, "Windows 离线故事配置 World 根目录")
+	_expect_ok(agent_store.call("configure_test_root", agent_root) as Dictionary, "Windows 离线故事配置 Agent 根目录")
+	var lease := store.call("begin_slot_transaction", slot_id) as Dictionary
+	_expect_ok(lease, "超长离线槽位可建立事务锁")
+	_expect_ok(store.call("end_slot_transaction", lease.get("leaseToken")) as Dictionary, "超长离线槽位事务锁可释放")
+	var payloads := {
+		"resident-a": {
+			"resident_name": "甲居民",
+			"payload": FileAccess.get_file_as_bytes(
+				"res://tests/fixtures/historical_saves/beta6/agent_saves/roundtrip-slot-beta6/sessions/roundtrip-session-beta6/revisions/1/resident_0000.bin",
+			),
+		},
+		"resident-b": {
+			"resident_name": "乙居民",
+			"payload": FileAccess.get_file_as_bytes(
+				"res://tests/fixtures/historical_saves/beta6/agent_saves/roundtrip-slot-beta6/sessions/roundtrip-session-beta6/revisions/1/resident_0001.bin",
+			),
+		},
+	}
+	var context_zero := {"slot_id": slot_id, "session_id": session_id, "save_revision": 0}
+	_expect_ok(agent_store.call("create_new_game", context_zero, payloads) as Dictionary, "超长离线 Agent 基线可创建")
+	var reserved := store.call("reserve_revision", slot_id, session_id) as Dictionary
+	_expect_ok(reserved, "超长离线故事可预留源修订")
+	var context := reserved.get("context", {}) as Dictionary
+	_expect_ok(agent_store.call("save_snapshot", context, payloads) as Dictionary, "超长离线故事可写入 Agent 快照")
+	var historical_root := (
+		"res://tests/fixtures/historical_saves/beta6/town_session_saves/slots/"
+		+ "roundtrip-slot-beta6/sessions/roundtrip-session-beta6/revisions/"
+		+ "00000000000000000001"
+	)
+	var source_config := _read_json("%s/session_config.json" % historical_root)
+	source_config["sessionId"] = session_id
+	source_config["residentIdentities"] = [
+		{"residentId": "resident-a", "residentName": "甲居民"},
+		{"residentId": "resident-b", "residentName": "乙居民"},
+	]
+	source_config["residentBindings"] = _windows_bindings("retired", "retired-model")
+	var world := _read_json("%s/world_snapshot.json" % historical_root)
+	var world_log := {
+		"schema": "town-world-log-snapshot",
+		"schemaVersion": 1,
+		"timelineId": "windows-offline",
+		"worldRevision": 9,
+		"maxSequence": 0,
+		"records": [],
+		"readState": {},
+	}
+	var stored := store.call("write_world_candidate", context, world, source_config, world_log) as Dictionary
+	_expect_ok(stored, "超长离线故事可写入 World 候选")
+	var manifest := SAVE_MANIFEST.build(
+		context,
+		Time.get_datetime_string_from_system(false, false),
+		stored.get("sessionConfigRef"),
+		stored.get("sessionConfigSha256"),
+		["resident-a", "resident-b"],
+		{
+			"snapshotRef": stored.get("snapshotRef"),
+			"worldRevision": 9,
+			"schema": "town-world-save",
+			"schemaVersion": 2,
+			"worldDataVersion": 4,
+			"day": 1,
+		},
+		stored.get("snapshotSha256"),
+		[],
+		{
+			"snapshotRef": stored.get("worldLogSnapshotRef"),
+			"snapshotSha256": stored.get("worldLogSnapshotSha256"),
+			"schema": "town-world-log-snapshot",
+			"schemaVersion": 1,
+			"timelineId": "windows-offline",
+			"maxSequence": 0,
+			"worldRevision": 9,
+		},
+	) as Dictionary
+	_expect_ok(store.call("publish_manifest", manifest) as Dictionary, "超长离线故事可发布源修订")
+	var catalog := SAVE_CATALOG.new() as RefCounted
+	_expect_ok(catalog.call("configure", store, profile_path, agent_store) as Dictionary, "超长离线故事可配置启动目录")
+	var slot_definitions := [
+		{"slotId": slot_id, "displayName": "Windows 离线小镇"},
+		{"slotId": "windows-offline-empty-%s" % suffix, "displayName": "空槽位"},
+	]
+	var inspected := catalog.call("get_catalog", slot_definitions) as Dictionary
+	_expect_ok(inspected, "超长离线故事可读取源修订")
+	var selected := inspected.get("continueSlot", {}) as Dictionary
+	var service := OFFLINE_REBIND.new() as RefCounted
+	_expect_ok(service.call("configure", store, agent_store, AvailableProvider.new()) as Dictionary, "超长离线改绑服务可配置")
+	_expect_ok(service.call("prepare", selected, {"residents": [
+		{"residentId": "resident-a", "attributes": {"name": "甲居民"}, "presentation": {}},
+		{"residentId": "resident-b", "attributes": {"name": "乙居民"}, "presentation": {}},
+	]}) as Dictionary, "超长离线改绑可准备完整复制")
+	var applied := service.call("apply_bindings", _windows_bindings("windows-provider", "windows-model")) as Dictionary
+	_expect_ok(applied, "超长 slot/session 可完成离线复制与发布")
+	var rebound_context := applied.get("context", {}) as Dictionary
+	_expect_equal(rebound_context.get("save_revision"), 2, "超长离线改绑发布下一修订")
+	_expect_ok(agent_store.call("load_snapshot", rebound_context) as Dictionary, "超长离线改绑后的 Agent 快照可重读")
+	var rescanned := catalog.call("get_catalog", slot_definitions) as Dictionary
+	_expect_ok(rescanned, "超长离线改绑发布后可重新扫描")
+	_expect_equal(
+		((rescanned.get("continueSlot", {}) as Dictionary).get("sessionConfig", {}) as Dictionary).get("residentBindings"),
+		_windows_bindings("windows-provider", "windows-model"),
+		"超长离线改绑重读采用新绑定",
+	)
+	_expect(_directory_is_empty(String(store.call("_slot_transaction_root", slot_id))), "超长离线改绑结束后不残留槽位事务锁")
+	_expect_ok(agent_store.call("cleanup_test_root") as Dictionary, "超长离线故事可清理 Agent 存档")
+	_expect_ok(store.call("cleanup_test_root") as Dictionary, "超长离线故事可清理 World 存档")
+	if FileAccess.file_exists(profile_path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(profile_path))
+	_expect(not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(world_root)), "超长离线 World 根目录已删除")
+	_expect(not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(agent_root)), "超长离线 Agent 根目录已删除")
+
+
+func _windows_bindings(provider_id: String, model_id: String) -> Array[Dictionary]:
+	return [
+		{"residentId": "resident-a", "llmBinding": {"mode": "model", "providerId": provider_id, "modelId": model_id}},
+		{"residentId": "resident-b", "llmBinding": {"mode": "model", "providerId": provider_id, "modelId": model_id}},
+	]
+
+
+func _read_json(path: String) -> Dictionary:
+	var value: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	return (value as Dictionary).duplicate(true) if value is Dictionary else {}
 
 
 func _test_resident_runtime_memory_path() -> void:

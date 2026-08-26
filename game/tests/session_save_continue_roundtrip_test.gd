@@ -37,6 +37,9 @@ const STARTUP_SAVE_CATALOG := preload(
 const AGENT_SAVE_STORE := preload(
 	"res://agent/lifecycle/AgentSaveStore.gd"
 )
+const OFFLINE_REBIND := preload(
+	"res://world/presentation/session/TownOfflineResidentModelRebindService.gd"
+)
 
 var _failures: Array[String] = []
 var _checks := 0
@@ -406,6 +409,17 @@ func _run() -> void:
 		6,
 		"再次启动会选择修复后继续产生的最新修订",
 	)
+	await _verify_offline_rebind_runtime_story(
+		store,
+		recovery_case.get("catalog") as RefCounted,
+		recovery_case.get("slotDefinitions", []) as Array,
+		provider_service,
+		request_host,
+		test_root,
+		world_data,
+		identities,
+		final_slot,
+	)
 	_expect_ok(
 		cleanup_agent.call("delete_game", cleanup_context) as Dictionary,
 		"闭环测试居民存档可清理",
@@ -413,6 +427,125 @@ func _run() -> void:
 	_expect_ok(store.call("cleanup_test_root") as Dictionary, "闭环测试世界存档可清理")
 	request_host.queue_free()
 	_finish()
+
+
+func _verify_offline_rebind_runtime_story(
+	store: RefCounted,
+	catalog: RefCounted,
+	slot_definitions: Array,
+	provider_service: RefCounted,
+	request_host: Node,
+	test_root: String,
+	world_data: Dictionary,
+	identities: Array[Dictionary],
+	selected_slot: Dictionary,
+) -> void:
+	_expect_ok(provider_service.call("configure", {
+		"capabilityMode": "formal",
+		"source": "runtime",
+		"allowFake": false,
+		"providerConfigs": {
+			"302-ai": {
+				"api_key": "offline-rebind-story-key",
+				"api_models": ["vendor/runtime-rebound"],
+				"api_model": "vendor/runtime-rebound",
+			},
+		},
+	}, request_host) as Dictionary, "运行故事可切换到当前正式 Provider")
+	provider_service.set("_health_by_target", {
+		"302-ai|vendor/runtime-rebound": {
+			"providerId": "302-ai",
+			"modelId": "vendor/runtime-rebound",
+			"status": "available",
+			"errorCode": "",
+			"retryable": false,
+		},
+	})
+	var bindings: Array[Dictionary] = []
+	var residents: Array[Dictionary] = []
+	for identity: Dictionary in identities:
+		var resident_id := String(identity.get("residentId", ""))
+		bindings.append({
+			"residentId": resident_id,
+			"llmBinding": {
+				"mode": "model",
+				"providerId": "302-ai",
+				"modelId": "vendor/runtime-rebound",
+			},
+		})
+		residents.append({
+			"residentId": resident_id,
+			"attributes": {"name": identity.get("residentName", resident_id)},
+			"presentation": {},
+		})
+	var rebind := OFFLINE_REBIND.new() as RefCounted
+	_expect_ok(rebind.call(
+		"configure",
+		store,
+		AGENT_SAVE_STORE.new(),
+		provider_service,
+	) as Dictionary, "正式运行故事可配置离线改绑服务")
+	_expect_ok(rebind.call(
+		"prepare",
+		selected_slot,
+		{"residents": residents},
+	) as Dictionary, "正式运行故事钉住加载页选定修订")
+	var rebound := rebind.call("apply_bindings", bindings) as Dictionary
+	_expect_ok(rebound, "离线改绑通过生产事务发布完整修订")
+	var rebound_context := rebound.get("context", {}) as Dictionary
+	_expect_equal(
+		rebound_context.get("save_revision"),
+		7,
+		"离线改绑在正式运行故事中发布修订 7",
+	)
+	var rebound_catalog := catalog.call("get_catalog", slot_definitions) as Dictionary
+	_expect_ok(rebound_catalog, "离线改绑后生产目录可重新扫描")
+	var rebound_slot := rebound_catalog.get("continueSlot", {}) as Dictionary
+	_expect_equal(
+		(rebound_slot.get("summary", {}) as Dictionary).get("saveRevision"),
+		7,
+		"重新扫描选择离线改绑修订",
+	)
+	var reopened := await _reopen_repaired_revision({
+		"providerService": provider_service,
+		"requestHost": request_host,
+		"testRoot": test_root,
+		"sessionConfig": rebound_slot.get("sessionConfig", {}),
+		"identities": identities,
+		"bindings": bindings,
+		"context": rebound_context,
+		"worldData": world_data,
+	})
+	_expect_ok(reopened, "正式 Continue 入口可进入离线改绑后的 Runtime")
+	_expect_equal(
+		reopened.get("adoptedBindings"),
+		bindings,
+		"Gateway 与 Runtime 实际采用离线改绑后的绑定",
+	)
+	_expect_equal(
+		(reopened.get("savedContext", {}) as Dictionary).get("save_revision"),
+		8,
+		"进入游戏后由正式保存服务发布修订 8",
+	)
+	var after_save_catalog := catalog.call("get_catalog", slot_definitions) as Dictionary
+	_expect_ok(after_save_catalog, "退出运行时后新 Host 可重新扫描")
+	var after_save_slot := after_save_catalog.get("continueSlot", {}) as Dictionary
+	var reopened_again := await _reopen_repaired_revision({
+		"providerService": provider_service,
+		"requestHost": request_host,
+		"testRoot": test_root,
+		"sessionConfig": after_save_slot.get("sessionConfig", {}),
+		"identities": identities,
+		"bindings": bindings,
+		"context": reopened.get("savedContext", {}),
+		"worldData": world_data,
+	})
+	_expect_ok(reopened_again, "退出后可由全新 Runtime 重开改绑存档")
+	_expect_equal(
+		reopened_again.get("adoptedBindings"),
+		bindings,
+		"退出重开仍保留离线改绑结果",
+	)
 
 
 func _prepare_continue_runtime(request: Dictionary) -> Dictionary:
@@ -557,6 +690,9 @@ func _reopen_repaired_revision(request: Dictionary) -> Dictionary:
 		return {"ok": false, "errorCode": "TEST_REPAIRED_WORLD_DID_NOT_ADVANCE"}
 	var saved := service.call("create_save") as Dictionary
 	if saved.get("ok") == true:
+		saved["adoptedBindings"] = (
+			gateway.call("get_resident_bindings") as Array
+		).duplicate(true)
 		var published_context := saved.get("context", {}) as Dictionary
 		var recorded := runtime.call(
 			"record_published_save",

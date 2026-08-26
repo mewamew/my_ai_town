@@ -149,7 +149,7 @@ jobs:
       - name: Import project
         shell: pwsh
         run: '& $env:GODOT_CONSOLE --headless --path game --import'
-      - name: Interrupted transaction and long-path regression
+      - name: Interrupted transaction, offline rebind, and long-path regression
         shell: pwsh
         run: |
           & $env:GODOT_CONSOLE --headless --path game --script res://tests/windows_directory_cleanup_test.gd

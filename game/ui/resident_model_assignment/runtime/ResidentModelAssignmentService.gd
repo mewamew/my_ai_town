@@ -2,8 +2,8 @@ class_name ResidentModelAssignmentService
 extends RefCounted
 
 
-const ASSIGNMENT_COPY := preload(
-	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentCopy.gd"
+const FEEDBACK_POLICY := preload(
+	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentFeedbackPolicy.gd"
 )
 
 
@@ -1226,7 +1226,7 @@ func _error_payload(error_code: String, retryable: bool, details: Array = []) ->
 
 
 func _error_message(error_code: String) -> String:
-	return ASSIGNMENT_COPY.error_message(error_code)
+	return FEEDBACK_POLICY.error_message(error_code)
 
 
 func _operation_payload(request_id: String, intent: String, status: String) -> Dictionary:

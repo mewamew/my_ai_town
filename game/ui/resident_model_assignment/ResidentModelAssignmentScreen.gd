@@ -28,8 +28,8 @@ const CompositeDesktop = preload(
 const RouteMode = preload(
 	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentRouteMode.gd"
 )
-const AssignmentCopy = preload(
-	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentCopy.gd"
+const FeedbackPolicy = preload(
+	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentFeedbackPolicy.gd"
 )
 const FormalDialog = preload(
 	"res://ui/common/formal_dialog/FormalConfirmationDialog.gd"
@@ -459,6 +459,7 @@ func _build_interface() -> void:
 
 	_build_header()
 	_build_body()
+	_wire_native_focus_neighbors()
 
 	_contract_label = _label("", 18, PageTheme.TERRACOTTA_DARK, "ContractError")
 	_contract_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -587,6 +588,15 @@ func _build_native_completion_modal() -> void:
 	_native_modal_start_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_native_modal_start_button.pressed.connect(_start_game_from_completion_modal)
 	actions.add_child(_native_modal_start_button)
+
+
+func _wire_native_focus_neighbors() -> void:
+	_back_button.focus_neighbor_right = _back_button.get_path_to(_mode_button)
+	_mode_button.focus_neighbor_left = _mode_button.get_path_to(_back_button)
+	_mode_button.focus_neighbor_bottom = _mode_button.get_path_to(_assign_button)
+	_assign_button.focus_neighbor_top = _assign_button.get_path_to(_mode_button)
+	_assign_button.focus_neighbor_bottom = _assign_button.get_path_to(_apply_button)
+	_apply_button.focus_neighbor_top = _apply_button.get_path_to(_assign_button)
 
 
 func _reset_provider_auto_refresh() -> void:
@@ -1321,7 +1331,7 @@ func _render_inspector() -> void:
 
 
 func _save_slot_error_copy(message: String, error_code: String) -> String:
-	return AssignmentCopy.save_slot_error(message, error_code, route_mode)
+	return FeedbackPolicy.save_slot_error(message, error_code, route_mode)
 
 
 func _render_action_states() -> void:
@@ -1337,7 +1347,7 @@ func _render_action_states() -> void:
 	)
 	_apply_button.disabled = not apply_enabled
 	_native_modal_start_button.disabled = not apply_enabled
-	_provider_settings_button.visible = AssignmentCopy.provider_settings_available(
+	_provider_settings_button.visible = FeedbackPolicy.provider_settings_available(
 		_presentation_view_model(),
 		route_mode,
 	)

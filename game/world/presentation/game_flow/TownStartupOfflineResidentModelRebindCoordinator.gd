@@ -34,6 +34,7 @@ var _rebind: TownOfflineResidentModelRebindService
 var _target: Dictionary = {}
 var _preserved_draft: Dictionary = {}
 var _last_result: Dictionary = {}
+var _return_state := ""
 
 
 func configure(
@@ -59,11 +60,53 @@ func configure(
 	return _success()
 
 
+func select_target(slot: Dictionary) -> Dictionary:
+	if is_open():
+		return _failure("STARTUP_SAVE_MODEL_COORDINATOR_ALREADY_OPEN")
+	var projection := project_slot_edit(slot)
+	var summary := slot.get("summary", {}) as Dictionary
+	var target := {
+		"slotId": String(slot.get("slotId", "")).strip_edges(),
+		"sessionId": String(summary.get("sessionId", "")).strip_edges(),
+		"saveRevision": int(summary.get("saveRevision", -1)),
+	}
+	if (
+		not bool(projection.get("modelEditAvailable", false))
+		or String(target.get("slotId", "")).is_empty()
+		or String(target.get("sessionId", "")).is_empty()
+		or int(target.get("saveRevision", -1)) < 1
+	):
+		return _failure(String(projection.get(
+			"modelEditDisabledReason",
+			"STARTUP_SAVE_MODEL_EDIT_TARGET_STALE",
+		)))
+	_target = target.duplicate(true)
+	_return_state = (
+		"recovery"
+		if bool(projection.get("modelEditRecoveryRequired", false))
+		else "selected"
+	)
+	var result := _success()
+	result["target"] = _target.duplicate(true)
+	result["recoveryRequired"] = _return_state == "recovery"
+	return result
+
+
 func open(startup: Control, slot: Dictionary) -> Dictionary:
+	if _target.is_empty():
+		var selected := select_target(slot)
+		if selected.get("ok") != true:
+			return selected
+	return resume(startup, slot)
+
+
+func resume(startup: Control, slot: Dictionary) -> Dictionary:
 	if is_open():
 		return _failure("STARTUP_SAVE_MODEL_COORDINATOR_ALREADY_OPEN")
 	if _store == null or startup == null:
 		return _failure("STARTUP_SAVE_MODEL_COORDINATOR_NOT_CONFIGURED")
+	if not _slot_matches_target(slot):
+		return _failure("STARTUP_SAVE_MODEL_EDIT_TARGET_STALE")
 	var rebind := OFFLINE_REBIND.new() as TownOfflineResidentModelRebindService
 	var configured := rebind.configure(_store, _agent_store, _provider)
 	if configured.get("ok") != true:
@@ -106,6 +149,7 @@ func open(startup: Control, slot: Dictionary) -> Dictionary:
 	_rebind = rebind
 	_assignment = assignment
 	_target = target.duplicate(true)
+	_return_state = "editing"
 	_assignment.draft_applied.connect(_on_draft_applied)
 	_assignment.back_requested.connect(_on_back_requested)
 	page.provider_settings_requested.connect(_on_provider_settings_requested)
@@ -140,7 +184,6 @@ func close() -> void:
 		_adapter.bind_resident_model_assignment_service(null)
 	_assignment = null
 	_rebind = null
-	_target.clear()
 
 
 func is_open() -> bool:
@@ -157,6 +200,10 @@ func assignment() -> RefCounted:
 
 func target() -> Dictionary:
 	return _target.duplicate(true)
+
+
+func awaiting_provider_settings() -> bool:
+	return _return_state == "provider_settings" and not _target.is_empty()
 
 
 func preserved_draft() -> Dictionary:
@@ -204,22 +251,24 @@ func _on_draft_applied(_draft: Dictionary, _revision: int) -> void:
 	_preserved_draft.clear()
 	var result := _last_result.duplicate(true)
 	close()
+	_clear_pending_target()
 	route_finished.emit(true, "load_game", result)
 
 
 func _on_back_requested(draft: Dictionary, _revision: int) -> void:
 	_preserve(draft)
 	close()
+	_clear_pending_target()
 	route_finished.emit(false, "load_game", _success())
 
 
 func _on_provider_settings_requested(_revision: int) -> void:
-	var slot_id := String(_target.get("slotId", ""))
 	if _assignment != null:
 		_preserve(_assignment.get_session_draft())
 	close()
+	_return_state = "provider_settings"
 	var result := _success()
-	result["slotId"] = slot_id
+	result["target"] = _target.duplicate(true)
 	route_finished.emit(false, "provider_settings", result)
 
 
@@ -229,6 +278,24 @@ func _preserve(draft: Dictionary) -> void:
 		"saveRevision": int(_target.get("saveRevision", 0)),
 		"draft": draft.duplicate(true),
 	}
+
+
+func _slot_matches_target(slot: Dictionary) -> bool:
+	if _target.is_empty():
+		return false
+	var summary := slot.get("summary", {}) as Dictionary
+	return (
+		String(slot.get("slotId", "")) == String(_target.get("slotId", ""))
+		and String(summary.get("sessionId", ""))
+		== String(_target.get("sessionId", ""))
+		and int(summary.get("saveRevision", -1))
+		== int(_target.get("saveRevision", -2))
+	)
+
+
+func _clear_pending_target() -> void:
+	_target.clear()
+	_return_state = ""
 
 
 func _success() -> Dictionary:

@@ -1,4 +1,4 @@
-class_name ResidentModelAssignmentCopy
+class_name ResidentModelAssignmentFeedbackPolicy
 extends RefCounted
 
 

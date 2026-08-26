@@ -11,6 +11,15 @@ const SAVE_MANIFEST := preload(
 const AGENT_SAVE_STORE := preload(
 	"res://agent/lifecycle/AgentSaveStore.gd"
 )
+const STARTUP_SAVE_CATALOG := preload(
+	"res://world/presentation/session/TownStartupSaveCatalog.gd"
+)
+const OFFLINE_REBIND := preload(
+	"res://world/presentation/session/TownOfflineResidentModelRebindService.gd"
+)
+const GAME_FLOW_HOST := preload(
+	"res://world/presentation/game_flow/GameFlowHost.gd"
+)
 const FAKE_MODEL := preload("res://agent/model/FakeModelProvider.gd")
 const FORMAL_PROJECT_NAME := "ai-town"
 const SLOT_ID := "town-main"
@@ -26,6 +35,9 @@ class FormalNoNetworkProviderService:
 
 	var providers: Dictionary = {}
 	var pending_availability: Array[Dictionary] = []
+
+	func configure(_config: Dictionary, _request_host: Node = null) -> Dictionary:
+		return {"ok": true, "errorCode": "", "retryable": false}
 
 	func get_health_snapshot() -> Dictionary:
 		return {
@@ -44,16 +56,19 @@ class FormalNoNetworkProviderService:
 		}
 
 	func list_available_models() -> Array[Dictionary]:
-		return [{
-			"providerId": "test-formal",
-			"modelId": "fixed",
-			"id": "fixed",
-			"label": "Fixed deterministic model",
-			"available": true,
-			"errorCode": "",
-			"retryable": false,
-			"capabilities": [],
-		}]
+		var result: Array[Dictionary] = []
+		for model_id in ["fixed", "rebound"]:
+			result.append({
+				"providerId": "test-formal",
+				"modelId": model_id,
+				"id": model_id,
+				"label": model_id,
+				"available": true,
+				"errorCode": "",
+				"retryable": false,
+				"capabilities": [],
+			})
+		return result
 
 	func validate_resident_bindings(bindings: Array) -> Dictionary:
 		if bindings.size() != 15:
@@ -67,7 +82,7 @@ class FormalNoNetworkProviderService:
 				String(binding.get("residentId", "")).is_empty()
 				or String(llm.get("mode", "")) != "model"
 				or String(llm.get("providerId", "")) != "test-formal"
-				or String(llm.get("modelId", "")) != "fixed"
+				or String(llm.get("modelId", "")) not in ["fixed", "rebound"]
 			):
 				return _failure("SESSION_LLM_BINDINGS_INVALID")
 		return {
@@ -99,6 +114,12 @@ class FormalNoNetworkProviderService:
 			"retryable": false,
 		}
 
+	func request_health_check(
+		bindings: Array,
+		on_complete: Callable = Callable(),
+	) -> Dictionary:
+		return check_entry_availability(bindings, on_complete)
+
 	func complete_next_availability() -> bool:
 		if pending_availability.is_empty():
 			return false
@@ -129,7 +150,9 @@ class FormalNoNetworkProviderService:
 			"ok": true,
 			"provider": providers[resident_id],
 			"providerId": "test-formal",
-			"modelId": "fixed",
+			"modelId": String(
+				(binding.get("llmBinding", {}) as Dictionary).get("modelId", "fixed"),
+			),
 			"errorCode": "",
 			"retryable": false,
 		}
@@ -759,21 +782,162 @@ func _run() -> void:
 		"successful Town publication clears the finalized compensation marker",
 	)
 
-	if gateway != null:
-		_expect_ok(
-			gateway.call("close_session") as Dictionary,
-			"test closes the published Agent session before isolated cleanup",
-		)
-	var final_scene := current_scene
-	current_scene = null
-	if final_scene != null and is_instance_valid(final_scene):
-		final_scene.free()
-	await _wait_frames(3)
-	if is_instance_valid(host):
-		host.free()
-	await _wait_frames(1)
+	await _verify_offline_rebind_host_reopen_story(host, gateway)
 	_cleanup_formal_slot()
 	call_deferred("_finish")
+
+
+func _verify_offline_rebind_host_reopen_story(
+	active_host: Node,
+	active_gateway: Node,
+) -> void:
+	await _release_formal_host(active_host, active_gateway)
+	var store := SAVE_STORE.new() as RefCounted
+	var agent_store := AGENT_SAVE_STORE.new() as RefCounted
+	var catalog := STARTUP_SAVE_CATALOG.new() as RefCounted
+	_expect_ok(catalog.call(
+		"configure",
+		store,
+		STARTUP_SAVE_CATALOG.DEFAULT_PROFILE_PATH,
+		agent_store,
+	) as Dictionary, "offline Host story configures the production startup catalog")
+	var slot_definitions := [
+		{"slotId": SLOT_ID, "displayName": "第一座小镇"},
+		{"slotId": "town-2", "displayName": "第二座小镇"},
+	]
+	var inspected := catalog.call("get_catalog", slot_definitions) as Dictionary
+	_expect_ok(inspected, "offline Host story scans the saved formal slot")
+	var selected_slot := inspected.get("continueSlot", {}) as Dictionary
+	_expect_equal(
+		(selected_slot.get("summary", {}) as Dictionary).get("saveRevision"),
+		2,
+		"offline Host story selects the manual save revision",
+	)
+	var saved_config := selected_slot.get("sessionConfig", {}) as Dictionary
+	var rebound_bindings: Array[Dictionary] = []
+	var residents: Array[Dictionary] = []
+	for identity_value: Variant in saved_config.get("residentIdentities", []) as Array:
+		var identity := identity_value as Dictionary
+		var resident_id := String(identity.get("residentId", ""))
+		rebound_bindings.append({
+			"residentId": resident_id,
+			"llmBinding": {
+				"mode": "model",
+				"providerId": "test-formal",
+				"modelId": "rebound",
+			},
+		})
+		residents.append({
+			"residentId": resident_id,
+			"attributes": {"name": identity.get("residentName", resident_id)},
+			"presentation": {},
+		})
+	var rebind := OFFLINE_REBIND.new() as RefCounted
+	_expect_ok(rebind.call(
+		"configure",
+		store,
+		agent_store,
+		FormalNoNetworkProviderService.new(),
+	) as Dictionary, "offline Host story configures the production rebind service")
+	_expect_ok(rebind.call(
+		"prepare",
+		selected_slot,
+		{"residents": residents},
+	) as Dictionary, "offline Host story pins the selected complete revision")
+	var rebound := rebind.call("apply_bindings", rebound_bindings) as Dictionary
+	_expect_ok(rebound, "offline Host story publishes the rebound pair")
+	_expect_equal(
+		(rebound.get("context", {}) as Dictionary).get("save_revision"),
+		3,
+		"offline rebind publishes revision 3 without replacing revision 2",
+	)
+
+	var first_entry := await _open_saved_town_with_new_host()
+	var first_host := first_entry.get("host") as Node
+	var first_gateway := first_entry.get("gateway") as Node
+	_expect(first_host != null and first_gateway != null, "new GameFlowHost enters the rebound save")
+	if first_gateway != null:
+		_expect_equal(
+			first_gateway.call("get_resident_bindings"),
+			rebound_bindings,
+			"production Host Gateway adopts the rebound bindings",
+		)
+	var first_runtime := first_host.get("_town_runtime") as Node if first_host != null else null
+	var first_adapter := first_runtime.call("get_ui_adapter") as Node if first_runtime != null else null
+	var resaved := (
+		first_adapter.call("dispatch", "save.create", {
+			"reason": "offline_rebind_host_story",
+		}) as Dictionary
+		if first_adapter != null
+		else _failure("TEST_HOST_RUNTIME_MISSING")
+	)
+	_expect_ok(resaved, "rebound Runtime saves through the production pause action")
+	var resaved_listing := store.call("list_published", SLOT_ID) as Dictionary
+	var resaved_manifests := resaved_listing.get("manifests", []) as Array
+	_expect_equal(
+		int((resaved_manifests[0] as Dictionary).get("save_revision", -1))
+		if not resaved_manifests.is_empty()
+		else -1,
+		4,
+		"production save advances the rebound slot to revision 4",
+	)
+	await _wait_frames(10)
+	await _release_formal_host(first_host, first_gateway)
+
+	var second_entry := await _open_saved_town_with_new_host()
+	var second_host := second_entry.get("host") as Node
+	var second_gateway := second_entry.get("gateway") as Node
+	_expect(second_host != null and second_gateway != null, "a second new GameFlowHost reopens revision 4")
+	if second_gateway != null:
+		_expect_equal(
+			second_gateway.call("get_resident_bindings"),
+			rebound_bindings,
+			"exit and new Host reopen preserve the rebound bindings",
+		)
+	await _wait_frames(10)
+	await _release_formal_host(second_host, second_gateway)
+
+
+func _open_saved_town_with_new_host() -> Dictionary:
+	var startup := STARTUP_SCENE.instantiate()
+	root.add_child(startup)
+	current_scene = startup
+	var host := GAME_FLOW_HOST.new() as Node
+	host.name = "GameFlowHost"
+	root.add_child(host)
+	await _wait_frames(4)
+	var provider := FormalNoNetworkProviderService.new()
+	host.set("_startup_provider_service", provider)
+	host.set("_startup_provider_settings_service", ProviderSettingsHarness.new())
+	var generation := int(host.get("_flow_generation")) + 1
+	host.set("_flow_generation", generation)
+	host.call("_start_formal_continue", generation, SLOT_ID, false, "load_game")
+	_expect(
+		await _wait_for_pending_availability(provider),
+		"new Host reaches the production Continue health boundary",
+	)
+	_expect(provider.complete_next_availability(), "new Host completes the Continue health check")
+	_expect(await _wait_for_town(host), "new Host publishes the restored Town route")
+	return {
+		"host": host,
+		"gateway": host.get("_gateway") as Node,
+	}
+
+
+func _release_formal_host(host: Node, gateway: Node) -> void:
+	if gateway != null and is_instance_valid(gateway):
+		_expect_ok(
+			gateway.call("close_session") as Dictionary,
+			"test closes the published Agent session before Host release",
+		)
+	var scene := current_scene
+	current_scene = null
+	if scene != null and is_instance_valid(scene):
+		scene.free()
+	await _wait_frames(3)
+	if host != null and is_instance_valid(host):
+		host.free()
+	await _wait_frames(2)
 
 
 func _emit_startup_new_game(startup: Node) -> void:
