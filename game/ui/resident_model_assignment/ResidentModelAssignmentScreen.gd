@@ -540,18 +540,13 @@ func _build_native_completion_modal() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.custom_minimum_size.y = 52
 	stack.add_child(title)
+	var initial_completion := FeedbackPolicy.completion_copy(
+		route_mode,
+		return_to_provider_settings,
+		SLOT_COUNT,
+	)
 	_native_modal_body = _label(
-		(
-			"这位新居民的模型已经配置完成，可以确认入镇。"
-			if _is_single_resident()
-			else "居民模型分配已更新，确认后返回模型设置。"
-			if return_to_provider_settings
-			else "全部居民的模型均已配置完成，可以保存到当前小镇。"
-			if _is_in_session()
-			else "全部居民的模型均已配置完成，可以保存到此存档。"
-			if _is_save_slot()
-			else "全部居民的模型均已配置完成，现在可以开始游戏。"
-		),
+		String(initial_completion.get("message", "")),
 		20,
 		PageTheme.INK_MUTED,
 		"ResponsiveModalBody",
@@ -570,17 +565,7 @@ func _build_native_completion_modal() -> void:
 	_native_modal_return_button.pressed.connect(_close_completion_modal)
 	actions.add_child(_native_modal_return_button)
 	_native_modal_start_button = _button(
-		(
-			"确认入镇"
-			if _is_single_resident()
-			else "确认并返回"
-			if return_to_provider_settings
-			else "保存修改"
-			if _is_in_session()
-			else "保存到此存档"
-			if _is_save_slot()
-			else "开始游戏"
-		),
+		String(initial_completion.get("confirm", "开始游戏")),
 		22,
 		"success",
 		"ResponsiveModalStart",
@@ -1547,19 +1532,13 @@ func _open_completion_modal() -> void:
 		return
 	_completion_modal_open = true
 	var resident_count := int(_render_data.get("residentCount", SLOT_COUNT))
-	_set_completion_modal_message(
-		(
-			"这位新居民的模型已经配置完成\n确认后会立即进入小镇。"
-			if _is_single_resident()
-			else "居民模型分配已更新\n确认后返回模型设置。"
-			if return_to_provider_settings
-			else "%d 位居民的模型均已配置完成\n保存后会立即用于当前小镇。" % resident_count
-			if _is_in_session()
-			else "%d 位居民的模型均已配置完成\n保存后会写入此存档的新修订。" % resident_count
-			if _is_save_slot()
-			else "%d 位居民的模型均已配置完成\n现在可以开始游戏。" % resident_count
-		)
+	var completion := FeedbackPolicy.completion_copy(
+		route_mode,
+		return_to_provider_settings,
+		resident_count,
 	)
+	_native_modal_start_button.text = String(completion.get("confirm", "开始游戏"))
+	_set_completion_modal_message(String(completion.get("message", "")))
 	_sync_completion_modal_visibility()
 
 

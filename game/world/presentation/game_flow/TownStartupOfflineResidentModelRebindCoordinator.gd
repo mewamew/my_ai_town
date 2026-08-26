@@ -130,6 +130,7 @@ func resume(startup: Control, slot: Dictionary) -> Dictionary:
 		draft,
 		{
 			"revision": maxi(int(draft.get("draftRevision", 1)), 1),
+			"allowAutomaticBindingRepair": false,
 			"applyHandler": func(
 				applied_draft: Dictionary,
 				bindings: Array,
@@ -225,13 +226,24 @@ static func project_slot_edit(slot: Dictionary) -> Dictionary:
 		and bool(reconciliation.get("repairable", false))
 		and String(reconciliation.get("action", "")) == RECONCILIATION.RECONCILE_ACTION
 	)
-	var available := not summary.is_empty() and (not has_blockers or recovery_required)
+	var recovery_plan := slot.get("recoveryPlan", {}) as Dictionary
+	var restore_before_edit := (
+		not recovery_required
+		and not recovery_plan.is_empty()
+		and not summary.is_empty()
+	)
+	var available := (
+		not summary.is_empty()
+		and not restore_before_edit
+		and (not has_blockers or recovery_required)
+	)
 	var reason := ""
 	if not available:
-		reason = "SESSION_SAVE_NO_COMPLETE_REVISION"
-		var blockers := save_blockers if not save_blockers.is_empty() else restore_blockers
-		if not blockers.is_empty() and blockers[0] is Dictionary:
-			reason = String((blockers[0] as Dictionary).get("errorCode", reason))
+		reason = (
+			"OFFLINE_RESIDENT_MODEL_REBIND_RECOVERY_REQUIRED"
+			if restore_before_edit
+			else "SESSION_SAVE_NO_COMPLETE_REVISION"
+		)
 	return {
 		"modelEditAvailable": available,
 		"modelEditSaveRevision": int(summary.get("saveRevision", 0)),

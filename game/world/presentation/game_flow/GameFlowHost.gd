@@ -2809,30 +2809,38 @@ func _on_startup_settings_intent_requested(
 
 func _resume_startup_save_model_assignment() -> void:
 	if _startup_save_model_coordinator == null:
-		_publish_startup_action_failure(
-			&"save.edit_resident_models",
+		_return_to_load_game_with_model_edit_failure(
 			_failure("STARTUP_SAVE_MODEL_EDIT_TARGET_STALE", false),
+			{},
 		)
-		_open_startup_load_game("load")
 		return
 	var target := _startup_save_model_coordinator.target()
 	var catalog := _startup_catalog_snapshot()
 	var slot := _startup_slot_by_id(catalog, String(target.get("slotId", "")))
 	if slot.is_empty():
-		_publish_startup_action_failure(
-			&"save.edit_resident_models",
+		_return_to_load_game_with_model_edit_failure(
 			_failure("STARTUP_SAVE_MODEL_EDIT_TARGET_STALE", false),
+			target,
 		)
-		_open_startup_load_game("load")
 		return
 	var startup := get_tree().current_scene as Control
 	var resumed := _startup_save_model_coordinator.resume(startup, slot)
 	if resumed.get("ok") != true:
-		_publish_startup_action_failure(&"save.edit_resident_models", resumed)
-		_open_startup_load_game("load")
+		_return_to_load_game_with_model_edit_failure(resumed, target)
 		return
 	_close_startup_load_game()
 	_last_result = resumed.duplicate(true)
+
+
+func _return_to_load_game_with_model_edit_failure(
+	result: Dictionary,
+	target: Dictionary,
+) -> void:
+	_publish_startup_action_failure(&"save.edit_resident_models", result)
+	_open_startup_load_game("load")
+	_publish_startup_load_game_result(result, {
+		"slotId": String(target.get("slotId", "")),
+	})
 
 
 func _startup_new_game_payload_is_authorized(payload: Dictionary) -> bool:

@@ -185,7 +185,7 @@ static func player_reason(reason: Variant) -> String:
 			return "操作正在进行，请稍候"
 		"OCCUPATION_SERVICE_UNSTAFFED":
 			return "对应岗位当前无人可执行，这项服务已经暂停"
-		"SESSION_SAVE_NO_PUBLISHED_REVISION":
+		"SESSION_SAVE_NO_PUBLISHED_REVISION", "SESSION_SAVE_NO_COMPLETE_REVISION":
 			return "当前没有可用的完整存档"
 		"SESSION_SAVE_CORRUPT":
 			return "这个存档已损坏，无法直接进入"
@@ -317,6 +317,10 @@ static func player_reason(reason: Variant) -> String:
 		"LLM_MODEL_UNAVAILABLE", "LLM_MODEL_UNKNOWN", \
 		"NO_AVAILABLE_MODEL":
 			return "所选模型当前不可用，请重新选择"
+		"STARTUP_SAVE_MODEL_EDIT_TARGET_STALE":
+			return "存档已更新，请重新选择完整修订"
+		"OFFLINE_RESIDENT_MODEL_REBIND_RECOVERY_REQUIRED":
+			return "请先完成存档恢复，再重新选择完整修订"
 		"PROVIDER_FORMAL_RUNTIME_REQUIRED":
 			return "模型服务尚未完成正式配置"
 		"RESIDENT_MODEL_ASSIGNMENT_START_FAILED", \

@@ -75,6 +75,7 @@ var _operation := _idle_operation()
 var _error: Variant = null
 var _apply_handler := Callable()
 var _single_resident_mode := false
+var _automatic_binding_repair_allowed := true
 var _slot_count := SLOT_COUNT
 var _allowed_space_ids: Array[String] = []
 
@@ -87,6 +88,9 @@ func configure(
 ) -> Dictionary:
 	_reset()
 	_single_resident_mode = bool(context.get("singleResidentMode", false))
+	_automatic_binding_repair_allowed = bool(
+		context.get("allowAutomaticBindingRepair", true),
+	)
 	var draft_slots_value: Variant = session_draft.get("slots", [])
 	if _single_resident_mode:
 		_slot_count = 1
@@ -423,6 +427,12 @@ func _apply_draft() -> Dictionary:
 	var provider_validation := _provider_service.call("validate_resident_bindings", bindings) as Dictionary
 	var automatic_repair: Dictionary = {}
 	if not bool(provider_validation.get("ok", false)):
+		if not _automatic_binding_repair_allowed:
+			return _failure(
+				String(provider_validation.get("errorCode", "SESSION_LLM_BINDINGS_INVALID")),
+				bool(provider_validation.get("retryable", false)),
+				provider_validation.get("errors", []) as Array,
+			)
 		automatic_repair = _try_auto_repair_draft_bindings(
 			bindings,
 			provider_validation,
@@ -1317,5 +1327,6 @@ func _reset() -> void:
 	_error = null
 	_apply_handler = Callable()
 	_single_resident_mode = false
+	_automatic_binding_repair_allowed = true
 	_slot_count = SLOT_COUNT
 	_allowed_space_ids.clear()

@@ -60,3 +60,38 @@ static func provider_settings_available(
 	return PROVIDER_CONFIGURATION_ERRORS.has(
 		String((error_value as Dictionary).get("code", "")),
 	)
+
+
+static func completion_copy(
+	route_mode: String,
+	return_to_provider_settings: bool,
+	resident_count: int,
+) -> Dictionary:
+	var count := maxi(resident_count, 1)
+	var primary := "全部居民的模型均已配置完成"
+	var secondary := "现在可以开始游戏。"
+	var confirm := "开始游戏"
+	if ResidentModelAssignmentRouteMode.is_single_resident(route_mode):
+		primary = "这位新居民的模型已经配置完成"
+		secondary = "确认后会立即进入小镇。"
+		confirm = "确认入镇"
+	elif return_to_provider_settings:
+		primary = "居民模型分配已更新"
+		secondary = "确认后返回模型设置。"
+		confirm = "确认并返回"
+	elif ResidentModelAssignmentRouteMode.is_in_session(route_mode):
+		primary = "%d 位居民的模型均已配置完成" % count
+		secondary = "保存后会立即用于当前小镇。"
+		confirm = "保存修改"
+	elif ResidentModelAssignmentRouteMode.is_save_slot(route_mode):
+		primary = "%d 位居民的模型均已配置完成" % count
+		secondary = "保存后会写入此存档的新修订。"
+		confirm = "保存到此存档"
+	else:
+		primary = "%d 位居民的模型均已配置完成" % count
+	return {
+		"primary": primary,
+		"secondary": secondary,
+		"message": "%s\n%s" % [primary, secondary],
+		"confirm": confirm,
+	}

@@ -82,6 +82,7 @@
   "game/tests/interior_occlusion_asset_generator_test.gd": "自动测试",
   "game/tests/town_interior_performance_probe.gd": "预检查",
   "game/tests/offline_resident_model_rebind_test.gd": "自动测试",
+  "game/tests/offline_resident_model_rebind_load_page_test.gd": "自动测试",
   "game/tests/offline_resident_model_rebind_ui_route_test.gd": "自动测试",
   "game/tests/resident_model_rebind_test.gd": "自动测试",
   "game/tests/resident_replacement_test.gd": "自动测试",

@@ -66,6 +66,11 @@ func _ready() -> void:
 		_render()
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_RESIZED and is_node_ready():
+		_layout_compact_slot_actions.call_deferred()
+
+
 func deactivate_modal_ownership() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_process_unhandled_input(false)
@@ -334,6 +339,7 @@ func _render() -> void:
 		)
 	)
 	_restore_focus_identity(focus_identity)
+	_layout_compact_slot_actions.call_deferred()
 
 
 func _capture_focus_identity() -> String:
@@ -459,6 +465,7 @@ func _build_slot_card(index: int, slot: Dictionary) -> void:
 		_request_slot.bind(slot.duplicate(true)),
 		_slot_layer,
 	)
+	_register_slot_action_layout(action, index, "primary", primary_action_rect)
 	action.set_meta("slot_id", slot_id)
 	action.set_meta("visual_state_family", visual_family)
 	action.disabled = (
@@ -485,19 +492,21 @@ func _build_slot_card(index: int, slot: Dictionary) -> void:
 	)
 	if not _is_overwrite_selection_mode():
 		var delete_contract := _action("deleteSlot")
+		var delete_source_rect := Rect2(
+			1150.0,
+			282.0 + float(index) * 159.0,
+			138.0,
+			64.0,
+		)
 		var delete_button := _button(
 			"%sDeleteAction" % slot_id,
 			"",
-			_source_rect(Rect2(
-				1150.0,
-				282.0 + float(index) * 159.0,
-				138.0,
-				64.0,
-			)),
+			_source_rect(delete_source_rect),
 			&"StartupLoadDeleteBadgeAction",
 			_request_delete_slot.bind(slot.duplicate(true)),
 			_slot_layer,
 		)
+		_register_slot_action_layout(delete_button, index, "delete", delete_source_rect)
 		delete_button.icon = _delete_icon_texture
 		delete_button.expand_icon = true
 		delete_button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -518,19 +527,21 @@ func _build_slot_card(index: int, slot: Dictionary) -> void:
 			)
 		)
 		var edit_contract := _action("editResidentModels")
+		var edit_source_rect := Rect2(
+			1150.0,
+			348.0 + float(index) * 159.0,
+			138.0,
+			64.0,
+		)
 		var edit_button := _button(
 			"%sModelEditAction" % slot_id,
 			"更改居民模型",
-			_source_rect(Rect2(
-				1150.0,
-				348.0 + float(index) * 159.0,
-				138.0,
-				64.0,
-			)),
+			_source_rect(edit_source_rect),
 			&"StartupLoadHealthyAction",
 			_request_edit_resident_models.bind(slot.duplicate(true)),
 			_slot_layer,
 		)
+		_register_slot_action_layout(edit_button, index, "edit", edit_source_rect)
 		edit_button.set_meta("slot_id", slot_id)
 		edit_button.set_meta("action_key", "editResidentModels")
 		edit_button.add_theme_font_size_override(&"font_size", 18)
@@ -551,6 +562,98 @@ func _build_slot_card(index: int, slot: Dictionary) -> void:
 		)
 
 
+func _register_slot_action_layout(
+	button: Button,
+	index: int,
+	role: String,
+	source_rect: Rect2,
+) -> void:
+	button.set_meta("slot_index", index)
+	button.set_meta("slot_action_role", role)
+	button.set_meta("slot_action_source_rect", source_rect)
+
+
+func _layout_compact_slot_actions() -> void:
+	if not is_instance_valid(_slot_layer) or size.x <= 0.0 or size.y <= 0.0:
+		return
+	var actions_by_slot: Dictionary = {}
+	for child: Node in _slot_layer.get_children():
+		if not child is Button or not child.has_meta("slot_action_role"):
+			continue
+		var index := int(child.get_meta("slot_index", -1))
+		if index < 0:
+			continue
+		if not actions_by_slot.has(index):
+			actions_by_slot[index] = {}
+		(actions_by_slot[index] as Dictionary)[String(
+			child.get_meta("slot_action_role", ""),
+		)] = child
+	if size.x > 1000.0:
+		for actions_value: Variant in actions_by_slot.values():
+			for button_value: Variant in (actions_value as Dictionary).values():
+				var button := button_value as Button
+				_apply_reference_rect(
+					button,
+					_source_rect(button.get_meta(
+						"slot_action_source_rect",
+						Rect2(),
+					) as Rect2),
+				)
+				if String(button.get_meta("slot_action_role", "")) == "edit":
+					button.add_theme_font_size_override(&"font_size", 18)
+		return
+	var text_right_reference := _source_rect(Rect2(512.0, 0.0, 492.0, 1.0)).end.x
+	var left := ceilf(text_right_reference / REFERENCE_VIEWPORT.x * size.x + 8.0)
+	var right := floorf(size.x - 8.0)
+	var available_width := right - left
+	var gap := 8.0
+	var delete_width := 48.0
+	var flexible_width := available_width - delete_width - gap * 2.0
+	var primary_width := clampf(flexible_width * 0.4, 48.0, 92.0)
+	var edit_width := flexible_width - primary_width
+	if edit_width < 48.0:
+		primary_width = maxf(48.0, primary_width - (48.0 - edit_width))
+		edit_width = 48.0
+	for index_value: Variant in actions_by_slot.keys():
+		var index := int(index_value)
+		var actions := actions_by_slot[index] as Dictionary
+		if not actions.has("primary") or not actions.has("delete") or not actions.has("edit"):
+			continue
+		var card_rect := _source_rect(Rect2(
+			446.0,
+			274.0 + float(index) * 159.0,
+			842.0,
+			142.0,
+		))
+		var card_top := card_rect.position.y / REFERENCE_VIEWPORT.y * size.y
+		var card_height := card_rect.size.y / REFERENCE_VIEWPORT.y * size.y
+		var action_y := roundf(card_top + (card_height - 48.0) * 0.5)
+		var primary := actions.get("primary") as Button
+		var delete := actions.get("delete") as Button
+		var edit := actions.get("edit") as Button
+		_apply_absolute_rect(primary, Rect2(left, action_y, primary_width, 48.0))
+		_apply_absolute_rect(delete, Rect2(
+			left + primary_width + gap,
+			action_y,
+			delete_width,
+			48.0,
+		))
+		_apply_absolute_rect(edit, Rect2(
+			left + primary_width + gap + delete_width + gap,
+			action_y,
+			edit_width,
+			48.0,
+		))
+		primary.add_theme_font_size_override(&"font_size", 14)
+		edit.add_theme_font_size_override(&"font_size", 14)
+
+
+func _apply_absolute_rect(control: Control, rect: Rect2) -> void:
+	control.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	control.position = rect.position
+	control.size = rect.size
+
+
 func _slot_body(slot: Dictionary) -> String:
 	var state := String(slot.get("state", "empty"))
 	if state == "empty":
@@ -560,6 +663,14 @@ func _slot_body(slot: Dictionary) -> String:
 	if state == "corrupt" and not bool(slot.get("continueAvailable", false)):
 		return "无法读取可进入的小镇存档"
 	if state == "recoverable":
+		if String(slot.get("recoveryState", "")) in [
+			"save_reconciliation_required",
+			"restore_reconciliation_required",
+		]:
+			return "%s · World %d" % [
+				_full_saved_at(String(slot.get("savedAt", ""))),
+				int(slot.get("worldRevision", 0)),
+			]
 		var damage := slot.get("damageDetails", {}) as Dictionary
 		return "完整修订 %d · %s · World %d" % [
 			int(damage.get("fallbackSaveRevision", slot.get("saveRevision", 0))),
@@ -586,14 +697,16 @@ func _recovery_copy(slot: Dictionary) -> String:
 			if bool(slot.get("continueAvailable", false))
 			else "保存未完成，尚无可恢复版本"
 		)
+	if recovery_state == "save_reconciliation_required":
+		return "上次保存未完成，需要先完成存档协调"
+	if recovery_state == "restore_reconciliation_required":
+		return "上次恢复未完成，需要先完成存档协调"
 	if state == "recoverable" or recovery_state == "older_complete_revision_available":
 		return "损坏修订 %d · %s · World %d" % [
 			int(damage.get("damagedSaveRevision", 0)),
 			_full_saved_at(String(damage.get("damagedSavedAt", ""))),
 			int(damage.get("damagedWorldRevision", 0)),
 		]
-	if recovery_state == "restore_reconciliation_required":
-		return "上次恢复未完成，需要先完成存档协调"
 	if state == "corrupt" or recovery_state.begins_with("corrupt"):
 		if not bool(slot.get("continueAvailable", false)):
 			return "存档损坏，且没有可恢复的完整版本"
@@ -609,6 +722,11 @@ func _recovery_copy(slot: Dictionary) -> String:
 func _slot_detail_copy(slot: Dictionary) -> String:
 	var state := String(slot.get("state", "empty"))
 	if state == "recoverable":
+		if String(slot.get("recoveryState", "")) in [
+			"save_reconciliation_required",
+			"restore_reconciliation_required",
+		]:
+			return "协调后可编辑完整修订 %d" % int(slot.get("saveRevision", 0))
 		var damage := slot.get("damageDetails", {}) as Dictionary
 		return "恢复至第 %d 天 · %d 位居民" % [
 			int(damage.get("fallbackDay", slot.get("day", 0))),

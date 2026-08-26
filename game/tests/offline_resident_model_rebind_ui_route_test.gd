@@ -51,10 +51,10 @@ func _run() -> void:
 	_expect_ok(interrupted, "UI/路由故事可建立真实可恢复目录状态")
 	var recoverable_slot := interrupted.get("slot", {}) as Dictionary
 	await _test_pending_target_drift(recoverable_slot)
+	await _test_host_stale_feedback()
 	interrupted = _fixture.create_recoverable_catalog_slot()
 	_expect_ok(interrupted, "并发发布后可再次建立恢复路由夹具")
 	recoverable_slot = interrupted.get("slot", {}) as Dictionary
-	await _test_load_page_action()
 	await _test_save_slot_page(prepared)
 	await _test_game_flow_route(recoverable_slot)
 	_fixture.cleanup()
@@ -147,88 +147,86 @@ func _test_pending_target_drift(recoverable_slot: Dictionary) -> void:
 	adapter.free()
 
 
-func _test_load_page_action() -> void:
-	var scene := load("res://ui/startup/StartupLoadGameScreen.tscn") as PackedScene
-	var screen := scene.instantiate() as Control
-	root.add_child(screen)
-	var intents: Array[String] = []
-	var routed_payloads: Array[Dictionary] = []
-	screen.intent_requested.connect(
-		func(intent: StringName, payload: Dictionary) -> void:
-			intents.append(String(intent))
-			routed_payloads.append(payload.duplicate(true)),
+func _test_host_stale_feedback() -> void:
+	var startup := Control.new()
+	startup.name = "StartupScreen"
+	root.add_child(startup)
+	current_scene = startup
+	var adapter := UI_ADAPTER.new()
+	root.add_child(adapter)
+	var host := GAME_FLOW_HOST.new()
+	root.add_child(host)
+	host.set("_startup_save_store", _save_store)
+	host.set("_startup_agent_save_store", _agent_store)
+	host.set("_startup_provider_service", _fixture.provider())
+	host.set("_startup_ui_adapter", adapter)
+	var startup_catalog := SAVE_CATALOG.new()
+	startup_catalog.call("configure", _save_store, _profile_path, _agent_store)
+	host.set("_startup_save_catalog", startup_catalog)
+	host.call("_bind_current_scene")
+	_expect_ok(
+		host.call("_ensure_startup_save_model_coordinator") as Dictionary,
+		"Host stale 故事可配置离线改绑协调器",
 	)
-	var view_model := {
-		"scope": "save",
-		"status": "ready",
-		"revision": 1,
-		"data": {
-			"mode": "load",
-			"providerIndependent": true,
-			"slots": [{
-				"slotId": "slot-a",
-				"displayName": "第一座小镇",
-				"sessionId": "session-a",
-				"saveRevision": 7,
-				"state": "recoverable",
-				"continueAvailable": true,
-				"modelEditAvailable": true,
-				"modelEditSaveRevision": 7,
-				"modelEditDisabledReason": "",
-			}],
-		},
-		"actions": {
-			"back": _action("startup.close_load_game", true),
-			"continueSlot": _action("session.continue_slot", true),
-			"deleteSlot": _action("save.request_delete_slot", true),
-			"editResidentModels": _action("save.edit_resident_models", true),
-		},
-		"operation": {},
-		"error": null,
-	}
-	_expect(bool(screen.call("apply_view_model", view_model)), "加载页接受模型编辑动作")
-	await process_frame
-	var compact_touch_height := (
-		(screen.call("_source_rect", Rect2(0, 0, 1, 64)) as Rect2).size.y
-		* 720.0
-		/ 1080.0
+	var coordinator := host.get("_startup_save_model_coordinator") as Object
+	var selected_slot := _catalog_slot()
+	var selected_revision := int(
+		(selected_slot.get("summary", {}) as Dictionary).get("saveRevision", -1),
+	)
+	_expect_ok(
+		coordinator.call("select_target", selected_slot) as Dictionary,
+		"Host stale 故事保存加载页选定修订",
+	)
+	var concurrent := OFFLINE_REBIND.new() as RefCounted
+	_expect_ok(concurrent.call(
+		"configure",
+		_save_store,
+		_agent_store,
+		_fixture.provider(),
+	) as Dictionary, "Host stale 故事可配置并发发布者")
+	_expect_ok(concurrent.call(
+		"prepare",
+		selected_slot,
+		_base_catalog(),
+	) as Dictionary, "Host stale 故事并发发布者钉住原修订")
+	_expect_ok(concurrent.call(
+		"apply_bindings",
+		_bindings_for("current-provider", "current-model-3"),
+	) as Dictionary, "Host stale 故事产生更新后的完整修订")
+	host.call("_resume_startup_save_model_assignment")
+	for _index in 3:
+		await process_frame
+	var load_page := host.get("_startup_load_game_page") as Control
+	var feedback := (
+		load_page.find_child("LoadGameFeedback", true, false) as Label
+		if load_page != null
+		else null
 	)
 	_expect(
-		compact_touch_height >= 48.0,
-		"紧凑横屏下删除与模型编辑按钮仍满足 48 像素触控高度",
+		load_page != null and load_page.visible,
+		"stale 后重新打开可见的加载页（last=%s）" % host.get("_last_result"),
 	)
-	var edit_button := screen.find_child("slot-aModelEditAction", true, false) as Button
-	_expect(edit_button != null, "完整修订卡片显示更改居民模型按钮")
-	if edit_button != null:
-		_expect(
-			edit_button.size.y >= 48.0,
-			"更改居民模型按钮满足触控高度",
-		)
-		edit_button.grab_focus()
-		var refreshed_view_model := view_model.duplicate(true)
-		refreshed_view_model["revision"] = 2
-		_expect(
-			bool(screen.call("apply_view_model", refreshed_view_model)),
-			"加载页后台刷新保留模型编辑契约",
-		)
-		await process_frame
-		edit_button = screen.find_child("slot-aModelEditAction", true, false) as Button
-		_expect_equal(
-			root.get_viewport().gui_get_focus_owner(),
-			edit_button,
-			"加载页刷新后恢复模型编辑按钮焦点",
-		)
-		screen.call("debug_request_edit_resident_models", "slot-a")
-	_expect_equal(intents, ["save.edit_resident_models"], "加载页发出离线改绑意图")
+	_expect(
+		feedback != null
+		and feedback.is_visible_in_tree()
+		and feedback.text.contains("存档已更新，请重新选择完整修订"),
+		"加载页自身显示明确的 stale 提示（feedback=%s）" % (
+			feedback.text if feedback != null else "missing"
+		),
+	)
 	_expect_equal(
-		(routed_payloads[0] as Dictionary).get("saveRevision")
-		if not routed_payloads.is_empty()
-		else null,
-		7,
-		"回退槽位明确编辑的完整修订",
+		(coordinator.call("target") as Dictionary).get("saveRevision"),
+		selected_revision,
+		"Host stale 提示仍对应玩家原先确认的修订",
 	)
-	root.remove_child(screen)
-	screen.free()
+	host.call("_close_startup_load_game")
+	root.remove_child(host)
+	host.free()
+	root.remove_child(adapter)
+	adapter.free()
+	current_scene = null
+	root.remove_child(startup)
+	startup.free()
 
 
 func _test_save_slot_page(prepared: Dictionary) -> void:
@@ -396,6 +394,38 @@ func _test_save_slot_page(prepared: Dictionary) -> void:
 		back_button != null and back_button.text == "← 返回加载存档",
 		"save_slot 模式显示正确的返回目标",
 	)
+	screen.call("_open_completion_modal")
+	await process_frame
+	var native_body := screen.get("_native_modal_body") as Label
+	var native_start := screen.get("_native_modal_start_button") as Button
+	var simplified := screen.find_child(
+		"ResidentModelAssignmentOriginalSimplifiedV34",
+		true,
+		false,
+	) as Control
+	var simplified_button_labels := simplified.get("_button_labels") as Dictionary
+	var simplified_primary := simplified.get("_completion_message_primary") as Label
+	var simplified_secondary := simplified.get("_completion_message_secondary") as Label
+	var simplified_start_copy := simplified_button_labels.get("modal_start") as Label
+	var completion_controls_ready := (
+		native_body != null
+		and native_start != null
+		and simplified_primary != null
+		and simplified_secondary != null
+		and simplified_start_copy != null
+	)
+	_expect(completion_controls_ready, "两套完成弹窗控件均已创建")
+	if completion_controls_ready:
+		_expect_equal(
+			native_body.text,
+			"%s\n%s" % [simplified_primary.text, simplified_secondary.text],
+			"响应式与宽屏完成文案来自同一策略",
+		)
+		_expect_equal(
+			native_start.text,
+			simplified_start_copy.text,
+			"响应式与宽屏完成按钮文案一致",
+		)
 	root.remove_child(screen)
 	screen.free()
 	root.remove_child(adapter)
@@ -540,6 +570,54 @@ func _test_game_flow_route(slot: Dictionary) -> void:
 		},
 	)
 	var changed_draft := routed_service.call("get_session_draft") as Dictionary
+	var manifests_before_rejected_apply := (
+		(_save_store.call("list_published", _slot_id) as Dictionary).get(
+			"manifests",
+			[],
+		) as Array
+	).size()
+	provider.call("set_unavailable_models", ["current-model-2"])
+	routed_vm = routed_service.call("get_view_model") as Dictionary
+	var rejected_apply := routed_service.call(
+		"dispatch",
+		"resident_model_assignment.apply_draft",
+		{"revision": int(routed_vm.get("revision", -1))},
+	) as Dictionary
+	_expect_equal(
+		rejected_apply.get("errorCode"),
+		"LLM_MODEL_UNAVAILABLE",
+		"save_slot 提交时所选模型失效会直接拒绝",
+	)
+	_expect_equal(
+		routed_service.call("get_session_draft"),
+		changed_draft,
+		"另有可用模型时也不会自动替换玩家草稿",
+	)
+	_expect_equal(
+		((_save_store.call("list_published", _slot_id) as Dictionary).get(
+			"manifests",
+			[],
+		) as Array).size(),
+		manifests_before_rejected_apply,
+		"目标模型失效时不会发布新 manifest",
+	)
+	await process_frame
+	var rejected_provider_button := page.find_child(
+		"ProviderSettingsButton",
+		true,
+		false,
+	) as Button
+	_expect(
+		rejected_provider_button != null and rejected_provider_button.visible,
+		"提交校验失败后显示返回模型配置入口",
+	)
+	provider.call("set_unavailable_models", [])
+	routed_vm = routed_service.call("get_view_model") as Dictionary
+	routed_service.call(
+		"dispatch",
+		"resident_model_assignment.refresh",
+		{"revision": int(routed_vm.get("revision", -1))},
+	)
 	provider.set_available(false)
 	routed_vm = routed_service.call("get_view_model") as Dictionary
 	routed_service.call(

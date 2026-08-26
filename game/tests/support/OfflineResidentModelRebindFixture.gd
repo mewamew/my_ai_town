@@ -26,9 +26,15 @@ const CURRENT_AGENT_FIXTURE_ROOT := (
 class AvailableProvider:
 	extends RefCounted
 	var available := true
+	var unavailable_model_ids: Array[String] = []
 
 	func set_available(value: bool) -> void:
 		available = value
+
+	func set_unavailable_models(model_ids: Array) -> void:
+		unavailable_model_ids.clear()
+		for model_id: Variant in model_ids:
+			unavailable_model_ids.append(String(model_id))
 
 	func get_health_snapshot() -> Dictionary:
 		if not available:
@@ -58,7 +64,7 @@ class AvailableProvider:
 				"providerId": "current-provider",
 				"modelId": model_id,
 				"label": model_id,
-				"available": true,
+				"available": model_id not in unavailable_model_ids,
 			})
 		return models
 
@@ -73,6 +79,7 @@ class AvailableProvider:
 				String(binding.get("providerId", "")) != "current-provider"
 				or String(binding.get("modelId", ""))
 				not in ["current-model", "current-model-2", "current-model-3"]
+				or unavailable_model_ids.has(String(binding.get("modelId", "")))
 			):
 				return _failure("LLM_MODEL_UNAVAILABLE")
 		return {"ok": true, "errorCode": "", "retryable": false}

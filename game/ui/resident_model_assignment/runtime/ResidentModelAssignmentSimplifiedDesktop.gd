@@ -666,6 +666,7 @@ func _build_footer() -> void:
 
 
 func _build_completion_modal() -> void:
+	var completion := FeedbackPolicy.completion_copy(route_mode, false, 15)
 	_completion_backdrop = ColorRect.new()
 	_completion_backdrop.name = "CompletionBackdrop"
 	_completion_backdrop.position = Vector2.ZERO
@@ -696,11 +697,7 @@ func _build_completion_modal() -> void:
 	_completion_message_primary = _add_label(
 		"ModalMessagePrimary",
 		Rect2(596, 421, 482, 56),
-		(
-			"这位新居民的模型已经配置完成"
-			if _is_single_resident()
-			else "全部居民的模型均已配置完成"
-		),
+		String(completion.get("primary", "")),
 		18,
 		HORIZONTAL_ALIGNMENT_CENTER,
 		INK_MUTED,
@@ -711,15 +708,7 @@ func _build_completion_modal() -> void:
 	_completion_message_secondary = _add_label(
 		"ModalMessageSecondary",
 		Rect2(596, 479, 482, 47),
-		(
-			"确认后会立即进入小镇。"
-			if _is_single_resident()
-			else "保存后会立即用于当前小镇。"
-			if _is_in_session()
-			else "保存后会写入此存档的新修订。"
-			if _is_save_slot()
-			else "现在可以开始游戏。"
-		),
+		String(completion.get("secondary", "")),
 		18,
 		HORIZONTAL_ALIGNMENT_CENTER,
 		INK_MUTED,
@@ -736,15 +725,7 @@ func _build_completion_modal() -> void:
 	_add_modal_button(
 		"modal_start",
 		Rect2(849, 584, 234, 70),
-		(
-			"确认入镇"
-			if _is_single_resident()
-			else "保存修改"
-			if _is_in_session()
-			else "保存到此存档"
-			if _is_save_slot()
-			else "开始游戏"
-		),
+		String(completion.get("confirm", "开始游戏")),
 		func() -> void: completion_modal_start_pressed.emit(),
 	)
 	for id: String in ["modal_return", "modal_start"]:
@@ -757,7 +738,6 @@ func _render(view_model: Dictionary) -> void:
 	var invalid := int(_data.get("invalidCount", 0))
 	var unassigned := int(_data.get("unassignedCount", 0))
 	var batch_mode := String(_data.get("mode", "single")) == "batch"
-	_render_return_flow_copy()
 	_set_text(
 		"ProgressCopy",
 		(
@@ -792,6 +772,7 @@ func _render(view_model: Dictionary) -> void:
 	_render_selected_header(batch_mode)
 	_render_models()
 	_render_action_states(batch_mode)
+	_render_completion_copy()
 	_set_text("Operation", _operation_copy(view_model))
 	var provider_settings_visible := FeedbackPolicy.provider_settings_available(
 		view_model,
@@ -1469,14 +1450,19 @@ func _return_to_provider_settings() -> bool:
 	return bool(_data.get("returnToProviderSettings", false))
 
 
-func _render_return_flow_copy() -> void:
-	if not _return_to_provider_settings():
-		return
+func _render_completion_copy() -> void:
+	var completion := FeedbackPolicy.completion_copy(
+		route_mode,
+		_return_to_provider_settings(),
+		int(_data.get("residentCount", 15)),
+	)
+	if _completion_message_primary != null:
+		_completion_message_primary.text = String(completion.get("primary", ""))
 	if _completion_message_secondary != null:
-		_completion_message_secondary.text = "确认后返回模型设置。"
+		_completion_message_secondary.text = String(completion.get("secondary", ""))
 	var modal_start_label := _button_labels.get("modal_start") as Label
 	if modal_start_label != null:
-		modal_start_label.text = "确认并返回"
+		modal_start_label.text = String(completion.get("confirm", "开始游戏"))
 
 
 func _action_enabled(action_key: String) -> bool:
