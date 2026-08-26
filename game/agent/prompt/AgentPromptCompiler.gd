@@ -1878,7 +1878,7 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 			"托人传话",
 			{"recipients": private_message_recipient_ids},
 		)
-	# 发布公告:站在中心广场公告栏处才能向全镇发公告(与 _prepare_announcement_action
+	# 发布公告:站在中心广场即可向全镇发公告(与 _prepare_announcement_action
 	# 的校验一致)。LLM 在广场时给出发公告选项,文本可含自然语言时间。
 	var current_place_name := String(
 		(place.get("name", "") as String) if place.has("name") else ""

@@ -2944,7 +2944,7 @@ func _prepare_announcement_action(
 	if place_name != CONTENT_CATALOG.PLACE_PLAZA:
 		return {
 			"ok": false,
-			"errors": ["发布公告需要站在中心广场的公告栏处"],
+			"errors": ["发布公告需要站在中心广场"],
 		}
 	var text := String(action.get("text", "")).strip_edges()
 	if text.is_empty() or text.length() > 240:

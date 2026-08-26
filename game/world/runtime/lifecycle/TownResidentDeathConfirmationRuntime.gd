@@ -15,6 +15,10 @@ const PLACE_SERVICE_COMMAND_RUNTIME := preload(
 	"res://world/runtime/work/TownPlaceServiceCommandRuntime.gd"
 )
 
+const WEREWOLF_RUNTIME := preload(
+	"res://world/runtime/TownWerewolfRuntime.gd"
+)
+
 const SYSTEM_BULLETIN_PUBLISHER_ID := "world"
 
 
@@ -134,18 +138,25 @@ static func confirm(
 	)
 	PLACE_SERVICE_COMMAND_RUNTIME.refresh_staffing(host)
 	if not deferred_to_dawn:
-		var death_announcement: Dictionary = ANNOUNCEMENT_COMMAND_RUNTIME.publish(
-			host,
-			SYSTEM_BULLETIN_PUBLISHER_ID,
-			host._death_announcement_text(event),
-			"",
-			"board",
+		# 放逐由镇民大会开票广播(town_bell)时已公告，这里不再补发死亡公告，
+		# 避免"放逐公告 + 死亡公告"两条连发。其余死亡结算(事件日志、终态、
+		# 全员唤醒)照常执行。
+		var announcement_blocked: bool = (
+			normalized_reason == WEREWOLF_RUNTIME.EXILE_REASON
 		)
-		if death_announcement.get("ok") != true:
-			push_error(
-				"居民死亡公告发布失败：%s"
-				% String(death_announcement.get("errorCode", "UNKNOWN"))
+		if not announcement_blocked:
+			var death_announcement: Dictionary = ANNOUNCEMENT_COMMAND_RUNTIME.publish(
+				host,
+				SYSTEM_BULLETIN_PUBLISHER_ID,
+				host._death_announcement_text(event),
+				"",
+				"board",
 			)
+			if death_announcement.get("ok") != true:
+				push_error(
+					"居民死亡公告发布失败：%s"
+					% String(death_announcement.get("errorCode", "UNKNOWN"))
+				)
 		for recipient_id: String in host.resident_registry.order:
 			if host._resident_is_alive(recipient_id):
 				host._schedule_decision(recipient_id, true)
