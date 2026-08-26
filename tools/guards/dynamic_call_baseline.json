@@ -5,7 +5,7 @@
   "game/ui": 139,
   "game/world/integration": 18,
   "game/world/maps": 20,
-  "game/world/presentation": 482,
+  "game/world/presentation": 479,
   "game/world/runtime": 31
  },
  "entries": [
@@ -3593,12 +3593,6 @@
   },
   {
    "path": "game/world/presentation/game_flow/GameFlowHost.gd",
-   "func": "_on_town_environment_changed",
-   "call": "string:.call(\"create_save\", { \"reason\": DAILY_AUTO_SAVE_REASON, })",
-   "count": 1
-  },
-  {
-   "path": "game/world/presentation/game_flow/GameFlowHost.gd",
    "func": "_on_town_ui_route_changed",
    "call": "string:.call( \"set_place_focus_route_active\", route == &\"place_focus\", )",
    "count": 1
@@ -3901,12 +3895,6 @@
    "path": "game/world/presentation/game_flow/GameFlowHost.gd",
    "func": "_restore_resident_model_assignment_failure_modal",
    "call": "string:.call(\"_open_completion_modal\")",
-   "count": 1
-  },
-  {
-   "path": "game/world/presentation/game_flow/GameFlowHost.gd",
-   "func": "_start_formal_continue",
-   "call": "string:.call( \"request_health_check\", bindings.duplicate(true), Callable(self, \"_on_formal_continue_provider_health_completed\").bind( generation, discovery.duplicate(true), world_data.duplicate(true), identities.duplicate(true), bindings.duplicate(true), resident_names.duplicate(), ), )",
    "count": 1
   },
   {
@@ -4237,12 +4225,6 @@
    "path": "game/world/presentation/session/TownSessionUiService.gd",
    "func": "continue_revision",
    "call": "string:.call( \"restore_revision\", slot_id, normalized_session_id, save_revision, world_data.duplicate(true), resident_identities.duplicate(true), agent_hydrator, )",
-   "count": 1
-  },
-  {
-   "path": "game/world/presentation/session/TownSessionUiService.gd",
-   "func": "create_save",
-   "call": "string:.call(\"save\", { \"slotId\": _session_config.get(\"slotId\"), \"sessionId\": _session_config.get(\"sessionId\"), \"residentIdentities\": identities, \"sessionConfig\": _manifest_session_config(), \"savedAt\": Time.get_datetime_string_from_system(false, false), \"residentMessages\": ( (payload.get(\"residentMessages\", []) as Array).duplicate(true) if payload.get(\"residentMessages\", []) is Array else payload.get(\"residentMessages\") ), })",
    "count": 1
   },
   {

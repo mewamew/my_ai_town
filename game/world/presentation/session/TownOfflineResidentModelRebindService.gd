@@ -5,7 +5,9 @@ extends RefCounted
 const MANIFEST := preload(
 	"res://world/presentation/session/TownSessionSaveManifest.gd"
 )
-const POPULATION_RULES := preload("res://world/runtime/TownPopulationRules.gd")
+const ASSIGNMENT_PROJECTION := preload(
+	"res://world/presentation/session/TownResidentModelAssignmentProjection.gd"
+)
 const SAVE_METHODS: Array[String] = [
 	"begin_slot_transaction",
 	"end_slot_transaction",
@@ -79,10 +81,20 @@ func prepare(slot_value: Variant, base_catalog_value: Variant) -> Dictionary:
 		or not config_value is Dictionary
 		or not slot.get("saveBlockers", []) is Array
 		or not slot.get("restoreBlockers", []) is Array
-		or not (slot.get("saveBlockers", []) as Array).is_empty()
-		or not (slot.get("restoreBlockers", []) as Array).is_empty()
 	):
 		return _failure("OFFLINE_RESIDENT_MODEL_REBIND_TARGET_UNAVAILABLE", false)
+	var save_blockers := slot.get("saveBlockers", []) as Array
+	var restore_blockers := slot.get("restoreBlockers", []) as Array
+	if not save_blockers.is_empty() or not restore_blockers.is_empty():
+		var reconciliation := slot.get("reconciliationPlan", {}) as Dictionary
+		return _failure(
+			"OFFLINE_RESIDENT_MODEL_REBIND_RECOVERY_REQUIRED"
+			if bool(reconciliation.get("repairable", false))
+			else "OFFLINE_RESIDENT_MODEL_REBIND_TARGET_UNAVAILABLE",
+			false,
+			[],
+			{"reconciliationPlan": reconciliation.duplicate(true)},
+		)
 	var summary := summary_value as Dictionary
 	var manifest := manifest_value as Dictionary
 	var session_config := config_value as Dictionary
@@ -133,7 +145,7 @@ func prepare(slot_value: Variant, base_catalog_value: Variant) -> Dictionary:
 func apply_bindings(bindings_value: Variant) -> Dictionary:
 	if _target.is_empty():
 		return _failure("OFFLINE_RESIDENT_MODEL_REBIND_TARGET_MISSING", false)
-	var normalized := _normalize_bindings(
+	var normalized := ASSIGNMENT_PROJECTION.normalize_bindings(
 		bindings_value,
 		(_target.get("manifest", {}) as Dictionary).get("resident_ids", []),
 	)
@@ -407,175 +419,51 @@ func _build_assignment_inputs(
 	session_config: Dictionary,
 	base_catalog: Dictionary,
 ) -> Dictionary:
-	var identities_value: Variant = session_config.get("residentIdentities")
-	var bindings_value: Variant = session_config.get("residentBindings")
-	var opening_value: Variant = session_config.get("openingConfig")
-	if (
-		not identities_value is Array
-		or not bindings_value is Array
-		or not opening_value is Dictionary
-	):
-		return _failure("OFFLINE_RESIDENT_MODEL_REBIND_SESSION_CONFIG_INVALID", false)
-	var identities := identities_value as Array
-	if not POPULATION_RULES.supports_resident_count(identities.size()):
-		return _failure("OFFLINE_RESIDENT_MODEL_REBIND_SESSION_CONFIG_INVALID", false)
-	var expected_ids: Array[String] = []
-	for value: Variant in identities:
-		if not value is Dictionary:
-			return _failure("OFFLINE_RESIDENT_MODEL_REBIND_SESSION_CONFIG_INVALID", false)
-		var resident_id := String((value as Dictionary).get("residentId", "")).strip_edges()
-		if resident_id.is_empty() or expected_ids.has(resident_id):
-			return _failure("OFFLINE_RESIDENT_MODEL_REBIND_SESSION_CONFIG_INVALID", false)
-		expected_ids.append(resident_id)
-	expected_ids.sort()
-	var normalized := _normalize_bindings(bindings_value, expected_ids)
-	if normalized.get("ok") != true:
-		return normalized
-	var binding_by_id: Dictionary = {}
-	for binding in normalized.get("bindings", []) as Array[Dictionary]:
-		binding_by_id[String(binding.get("residentId", ""))] = (
-			binding.get("llmBinding", {}) as Dictionary
-		).duplicate(true)
-	var opening := opening_value as Dictionary
-	var saved_by_id: Dictionary = {}
-	for value: Variant in opening.get("residents", []) as Array:
-		if value is Dictionary:
-			saved_by_id[String((value as Dictionary).get("residentId", ""))] = (
-				value as Dictionary
-			).duplicate(true)
-	var base_by_id: Dictionary = {}
-	for value: Variant in base_catalog.get("residents", []) as Array:
-		if value is Dictionary:
-			base_by_id[String((value as Dictionary).get("residentId", ""))] = (
-				value as Dictionary
-			).duplicate(true)
-	var residents: Array[Dictionary] = []
-	var slots: Array[Dictionary] = []
-	for index in expected_ids.size():
-		var resident_id := expected_ids[index]
-		var saved := saved_by_id.get(resident_id, {}) as Dictionary
-		var base := base_by_id.get(resident_id, {}) as Dictionary
-		var attributes := (
-			(saved.get("attributes", {}) as Dictionary).duplicate(true)
-			if saved.get("attributes") is Dictionary
-			else (base.get("attributes", {}) as Dictionary).duplicate(true)
-		)
-		if attributes.is_empty():
-			attributes = {"name": resident_id}
-		var presentation := (
-			base.get("presentation", {}) as Dictionary
-		).duplicate(true)
-		if saved.get("presentation") is Dictionary:
-			presentation.merge(
-				(saved.get("presentation", {}) as Dictionary).duplicate(true),
-				true,
-			)
-		residents.append({
-			"residentId": resident_id,
-			"attributes": attributes,
-			"presentation": presentation,
-		})
-		slots.append({
-			"residentId": resident_id,
-			"spaceId": "home_%02d" % (index + 1),
-			"llmBinding": (binding_by_id[resident_id] as Dictionary).duplicate(true),
-		})
-	return {
-		"ok": true,
-		"errorCode": "",
-		"retryable": false,
-		"residentCatalog": {"residents": residents},
-		"draft": {
-			"schemaVersion": 1,
-			"sourceScope": "resident_selection",
-			"draftRevision": 1,
-			"slots": slots,
-		},
-	}
-
-
-func _normalize_bindings(
-	bindings_value: Variant,
-	expected_ids_value: Variant,
-) -> Dictionary:
-	if not bindings_value is Array or not expected_ids_value is Array:
-		return _failure("SESSION_LLM_BINDINGS_INVALID", false)
-	var expected_ids: Array[String] = []
-	for value: Variant in expected_ids_value as Array:
-		if not value is String:
-			return _failure("SESSION_LLM_BINDINGS_INVALID", false)
-		expected_ids.append(value as String)
-	expected_ids.sort()
-	var seen: Dictionary = {}
-	var bindings: Array[Dictionary] = []
-	for value: Variant in bindings_value as Array:
-		if not value is Dictionary:
-			return _failure("SESSION_LLM_BINDINGS_INVALID", false)
-		var item := value as Dictionary
-		var resident_id := String(item.get("residentId", "")).strip_edges()
-		var llm_value: Variant = item.get("llmBinding")
-		if (
-			resident_id.is_empty()
-			or not expected_ids.has(resident_id)
-			or seen.has(resident_id)
-			or not llm_value is Dictionary
-		):
-			return _failure("SESSION_LLM_BINDINGS_INVALID", false)
-		var llm := llm_value as Dictionary
-		var provider_id := String(llm.get("providerId", "")).strip_edges()
-		var model_id := String(llm.get("modelId", "")).strip_edges()
-		if (
-			String(llm.get("mode", "")) != "model"
-			or provider_id.is_empty()
-			or model_id.is_empty()
-		):
-			return _failure("SESSION_LLM_BINDINGS_INVALID", false)
-		seen[resident_id] = true
-		bindings.append({
-			"residentId": resident_id,
-			"llmBinding": {
-				"mode": "model",
-				"providerId": provider_id,
-				"modelId": model_id,
-			},
-		})
-	if seen.size() != expected_ids.size():
-		return _failure("SESSION_LLM_BINDINGS_INVALID", false)
-	bindings.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return String(a.get("residentId", "")) < String(b.get("residentId", ""))
+	var projected := ASSIGNMENT_PROJECTION.build(session_config, base_catalog)
+	if projected.get("ok") == true:
+		return projected
+	var error_code := String(projected.get("errorCode", ""))
+	return _failure(
+		"OFFLINE_RESIDENT_MODEL_REBIND_SESSION_CONFIG_INVALID"
+		if error_code == "SESSION_RESIDENT_ASSIGNMENT_PROJECTION_INVALID"
+		else error_code,
+		false,
+		projected.get("errors", []) as Array,
 	)
-	return {
-		"ok": true,
-		"errorCode": "",
-		"retryable": false,
-		"bindings": bindings,
-	}
 
 
 func _cleanup_failed_candidate(
 	context: Dictionary,
 	operation: Dictionary,
 ) -> Dictionary:
-	var world_cleanup := _store.discard_unpublished_revision(
-		context,
-	)
-	if world_cleanup.get("ok") != true:
-		return _failure(
-			"OFFLINE_RESIDENT_MODEL_REBIND_CLEANUP_FAILED",
-			false,
-			[],
-			{
-				"operation": operation.duplicate(true),
-				"worldCleanup": world_cleanup.duplicate(true),
-			},
-		)
+	# Agent 快照会拒绝覆盖同一修订。因此必须先删 Agent：
+	# 若这一步失败，保留 World 候选与 allocation，下次将分配更大修订号。
 	var agent_cleanup := _agent_store.discard_snapshot(context) as Dictionary
 	if agent_cleanup.get("ok") != true:
 		return _failure(
 			"OFFLINE_RESIDENT_MODEL_REBIND_CLEANUP_FAILED",
-			false,
+			true,
 			agent_cleanup.get("errors", []) as Array,
-			{"operation": operation.duplicate(true)},
+			{
+				"context": context.duplicate(true),
+				"operation": operation.duplicate(true),
+				"agentCleanup": agent_cleanup.duplicate(true),
+				"worldEvidencePreserved": true,
+			},
+		)
+	var world_cleanup := _store.discard_unpublished_revision(context)
+	if world_cleanup.get("ok") != true:
+		return _failure(
+			"OFFLINE_RESIDENT_MODEL_REBIND_CLEANUP_FAILED",
+			true,
+			[],
+			{
+				"context": context.duplicate(true),
+				"operation": operation.duplicate(true),
+				"agentCleanup": agent_cleanup.duplicate(true),
+				"worldCleanup": world_cleanup.duplicate(true),
+				"worldEvidencePreserved": true,
+			},
 		)
 	return operation
 

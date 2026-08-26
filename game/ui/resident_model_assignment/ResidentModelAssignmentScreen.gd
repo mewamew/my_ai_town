@@ -6,6 +6,7 @@ signal intent_requested(intent: String, payload: Dictionary)
 signal action_dispatch_started(intent: String, payload: Dictionary)
 signal action_blocked(intent: String, reason: String)
 signal back_requested(revision: int)
+signal provider_settings_requested(revision: int)
 
 
 var return_to_provider_settings := false
@@ -23,6 +24,12 @@ const PageTheme = preload(
 )
 const CompositeDesktop = preload(
 	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentSimplifiedDesktop.gd"
+)
+const RouteMode = preload(
+	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentRouteMode.gd"
+)
+const AssignmentCopy = preload(
+	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentCopy.gd"
 )
 const FormalDialog = preload(
 	"res://ui/common/formal_dialog/FormalConfirmationDialog.gd"
@@ -79,9 +86,7 @@ const REQUIRED_ACTIONS: Array[String] = [
 ]
 
 
-var in_session_mode := false
-var single_resident_mode := false
-var save_slot_mode := false
+var route_mode := RouteMode.NEW_GAME
 var _adapter: Object
 var _view_model: Dictionary = {}
 var _render_data: Dictionary = {}
@@ -126,6 +131,7 @@ var _model_status_detail: Label
 var _model_source_detail: Label
 var _mode_button: Button
 var _back_button: Button
+var _provider_settings_button: Button
 var _refresh_button: Button
 var _assign_button: Button
 var _apply_button: Button
@@ -172,13 +178,22 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func apply_route_payload(payload: Dictionary) -> void:
-	var route_mode := String(payload.get("mode", ""))
-	in_session_mode = route_mode in ["in_session", "resident_admission"]
-	single_resident_mode = route_mode == "resident_admission"
-	save_slot_mode = route_mode == "save_slot"
+	route_mode = RouteMode.normalize(payload.get("mode", RouteMode.NEW_GAME))
 	return_to_provider_settings = bool(
 		payload.get("returnToProviderSettings", false)
 	)
+
+
+func _is_in_session() -> bool:
+	return RouteMode.is_in_session(route_mode)
+
+
+func _is_single_resident() -> bool:
+	return RouteMode.is_single_resident(route_mode)
+
+
+func _is_save_slot() -> bool:
+	return RouteMode.is_save_slot(route_mode)
 
 
 func request_back() -> bool:
@@ -197,13 +212,13 @@ func _build_exit_confirmation() -> void:
 	_exit_confirmation.name = "UnsavedChangesDialog"
 	_exit_confirmation.title = (
 		"返回居民资料？"
-		if single_resident_mode
+		if _is_single_resident()
 		else "返回模型设置？"
 		if return_to_provider_settings
 		else "返回暂停菜单？"
-		if in_session_mode
+		if _is_in_session()
 		else "返回加载存档？"
-		if save_slot_mode
+		if _is_save_slot()
 		else "返回居民选择？"
 	)
 	_exit_confirmation.dialog_text = "当前模型分配还没有应用，返回后仍会保留草稿。"
@@ -353,10 +368,11 @@ func runtime_gate_snapshot() -> Dictionary:
 		"scope": SCOPE,
 		"revision": _revision,
 		"profile": _layout_profile,
+		"routeMode": route_mode,
 		"wholePageScale": false,
 		"formalReady": bool(_render_data.get("formalReady", false)),
 		"residentCount": int(_render_data.get("residentCount", 0)),
-		"saveSlotMode": save_slot_mode,
+		"saveSlotMode": _is_save_slot(),
 		"textSlots": text_slots,
 		"touchTargets": touch_targets,
 		"borderOwners": border_owners,
@@ -459,14 +475,16 @@ func _build_interface() -> void:
 	_composite_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_composite_host.add_child(_composite_frame)
 	_composite_desktop = CompositeDesktop.new()
-	_composite_desktop.set("in_session_mode", in_session_mode)
-	_composite_desktop.set("single_resident_mode", single_resident_mode)
-	_composite_desktop.set("save_slot_mode", save_slot_mode)
+	_composite_desktop.set("route_mode", route_mode)
 	_composite_frame.add_child(_composite_desktop)
 	_composite_desktop.connect("action_requested", Callable(self, "_request_action"))
 	_composite_desktop.connect("back_pressed", Callable(self, "_request_back"))
 	_composite_desktop.connect("assign_pressed", Callable(self, "_assign_target"))
 	_composite_desktop.connect("apply_pressed", Callable(self, "_open_completion_modal"))
+	_composite_desktop.connect(
+		"provider_settings_pressed",
+		func() -> void: _request_provider_settings(),
+	)
 	_composite_desktop.connect(
 		"completion_modal_return_pressed",
 		Callable(self, "_close_completion_modal"),
@@ -524,13 +542,13 @@ func _build_native_completion_modal() -> void:
 	_native_modal_body = _label(
 		(
 			"这位新居民的模型已经配置完成，可以确认入镇。"
-			if single_resident_mode
+			if _is_single_resident()
 			else "居民模型分配已更新，确认后返回模型设置。"
 			if return_to_provider_settings
 			else "全部居民的模型均已配置完成，可以保存到当前小镇。"
-			if in_session_mode
+			if _is_in_session()
 			else "全部居民的模型均已配置完成，可以保存到此存档。"
-			if save_slot_mode
+			if _is_save_slot()
 			else "全部居民的模型均已配置完成，现在可以开始游戏。"
 		),
 		20,
@@ -553,13 +571,13 @@ func _build_native_completion_modal() -> void:
 	_native_modal_start_button = _button(
 		(
 			"确认入镇"
-			if single_resident_mode
+			if _is_single_resident()
 			else "确认并返回"
 			if return_to_provider_settings
 			else "保存修改"
-			if in_session_mode
+			if _is_in_session()
 			else "保存到此存档"
-			if save_slot_mode
+			if _is_save_slot()
 			else "开始游戏"
 		),
 		22,
@@ -718,6 +736,8 @@ func _presentation_view_model() -> Dictionary:
 func _render_provider_auto_refresh_feedback() -> void:
 	if is_instance_valid(_operation_label):
 		_operation_label.text = PROVIDER_AUTO_REFRESH_EXHAUSTED_MESSAGE
+	if is_instance_valid(_provider_settings_button):
+		_provider_settings_button.visible = _is_save_slot()
 	if is_instance_valid(_composite_desktop):
 		_composite_desktop.call("apply_view_model", _presentation_view_model())
 
@@ -743,7 +763,7 @@ func _build_header() -> void:
 		"← 返回模型设置"
 		if return_to_provider_settings
 		else "← 返回加载存档"
-		if save_slot_mode
+		if _is_save_slot()
 		else "← 返回居民选择",
 		20,
 		"paper",
@@ -752,6 +772,18 @@ func _build_header() -> void:
 	_back_button.custom_minimum_size = Vector2(210, 56)
 	_back_button.pressed.connect(_request_back)
 	_header_top.add_child(_back_button)
+	_provider_settings_button = _button(
+		"返回模型配置",
+		20,
+		"blue",
+		"ProviderSettingsButton",
+	)
+	_provider_settings_button.custom_minimum_size = Vector2(210, 56)
+	_provider_settings_button.pressed.connect(
+		func() -> void: _request_provider_settings(),
+	)
+	_provider_settings_button.visible = false
+	_header_top.add_child(_provider_settings_button)
 
 	var title := _label("居民模型工作台", 42, PageTheme.INK, "PageTitle")
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -762,7 +794,7 @@ func _build_header() -> void:
 	_mode_button.custom_minimum_size = Vector2(190, 56)
 	_mode_button.pressed.connect(_toggle_mode)
 	_header_top.add_child(_mode_button)
-	_mode_button.visible = not single_resident_mode
+	_mode_button.visible = not _is_single_resident()
 
 	_summary_grid = GridContainer.new()
 	_summary_grid.name = "SummaryGrid"
@@ -811,7 +843,7 @@ func _build_resident_section() -> void:
 	stack.add_theme_constant_override("separation", 10)
 	_resident_section.add_child(stack)
 	stack.add_child(_section_title(
-		"入镇居民" if single_resident_mode else "居民队列",
+		"入镇居民" if _is_single_resident() else "居民队列",
 		"ResidentQueueTitle",
 	))
 
@@ -929,10 +961,10 @@ func _render() -> void:
 	_progress.value = completed
 	var mode := String(_render_data.get("mode", "single"))
 	_mode_button.text = "返回单人模式" if mode == "batch" else "切换批量模式"
-	_mode_button.visible = not single_resident_mode
+	_mode_button.visible = not _is_single_resident()
 	_selected_count_label.text = (
 		"仅显示本次入镇居民"
-		if single_resident_mode
+		if _is_single_resident()
 		else "批量已选 %d 人" % (_render_data.get("selectedBatchResidentIds", []) as Array).size()
 		if mode == "batch"
 		else "单人模式 · 点击居民查看绑定"
@@ -1277,32 +1309,19 @@ func _render_inspector() -> void:
 	)
 	_apply_button.text = (
 		"确认入镇"
-		if single_resident_mode
+		if _is_single_resident()
 		else "确认并返回模型设置"
 		if return_to_provider_settings
 		else "保存模型分配"
-		if in_session_mode
+		if _is_in_session()
 		else "保存到此存档"
-		if save_slot_mode
+		if _is_save_slot()
 		else "确认 %d 人模型分配" % int(_render_data.get("residentCount", SLOT_COUNT))
 	)
 
 
 func _save_slot_error_copy(message: String, error_code: String) -> String:
-	if (
-		not save_slot_mode
-		or error_code not in [
-			"SESSION_LLM_BINDINGS_INVALID",
-			"LLM_PROVIDER_UNAVAILABLE",
-			"LLM_MODEL_UNAVAILABLE",
-			"LLM_MODEL_UNKNOWN",
-			"PROVIDER_HEALTH_UNAVAILABLE",
-			"PROVIDER_HEALTH_QUERY_FAILED",
-			"PROVIDER_CATALOG_UNAVAILABLE",
-		]
-	):
-		return message
-	return "%s 草稿已保留；可返回加载存档，从主菜单打开“模型设置”。" % message
+	return AssignmentCopy.save_slot_error(message, error_code, route_mode)
 
 
 func _render_action_states() -> void:
@@ -1318,6 +1337,10 @@ func _render_action_states() -> void:
 	)
 	_apply_button.disabled = not apply_enabled
 	_native_modal_start_button.disabled = not apply_enabled
+	_provider_settings_button.visible = AssignmentCopy.provider_settings_available(
+		_presentation_view_model(),
+		route_mode,
+	)
 	_native_modal_return_button.disabled = false
 	var loading := String((_view_model.get("operation", {}) as Dictionary).get("status", "")) == "loading"
 	if loading:
@@ -1391,6 +1414,12 @@ func _dispatch_prepared_action(intent: String, payload: Dictionary) -> Dictionar
 
 func _request_back() -> void:
 	request_back()
+
+
+func _request_provider_settings() -> void:
+	if not _is_save_slot():
+		return
+	provider_settings_requested.emit(_revision)
 
 
 func _dispatch_back() -> void:
@@ -1511,13 +1540,13 @@ func _open_completion_modal() -> void:
 	_set_completion_modal_message(
 		(
 			"这位新居民的模型已经配置完成\n确认后会立即进入小镇。"
-			if single_resident_mode
+			if _is_single_resident()
 			else "居民模型分配已更新\n确认后返回模型设置。"
 			if return_to_provider_settings
 			else "%d 位居民的模型均已配置完成\n保存后会立即用于当前小镇。" % resident_count
-			if in_session_mode
+			if _is_in_session()
 			else "%d 位居民的模型均已配置完成\n保存后会写入此存档的新修订。" % resident_count
-			if save_slot_mode
+			if _is_save_slot()
 			else "%d 位居民的模型均已配置完成\n现在可以开始游戏。" % resident_count
 		)
 	)
@@ -1543,7 +1572,7 @@ func _start_game_from_completion_modal() -> void:
 		_set_completion_modal_message(
 			(
 				"暂时无法保存模型分配\n%s\n当前草稿已保留。"
-				if in_session_mode or return_to_provider_settings
+				if _is_in_session() or return_to_provider_settings
 				else "暂时无法开始游戏\n%s\n当前草稿已保留。"
 			)
 			% UiViewModel.player_reason(blocked_reason)
@@ -1571,7 +1600,7 @@ func _start_game_from_completion_modal() -> void:
 	_set_completion_modal_message(
 		(
 			"暂时无法保存模型分配\n%s\n当前草稿已保留。"
-			if in_session_mode or return_to_provider_settings
+			if _is_in_session() or return_to_provider_settings
 			else "暂时无法开始游戏\n%s\n当前草稿已保留。"
 		)
 		% reason
@@ -1784,7 +1813,7 @@ func _validate_contract(view_model: Dictionary, data: Dictionary) -> PackedStrin
 	if String(data.get("source", "")) != "runtime":
 		issues.append("source 必须为 runtime")
 	var expected_count := int(data.get("residentCount", 0))
-	if single_resident_mode:
+	if _is_single_resident():
 		expected_count = 1
 	elif not POPULATION_RULES.supports_resident_count(expected_count):
 		issues.append("residentCount 必须在 %d～%d 之间" % [

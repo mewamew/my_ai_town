@@ -39,8 +39,18 @@ const CURRENT_AGENT_FIXTURE_ROOT := (
 
 class FakeProviderService:
 	extends RefCounted
+	var available := true
+
+	func set_available(value: bool) -> void:
+		available = value
 
 	func get_health_snapshot() -> Dictionary:
+		if not available:
+			return {
+				"ok": false,
+				"errorCode": "PROVIDER_HEALTH_UNAVAILABLE",
+				"retryable": false,
+			}
 		return {
 			"ok": true,
 			"formalReady": true,
@@ -55,6 +65,8 @@ class FakeProviderService:
 
 	func list_available_models() -> Array:
 		var models: Array[Dictionary] = []
+		if not available:
+			return models
 		for model_id in ["current-model", "current-model-2", "current-model-3"]:
 			models.append({
 				"providerId": "current-provider",
@@ -121,6 +133,22 @@ class FailPublishStore:
 			"retryable": true,
 		}
 
+
+class FaultInjectingAgentStore:
+	extends AgentSaveStore
+	var fail_next_discard := false
+
+	func discard_snapshot(context: Variant) -> Dictionary:
+		if fail_next_discard:
+			fail_next_discard = false
+			return {
+				"ok": false,
+				"errorCode": "TEST_AGENT_SNAPSHOT_DELETE_FAILED",
+				"retryable": true,
+				"errors": [{"code": "TEST_AGENT_SNAPSHOT_DELETE_FAILED"}],
+			}
+		return super.discard_snapshot(context)
+
 var _failures: Array[String] = []
 var _checks := 0
 var _save_store: RefCounted
@@ -138,13 +166,13 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var identity := "%d_%d" % [OS.get_process_id(), Time.get_ticks_usec()]
-	_slot_id = "offline-model-slot-%s-%s" % ["s".repeat(84), identity]
+	_slot_id = "town-main"
 	_session_id = "offline-model-session-%s-%s" % ["r".repeat(80), identity]
 	_save_root = "user://tests/town_session_saves/offline_model_%s" % identity
 	_agent_root = "user://agent_save_tests/offline_model_%s" % identity
 	_profile_path = "user://tests/town_startup_profile/offline_model_%s.json" % identity
 	_save_store = SAVE_STORE.new()
-	_agent_store = AGENT_STORE.new()
+	_agent_store = FaultInjectingAgentStore.new()
 	_expect_ok(
 		_save_store.call("configure_test_root", _save_root) as Dictionary,
 		"离线改绑使用隔离的 World 存档目录",
@@ -192,7 +220,7 @@ func _test_prepare_and_publish(source: Dictionary) -> void:
 	var prepared := service.call(
 		"prepare",
 		slot,
-		{"residents": []},
+		_base_catalog(),
 	) as Dictionary
 	_expect_ok(prepared, "失效的旧绑定不会阻止编辑页准备")
 	_expect_equal(
@@ -342,8 +370,8 @@ func _test_prepare_and_publish(source: Dictionary) -> void:
 	var second := OFFLINE_REBIND.new()
 	first.call("configure", _save_store, _agent_store, FakeProviderService.new())
 	second.call("configure", _save_store, _agent_store, FakeProviderService.new())
-	first.call("prepare", fresh_slot, {"residents": []})
-	second.call("prepare", fresh_slot, {"residents": []})
+	first.call("prepare", fresh_slot, _base_catalog())
+	second.call("prepare", fresh_slot, _base_catalog())
 	var next_bindings := _bindings_for("current-provider", "current-model-2")
 	_expect_ok(
 		second.call("apply_bindings", next_bindings) as Dictionary,
@@ -368,27 +396,83 @@ func _test_prepare_and_publish(source: Dictionary) -> void:
 		_agent_store,
 		FakeProviderService.new(),
 	)
-	failure_service.call("prepare", _catalog_slot(), {"residents": []})
+	failure_service.call("prepare", _catalog_slot(), _base_catalog())
+	(_agent_store as FaultInjectingAgentStore).fail_next_discard = true
 	var failed := failure_service.call(
 		"apply_bindings",
 		_bindings_for("current-provider", "current-model-3"),
 	) as Dictionary
 	_expect(not bool(failed.get("ok", false)), "manifest 发布失败会返回可重试错误")
 	_expect_equal(failed.get("retryable"), true, "磁盘发布失败明确允许玩家重试")
+	_expect_equal(
+		failed.get("errorCode"),
+		"OFFLINE_RESIDENT_MODEL_REBIND_CLEANUP_FAILED",
+		"Agent 清理失败使用可恢复的清理错误",
+	)
 	var after_failure := _save_store.call("list_published", _slot_id) as Dictionary
 	_expect_equal(
 		(after_failure.get("manifests", []) as Array).size(),
 		3,
 		"失败提交不影响已有完整修订",
 	)
-	var leaked_agent := _agent_store.call(
+	var preserved_agent := _agent_store.call(
 		"load_snapshot",
 		{"slot_id": _slot_id, "session_id": _session_id, "save_revision": 4},
 	) as Dictionary
-	_expect(not bool(leaked_agent.get("ok", false)), "失败提交清理未发布的 Agent 快照")
+	_expect_ok(preserved_agent, "Agent 删除失败时保留未发布修订证据")
+	_expect_equal(
+		((failed.get("meta", {}) as Dictionary).get("context", {}) as Dictionary).get(
+			"save_revision",
+		),
+		4,
+		"清理失败回执标记被保留的修订",
+	)
+	var retry_service := OFFLINE_REBIND.new()
+	_expect_ok(
+		retry_service.call(
+			"configure",
+			_save_store,
+			_agent_store,
+			FakeProviderService.new(),
+		) as Dictionary,
+		"Agent 清理失败后可重建离线改绑流程",
+	)
+	_expect_ok(
+		retry_service.call("prepare", _catalog_slot(), _base_catalog()) as Dictionary,
+		"重试仍钉住原发布修订",
+	)
+	var retried := retry_service.call(
+		"apply_bindings",
+		_bindings_for("current-provider", "current-model-3"),
+	) as Dictionary
+	_expect_ok(retried, "重试跳过残留修订并成功发布")
+	_expect_equal(
+		(retried.get("context", {}) as Dictionary).get("save_revision"),
+		5,
+		"残留 allocation 推动修订号前进",
+	)
+	var resaved := _publish_copy_of_latest_revision()
+	_expect_ok(resaved, "改绑后可再次发布成对存档")
+	_expect_equal(
+		(resaved.get("context", {}) as Dictionary).get("save_revision"),
+		6,
+		"改绑后的再次存档使用下一修订",
+	)
+	var reopened := _fresh_catalog_slot()
+	_expect_equal(
+		(reopened.get("summary", {}) as Dictionary).get("saveRevision"),
+		6,
+		"重新扫描读取重试发布的修订",
+	)
+	_expect_equal(
+		(reopened.get("sessionConfig", {}) as Dictionary).get("residentBindings"),
+		_bindings_for("current-provider", "current-model-3"),
+		"退出并重开后仍保留改绑结果",
+	)
+	var recoverable_slot := _create_recoverable_catalog_slot()
 
 	await _test_save_slot_page(prepared)
-	await _test_game_flow_route(_catalog_slot())
+	await _test_game_flow_route(recoverable_slot)
 
 
 func _test_load_page_action() -> void:
@@ -519,7 +603,88 @@ func _test_save_slot_page(prepared: Dictionary) -> void:
 	root.add_child(screen)
 	await process_frame
 	var snapshot := screen.call("runtime_gate_snapshot") as Dictionary
-	_expect_equal(snapshot.get("saveSlotMode"), true, "模型分配页进入 save_slot 模式")
+	_expect_equal(snapshot.get("routeMode"), "save_slot", "模型分配页只保留一个 save_slot RouteMode")
+	var layout_cases := [
+		[Vector2(1920, 1080), "wide", "宽屏"],
+		[Vector2(960, 540), "compact", "紧凑横屏"],
+		[Vector2(540, 960), "portrait", "紧凑竖屏"],
+	]
+	for layout_case_value: Variant in layout_cases:
+		var layout_case := layout_case_value as Array
+		screen.call("_apply_responsive_layout_for_size", layout_case[0] as Vector2)
+		await process_frame
+		snapshot = screen.call("runtime_gate_snapshot") as Dictionary
+		_expect_equal(
+			snapshot.get("profile"),
+			layout_case[1],
+			"%s 使用预期布局" % String(layout_case[2]),
+		)
+		for target_value: Variant in snapshot.get("touchTargets", []) as Array:
+			var target := target_value as Dictionary
+			_expect(
+				bool(target.get("minimumMet", false)),
+				"%s 可见操作区 %s 满足 48 像素" % [
+					String(layout_case[2]),
+					String(target.get("id", "")),
+				],
+			)
+	screen.call("_apply_responsive_layout_for_size", Vector2(1920, 1080))
+	await process_frame
+	var list_fallback := screen.find_child(
+		"ResidentPortraitFallback0",
+		true,
+		false,
+	) as Label
+	var detail_fallback := screen.find_child(
+		"SelectedResidentPortraitFallback",
+		true,
+		false,
+	) as Label
+	_expect(
+		list_fallback != null and list_fallback.visible and list_fallback.text == "甲",
+		"列表区头像缺失时显示姓名首字",
+	)
+	_expect(
+		detail_fallback != null and detail_fallback.visible and detail_fallback.text == "甲",
+		"详情区头像缺失时显示姓名首字",
+	)
+	screen.call("_apply_responsive_layout_for_size", Vector2(960, 540))
+	await process_frame
+	var mode_button := screen.find_child("ModeButton", true, false) as Button
+	mode_button.grab_focus()
+	var keyboard_accept := InputEventKey.new()
+	keyboard_accept.keycode = KEY_ENTER
+	keyboard_accept.pressed = true
+	Input.parse_input_event(keyboard_accept)
+	keyboard_accept = keyboard_accept.duplicate()
+	keyboard_accept.pressed = false
+	Input.parse_input_event(keyboard_accept)
+	await process_frame
+	_expect_equal(
+		((assignment.get_view_model().get("data", {}) as Dictionary).get("mode")),
+		"batch",
+		"键盘 Enter 可操作当前焦点",
+	)
+	var gamepad_accept := InputEventJoypadButton.new()
+	gamepad_accept.button_index = JOY_BUTTON_A
+	gamepad_accept.pressed = true
+	mode_button.grab_focus()
+	_expect(
+		InputMap.event_is_action(gamepad_accept, "ui_accept"),
+		"手柄 A 键映射为界面确认操作",
+	)
+	_expect_equal(
+		root.get_viewport().gui_get_focus_owner(),
+		mode_button,
+		"切换模式按钮在手柄操作前保持焦点",
+	)
+	mode_button.pressed.emit()
+	await process_frame
+	_expect_equal(
+		((assignment.get_view_model().get("data", {}) as Dictionary).get("mode")),
+		"single",
+		"手柄 A 键可操作当前焦点",
+	)
 	var apply_button := screen.find_child("ApplyDraftButton", true, false) as Button
 	_expect(
 		apply_button != null and apply_button.text == "保存到此存档",
@@ -537,6 +702,24 @@ func _test_save_slot_page(prepared: Dictionary) -> void:
 
 
 func _test_game_flow_route(slot: Dictionary) -> void:
+	_expect_equal(slot.get("state"), "recoverable", "GameFlow 验收使用真实可修复 catalog 槽位")
+	var guarded_service := OFFLINE_REBIND.new()
+	guarded_service.call(
+		"configure",
+		_save_store,
+		_agent_store,
+		FakeProviderService.new(),
+	)
+	var guarded_prepare := guarded_service.call(
+		"prepare",
+		slot,
+		_base_catalog(),
+	) as Dictionary
+	_expect_equal(
+		guarded_prepare.get("errorCode"),
+		"OFFLINE_RESIDENT_MODEL_REBIND_RECOVERY_REQUIRED",
+		"存在可修复 blocker 时离线模块明确要求先协调恢复",
+	)
 	var startup := Control.new()
 	startup.name = "StartupScreen"
 	root.add_child(startup)
@@ -546,58 +729,132 @@ func _test_game_flow_route(slot: Dictionary) -> void:
 	var host := GAME_FLOW_HOST.new()
 	root.add_child(host)
 	host.set("_startup_save_store", _save_store)
-	host.set("_startup_provider_service", FakeProviderService.new())
+	host.set("_startup_agent_save_store", _agent_store)
+	var provider := FakeProviderService.new()
+	host.set("_startup_provider_service", provider)
 	host.set("_startup_ui_adapter", adapter)
 	var startup_catalog := SAVE_CATALOG.new()
 	startup_catalog.call("configure", _save_store, _profile_path, _agent_store)
 	host.set("_startup_save_catalog", startup_catalog)
 	host.call("_bind_current_scene")
 	var projection := host.call("_startup_slot_projection", slot) as Dictionary
-	_expect_equal(projection.get("modelEditAvailable"), true, "完整修订开放模型编辑")
+	_expect_equal(projection.get("modelEditAvailable"), true, "可修复槽位保留模型编辑入口")
+	_expect_equal(
+		projection.get("modelEditRecoveryRequired"),
+		true,
+		"模型编辑入口明确先进入恢复协调",
+	)
 	_expect_equal(
 		projection.get("modelEditSaveRevision"),
 		(slot.get("summary", {}) as Dictionary).get("saveRevision"),
-		"加载页钉住被编辑的完整修订",
+		"恢复前仍钉住最近完整修订",
 	)
-	var recoverable := slot.duplicate(true)
-	recoverable["state"] = "recoverable"
-	recoverable["latestEvidenceRevision"] = int(projection.get("saveRevision", 0)) + 1
-	var recoverable_projection := host.call(
-		"_startup_slot_projection",
-		recoverable,
-	) as Dictionary
-	_expect_equal(recoverable_projection.get("modelEditAvailable"), true, "可回退槽位可编辑最近完整修订")
-	_expect_equal(
-		recoverable_projection.get("modelEditSaveRevision"),
-		projection.get("saveRevision"),
-		"可回退槽位明确钉住较旧的完整修订",
+	host.set("_startup_load_game_mode", "load")
+	host.call(
+		"_on_startup_load_game_intent_requested",
+		&"save.edit_resident_models",
+		{
+			"slotId": _slot_id,
+			"saveRevision": projection.get("modelEditSaveRevision"),
+		},
 	)
-	var corrupt := slot.duplicate(true)
-	corrupt["state"] = "corrupt"
-	corrupt["summary"] = {}
-	corrupt["saveBlockers"] = [{"errorCode": "SESSION_SAVE_CORRUPT"}]
-	var corrupt_projection := host.call("_startup_slot_projection", corrupt) as Dictionary
-	_expect_equal(corrupt_projection.get("modelEditAvailable"), false, "不可修复槽位禁用模型编辑")
-	_expect_equal(corrupt_projection.get("modelEditDisabledReason"), "SESSION_SAVE_CORRUPT", "不可修复槽位说明禁用原因")
-	var interrupted := slot.duplicate(true)
-	interrupted["state"] = "incomplete"
-	interrupted["latestEvidenceRevision"] = int(projection.get("saveRevision", 0)) + 1
-	var interrupted_projection := host.call(
-		"_startup_slot_projection",
-		interrupted,
-	) as Dictionary
-	_expect_equal(interrupted_projection.get("modelEditAvailable"), true, "保存中断槽位仍可编辑最近完整修订")
-	host.call("_open_startup_save_model_assignment", slot)
 	await process_frame
-	var page := host.get("_startup_save_model_page") as Control
-	_expect(page != null, "GameFlowHost 从加载页打开离线模型编辑路由")
+	_expect(host.get("_startup_overwrite_page") != null, "可修复槽位先打开恢复确认页")
+	host.call(
+		"_on_new_game_overwrite_intent_requested",
+		&"session.confirm_recovery",
+		{},
+	)
+	for _index in 5:
+		await process_frame
+	var coordinator := host.get("_startup_save_model_coordinator") as Object
+	var page := coordinator.call("page") as Control if coordinator != null else null
+	_expect(page != null, "恢复协调完成后打开离线模型编辑路由")
 	if page != null:
 		var snapshot := page.call("runtime_gate_snapshot") as Dictionary
-		_expect_equal(snapshot.get("saveSlotMode"), true, "Host 路由保留 save_slot 模式")
+		_expect_equal(snapshot.get("routeMode"), "save_slot", "Host 路由保留单一 save_slot 模式")
 	_expect(host.get("_gateway") == null, "离线模型编辑不创建 Agent Gateway")
 	_expect(host.get("_town_runtime") == null, "离线模型编辑不创建 Town Runtime")
-	var routed_service := host.get("_startup_save_model_assignment_service") as Object
+	var routed_service := coordinator.call("assignment") as Object
 	var routed_vm := routed_service.call("get_view_model") as Dictionary
+	routed_service.call(
+		"dispatch",
+		"resident_model_assignment.select_model",
+		{
+			"revision": int(routed_vm.get("revision", -1)),
+			"providerId": "current-provider",
+			"modelId": "current-model-2",
+		},
+	)
+	routed_vm = routed_service.call("get_view_model") as Dictionary
+	routed_service.call(
+		"dispatch",
+		"resident_model_assignment.assign_one",
+		{
+			"revision": int(routed_vm.get("revision", -1)),
+			"residentId": "resident-a",
+			"llmBinding": {
+				"mode": "model",
+				"providerId": "current-provider",
+				"modelId": "current-model-2",
+			},
+		},
+	)
+	var changed_draft := routed_service.call("get_session_draft") as Dictionary
+	provider.set_available(false)
+	routed_vm = routed_service.call("get_view_model") as Dictionary
+	routed_service.call(
+		"dispatch",
+		"resident_model_assignment.refresh",
+		{"revision": int(routed_vm.get("revision", -1))},
+	)
+	await process_frame
+	page.call("_apply_responsive_layout_for_size", Vector2(1920, 1080))
+	await process_frame
+	var provider_button := page.find_child("ProviderSettingsButton", true, false) as Button
+	var composite := page.find_child(
+		"ResidentModelAssignmentOriginalSimplifiedV34",
+		true,
+		false,
+	) as Control
+	var composite_provider_button := (
+		composite.call("focus_target", "provider_settings") as Button
+		if composite != null
+		else null
+	)
+	_expect(
+		provider_button != null and provider_button.visible,
+		"Provider 不可用时响应式页显示返回模型配置入口",
+	)
+	_expect(
+		composite_provider_button != null and composite_provider_button.visible,
+		"Provider 不可用时宽屏页显示返回模型配置入口",
+	)
+	composite.call("emit_signal", "provider_settings_pressed")
+	for _index in 2:
+		await process_frame
+	_expect(
+		host.get("_startup_settings_page") != null,
+		"返回模型配置入口真正打开 Provider 设置页",
+	)
+	var preserved := coordinator.call("preserved_draft") as Dictionary
+	_expect_equal(
+		preserved.get("draft"),
+		changed_draft,
+		"前往模型配置时保留当前草稿",
+	)
+	provider.set_available(true)
+	host.call("_on_startup_settings_intent_requested", &"provider_settings.back", {})
+	for _index in 4:
+		await process_frame
+	coordinator = host.get("_startup_save_model_coordinator") as Object
+	routed_service = coordinator.call("assignment") as Object
+	_expect_equal(
+		routed_service.call("get_session_draft"),
+		changed_draft,
+		"从模型配置返回后恢复原草稿",
+	)
+	routed_vm = routed_service.call("get_view_model") as Dictionary
 	routed_service.call(
 		"dispatch",
 		"resident_model_assignment.back",
@@ -605,10 +862,6 @@ func _test_game_flow_route(slot: Dictionary) -> void:
 	)
 	for _index in 3:
 		await process_frame
-	_expect(
-		not (host.get("_startup_save_model_preserved_draft") as Dictionary).is_empty(),
-		"返回加载页时保留离线模型草稿",
-	)
 	_expect(
 		host.get("_startup_load_game_page") != null,
 		"离线模型页返回后重新扫描并打开加载存档页",
@@ -733,6 +986,246 @@ func _catalog_slot() -> Dictionary:
 	return ((result.get("slots", []) as Array)[0] as Dictionary).duplicate(true)
 
 
+func _fresh_catalog_slot() -> Dictionary:
+	var fresh_store := SAVE_STORE.new()
+	var fresh_agent := AGENT_STORE.new()
+	_expect_ok(
+		fresh_store.call("configure_test_root", _save_root) as Dictionary,
+		"重开时可重新绑定 World 存档目录",
+	)
+	_expect_ok(
+		fresh_agent.call("configure_test_root", _agent_root) as Dictionary,
+		"重开时可重新绑定 Agent 存档目录",
+	)
+	var catalog := SAVE_CATALOG.new()
+	_expect_ok(
+		catalog.call(
+			"configure",
+			fresh_store,
+			_profile_path.trim_suffix(".json") + "_reopened.json",
+			fresh_agent,
+		) as Dictionary,
+		"重开时可重建启动存档目录",
+	)
+	var result := catalog.call(
+		"get_catalog",
+		[
+			{"slotId": _slot_id, "displayName": "离线模型小镇"},
+			{"slotId": "town-2", "displayName": "空槽位"},
+		],
+	) as Dictionary
+	_expect_ok(result, "重开后可重新扫描存档")
+	return (
+		((result.get("slots", []) as Array)[0] as Dictionary).duplicate(true)
+		if (result.get("slots", []) as Array).size() > 0
+		else {}
+	)
+
+
+func _create_recoverable_catalog_slot() -> Dictionary:
+	var listed := _save_store.call("list_published", _slot_id) as Dictionary
+	var manifests := listed.get("manifests", []) as Array
+	_expect(not manifests.is_empty(), "可修复夹具有已发布基线")
+	if manifests.is_empty():
+		return {}
+	var latest := manifests[0] as Dictionary
+	var components := latest.get("components", {}) as Dictionary
+	var world_component := components.get("world", {}) as Dictionary
+	var log_component := components.get("world_log", {}) as Dictionary
+	var world := _save_store.call(
+		"read_reference",
+		world_component.get("snapshot_ref"),
+		world_component.get("snapshot_sha256"),
+	) as Dictionary
+	var config := _save_store.call(
+		"read_reference",
+		latest.get("session_config_ref"),
+		latest.get("session_config_sha256"),
+	) as Dictionary
+	var world_log := _save_store.call(
+		"read_world_log_snapshot",
+		log_component.get("snapshot_ref"),
+		log_component.get("snapshot_sha256"),
+	) as Dictionary
+	var source_agent := _agent_store.call(
+		"load_snapshot",
+		{
+			"slot_id": _slot_id,
+			"session_id": _session_id,
+			"save_revision": int(latest.get("save_revision", 0)),
+		},
+	) as Dictionary
+	var reserved := _save_store.call(
+		"reserve_revision",
+		_slot_id,
+		_session_id,
+	) as Dictionary
+	_expect_ok(reserved, "可修复夹具预留下一修订")
+	var context := reserved.get("context", {}) as Dictionary
+	var begun := _save_store.call("begin_intent", context, "save") as Dictionary
+	_expect_ok(begun, "可修复夹具建立真实保存 intent")
+	var intent_id := String(begun.get("intentId", ""))
+	_expect_ok(
+		_save_store.call(
+			"write_intent_stage", context, "save", intent_id, "save_started", {},
+		) as Dictionary,
+		"可修复夹具写入保存开始阶段",
+	)
+	var stored := _save_store.call(
+		"write_world_candidate",
+		context,
+		(world.get("value", {}) as Dictionary).duplicate(true),
+		(config.get("value", {}) as Dictionary).duplicate(true),
+		(world_log.get("value", {}) as Dictionary).duplicate(true),
+	) as Dictionary
+	_expect_ok(stored, "可修复夹具写入 World 候选")
+	for stage in ["world_candidate_written", "agent_commit_started"]:
+		_expect_ok(
+			_save_store.call(
+				"write_intent_stage", context, "save", intent_id, stage, {},
+			) as Dictionary,
+			"可修复夹具写入 %s 阶段" % stage,
+		)
+	_expect_ok(
+		_agent_store.call(
+			"save_snapshot",
+			context,
+			(source_agent.get("resident_payloads", {}) as Dictionary).duplicate(true),
+		) as Dictionary,
+		"可修复夹具写入 Agent 快照",
+	)
+	_expect_ok(
+		_save_store.call(
+			"write_intent_stage", context, "save", intent_id, "agent_committed", {},
+		) as Dictionary,
+		"可修复夹具停在 Agent 已提交阶段",
+	)
+	var slot := _catalog_slot()
+	_expect_equal(slot.get("state"), "recoverable", "真实 catalog 将中断保存分类为可修复")
+	_expect(
+		not (slot.get("saveBlockers", []) as Array).is_empty(),
+		"可修复槽位保留真实保存 blocker",
+	)
+	_expect_equal(
+		(slot.get("reconciliationPlan", {}) as Dictionary).get("repairable"),
+		true,
+		"恢复协调计划明确可修复",
+	)
+	return slot
+
+
+func _publish_copy_of_latest_revision() -> Dictionary:
+	var listed := _save_store.call("list_published", _slot_id) as Dictionary
+	var manifests := listed.get("manifests", []) as Array
+	if manifests.is_empty():
+		return {"ok": false, "errorCode": "TEST_SOURCE_MANIFEST_MISSING"}
+	var source := manifests[0] as Dictionary
+	var components := source.get("components", {}) as Dictionary
+	var world_component := components.get("world", {}) as Dictionary
+	var log_component := components.get("world_log", {}) as Dictionary
+	var world := _save_store.call(
+		"read_reference",
+		world_component.get("snapshot_ref"),
+		world_component.get("snapshot_sha256"),
+	) as Dictionary
+	var config := _save_store.call(
+		"read_reference",
+		source.get("session_config_ref"),
+		source.get("session_config_sha256"),
+	) as Dictionary
+	var world_log := _save_store.call(
+		"read_world_log_snapshot",
+		log_component.get("snapshot_ref"),
+		log_component.get("snapshot_sha256"),
+	) as Dictionary
+	var source_context := {
+		"slot_id": _slot_id,
+		"session_id": _session_id,
+		"save_revision": int(source.get("save_revision", 0)),
+	}
+	var agent := _agent_store.call("load_snapshot", source_context) as Dictionary
+	for result in [world, config, world_log, agent]:
+		if not bool((result as Dictionary).get("ok", false)):
+			return result as Dictionary
+	var reserved := _save_store.call(
+		"reserve_revision",
+		_slot_id,
+		_session_id,
+	) as Dictionary
+	if reserved.get("ok") != true:
+		return reserved
+	var context := reserved.get("context", {}) as Dictionary
+	var stored := _save_store.call(
+		"write_world_candidate",
+		context,
+		(world.get("value", {}) as Dictionary).duplicate(true),
+		(config.get("value", {}) as Dictionary).duplicate(true),
+		(world_log.get("value", {}) as Dictionary).duplicate(true),
+	) as Dictionary
+	if stored.get("ok") != true:
+		return stored
+	var saved_agent := _agent_store.call(
+		"save_snapshot",
+		context,
+		(agent.get("resident_payloads", {}) as Dictionary).duplicate(true),
+	) as Dictionary
+	if saved_agent.get("ok") != true:
+		return saved_agent
+	var manifest := SAVE_MANIFEST.build(
+		context,
+		Time.get_datetime_string_from_system(false, false),
+		stored.get("sessionConfigRef"),
+		stored.get("sessionConfigSha256"),
+		(source.get("resident_ids", []) as Array).duplicate(),
+		{
+			"snapshotRef": stored.get("snapshotRef"),
+			"worldRevision": world_component.get("world_revision"),
+			"schema": world_component.get("schema"),
+			"schemaVersion": world_component.get("schema_version"),
+			"worldDataVersion": world_component.get("world_data_version"),
+			"day": world_component.get("day"),
+		},
+		stored.get("snapshotSha256"),
+		SAVE_MANIFEST.resident_messages(source),
+		{
+			"snapshotRef": stored.get("worldLogSnapshotRef"),
+			"snapshotSha256": stored.get("worldLogSnapshotSha256"),
+			"schema": log_component.get("schema"),
+			"schemaVersion": log_component.get("schema_version"),
+			"timelineId": log_component.get("timeline_id"),
+			"maxSequence": log_component.get("max_sequence"),
+			"worldRevision": log_component.get("world_revision"),
+		},
+	) as Dictionary
+	var published := _save_store.call("publish_manifest", manifest) as Dictionary
+	if published.get("ok") != true:
+		return published
+	return {
+		"ok": true,
+		"errorCode": "",
+		"retryable": false,
+		"context": context,
+		"manifest": manifest,
+	}
+
+
+func _base_catalog() -> Dictionary:
+	return {
+		"residents": [
+			{
+				"residentId": "resident-a",
+				"attributes": {"name": "甲居民"},
+				"presentation": {"portraitRef": "res://missing/portrait-a.png"},
+			},
+			{
+				"residentId": "resident-b",
+				"attributes": {"name": "乙居民"},
+				"presentation": {},
+			},
+		],
+	}
+
+
 func _session_config() -> Dictionary:
 	var fixture := _read_json("%s/session_config.json" % CURRENT_SAVE_FIXTURE_ROOT)
 	return {
@@ -815,6 +1308,9 @@ func _cleanup() -> void:
 		_save_store.call("cleanup_test_root")
 	if FileAccess.file_exists(_profile_path):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(_profile_path))
+	var reopened_profile := _profile_path.trim_suffix(".json") + "_reopened.json"
+	if FileAccess.file_exists(reopened_profile):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(reopened_profile))
 	var audio_controller := root.get_node_or_null("TownAudioController")
 	if audio_controller != null and audio_controller.has_method("prepare_shutdown"):
 		audio_controller.call("prepare_shutdown")

@@ -2,6 +2,11 @@ class_name ResidentModelAssignmentService
 extends RefCounted
 
 
+const ASSIGNMENT_COPY := preload(
+	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentCopy.gd"
+)
+
+
 signal view_model_changed(scope: String, view_model: Dictionary)
 signal operation_completed(scope: String, operation: Dictionary)
 signal draft_applied(draft: Dictionary, revision: int)
@@ -1221,24 +1226,7 @@ func _error_payload(error_code: String, retryable: bool, details: Array = []) ->
 
 
 func _error_message(error_code: String) -> String:
-	match error_code:
-		"RESIDENT_MODEL_ASSIGNMENT_REVISION_STALE":
-			return "页面数据已更新，请按最新状态继续操作。"
-		"RESIDENT_MODEL_ASSIGNMENT_DRAFT_INCOMPLETE", "SESSION_DRAFT_INVALID":
-			return "仍有居民未完成有效模型绑定，草稿已保留。"
-		"SESSION_LLM_BINDINGS_INVALID", "SESSION_LLM_PROVIDER_REQUIRED", "SESSION_LLM_MODEL_REQUIRED":
-			return "当前模型连接不可用，系统已尝试自动迁移但没有找到可用模型，草稿已保留。"
-		"PROVIDER_HEALTH_UNAVAILABLE", "PROVIDER_HEALTH_QUERY_FAILED", "PROVIDER_HEALTH_SNAPSHOT_INVALID", "PROVIDER_CATALOG_UNAVAILABLE", "PROVIDER_MODEL_CATALOG_INVALID", "PROVIDER_MODEL_CATALOG_DUPLICATED", "PROVIDER_HEALTH_CATALOG_INVALID", "PROVIDER_HEALTH_CATALOG_DUPLICATED", "PROVIDER_FORMAL_RUNTIME_REQUIRED", "LLM_PROVIDER_UNAVAILABLE", "LLM_MODEL_UNAVAILABLE", "LLM_MODEL_UNKNOWN":
-			return "目标 Provider 或模型当前不可用，原绑定与草稿已保留。"
-		"SESSION_SAVE_MANIFEST_PUBLISH_FAILED", "SESSION_SAVE_STORE_WRITE_FAILED":
-			return "新存档修订尚未发布，原存档和草稿未变，请检查磁盘后重试。"
-		"OFFLINE_RESIDENT_MODEL_REBIND_TARGET_STALE":
-			return "存档已被其他流程更新，原存档和草稿未变；请返回加载页重新选择。"
-		"SESSION_DRAFT_SCHEMA_UNSUPPORTED", "SESSION_DRAFT_SOURCE_INVALID", "SESSION_DRAFT_REVISION_INVALID", "SESSION_DRAFT_SLOTS_INVALID", "SESSION_DRAFT_SLOT_INVALID", "SESSION_RESIDENT_COUNT_OUT_OF_RANGE", "SESSION_HOME_SPACE_COUNT_MISMATCH", "SESSION_HOME_SPACE_REQUIRED", "SESSION_HOME_SPACE_UNKNOWN", "SESSION_HOME_SPACE_DUPLICATED", "SESSION_HOME_SPACE_MISSING", "SESSION_RESIDENT_ID_REQUIRED", "SESSION_RESIDENT_ID_UNKNOWN", "SESSION_RESIDENT_ID_DUPLICATED", "SESSION_LLM_BINDING_INVALID":
-			return "居民选择草稿无效，未进入模型分配；原草稿未被修改。"
-		"RESIDENT_MODEL_ASSIGNMENT_BATCH_EMPTY":
-			return "请先在批量模式选择至少一位居民。"
-	return "操作未完成，已保留最近一次确认数据。"
+	return ASSIGNMENT_COPY.error_message(error_code)
 
 
 func _operation_payload(request_id: String, intent: String, status: String) -> Dictionary:

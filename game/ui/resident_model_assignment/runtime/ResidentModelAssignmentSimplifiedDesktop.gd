@@ -6,11 +6,18 @@ signal action_requested(action_key: String, payload: Dictionary, focus_id: Strin
 signal back_pressed
 signal assign_pressed
 signal apply_pressed
+signal provider_settings_pressed
 signal completion_modal_return_pressed
 signal completion_modal_start_pressed
 
 
 const UiViewModel := preload("res://ui/common/AiTownUiViewModel.gd")
+const RouteMode := preload(
+	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentRouteMode.gd"
+)
+const AssignmentCopy := preload(
+	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentCopy.gd"
+)
 const SIZE := Vector2(1672, 941)
 const FONT_PATH := (
 	"res://assets/ui/startup/fonts/noto_sans_cjk_sc_medium/"
@@ -65,9 +72,7 @@ const RESIDENT_SCROLL_RECT := Rect2(643, 241, 24, 487)
 const MODEL_SCROLL_RECT := Rect2(1555, 450, 24, 316)
 
 
-var in_session_mode := false
-var single_resident_mode := false
-var save_slot_mode := false
+var route_mode := RouteMode.NEW_GAME
 var _font: Font
 var _data: Dictionary = {}
 var _actions: Dictionary = {}
@@ -91,6 +96,7 @@ var _button_labels: Dictionary = {}
 
 var _resident_surfaces: Array[TextureRect] = []
 var _resident_portraits: Array[TextureRect] = []
+var _resident_portrait_fallbacks: Array[Label] = []
 var _resident_names: Array[Label] = []
 var _resident_bindings: Array[Label] = []
 var _resident_checks: Array[TextureRect] = []
@@ -100,6 +106,7 @@ var _model_names: Array[Label] = []
 var _model_meta: Array[Label] = []
 
 var _detail_portrait: TextureRect
+var _detail_portrait_fallback: Label
 var _batch_summary_surface: TextureRect
 var _batch_select_all_surface: TextureRect
 var _mode_surface: TextureRect
@@ -113,6 +120,18 @@ var _completion_overlay: TextureRect
 var _completion_message_primary: Label
 var _completion_message_secondary: Label
 var _completion_labels: Array[Label] = []
+
+
+func _is_in_session() -> bool:
+	return RouteMode.is_in_session(route_mode)
+
+
+func _is_single_resident() -> bool:
+	return RouteMode.is_single_resident(route_mode)
+
+
+func _is_save_slot() -> bool:
+	return RouteMode.is_save_slot(route_mode)
 
 
 func _ready() -> void:
@@ -381,9 +400,9 @@ func _build_header() -> void:
 			),
 		"asset_text_button",
 	)
-	_mode_surface.visible = not single_resident_mode
+	_mode_surface.visible = not _is_single_resident()
 	(_labels.get("ModeCopy") as Label).visible = true
-	(_buttons.get("mode") as Button).visible = not single_resident_mode
+	(_buttons.get("mode") as Button).visible = not _is_single_resident()
 
 
 func _build_resident_list() -> void:
@@ -421,6 +440,16 @@ func _build_resident_list() -> void:
 		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		add_child(portrait)
 		_resident_portraits.append(portrait)
+		var portrait_fallback := _add_label(
+			"ResidentPortraitFallback%d" % index,
+			Rect2(rect.position + Vector2(19, 8), Vector2(74, 66)),
+			"",
+			30,
+			HORIZONTAL_ALIGNMENT_CENTER,
+			INK,
+		)
+		portrait_fallback.visible = false
+		_resident_portrait_fallbacks.append(portrait_fallback)
 
 		var name_label := _add_label(
 			"ResidentName%d" % index,
@@ -467,6 +496,15 @@ func _build_selected_resident_header() -> void:
 	)
 	_detail_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	add_child(_detail_portrait)
+	_detail_portrait_fallback = _add_label(
+		"SelectedResidentPortraitFallback",
+		Rect2(730, 202, 134, 134),
+		"",
+		52,
+		HORIZONTAL_ALIGNMENT_CENTER,
+		INK,
+	)
+	_detail_portrait_fallback.visible = false
 	_batch_summary_surface = _texture_rect(
 		"BatchSummaryAsset",
 		Rect2(696, 158, 900, 209),
@@ -582,6 +620,22 @@ func _build_footer() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT,
 		INK_MUTED,
 	)
+	_add_label(
+		"ProviderSettingsCopy",
+		Rect2(730, 813, 300, 64),
+		"返回模型配置",
+		20,
+		HORIZONTAL_ALIGNMENT_CENTER,
+		INK_LIGHT,
+	)
+	var provider_settings_button := _add_hit_button(
+		"provider_settings",
+		Rect2(700, 799, 340, 96),
+		func() -> void: provider_settings_pressed.emit(),
+		"provider_settings_action",
+	)
+	provider_settings_button.visible = false
+	(_labels.get("ProviderSettingsCopy") as Label).visible = false
 	_assign_surface = _texture_rect(
 		"AssignControlAsset",
 		Rect2(1068, 799, 544, 96),
@@ -644,7 +698,7 @@ func _build_completion_modal() -> void:
 		Rect2(596, 421, 482, 56),
 		(
 			"这位新居民的模型已经配置完成"
-			if single_resident_mode
+			if _is_single_resident()
 			else "全部居民的模型均已配置完成"
 		),
 		18,
@@ -659,11 +713,11 @@ func _build_completion_modal() -> void:
 		Rect2(596, 479, 482, 47),
 		(
 			"确认后会立即进入小镇。"
-			if single_resident_mode
+			if _is_single_resident()
 			else "保存后会立即用于当前小镇。"
-			if in_session_mode
+			if _is_in_session()
 			else "保存后会写入此存档的新修订。"
-			if save_slot_mode
+			if _is_save_slot()
 			else "现在可以开始游戏。"
 		),
 		18,
@@ -684,11 +738,11 @@ func _build_completion_modal() -> void:
 		Rect2(849, 584, 234, 70),
 		(
 			"确认入镇"
-			if single_resident_mode
+			if _is_single_resident()
 			else "保存修改"
-			if in_session_mode
+			if _is_in_session()
 			else "保存到此存档"
-			if save_slot_mode
+			if _is_save_slot()
 			else "开始游戏"
 		),
 		func() -> void: completion_modal_start_pressed.emit(),
@@ -718,11 +772,11 @@ func _render(view_model: Dictionary) -> void:
 	)
 	_set_text(
 		"ModeCopy",
-		"入镇绑定" if single_resident_mode else "返回单人" if batch_mode else "批量选择",
+		"入镇绑定" if _is_single_resident() else "返回单人" if batch_mode else "批量选择",
 	)
-	_mode_surface.visible = not single_resident_mode
+	_mode_surface.visible = not _is_single_resident()
 	(_labels.get("ModeCopy") as Label).visible = true
-	(_buttons.get("mode") as Button).visible = not single_resident_mode
+	(_buttons.get("mode") as Button).visible = not _is_single_resident()
 	_mode_surface.texture = _load_texture(
 		MODE_CONTROL_BATCH_PATH if batch_mode else MODE_CONTROL_SINGLE_PATH
 	)
@@ -739,6 +793,12 @@ func _render(view_model: Dictionary) -> void:
 	_render_models()
 	_render_action_states(batch_mode)
 	_set_text("Operation", _operation_copy(view_model))
+	var provider_settings_visible := AssignmentCopy.provider_settings_available(
+		view_model,
+		route_mode,
+	)
+	(_buttons.get("provider_settings") as Button).visible = provider_settings_visible
+	(_labels.get("ProviderSettingsCopy") as Label).visible = provider_settings_visible
 	_render_scrollbars()
 
 
@@ -781,7 +841,11 @@ func _render_residents(batch_mode: bool) -> void:
 		_resident_names[index].text = String(resident.get("displayName", ""))
 		_resident_names[index].tooltip_text = _resident_names[index].text
 		_resident_bindings[index].text = ""
-		_render_portrait(_resident_portraits[index], resident)
+		_render_portrait(
+			_resident_portraits[index],
+			_resident_portrait_fallbacks[index],
+			resident,
+		)
 		if batch_mode:
 			_resident_checks[index].visible = false
 		else:
@@ -805,6 +869,7 @@ func _render_selected_header(batch_mode: bool) -> void:
 		var resident_count := int(_data.get("residentCount", 0))
 		var all_selected := resident_count > 0 and selected_count >= resident_count
 		_detail_portrait.visible = false
+		_detail_portrait_fallback.visible = false
 		_batch_summary_surface.visible = true
 		_batch_select_all_surface.visible = true
 		kicker.position = Vector2(715, 188)
@@ -835,7 +900,7 @@ func _render_selected_header(batch_mode: bool) -> void:
 		_batch_select_all_surface.visible = false
 		(_labels.get("BatchSelectAllCopy") as Label).visible = false
 		(_buttons.get("batch_select_all") as Button).visible = false
-		_render_portrait(_detail_portrait, resident)
+		_render_portrait(_detail_portrait, _detail_portrait_fallback, resident)
 		kicker.position = Vector2(920, 190)
 		kicker.size = Vector2(620, 30)
 		kicker.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -913,13 +978,13 @@ func _render_action_states(batch_mode: bool) -> void:
 		(
 			(
 				"已全部分配 · 确认入镇"
-				if single_resident_mode
+				if _is_single_resident()
 				else "确认并返回模型设置"
 				if _return_to_provider_settings()
 				else "已全部分配 · 保存修改"
-				if in_session_mode
+				if _is_in_session()
 				else "已全部分配 · 保存到存档"
-				if save_slot_mode
+				if _is_save_slot()
 				else "已全部分配 · 开始游戏"
 			)
 			if ready_to_start
@@ -1246,13 +1311,21 @@ func _render_scrollbar(
 	thumb.size = Vector2(24, 48)
 
 
-func _render_portrait(texture_rect: TextureRect, resident: Dictionary) -> void:
+func _render_portrait(
+	texture_rect: TextureRect,
+	fallback_label: Label,
+	resident: Dictionary,
+) -> void:
 	var texture := _portrait_frame(
 		String(resident.get("portraitRef", "")),
 		String(resident.get("portraitFrameMode", "legacy_atlas_64x80")),
 	)
 	texture_rect.texture = texture
 	texture_rect.visible = texture != null
+	fallback_label.text = String(resident.get("portraitFallbackText", "?")).strip_edges().left(1)
+	if fallback_label.text.is_empty():
+		fallback_label.text = "?"
+	fallback_label.visible = texture == null
 
 
 func _portrait_frame(path: String, frame_mode: String) -> Texture2D:
@@ -1370,19 +1443,7 @@ func _operation_copy(view_model: Dictionary) -> String:
 			return "分配已更新，确认全部后即可继续"
 		"rejected", "error":
 			var message := error_message if not error_message.is_empty() else "操作未完成，原分配已保留"
-			return (
-				"%s；可返回加载存档，从主菜单打开“模型设置”" % message
-				if save_slot_mode and error_code in [
-					"SESSION_LLM_BINDINGS_INVALID",
-					"LLM_PROVIDER_UNAVAILABLE",
-					"LLM_MODEL_UNAVAILABLE",
-					"LLM_MODEL_UNKNOWN",
-					"PROVIDER_HEALTH_UNAVAILABLE",
-					"PROVIDER_HEALTH_QUERY_FAILED",
-					"PROVIDER_CATALOG_UNAVAILABLE",
-				]
-				else message
-			)
+			return AssignmentCopy.save_slot_error(message, error_code, route_mode)
 		"disabled":
 			return "当前没有可用模型"
 	if has_pending_rebind(_data):
@@ -1396,9 +1457,9 @@ func _operation_copy(view_model: Dictionary) -> String:
 			"调整完成后，点击确认返回模型设置"
 			if _return_to_provider_settings()
 			else "全部居民均已完成模型分配，可以保存修改"
-			if in_session_mode
+			if _is_in_session()
 			else "全部居民均已完成模型分配，可以保存到此存档"
-			if save_slot_mode
+			if _is_save_slot()
 			else "全部居民均已完成模型分配，可以开始游戏"
 		)
 	return "模型来自已连接服务；此处只负责分配"
@@ -1437,7 +1498,9 @@ func _set_action_state(button_id: String, action_key: String) -> void:
 
 func _set_resident_slot_visible(index: int, value: bool) -> void:
 	_resident_surfaces[index].visible = value
-	_resident_portraits[index].visible = value
+	if not value:
+		_resident_portraits[index].visible = false
+		_resident_portrait_fallbacks[index].visible = false
 	_resident_names[index].visible = value
 	_resident_bindings[index].visible = false
 	_resident_checks[index].visible = value
