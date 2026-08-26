@@ -96,11 +96,11 @@
   },
   {
     "id": "res://tests/offline_resident_model_rebind_load_page_test.gd",
-    "min_checks": 57
+    "min_checks": 58
   },
   {
     "id": "res://tests/windows_directory_cleanup_test.gd",
-    "min_checks": 102
+    "min_checks": 105
   },
   {
     "id": "res://tests/startup_social_feedback_test.gd",

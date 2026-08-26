@@ -52,8 +52,8 @@ checks=(
 	"res://tests/offline_resident_model_rebind_test.gd|OFFLINE_RESIDENT_MODEL_REBIND_PASS|32"
 	"res://tests/offline_resident_model_rebind_ui_route_test.gd|OFFLINE_RESIDENT_MODEL_REBIND_UI_ROUTE_PASS|45"
 	"res://tests/offline_resident_model_assignment_page_test.gd|OFFLINE_RESIDENT_MODEL_ASSIGNMENT_PAGE_PASS|95"
-	"res://tests/offline_resident_model_rebind_load_page_test.gd|OFFLINE_RESIDENT_MODEL_REBIND_LOAD_PAGE_PASS|57"
-	"res://tests/windows_directory_cleanup_test.gd|WINDOWS_DIRECTORY_CLEANUP_PASS|102"
+	"res://tests/offline_resident_model_rebind_load_page_test.gd|OFFLINE_RESIDENT_MODEL_REBIND_LOAD_PAGE_PASS|58"
+	"res://tests/windows_directory_cleanup_test.gd|WINDOWS_DIRECTORY_CLEANUP_PASS|105"
 	"res://tests/startup_social_feedback_test.gd|STARTUP_SOCIAL_FEEDBACK_PASS|65"
 	"res://ui/startup/tests/StartupTypographyContractTest.gd|STARTUP_TYPOGRAPHY_CONTRACT_PASS|54"
 )

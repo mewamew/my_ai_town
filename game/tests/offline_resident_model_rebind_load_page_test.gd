@@ -8,6 +8,9 @@ const STARTUP_REBIND_COORDINATOR := preload(
 	"res://world/presentation/game_flow/TownStartupOfflineResidentModelRebindCoordinator.gd"
 )
 const FIXTURE := preload("res://tests/support/OfflineResidentModelRebindFixture.gd")
+const MOBILE_SCREEN_FIXTURE := preload(
+	"res://tests/support/StartupLoadGameMobileScreenFixture.gd"
+)
 
 
 var _failures: Array[String] = []
@@ -300,16 +303,8 @@ func _load_page_view_model(slots: Array, revision: int) -> Dictionary:
 
 func _test_load_page_action() -> void:
 	var scene := load("res://ui/startup/StartupLoadGameScreen.tscn") as PackedScene
-	var screen := scene.instantiate() as Control
-	screen.call("configure_runtime_layout", true)
-	root.add_child(screen)
 	var intents: Array[String] = []
 	var routed_payloads: Array[Dictionary] = []
-	screen.intent_requested.connect(
-		func(intent: StringName, payload: Dictionary) -> void:
-			intents.append(String(intent))
-			routed_payloads.append(payload.duplicate(true)),
-	)
 	var view_model := {
 		"scope": "save",
 		"status": "ready",
@@ -338,7 +333,12 @@ func _test_load_page_action() -> void:
 		"operation": {},
 		"error": null,
 	}
-	_expect(bool(screen.call("apply_view_model", view_model)), "加载页接受模型编辑动作")
+	var mobile_screen := MOBILE_SCREEN_FIXTURE.new() as Control
+	root.add_child(mobile_screen)
+	_expect(
+		bool(mobile_screen.call("apply_view_model", view_model)),
+		"移动加载页替身接受模型编辑动作",
+	)
 	await process_frame
 	var original_viewport_size := root.size
 	for layout_value: Variant in [
@@ -350,12 +350,12 @@ func _test_load_page_action() -> void:
 		for _index in 3:
 			await process_frame
 		var compact_actions: Array[Button] = [
-			screen.find_child("slot-aAction", true, false) as Button,
-			screen.find_child("slot-aDeleteAction", true, false) as Button,
-			screen.find_child("slot-aModelEditAction", true, false) as Button,
+			mobile_screen.find_child("slot-aAction", true, false) as Button,
+			mobile_screen.find_child("slot-aDeleteAction", true, false) as Button,
+			mobile_screen.find_child("slot-aModelEditAction", true, false) as Button,
 		]
 		for button: Button in compact_actions:
-			var physical_size := _physical_rect(button, screen).size
+			var physical_size := _physical_rect(button, mobile_screen).size
 			_expect(
 				button != null
 				and physical_size.x >= 48.0
@@ -371,15 +371,15 @@ func _test_load_page_action() -> void:
 					_expect(false, "%s 的关键操作按钮完整" % String(layout[1]))
 					continue
 				_expect(
-					not _physical_rect(compact_actions[left_index], screen).intersects(
-						_physical_rect(compact_actions[right_index], screen),
+					not _physical_rect(compact_actions[left_index], mobile_screen).intersects(
+						_physical_rect(compact_actions[right_index], mobile_screen),
 					),
 					"%s 的 %s %s 互不重叠（left=%s right=%s）" % [
 						String(layout[1]),
 						compact_actions[left_index].name,
 						compact_actions[right_index].name,
-						_physical_rect(compact_actions[left_index], screen),
-						_physical_rect(compact_actions[right_index], screen),
+						_physical_rect(compact_actions[left_index], mobile_screen),
+						_physical_rect(compact_actions[right_index], mobile_screen),
 					],
 				)
 		var delete_button := compact_actions[1]
@@ -387,11 +387,20 @@ func _test_load_page_action() -> void:
 		_expect(
 			delete_button != null
 			and edit_button != null
-			and _physical_rect(edit_button, screen).position.y
-			>= _physical_rect(delete_button, screen).end.y,
+			and _physical_rect(edit_button, mobile_screen).position.y
+			>= _physical_rect(delete_button, mobile_screen).end.y,
 			"%s 的更改居民模型按钮位于删除按钮下方" % String(layout[1]),
 		)
-	screen.call("configure_runtime_layout", false)
+	root.remove_child(mobile_screen)
+	mobile_screen.free()
+	var screen := scene.instantiate() as Control
+	root.add_child(screen)
+	screen.intent_requested.connect(
+		func(intent: StringName, payload: Dictionary) -> void:
+			intents.append(String(intent))
+			routed_payloads.append(payload.duplicate(true)),
+	)
+	_expect(bool(screen.call("apply_view_model", view_model)), "桌面加载页接受模型编辑动作")
 	root.size = Vector2i(960, 540)
 	for _index in 3:
 		await process_frame

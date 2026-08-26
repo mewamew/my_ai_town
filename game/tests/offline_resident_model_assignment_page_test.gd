@@ -7,6 +7,9 @@ const OFFLINE_REBIND := preload(
 const ASSIGNMENT_SERVICE := preload(
 	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentService.gd"
 )
+const FEEDBACK_POLICY := preload(
+	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentFeedbackPolicy.gd"
+)
 const UI_ADAPTER := preload("res://world/presentation/ui/TownUiAdapter.gd")
 const FIXTURE := preload("res://tests/support/OfflineResidentModelRebindFixture.gd")
 
@@ -81,15 +84,13 @@ func _test_save_slot_page(prepared: Dictionary) -> void:
 		valid_draft,
 	)
 	_expect(
-		String(assignment.call(
-			"_error_message",
+		String(FEEDBACK_POLICY.error_message(
 			"SESSION_SAVE_MANIFEST_PUBLISH_FAILED",
 		)).contains("重试"),
 		"磁盘发布失败给出明确重试说明",
 	)
 	_expect(
-		String(assignment.call(
-			"_error_message",
+		String(FEEDBACK_POLICY.error_message(
 			"OFFLINE_RESIDENT_MODEL_REBIND_TARGET_STALE",
 		)).contains("返回加载页"),
 		"并发冲突提示重新选择最新修订",

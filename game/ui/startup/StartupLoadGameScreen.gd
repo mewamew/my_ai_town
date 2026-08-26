@@ -56,7 +56,6 @@ var _feedback: Label
 var _back_button: Button
 var _visual_atlas_texture: Texture2D
 var _delete_icon_texture: AtlasTexture
-var _force_mobile_runtime := false
 
 
 func _ready() -> void:
@@ -71,12 +70,6 @@ func _ready() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED and is_node_ready():
-		_apply_platform_slot_action_layout.call_deferred()
-
-
-func configure_runtime_layout(force_mobile_runtime := false) -> void:
-	_force_mobile_runtime = force_mobile_runtime
-	if is_node_ready():
 		_apply_platform_slot_action_layout.call_deferred()
 
 
@@ -668,7 +661,7 @@ func _apply_platform_slot_action_layout() -> void:
 
 
 func _mobile_runtime_enabled() -> bool:
-	return _force_mobile_runtime or MOBILE_UI_PROFILE.is_mobile_runtime()
+	return MOBILE_UI_PROFILE.is_mobile_runtime()
 
 
 func _display_size() -> Vector2:

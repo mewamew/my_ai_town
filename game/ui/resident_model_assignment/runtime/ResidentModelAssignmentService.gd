@@ -1229,14 +1229,10 @@ func _error_payload(error_code: String, retryable: bool, details: Array = []) ->
 	return {
 		"kind": "transport" if retryable else "validation",
 		"code": error_code,
-		"message": _error_message(error_code),
+		"message": FEEDBACK_POLICY.error_message(error_code),
 		"retryable": retryable,
 		"details": details.duplicate(true),
 	}
-
-
-func _error_message(error_code: String) -> String:
-	return FEEDBACK_POLICY.error_message(error_code)
 
 
 func _operation_payload(request_id: String, intent: String, status: String) -> Dictionary:

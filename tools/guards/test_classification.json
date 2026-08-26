@@ -94,6 +94,7 @@
   "game/tests/resident_presentation_test.gd": "自动测试",
   "game/tests/support/TownWorldTestCase.gd": "辅助",
   "game/tests/support/OfflineResidentModelRebindFixture.gd": "辅助",
+  "game/tests/support/StartupLoadGameMobileScreenFixture.gd": "辅助",
   "game/tests/support/TownAgentDecisionTraceEvidence.gd": "辅助",
   "game/tests/town_activity_test.gd": "自动测试",
   "game/tests/town_conversation_test.gd": "自动测试",

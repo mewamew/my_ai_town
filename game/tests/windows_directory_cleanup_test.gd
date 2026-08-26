@@ -620,6 +620,19 @@ func _test_offline_rebind_long_path_story(suffix: String) -> void:
 	_expect_ok(agent_store.call("configure_test_root", agent_root) as Dictionary, "Windows 离线故事配置 Agent 根目录")
 	var lease := store.call("begin_slot_transaction", slot_id) as Dictionary
 	_expect_ok(lease, "超长离线槽位可建立事务锁")
+	var lease_token := String(lease.get("leaseToken", ""))
+	var owned_transactions := store.get("_owned_slot_transactions") as Dictionary
+	var lease_record := owned_transactions.get(lease_token, {}) as Dictionary
+	var transaction_owner_path := "%s/owner.json" % String(
+		lease_record.get("claimPath", ""),
+	)
+	_expect(
+		_simulated_windows_path(transaction_owner_path).length()
+		< WINDOWS_LEGACY_MAX_PATH,
+		"超长离线故事的槽位事务 owner 使用短路径（length=%d）" % (
+			_simulated_windows_path(transaction_owner_path).length()
+		),
+	)
 	_expect_ok(store.call("end_slot_transaction", lease.get("leaseToken")) as Dictionary, "超长离线槽位事务锁可释放")
 	var payloads := {
 		"resident-a": {
@@ -714,8 +727,31 @@ func _test_offline_rebind_long_path_story(suffix: String) -> void:
 	_expect_ok(agent_store.call("load_snapshot", rebound_context) as Dictionary, "超长离线改绑后的 Agent 快照可重读")
 	var rescanned := catalog.call("get_catalog", slot_definitions) as Dictionary
 	_expect_ok(rescanned, "超长离线改绑发布后可重新扫描")
+	var rebound_slot := rescanned.get("continueSlot", {}) as Dictionary
+	var rebound_manifest := rebound_slot.get("manifest", {}) as Dictionary
+	var world_session_config_path := String(store.call(
+		"_resolve_reference",
+		String(rebound_manifest.get("session_config_ref", "")),
+	))
+	var agent_snapshot_path := "%s/snapshot.json" % String(
+		agent_store.call("_snapshot_root", rebound_context),
+	)
+	_expect(
+		FileAccess.file_exists(world_session_config_path)
+		and _simulated_windows_path(world_session_config_path).length()
+		>= WINDOWS_LEGACY_MAX_PATH,
+		"离线复制后的 World session_config 明确跨过传统 Windows 路径边界（length=%d）"
+		% _simulated_windows_path(world_session_config_path).length(),
+	)
+	_expect(
+		FileAccess.file_exists(agent_snapshot_path)
+		and _simulated_windows_path(agent_snapshot_path).length()
+		>= WINDOWS_LEGACY_MAX_PATH,
+		"离线复制后的 Agent snapshot 明确跨过传统 Windows 路径边界（length=%d）"
+		% _simulated_windows_path(agent_snapshot_path).length(),
+	)
 	_expect_equal(
-		((rescanned.get("continueSlot", {}) as Dictionary).get("sessionConfig", {}) as Dictionary).get("residentBindings"),
+		(rebound_slot.get("sessionConfig", {}) as Dictionary).get("residentBindings"),
 		_windows_bindings("windows-provider", "windows-model"),
 		"超长离线改绑重读采用新绑定",
 	)
