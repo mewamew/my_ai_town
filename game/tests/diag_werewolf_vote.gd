@@ -177,7 +177,8 @@ func _verify_vote_round() -> void:
 	var candidates: Array = vote.get("candidateIds", []) as Array
 	_expect_equal(candidates.size() >= 3, true, "候选人名单非空 (%d人)" % candidates.size())
 	_expect_equal(candidates.has(civilians[0]), true, "平民在候选人名单中")
-	# 全员投票: 前8票投 civilians[0],其余投 civilians[1] → 收齐立即开票
+	# 全员投票: 前9票投 civilians[0],其余投 civilians[1] → 收齐立即开票。
+	# 投自己者改投对方(本人票转移 1 票), 前 9 分配保证 target_high 仍最高。
 	var target_high := civilians[0]
 	var target_low := civilians[1]
 	var voters := _alive_voter_ids(world, [], 99)
@@ -186,10 +187,12 @@ func _verify_vote_round() -> void:
 		world.call("stop")
 		return
 	for index: int in voters.size():
+		var ballot_target := target_high if index < 9 else target_low
+		if voters[index] == ballot_target:
+			# 不能投自己(快照已排除本人, 提交校验兜底): 改投另一名候选。
+			ballot_target = target_low if ballot_target == target_high else target_high
 		var ballot := {
-			"target_resident_id": (
-				target_high if index < 8 else target_low
-			),
+			"target_resident_id": ballot_target,
 			"line": "案发那晚他的行踪说不清。",
 		}
 		WEREWOLF.submit_vote(world, voters[index], ballot)

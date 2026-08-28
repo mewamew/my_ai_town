@@ -179,24 +179,30 @@ static func consume(
 			resident_id,
 			decision.get("social_response"),
 		)
+	var attachment_submitted := {}
+	# 附件通道(汇报/投票/夜间技能)先于动作通道提交。记录提交结果供
+	# submit_valid 做双通道幂等: 模型同时输出附件+同类型动作(或只输出
+	# 附件)时, 附件已生效而动作被拒("已经提交过")会把决策整体打回重试,
+	# 重试时附件再报"已经提交过"——汇报实际成功但模型永远看不到成功反馈。
 	if decision.has("exile_vote"):
-		host.WEREWOLF_RUNTIME.submit_vote(
+		attachment_submitted["exile_vote"] = host.WEREWOLF_RUNTIME.submit_vote(
 			host,
 			resident_id,
 			decision.get("exile_vote") as Dictionary,
-		)
+		).is_empty()
 	if decision.has("report"):
-		host.WEREWOLF_RUNTIME.submit_report(
+		attachment_submitted["report"] = host.WEREWOLF_RUNTIME.submit_report(
 			host,
 			resident_id,
 			decision.get("report") as Dictionary,
-		)
+		).is_empty()
 	if decision.has("night_skill"):
-		host.ROLE_SKILL_RUNTIME.submit_night_skill(
+		attachment_submitted["night_skill"] = host.ROLE_SKILL_RUNTIME.submit_night_skill(
 			host,
 			resident_id,
 			decision.get("night_skill") as Dictionary,
-		)
+		).is_empty()
+	context["attachmentSubmitted"] = attachment_submitted
 	context["probeLapUsec"] = WORLD_PERFORMANCE_PROBE.record_lap(
 		int(context.get("probeLapUsec", 0)),
 		"submission_validate_and_social",
@@ -234,6 +240,18 @@ static func submit_valid(
 			host, resident_id, resident, decision, context
 		)
 	if handling != "replace_current" or typeof(decision.get("action")) != TYPE_DICTIONARY:
+		# 附件通道(汇报/投票/夜间技能)已生效时, 无动作也算有效决策:
+		# 模型可能只输出附件(legacy 通道), 拒绝会导致附件已生效但决策
+		# 报错, 模型重试时附件再报"已经提交过"。
+		var attachment_submitted_any := _attachment_submitted_any(
+			context.get("attachmentSubmitted", {}) as Dictionary,
+		)
+		if attachment_submitted_any:
+			return host._complete_agent_submission({
+				"ok": true,
+				"consumed": true,
+				"stale": false,
+			})
 		host._schedule_decision(resident_id, false)
 		return host._complete_agent_submission({"ok": false, "stale": false, "errors": ["决定必须继续当前动作或提交新动作"]})
 	var action := (decision.get("action", {}) as Dictionary).duplicate(true)
@@ -333,6 +351,14 @@ static func submit_valid(
 	if action_type == "投票放逐":
 		# 方案A: 投票放逐作为即时动作直接提交(不写 currentAction、不进推进循环)。
 		# 目标按ID校验(候选名单=ID),失败反馈模型重试;附件 exile_vote 通道仍保留。
+		# 双通道幂等: 附件 exile_vote 已提交成功时, 动作通道重复提交视为成功。
+		var attachment_submitted := context.get("attachmentSubmitted", {}) as Dictionary
+		if bool(attachment_submitted.get("exile_vote", false)):
+			return host._complete_agent_submission({
+				"ok": true,
+				"consumed": true,
+				"stale": false,
+			})
 		var vote_error: String = host.WEREWOLF_RUNTIME.submit_vote(host, resident_id, {
 			"target_resident_id": String(action.get("target_resident_id", "")),
 			"line": String(action.get("line", "")),
@@ -351,6 +377,14 @@ static func submit_valid(
 	if action_type == "使用技能":
 		# 夜间技能作为即时动作直接提交(不写 currentAction、不进推进循环)。
 		# 目标按ID校验(候选名单=ID),失败反馈模型重试;附件 night_skill 通道仍保留。
+		# 双通道幂等: 附件 night_skill 已提交成功时, 动作通道重复提交视为成功。
+		var attachment_submitted := context.get("attachmentSubmitted", {}) as Dictionary
+		if bool(attachment_submitted.get("night_skill", false)):
+			return host._complete_agent_submission({
+				"ok": true,
+				"consumed": true,
+				"stale": false,
+			})
 		var skill_error: String = host.ROLE_SKILL_RUNTIME.submit_night_skill(host, resident_id, {
 			"skill_id": String(action.get("skill_id", "")),
 			"target_resident_id": String(action.get("target_resident_id", "")),
@@ -370,6 +404,14 @@ static func submit_valid(
 	if action_type == "向警察汇报":
 		# 审讯会汇报期: 居民向警察秘密汇报(目击/听到/怀疑/不汇报), 即时提交。
 		# 内容保密不广播, 只进警察侧汇总; 失败反馈模型重试。
+		# 双通道幂等: 附件 report 已提交成功时, 动作通道重复提交视为成功。
+		var attachment_submitted := context.get("attachmentSubmitted", {}) as Dictionary
+		if bool(attachment_submitted.get("report", false)):
+			return host._complete_agent_submission({
+				"ok": true,
+				"consumed": true,
+				"stale": false,
+			})
 		var report_error: String = host.WEREWOLF_RUNTIME.submit_report(host, resident_id, {
 			"kind": String(action.get("kind", "")),
 			"line": String(action.get("line", "")),
@@ -538,3 +580,11 @@ static func submit_valid(
 	return AGENT_DECISION_ACTION_RUNTIME.submit_prepared_action(
 		host, resident, decision, action, context
 	)
+
+
+## 附件通道(汇报/投票/夜间技能)是否至少有一类已提交成功。
+static func _attachment_submitted_any(attachment_submitted: Dictionary) -> bool:
+	for submitted_value: Variant in attachment_submitted.values():
+		if bool(submitted_value):
+			return true
+	return false

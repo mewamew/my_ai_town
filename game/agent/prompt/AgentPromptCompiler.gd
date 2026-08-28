@@ -629,7 +629,7 @@ func _render_snapshot(wake_packet: Dictionary) -> String:
 			phase_prompt = String(assembly.get("reportPrompt", ""))
 		if not phase_prompt.is_empty():
 			lines.append(phase_prompt)
-		if assembly_phase == "report":
+		if assembly_phase == "report" and String(assembly.get("role", "")) != "police":
 			lines.append("汇报类型：%s。" % _join(assembly.get("kinds", []) as Array))
 			if bool(assembly.get("reported", false)):
 				lines.append("你已提交汇报，等待警察收齐后开始审讯。")
@@ -692,14 +692,19 @@ func _render_snapshot(wake_packet: Dictionary) -> String:
 		)
 	)
 	var destinations := place.get("destinations", []) as Array
-	lines.append(
-		"当前可前往地点：%s。去其他地点会被 World 拒绝。"
-		% (
-			"无"
-			if destinations.is_empty()
-			else _join(destinations)
+	if assembly_phase != "idle":
+		# 审讯会期间时间冻结: 任何"去"动作都会被白名单拒绝, 明确告知
+		# 避免模型盯着地点列表想出门(实锤: 汇报期居民全选"去镇公所"被拒)。
+		lines.append("当前可前往地点：无（警察审讯会期间时间冻结，不能离开当前位置）。")
+	else:
+		lines.append(
+			"当前可前往地点：%s。去其他地点会被 World 拒绝。"
+			% (
+				"无"
+				if destinations.is_empty()
+				else _join(destinations)
+			)
 		)
-	)
 	var dining := place.get("dining", {}) as Dictionary
 	if not dining.is_empty():
 		var retry_text := ""
@@ -1895,6 +1900,16 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 		var conflict_intent := _conversation_conflict_intent_constraints(snapshot)
 		if not conflict_intent.is_empty():
 			reply_constraints["conflict_intent"] = conflict_intent
+		# 狼人杀附件在"必须答话"时也不能丢: 投票期被对话锁定(等待答话)的
+		# 居民仍需投票——否则 wake_requires_reply 早退只给「答话」, 投票期
+		# 白名单只允许「投票放逐」, 提交答话被拒→反复重试→超时弃权;
+		# 夜间对话中者同理仍可看到技能选项(不强制)。
+		var reply_exile_vote := _exile_vote_constraints(snapshot)
+		if not reply_exile_vote.is_empty():
+			reply_constraints["exile_vote"] = reply_exile_vote
+		var reply_night_skill := _night_skill_constraints(snapshot)
+		if not reply_night_skill.is_empty():
+			reply_constraints["night_skill"] = reply_night_skill
 		return reply_constraints
 	var post_injury_reaction := snapshot.get("post_injury_reaction", {}) as Dictionary
 	if bool(post_injury_reaction.get("required", false)):
@@ -2003,6 +2018,23 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 				and bool((value as Dictionary).get("available_for_conversation", true))
 			):
 				targets.append(String((value as Dictionary).get("resident_id", "")))
+		# 警察审讯会: 审讯期警察可远程提审任何候选居民(准备层豁免感知范围/
+		# 对话冷却, 见 TownActionPreparationRuntime.prepare_talk_action 的
+		# interrogation_allowed)。搭话目标必须合并"可审讯候选", 否则 08:00
+		# 开会时警察身边通常只有 1-3 人, 想审的嫌疑人(不在 nearby)没有搭话
+		# 选项也没有 ID(assembly 快照只渲染名字), 审讯 5 人额度用不满,
+		# 身边无人时审讯期整段卡到 600s 兜底(实锤风险, 见狼人杀踩坑手册)。
+		var assembly := snapshot.get("assembly", {}) as Dictionary
+		if (
+			String(assembly.get("phase", "")) == "interrogation"
+			and String(assembly.get("role", "")) == "police"
+		):
+			for target_value: Variant in assembly.get("targets", []) as Array:
+				var target_id := String(
+					(target_value as Dictionary).get("resident_id", ""),
+				).strip_edges()
+				if not target_id.is_empty() and not targets.has(target_id):
+					targets.append(target_id)
 		if not targets.is_empty():
 			actions["搭话"] = _action_constraints("搭话", {"targets": targets})
 	var conflict_actions := AgentConflictContractScript.prompt_constraints(snapshot)

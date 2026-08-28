@@ -41,6 +41,16 @@ func _verify_fake_state_machine() -> void:
 	# 同一天重复触发不重开
 	WEREWOLF.start_assembly(fake, fake.absolute_minute)
 	_expect_equal(WEREWOLF.assembly_phase(fake), "report", "同天不重开")
+	# 汇报期警察 wake 快照: 不被告知"请向警察汇报"(Bug2: 08:00 天亮公布
+	# 死讯唤醒全员含警察, 警察在汇报期 wake 时 prompt 不应让它汇报——
+	# 提交必被白名单拒绝, 浪费请求并让模型困惑)。
+	var police_report_snap: Dictionary = WEREWOLF.assembly_wake_snapshot(fake, "p")
+	_expect_equal(String(police_report_snap.get("role", "")), "police", "汇报期警察快照 role=police")
+	_expect_equal(
+		String(police_report_snap.get("reportPrompt", "")).contains("请向警察汇报"),
+		false,
+		"汇报期警察不被要求汇报",
+	)
 	# 汇报校验
 	_expect_equal(
 		WEREWOLF.submit_report(fake, "p", {"kind": "目击", "line": "x"}),
@@ -78,6 +88,15 @@ func _verify_fake_state_machine() -> void:
 	_expect_equal(summary.size(), 3, "汇报汇总含全部存活非警察")
 	var c3_summary := summary[2] as Dictionary
 	_expect_equal(String(c3_summary.get("kind", "")), "未汇报", "超时未交视为不汇报")
+	# 审讯期警察 wake 快照: targets 含全部可审候选(远程提审需要 ID——
+	# prompt 搭话选项合并 interrogationTargets, 见 AgentPromptCompiler)。
+	var police_interrogation_snap: Dictionary = WEREWOLF.assembly_wake_snapshot(fake, "p")
+	_expect_equal(String(police_interrogation_snap.get("role", "")), "police", "审讯期警察快照 role=police")
+	_expect_equal(
+		(police_interrogation_snap.get("targets", []) as Array).size(),
+		3,
+		"审讯期警察快照含全部候选",
+	)
 	# 审讯登记
 	_expect_equal(WEREWOLF.begin_interrogation_target(fake, "c3", "p"), false, "平民不能发起审讯")
 	_expect_equal(WEREWOLF.begin_interrogation_target(fake, "p", "p"), false, "不能审警察")
@@ -341,13 +360,17 @@ func _verify_real_world_assembly() -> void:
 	# 警察结束审讯 → 投票期
 	_expect_equal(WEREWOLF.end_interrogation(world, police_id), "", "真实世界警察结束审讯")
 	_expect_equal(WEREWOLF.assembly_phase(world), "vote", "真实世界进入投票期")
-	# 全员投票(全部投 civilians[1]) → 收齐立即开票散会
+	# 全员投票(全部投 civilians[1]) → 收齐立即开票散会。
+	# 注意: 被投者本人不能投自己(快照已排除本人, 提交校验兜底), 投另一人。
 	var target_id := civilians[1]
 	var voters: Array[String] = [police_id]
 	voters.append_array(civilians)
 	for voter: String in voters:
+		var vote_target := target_id
+		if voter == target_id:
+			vote_target = civilians[0]
 		var vote_error := WEREWOLF.submit_vote(world, voter, {
-			"target_resident_id": target_id,
+			"target_resident_id": vote_target,
 			"line": "根据审讯记录放逐他。",
 		})
 		_expect_equal(vote_error, "", "%s 投票成功" % voter)

@@ -761,9 +761,50 @@ static func end_interrogation(world, resident_id: String) -> String:
 	return ""
 
 
+## 结束警察参与的活跃对话(审讯对话在投票期已无意义)。防御性跳过
+## 无对话引擎的世界(测试桩/FakeWorld 无 conversation_state)。
+static func _end_police_interrogation_conversations(world) -> void:
+	var police_id := _assembly_police_id(world)
+	if police_id.is_empty():
+		return
+	var conversation_state: Variant = world.get("conversation_state")
+	if conversation_state == null or not (conversation_state is Object):
+		return
+	var records_value: Variant = conversation_state.get("records")
+	if not (records_value is Dictionary):
+		return
+	var records := records_value as Dictionary
+	var ended_any := false
+	for conversation_id_value: Variant in records.keys():
+		var conversation_id := String(conversation_id_value)
+		var conversation := records.get(conversation_id, {}) as Dictionary
+		if String(conversation.get("status", "")) != "active":
+			continue
+		if not (conversation.get("participants", []) as Array).has(police_id):
+			continue
+		CONVERSATION_RUNTIME._end_conversation(
+			world,
+			world._traveler_relationship_state,
+			conversation_id,
+			"审讯结束",
+			"completed",
+		)
+		ended_any = true
+	if ended_any:
+		TOWN_LOG.line(
+			"WEREWOLF",
+			"%s | 审讯对话已随投票期开始而结束(被审者不再被答话锁定)" % world._time_label(),
+		)
+
+
 ## 审讯期 → 投票期: 开新投票回合(候选=存活非警察), 全员唤醒,
 ## 投票 wake 携带审讯逐字稿(assembly_wake_snapshot)。
 static func _begin_vote(world) -> void:
+	# 结束警察参与的活跃审讯对话: 否则被审者在投票期仍被"答话"锁定
+	# (wake_requires_reply 优先级高于大会动作裁剪——被审者 wake 只给
+	# 「答话」, 投票期白名单只允许「投票放逐」, 提交答话被拒→反复重试
+	# 烧请求→被审者永远投不了票→90s 超时弃权)。
+	_end_police_interrogation_conversations(world)
 	var assembly := world._werewolf_state.get("assembly", {}) as Dictionary
 	var alive_ids := _assembly_alive_ids(world)
 	var candidate_ids: Array[String] = []
@@ -907,6 +948,19 @@ static func assembly_wake_snapshot(world, resident_id: String) -> Dictionary:
 	var is_police: bool = world._resident_is_police(resident_id)
 	match phase:
 		"report":
+			if is_police:
+				# 警察不汇报: 08:00 天亮公布死讯会唤醒全员(含警察), 警察在
+				# 汇报期 wake 时若被告知"请向警察汇报"必被白名单拒绝
+				# ("汇报正在收集中, 警察请等待"), 浪费一次请求并让模型困惑。
+				return {
+					"phase": "report",
+					"frozen": true,
+					"role": "police",
+					"reportPrompt": "汇报正在收集中，警察请等待汇报收齐后开始审讯。",
+					"kinds": ASSEMBLY_REPORT_KINDS,
+					"reported": true,
+					"deadlineSeconds": int(ASSEMBLY_REPORT_TIMEOUT_SECONDS),
+				}
 			var reports := assembly.get("reports", {}) as Dictionary
 			var reported := reports.has(resident_id)
 			return {
@@ -1105,6 +1159,10 @@ static func submit_vote(world, resident_id: String, value: Dictionary) -> String
 		candidate_ids.append(String(candidate_value))
 	if not candidate_ids.has(target_id):
 		return "投票目标 %s 不在候选人名单中" % world._resident_display_name(target_id)
+	if target_id == resident_id:
+		# 快照已把投票者本人排除出候选(见 vote_snapshot), 提交校验是兜底——
+		# 模型理论上不会投自己, 但直接校验可防伪造请求。
+		return "不能投自己"
 	votes[resident_id] = {
 		"target_resident_id": target_id,
 		"target_resident_name": world._resident_display_name(target_id),

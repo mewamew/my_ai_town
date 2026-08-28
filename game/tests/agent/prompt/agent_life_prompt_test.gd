@@ -12,7 +12,53 @@ func _initialize() -> void:
 		_test_interest_labels_are_rendered(compiler_script)
 		_test_body_conditions_and_needs_are_rendered(compiler_script)
 		_test_social_assignment_context(compiler_script)
+		_test_interrogation_talk_targets(compiler_script)
 	_finish_prompt_test("AGENT_LIFE_PROMPT_PASS")
+
+
+func _test_interrogation_talk_targets(compiler_script: Script) -> void:
+	# 警察审讯期: 搭话目标必须合并可审候选(远程提审), 不能只有 nearby。
+	# 否则 08:00 开会时警察身边人少, 想审的嫌疑人(不在附近)没有搭话
+	# 选项也没有 ID, 审讯 5 人额度用不满、身边无人时审讯期卡到兜底超时。
+	var compiler: RefCounted = compiler_script.new(_initialization())
+	var wake := _wake_packet("interrogation-talk-1", "晴天")
+	var snapshot := wake.get("snapshot", {}) as Dictionary
+	snapshot["assembly"] = {
+		"phase": "interrogation",
+		"frozen": true,
+		"role": "police",
+		"reportSummary": [],
+		"interrogationCount": 0,
+		"interrogationMax": 5,
+		"targets": [
+			{"resident_id": "resident-tang-xiao-man", "name": "唐小满"},
+			{"resident_id": "resident-lin-lan", "name": "林岚"},
+			{"resident_id": "resident-zhou-ning", "name": "周宁"},
+		],
+		"interrogated": [],
+		"prompt": "审讯进行中。",
+	}
+	var request := compiler.call("compile", wake, "") as Dictionary
+	var constraints := request.get("derived_constraints", {}) as Dictionary
+	var actions := constraints.get("actions", {}) as Dictionary
+	var talk := actions.get("搭话", {}) as Dictionary
+	var talk_targets := talk.get("targets", []) as Array
+	_expect(
+		talk_targets.has("resident-tang-xiao-man")
+		and talk_targets.has("resident-lin-lan")
+		and talk_targets.has("resident-zhou-ning"),
+		"审讯期警察搭话目标含全部可审候选(远程): %s" % str(talk_targets),
+	)
+	var user_text := String(
+		((request.get("messages", []) as Array)[1] as Dictionary).get(
+			"content",
+			"",
+		),
+	)
+	_expect(
+		user_text.contains("可审讯对象"),
+		"审讯期警察看到可审讯对象列表",
+	)
 
 
 func _test_life_and_social_context(compiler_script: Script) -> void:
