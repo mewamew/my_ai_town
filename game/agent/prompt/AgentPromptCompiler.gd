@@ -1706,6 +1706,14 @@ func _render_constraints(constraints: Dictionary) -> String:
 			# 警察镇公所查案提交模板: 只有你在镇公所时才会出现; 查阅档案获取
 			# 死亡案件与夜间行踪疑点线索, 每天限 2 次(跨天重置)。
 			text += "\n  提交格式(唯一合法,type必须写'查案'两字): {\"action_id\":\"当前决定编号-查案\",\"type\":\"查案\",\"line\":\"短台词\"}; 不要加其他字段; 只能在镇公所使用,每次消耗一次当日查案额度(每天2次),档案会告诉你死亡案件记录和深夜行踪异常的人"
+		if String(action_type) == "向警察汇报":
+			# 审讯会汇报期提交模板(非警察): kind 用 目击/听到/怀疑/不汇报,
+			# 汇报内容保密只进警察侧, 收齐或超时即进入审讯。
+			text += "\n  提交格式(唯一合法,type必须写'向警察汇报'两字): {\"action_id\":\"当前决定编号-向警察汇报\",\"type\":\"向警察汇报\",\"kind\":\"上面某个汇报类型的名字(目击/听到/怀疑/不汇报)\",\"line\":\"汇报内容(不汇报时可为空)\"}; 不要加其他字段; 汇报直接提交即可,不需要去任何地方; 没有线索就选 kind=不汇报"
+		if String(action_type) == "结束审讯":
+			# 审讯会审讯期提交模板(警察): 主动结束审讯进入投票期, 审讯记录会
+			# 一次性公开给全镇。
+			text += "\n  提交格式(唯一合法,type必须写'结束审讯'两字): {\"action_id\":\"当前决定编号-结束审讯\",\"type\":\"结束审讯\",\"line\":\"短台词\"}; 不要加其他字段; 结束审讯后全员将看到审讯记录并投票"
 		lines.append(text)
 	return "\n".join(lines)
 
@@ -2013,6 +2021,27 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 			"targets": (night_skill.get("candidate_ids", []) as Array).duplicate(),
 			"required": false,
 			"max_line_characters": int(night_skill.get("max_line_characters", 80)),
+		}
+	# 警察审讯会: 按阶段注入专属即时动作。模型不知道这些动作存在就只会选
+	# 普通动作被白名单拒绝(实锤: 汇报期居民全选"去镇公所"被拒, 120s 后
+	# 0 人汇报、警察零线索)。
+	var assembly_snapshot := snapshot.get("assembly", {}) as Dictionary
+	var assembly_phase := String(assembly_snapshot.get("phase", ""))
+	if assembly_phase == "report":
+		(constraints["actions"] as Dictionary)["向警察汇报"] = {
+			"fields": ["action_id", "type", "kind", "line"],
+			"kinds": (assembly_snapshot.get("kinds", []) as Array).duplicate(),
+			"required": false,
+			"max_line_characters": 80,
+		}
+	elif (
+		assembly_phase == "interrogation"
+		and String(assembly_snapshot.get("role", "")) == "police"
+	):
+		(constraints["actions"] as Dictionary)["结束审讯"] = {
+			"fields": ["action_id", "type", "line"],
+			"required": false,
+			"max_line_characters": 80,
 		}
 	var police_intel := snapshot.get("police_intel", {}) as Dictionary
 	if not police_intel.is_empty():
