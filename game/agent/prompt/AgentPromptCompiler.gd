@@ -616,6 +616,55 @@ func _render_snapshot(wake_packet: Dictionary) -> String:
 		lines.append("当前动作：%s" % _render_action(current_action as Dictionary))
 	else:
 		lines.append("当前动作：无")
+	# 警察审讯会: 阶段提示/汇报汇总/审讯逐字稿渲染。此前 assembly 键完全
+	# 没渲染进 prompt, 模型不知道汇报期/审讯期/投票期该做什么、怎么填参数
+	# (实锤: 汇报期居民全选"去镇公所"被拒——只能靠动作约束猜)。
+	var assembly := snapshot.get("assembly", {}) as Dictionary
+	var assembly_phase := String(assembly.get("phase", "idle"))
+	if assembly_phase != "idle":
+		lines.append("")
+		lines.append("[小镇事件：警察审讯会（时间已冻结）]")
+		var phase_prompt := String(assembly.get("prompt", ""))
+		if phase_prompt.is_empty():
+			phase_prompt = String(assembly.get("reportPrompt", ""))
+		if not phase_prompt.is_empty():
+			lines.append(phase_prompt)
+		if assembly_phase == "report":
+			lines.append("汇报类型：%s。" % _join(assembly.get("kinds", []) as Array))
+			if bool(assembly.get("reported", false)):
+				lines.append("你已提交汇报，等待警察收齐后开始审讯。")
+			else:
+				lines.append("请现在提交汇报：kind 选一种（目击/听到/怀疑/不汇报），line 写具体内容；没有线索就选 kind=不汇报。")
+		elif String(assembly.get("role", "")) == "police":
+			var summary := assembly.get("reportSummary", []) as Array
+			if not summary.is_empty():
+				lines.append("居民汇报汇总：")
+				for report_value: Variant in summary:
+					var report := report_value as Dictionary
+					lines.append("- %s：%s%s" % [
+						_safe(report.get("name", "")),
+						_safe(report.get("kind", "")),
+						("：" + String(report.get("line", ""))) if not String(report.get("line", "")).is_empty() else "",
+					])
+			var interrogation_targets := assembly.get("targets", []) as Array
+			if not interrogation_targets.is_empty():
+				var target_names: Array[String] = []
+				for target_value: Variant in interrogation_targets:
+					target_names.append(_safe((target_value as Dictionary).get("name", "")))
+				lines.append("可审讯对象：%s。" % "、".join(target_names))
+			lines.append("已审问 %d/%d 人。" % [
+				int(assembly.get("interrogationCount", 0)),
+				int(assembly.get("interrogationMax", 5)),
+			])
+		elif assembly_phase == "vote":
+			var transcript := assembly.get("transcript", []) as Array
+			if not transcript.is_empty():
+				lines.append("审讯记录（投票参考）：")
+				for turn_value: Variant in transcript:
+					var turn := turn_value as Dictionary
+					lines.append("- %s：「%s」" % [_safe(turn.get("speaker", "")), _safe(turn.get("say", ""))])
+			else:
+				lines.append("（本轮没有审讯记录）")
 	var rhythm := snapshot.get("rhythm", {}) as Dictionary
 	if not rhythm.is_empty():
 		lines.append(
