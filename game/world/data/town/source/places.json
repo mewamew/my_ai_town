@@ -94,7 +94,8 @@
       "serviceProfile": {
         "capacity": 1,
         "helperActivityId": "activity_cafe_receive_guests",
-        "requestActivityIds": ["activity_cafe_order"]
+        "requestActivityIds": ["activity_cafe_order"],
+        "unstaffedVisitorActivityIds": ["activity_cafe_rest"]
       },
       "capabilities": {
         "assignableWorkplace": true,
@@ -110,7 +111,11 @@
       "serviceProfile": {
         "capacity": 1,
         "helperActivityId": "activity_library_staff_checkout",
-        "requestActivityIds": ["activity_library_checkout"]
+        "requestActivityIds": ["activity_library_checkout"],
+        "unstaffedVisitorActivityIds": [
+          "activity_library_read",
+          "activity_library_write"
+        ]
       },
       "capabilities": {
         "assignableWorkplace": true,
@@ -141,7 +146,8 @@
         "requestActivityIds": [
           "activity_clinic_consult",
           "activity_clinic_examination"
-        ]
+        ],
+        "unstaffedVisitorActivityIds": []
       },
       "capabilities": {
         "assignableWorkplace": true,
@@ -170,7 +176,8 @@
       "serviceProfile": {
         "capacity": 4,
         "helperActivityId": "activity_dining_serve_meal",
-        "requestActivityIds": ["activity_dining_collect_meal"]
+        "requestActivityIds": ["activity_dining_collect_meal"],
+        "unstaffedVisitorActivityIds": []
       },
       "capabilities": {
         "assignableWorkplace": true,
@@ -188,7 +195,8 @@
       "serviceProfile": {
         "capacity": 1,
         "helperActivityId": "activity_workshop_craft_item",
-        "requestActivityIds": ["activity_workshop_handoff_repair"]
+        "requestActivityIds": ["activity_workshop_handoff_repair"],
+        "unstaffedVisitorActivityIds": []
       },
       "capabilities": {
         "assignableWorkplace": true,

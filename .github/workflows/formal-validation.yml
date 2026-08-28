@@ -24,103 +24,155 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: 运行守卫
         run: tools/guards/run_guards.sh
 
   formal-suite:
+    name: formal-suite
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          missing=()
-          for command_name in zsh rg unzip; do
-            if ! command -v "$command_name" >/dev/null 2>&1; then
-              missing+=("$command_name")
-            fi
-          done
-          if (( ${#missing[@]} == 0 )); then
-            echo "All required commands are already available."
-            exit 0
-          fi
-          echo "Missing commands: ${missing[*]}"
-          for source_file in \
-            /etc/apt/apt-mirrors.txt \
-            /etc/apt/sources.list \
-            /etc/apt/sources.list.d/*.list \
-            /etc/apt/sources.list.d/*.sources; do
-            if [ -f "$source_file" ]; then
-              sudo -n sed -i \
-                -e 's#http://azure.archive.ubuntu.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' \
-                -e 's#https://azure.archive.ubuntu.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' \
-                -e 's#azure.archive.ubuntu.com#archive.ubuntu.com#g' \
-                "$source_file"
-            fi
-          done
-          timeout --foreground 5m sudo -n apt-get update
-          timeout --foreground 5m sudo -n env DEBIAN_FRONTEND=noninteractive \
-            apt-get install -y zsh ripgrep unzip
-
-      - name: Cache Godot binary
-        id: godot-cache
-        uses: actions/cache@v4
+      - uses: ./.github/actions/setup-godot
         with:
-          path: ~/godot-bin
-          key: godot-${{ env.GODOT_VERSION }}-linux-x86_64
-
-      - name: Download Godot
-        if: steps.godot-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p ~/godot-bin
-          curl --fail --show-error --location --retry 3 --retry-delay 5 \
-            --connect-timeout 15 --max-time 300 -o /tmp/godot.zip \
-            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
-          unzip -q /tmp/godot.zip -d /tmp/godot-extract
-          mv /tmp/godot-extract/Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/godot-bin/godot
-          chmod +x ~/godot-bin/godot
-
-      - name: Add Godot to PATH
-        run: echo "$HOME/godot-bin" >> "$GITHUB_PATH"
-
-      - name: Cache Godot import artifacts
-        uses: actions/cache@v4
-        with:
-          path: game/.godot
-          key: godot-import-${{ env.GODOT_VERSION }}-${{ hashFiles('game/**/*.import', 'game/project.godot') }}
-          restore-keys: |
-            godot-import-${{ env.GODOT_VERSION }}-
-
-      - name: Import project
-        run: |
-          set -o pipefail
-          godot --headless --path game --import 2>&1 | tee /tmp/godot-import.log
-          if grep -qE '^ERROR:|SCRIPT ERROR:|Parse Error:|Failed to load script' /tmp/godot-import.log; then
-            echo "::error::Godot import produced engine or script errors."
-            grep -nE '^ERROR:|SCRIPT ERROR:|Parse Error:|Failed to load script' /tmp/godot-import.log | head -20
-            exit 1
-          fi
-
-      - name: Agent offline suite
-        env:
-          AI_TOWN_PROVIDER_TEST_NO_NETWORK: "1"
-        run: godot --headless --path game --script res://tests/agent/run_agent_tests.gd
+          godot-version: ${{ env.GODOT_VERSION }}
 
       - name: Formal release story suite
+        env:
+          AI_TOWN_FORMAL_RELEASE_START_AT: ${{ github.event_name == 'pull_request' && '10' || '1' }}
         run: zsh game/tests/run_formal_release_story_suite.sh
 
-      - name: Isolated formal entry story
+      - name: Source tree must stay clean after tests
+        run: test -z "$(git status --porcelain)"
+
+  formal-ui:
+    name: PR UI regression
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-godot
+        with:
+          godot-version: ${{ env.GODOT_VERSION }}
+      - name: UI-facing formal stories
         env:
+          AI_TOWN_FORMAL_RELEASE_START_AT: "3"
+          AI_TOWN_FORMAL_RELEASE_END_AT: "8"
+          AI_TOWN_FORMAL_RELEASE_SKIP_INDICES: "4"
+        run: zsh game/tests/run_formal_release_story_suite.sh
+      - run: test -z "$(git status --porcelain)"
+
+  agent-suite:
+    name: Agent offline (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: provider
+            groups: provider
+          - name: memory
+            groups: memory,avatar_memory
+          - name: runtime
+            groups: runtime,save
+          - name: contracts
+            groups: contract,debug,prompt,support
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-godot
+        with:
+          godot-version: ${{ env.GODOT_VERSION }}
+      - env:
+          AI_TOWN_PROVIDER_TEST_NO_NETWORK: "1"
+        run: >-
+          godot --headless --path game
+          --script res://tests/agent/run_agent_tests.gd
+          -- --group=${{ matrix.groups }}
+      - run: test -z "$(git status --porcelain)"
+
+  formal-entry:
+    name: Isolated formal entry story
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-godot
+        with:
+          godot-version: ${{ env.GODOT_VERSION }}
+      - env:
           GODOT_USERDATA_ROOT: /home/runner/.local/share/godot/app_userdata
         run: zsh game/tests/run_isolated_formal_entry_story.sh
+      - run: test -z "$(git status --porcelain)"
+
+  historical-migration:
+    name: Historical save migration matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-godot
+        with:
+          godot-version: ${{ env.GODOT_VERSION }}
+      - env:
+          GODOT_USERDATA_ROOT: /home/runner/.local/share/godot/app_userdata
+          AI_TOWN_HISTORICAL_MATRIX_PARALLEL: "2"
+        run: zsh game/tests/run_historical_save_migration_matrix.sh
 
       - name: Source tree must stay clean after tests
+        run: test -z "$(git status --porcelain)"
+
+  windows-save-recovery:
+    name: Windows save recovery (long path)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Enable Windows long paths
+        shell: pwsh
+        run: git config --global core.longpaths true
+      - uses: actions/checkout@v4
+      - name: Download Godot
+        shell: pwsh
         run: |
-          git status --porcelain
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "::error::Tests generated unexpected changes in the source tree (missing .gd.uid, gate reports written to res://, etc.)."
-            exit 1
-          fi
+          $archive = Join-Path $env:RUNNER_TEMP "godot.zip"
+          $target = Join-Path $env:RUNNER_TEMP "godot"
+          Invoke-WebRequest `
+            -Uri "https://github.com/godotengine/godot/releases/download/${{ env.GODOT_VERSION }}-stable/Godot_v${{ env.GODOT_VERSION }}-stable_win64.exe.zip" `
+            -OutFile $archive
+          Expand-Archive -Path $archive -DestinationPath $target
+          $console = Get-ChildItem $target -Filter "*console.exe" | Select-Object -First 1
+          if (-not $console) { throw "Godot console executable not found" }
+          "GODOT_CONSOLE=$($console.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Import project
+        shell: pwsh
+        run: '& $env:GODOT_CONSOLE --headless --path game --import'
+      - name: Interrupted transaction and long-path regression
+        shell: pwsh
+        run: |
+          & $env:GODOT_CONSOLE --headless --path game --script res://tests/windows_directory_cleanup_test.gd
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $env:GODOT_CONSOLE --headless --path game --script res://tests/save_reconciliation_test.gd
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upgrade beta5 long-path fixture
+        shell: pwsh
+        run: |
+          $userRoot = Join-Path $env:APPDATA "Godot\app_userdata\我的ai小镇"
+          $fixture = "game/tests/fixtures/historical_saves/beta5-long-path"
+          if (Test-Path $userRoot) { Remove-Item -Recurse -Force $userRoot }
+          New-Item -ItemType Directory -Force -Path $userRoot | Out-Null
+          Copy-Item -Recurse -Force "$fixture\*" $userRoot
+          $suffix = "x" * 90
+          $env:AI_TOWN_HISTORICAL_FIXTURE_ID = "beta5"
+          $env:AI_TOWN_HISTORICAL_SLOT_ID = "roundtrip-slot-long-path-$suffix"
+          $env:AI_TOWN_HISTORICAL_SESSION_ID = "roundtrip-session-long-path-$suffix"
+          $env:AI_TOWN_PROVIDER_TEST_NO_NETWORK = "1"
+          try {
+            & $env:GODOT_CONSOLE --headless --path game --script res://tests/historical_save_migration_story_test.gd
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          finally {
+            if (Test-Path $userRoot) { Remove-Item -Recurse -Force $userRoot }
+          }

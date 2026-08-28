@@ -1,0 +1,314 @@
+{
+  "canvas_size_px": [
+    1335.0,
+    1178.0
+  ],
+  "room_id": "dock_warehouse",
+  "schema_version": 2,
+  "segments": [
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        88,
+        464
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/dock_warehouse/wall_occlusion_runtime/west_internal_wall_face-699adb2a07e4.png",
+      "foreground_texture_sha256": "699adb2a07e4af83bbdb9f622c894726c58556d11e3b9b85d3bc1508c6728756",
+      "foreground_texture_size_px": [
+        288,
+        120
+      ],
+      "id": "west_internal_wall_face",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            120.0,
+            568.0
+          ],
+          [
+            440.0,
+            568.0
+          ],
+          [
+            440.0,
+            696.0
+          ],
+          [
+            120.0,
+            696.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 64.0,
+      "foreground_canvas_origin_px": [
+        344,
+        416
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/dock_warehouse/wall_occlusion_runtime/west_column_face-7016ac9a1d61.png",
+      "foreground_texture_sha256": "7016ac9a1d6127ca096dad8669c3af7bbc9feedbb597ee26b3effa5baab22a3d",
+      "foreground_texture_size_px": [
+        32,
+        224
+      ],
+      "id": "west_column_face",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            280.0,
+            568.0
+          ],
+          [
+            440.0,
+            568.0
+          ],
+          [
+            440.0,
+            728.0
+          ],
+          [
+            280.0,
+            728.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 64.0,
+      "foreground_canvas_origin_px": [
+        592,
+        416
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/dock_warehouse/wall_occlusion_runtime/center_column_beam_face-3b158fc3e809.png",
+      "foreground_texture_sha256": "3b158fc3e80944e5216ba90384867ad0e5cdb77a9c752c74d6825b09bdbbf54b",
+      "foreground_texture_size_px": [
+        40,
+        456
+      ],
+      "id": "center_column_beam_face",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            536.0,
+            632.0
+          ],
+          [
+            696.0,
+            632.0
+          ],
+          [
+            696.0,
+            888.0
+          ],
+          [
+            536.0,
+            888.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 64.0,
+      "foreground_canvas_origin_px": [
+        796,
+        416
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/dock_warehouse/wall_occlusion_runtime/east_column_face-1d517704d47e.png",
+      "foreground_texture_sha256": "1d517704d47e603ff4b8b758d60ff2cf20db092322df9c4fd8ae8f26a35c8cae",
+      "foreground_texture_size_px": [
+        36,
+        224
+      ],
+      "id": "east_column_face",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            728.0,
+            568.0
+          ],
+          [
+            888.0,
+            568.0
+          ],
+          [
+            888.0,
+            728.0
+          ],
+          [
+            728.0,
+            728.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 64.0,
+      "foreground_canvas_origin_px": [
+        880,
+        576
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/dock_warehouse/wall_occlusion_runtime/main_annex_lower_divider_face-ddb7e5804682.png",
+      "foreground_texture_sha256": "ddb7e58046824e20766231a91f8b997d50c005caee7750a924644633cc7ca32f",
+      "foreground_texture_size_px": [
+        48,
+        480
+      ],
+      "id": "main_annex_lower_divider_face",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            824.0,
+            568.0
+          ],
+          [
+            888.0,
+            568.0
+          ],
+          [
+            888.0,
+            888.0
+          ],
+          [
+            824.0,
+            888.0
+          ]
+        ],
+        [
+          [
+            920.0,
+            568.0
+          ],
+          [
+            984.0,
+            568.0
+          ],
+          [
+            984.0,
+            888.0
+          ],
+          [
+            920.0,
+            888.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        80,
+        872
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/dock_warehouse/wall_occlusion_runtime/south_main_left_face-d3cc99aae8ed.png",
+      "foreground_texture_sha256": "d3cc99aae8ed788ae061e5d16538aa1227a133ce12b9b187c9ef6e431e3de27e",
+      "foreground_texture_size_px": [
+        360,
+        184
+      ],
+      "id": "south_main_left_face",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            120.0,
+            792.0
+          ],
+          [
+            536.0,
+            792.0
+          ],
+          [
+            536.0,
+            1048.0
+          ],
+          [
+            120.0,
+            1048.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        600,
+        872
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/dock_warehouse/wall_occlusion_runtime/south_main_right_face-4b39621c6e84.png",
+      "foreground_texture_sha256": "4b39621c6e845f9da0979ac388a3b92eb953013aacc4cd6b9f84d5aa1866c9e9",
+      "foreground_texture_size_px": [
+        320,
+        184
+      ],
+      "id": "south_main_right_face",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            504.0,
+            792.0
+          ],
+          [
+            888.0,
+            792.0
+          ],
+          [
+            888.0,
+            1048.0
+          ],
+          [
+            504.0,
+            1048.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        920,
+        888
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/dock_warehouse/wall_occlusion_runtime/south_annex_face-ac57f7d2ff93.png",
+      "foreground_texture_sha256": "ac57f7d2ff9395b120f52d21a328554b271c183eb72d86e7b83e08ea8b0e5e81",
+      "foreground_texture_size_px": [
+        344,
+        104
+      ],
+      "id": "south_annex_face",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            920.0,
+            792.0
+          ],
+          [
+            1208.0,
+            792.0
+          ],
+          [
+            1208.0,
+            888.0
+          ],
+          [
+            920.0,
+            888.0
+          ]
+        ]
+      ]
+    }
+  ],
+  "source_geometry_revision": "dock_warehouse_selected_c_space_v1",
+  "source_geometry_sha256": "14d0988ae0d2771746386a718f9178f5c7772d2c7c1fc3a61af82a192e3d23d7",
+  "source_occlusion_revision": "dock_warehouse_selected_c_space_v1",
+  "source_occlusion_sha256": "a50195786ff12f7c6914072cca96304b50594b64b4e0b7407369d04fb38d7dbd",
+  "source_shell_path": "res://world/maps/town/interiors/redesign_v2/rooms/dock_warehouse/assets/background/room_shell.png",
+  "source_shell_sha256": "6b497d7b3d7f56833dd70f364636186273ffd93918b545b73c0d3ef9bc77c9e2"
+}

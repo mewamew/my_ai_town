@@ -1,0 +1,16 @@
+{
+	"context": {
+		"save_revision": 2,
+		"session_id": "session-1787547424-5",
+		"slot_id": "town-main"
+	},
+	"intent_id": "save",
+	"kind": "save",
+	"order": 1,
+	"payload": {
+		"sourceGeneration": 1
+	},
+	"schema": "town-session-save-intent",
+	"schema_version": 1,
+	"state": "save_started"
+}

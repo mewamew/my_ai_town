@@ -1,0 +1,262 @@
+{
+  "canvas_size_px": [
+    1254.0,
+    1254.0
+  ],
+  "room_id": "town_hall",
+  "schema_version": 2,
+  "segments": [
+    {
+      "fade_distance_px": 12.0,
+      "foreground_canvas_origin_px": [
+        37,
+        849
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/town_hall/wall_occlusion_runtime/south_foreground_left_outer-6384ce8fb717.png",
+      "foreground_texture_sha256": "6384ce8fb7171528cb7a34310c6d82745d4439b3eb91cd603d510c303fc42ee8",
+      "foreground_texture_size_px": [
+        165,
+        149
+      ],
+      "id": "south_foreground_left_outer",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            83.0,
+            851.0
+          ],
+          [
+            202.0,
+            851.0
+          ],
+          [
+            202.0,
+            883.0
+          ],
+          [
+            83.0,
+            883.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 12.0,
+      "foreground_canvas_origin_px": [
+        202,
+        849
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/town_hall/wall_occlusion_runtime/south_foreground_left_middle-9b35ac745fe0.png",
+      "foreground_texture_sha256": "9b35ac745fe075ee6c8b0d426f57294303a272ad9b960392a2aad67600468c93",
+      "foreground_texture_size_px": [
+        154,
+        149
+      ],
+      "id": "south_foreground_left_middle",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            202.0,
+            851.0
+          ],
+          [
+            356.0,
+            851.0
+          ],
+          [
+            356.0,
+            883.0
+          ],
+          [
+            202.0,
+            883.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 12.0,
+      "foreground_canvas_origin_px": [
+        356,
+        849
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/town_hall/wall_occlusion_runtime/south_foreground_left_inner-3113281c9469.png",
+      "foreground_texture_sha256": "3113281c946919b9166d710fb412ef7980502b669bd7a5356abac7d76f3c31c1",
+      "foreground_texture_size_px": [
+        175,
+        223
+      ],
+      "id": "south_foreground_left_inner",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            356.0,
+            851.0
+          ],
+          [
+            531.0,
+            851.0
+          ],
+          [
+            531.0,
+            883.0
+          ],
+          [
+            356.0,
+            883.0
+          ]
+        ],
+        [
+          [
+            595.0,
+            915.0
+          ],
+          [
+            627.0,
+            915.0
+          ],
+          [
+            627.0,
+            947.0
+          ],
+          [
+            595.0,
+            947.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 12.0,
+      "foreground_canvas_origin_px": [
+        691,
+        849
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/town_hall/wall_occlusion_runtime/south_foreground_right_inner-f7d01aa77a58.png",
+      "foreground_texture_sha256": "f7d01aa77a58f05d641025ad84cf2cc76707add698c10d343804a602289591ad",
+      "foreground_texture_size_px": [
+        179,
+        223
+      ],
+      "id": "south_foreground_right_inner",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            691.0,
+            851.0
+          ],
+          [
+            870.0,
+            851.0
+          ],
+          [
+            870.0,
+            883.0
+          ],
+          [
+            691.0,
+            883.0
+          ]
+        ],
+        [
+          [
+            595.0,
+            915.0
+          ],
+          [
+            627.0,
+            915.0
+          ],
+          [
+            627.0,
+            947.0
+          ],
+          [
+            595.0,
+            947.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 12.0,
+      "foreground_canvas_origin_px": [
+        870,
+        849
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/town_hall/wall_occlusion_runtime/south_foreground_right_middle-3232c06c60a9.png",
+      "foreground_texture_sha256": "3232c06c60a955afbf46bba8abc892a6d87fa85cf446a66aa6ea15347f86f99b",
+      "foreground_texture_size_px": [
+        143,
+        223
+      ],
+      "id": "south_foreground_right_middle",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            870.0,
+            851.0
+          ],
+          [
+            1013.0,
+            851.0
+          ],
+          [
+            1013.0,
+            883.0
+          ],
+          [
+            870.0,
+            883.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 12.0,
+      "foreground_canvas_origin_px": [
+        1013,
+        849
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/town_hall/wall_occlusion_runtime/south_foreground_right_outer-c7457a1c055a.png",
+      "foreground_texture_sha256": "c7457a1c055a036f70edb2b4ce68f638b59768c07117b2551e6ca0b073d2f04a",
+      "foreground_texture_size_px": [
+        204,
+        149
+      ],
+      "id": "south_foreground_right_outer",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            1013.0,
+            851.0
+          ],
+          [
+            1171.0,
+            851.0
+          ],
+          [
+            1171.0,
+            883.0
+          ],
+          [
+            1013.0,
+            883.0
+          ]
+        ]
+      ]
+    }
+  ],
+  "source_geometry_revision": "town_hall_user_confirmed_manual_layout_anchor_v4",
+  "source_geometry_sha256": "5f015e5a639f83ef778f2da2f5b3a444050f0ab5be0d5edd30add5e90498f53e",
+  "source_occlusion_revision": "town_hall_runtime_v1_geometry_wall_reveal_v3_local_bays",
+  "source_occlusion_sha256": "f73f4a04326e04f652468aee0b1394ae8fdc5932d3da5306f63c25b162d988e7",
+  "source_shell_path": "res://world/maps/town/interiors/redesign_v2/rooms/town_hall/assets/background/room_shell.png",
+  "source_shell_sha256": "4c30e888ead29090175acdee9ca81fa7ede59d515f548530f4b6afaf52c672ea"
+}

@@ -22,6 +22,7 @@ static func query(
 	resident_names: Dictionary,
 	world_data: Dictionary,
 	absolute_minute: int,
+	authorized_capabilities: Dictionary = {},
 ) -> Array[Dictionary]:
 	if resident_id.is_empty() or occupation_ids.is_empty():
 		return []
@@ -37,6 +38,11 @@ static func query(
 	task_ids.sort()
 	for task_id: String in task_ids:
 		var task := tasks_by_id.get(task_id, {}) as Dictionary
+		if (
+			not (task.get("eligibleResidentIds", []) as Array).has(resident_id)
+			and not authorized_capabilities.has(String(task.get("capability", "")))
+		):
+			continue
 		if not _is_currently_available(
 			task,
 			occupation_services,

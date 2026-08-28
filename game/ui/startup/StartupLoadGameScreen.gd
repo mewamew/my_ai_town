@@ -449,7 +449,10 @@ func _build_slot_card(index: int, slot: Dictionary) -> void:
 	action.disabled = (
 		not bool(action_contract.get("enabled", false))
 		or state == "empty"
-		or not bool(slot.get("continueAvailable", false))
+		or (
+			not bool(slot.get("continueAvailable", false))
+			and not bool(slot.get("diagnosticAvailable", false))
+		)
 	)
 	action.tooltip_text = (
 		UiViewModel.player_reason(
@@ -598,6 +601,8 @@ func _damage_detail_copy(slot: Dictionary) -> String:
 
 
 func _slot_action_copy(slot: Dictionary) -> String:
+	if bool(slot.get("diagnosticAvailable", false)):
+		return "查看诊断"
 	if bool(slot.get("requiresRecoveryConfirmation", false)):
 		return "查看恢复详情"
 	if String(slot.get("state", "")) == "recoverable":
@@ -671,7 +676,10 @@ func _request_slot(slot: Dictionary) -> bool:
 			if overwrite_selection
 			else "SESSION_SAVE_NO_PUBLISHED_REVISION",
 		)
-	if not bool(slot.get("continueAvailable", false)):
+	if (
+		not bool(slot.get("continueAvailable", false))
+		and not bool(slot.get("diagnosticAvailable", false))
+	):
 		var unavailable_reason := String(slot.get(
 				"errorCode",
 				"STARTUP_OVERWRITE_SLOT_CONFIRMATION_UNAVAILABLE"

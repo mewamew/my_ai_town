@@ -460,6 +460,8 @@ func create_arrangement(
 			return _failure("STAFFING_ARRANGEMENT_CONFLICT")
 	var post := post_for_occupation(normalized_occupation)
 	var entry_rule := String(post.get("staffingEntryRule", ""))
+	var chain := _chains_by_occupation.get(normalized_occupation, {}) as Dictionary
+	var authorized_capabilities := _authorized_capabilities_for_chain(chain)
 	_arrangement_sequence += 1
 	var arrangement_id := "staffing-arrangement-%06d" % (
 		_arrangement_sequence
@@ -472,6 +474,7 @@ func create_arrangement(
 		"status": "active",
 		"coversPost": (
 			normalized_mode in ["part_time", "shift"]
+			and entry_rule != "helper_only"
 			and (
 				entry_rule == "direct"
 				or is_qualified(
@@ -480,11 +483,11 @@ func create_arrangement(
 				)
 			)
 		),
-		"authorizesWork": (
+		"authorizesWork": not authorized_capabilities.is_empty() and (
 			(
 				normalized_mode in ["part_time", "shift"]
 				and (
-					entry_rule == "direct"
+					entry_rule in ["direct", "helper_only"]
 					or is_qualified(
 						normalized_resident,
 						normalized_occupation,
@@ -496,6 +499,7 @@ func create_arrangement(
 				and entry_rule == "performance_required"
 			)
 		),
+		"authorizedCapabilities": authorized_capabilities,
 		"createdAtMinute": absolute_minute,
 		"shiftStartMinute": shift_start_minute,
 		"shiftEndMinute": shift_end_minute,
@@ -600,6 +604,53 @@ func active_assignment_occupation_ids(
 	return result
 
 
+func active_assignment_capabilities(
+	resident_id: String,
+	absolute_minute: int,
+	occupation_id := "",
+) -> Array[String]:
+	var result: Array[String] = []
+	for value: Variant in _arrangements.values():
+		var arrangement := value as Dictionary
+		if (
+			String(arrangement.get("residentId", "")) != resident_id
+			or String(arrangement.get("status", "")) != "active"
+			or not bool(arrangement.get("authorizesWork", false))
+			or (
+				not occupation_id.is_empty()
+				and String(arrangement.get("occupationId", "")) != occupation_id
+			)
+		):
+			continue
+		if (
+			String(arrangement.get("mode", "")) != "trial"
+			and not _arrangement_active_at(arrangement, absolute_minute)
+		):
+			continue
+		for capability_value: Variant in arrangement.get(
+			"authorizedCapabilities",
+			[],
+		) as Array:
+			var capability := String(capability_value)
+			if not capability.is_empty() and not result.has(capability):
+				result.append(capability)
+	result.sort()
+	return result
+
+
+func active_assignment_allows_capability(
+	resident_id: String,
+	occupation_id: String,
+	capability: String,
+	absolute_minute: int,
+) -> bool:
+	return active_assignment_capabilities(
+		resident_id,
+		absolute_minute,
+		occupation_id,
+	).has(capability)
+
+
 func end_active_arrangements_for_occupation(
 	occupation_id: String,
 	absolute_minute: int,
@@ -702,6 +753,35 @@ func restore_persistent_snapshot(
 		var arrangement := (
 			arrangement_value as Dictionary
 		).duplicate(true)
+		var arrangement_occupation_id := String(
+			arrangement.get("occupationId", ""),
+		)
+		var chain := _chains_by_occupation.get(
+			arrangement_occupation_id,
+			{},
+		) as Dictionary
+		var expected_capabilities := _authorized_capabilities_for_chain(chain)
+		if not arrangement.has("authorizedCapabilities"):
+			arrangement["authorizedCapabilities"] = expected_capabilities
+			if (
+				String(chain.get("staffingEntryRule", "")) == "helper_only"
+				and String(arrangement.get("mode", "")) == "part_time"
+				and String(arrangement.get("status", "")) == "active"
+			):
+				arrangement["authorizesWork"] = true
+		var saved_capabilities_value: Variant = arrangement.get(
+			"authorizedCapabilities",
+		)
+		if not saved_capabilities_value is Array:
+			return _failure("STAFFING_SAVE_INVALID")
+		var saved_capabilities: Array[String] = []
+		for capability_value: Variant in saved_capabilities_value as Array:
+			var capability := String(capability_value).strip_edges()
+			if capability.is_empty() or saved_capabilities.has(capability):
+				return _failure("STAFFING_SAVE_INVALID")
+			saved_capabilities.append(capability)
+		if saved_capabilities != expected_capabilities:
+			return _failure("STAFFING_SAVE_INVALID")
 		var arrangement_id := String(
 			arrangement.get("arrangementId", ""),
 		)
@@ -711,9 +791,7 @@ func restore_persistent_snapshot(
 			or not residents.has(String(
 				arrangement.get("residentId", ""),
 			))
-			or not _chains_by_occupation.has(String(
-				arrangement.get("occupationId", ""),
-			))
+			or not _chains_by_occupation.has(arrangement_occupation_id)
 			or String(arrangement.get("mode", ""))
 			not in ["part_time", "shift", "trial"]
 			or String(arrangement.get("status", ""))
@@ -743,6 +821,14 @@ func _occupation_id_for_resident(resident: Dictionary) -> String:
 		):
 			return String(occupation.get("occupationId", ""))
 	return ""
+
+
+func _authorized_capabilities_for_chain(chain: Dictionary) -> Array:
+	return (
+		(chain.get("helperTaskCapabilities", []) as Array).duplicate()
+		if String(chain.get("staffingEntryRule", "")) == "helper_only"
+		else (chain.get("taskCapabilities", []) as Array).duplicate()
+	)
 
 
 func _physical_capacity(occupation: Dictionary) -> int:

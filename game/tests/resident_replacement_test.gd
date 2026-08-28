@@ -99,6 +99,14 @@ class ReturnToStartWiringHarness:
 		resident_messages: Array = [],
 	) -> Dictionary:
 		saved_messages = resident_messages.duplicate(true)
+		if (
+			saved_messages.is_empty()
+			and _gateway != null
+			and _gateway.has_method("get_background_departure_messages")
+		):
+			saved_messages = (
+				_gateway.call("get_background_departure_messages") as Array
+			).duplicate(true)
 		return {"ok": true, "errorCode": "", "retryable": false}
 
 	func _route_to_start_after_departure(
@@ -170,6 +178,15 @@ func _run() -> void:
 		bool(started.get("ok", false)),
 		"世界可以启动：%s" % JSON.stringify(started.get("errors", [])),
 	)
+	_expect_equal(
+		RESIDENT_REPLACEMENT.target_resident_count(world),
+		15,
+		"十五人世界以十五个居民席位作为补位目标",
+	)
+	_expect(
+		not RESIDENT_REPLACEMENT.replacement_needed(world),
+		"居民完整时不需要补位",
+	)
 	var deceased := identities[0]
 	var deceased_name := String(deceased.get("residentName", ""))
 	var death := world.confirm_resident_death(
@@ -179,6 +196,10 @@ func _run() -> void:
 	_expect(bool(death.get("ok", false)), "居民死亡可以确认")
 	var death_event_id := String(
 		(death.get("event", {}) as Dictionary).get("event_id", "")
+	)
+	_expect(
+		RESIDENT_REPLACEMENT.replacement_needed(world),
+		"居民死亡后需要恢复本局目标人口",
 	)
 	_verify_async_recovery(opening, death.get("event", {}) as Dictionary)
 	var record := ((opening.get("residents", []) as Array)[0] as Dictionary).duplicate(true)
@@ -257,6 +278,10 @@ func _run() -> void:
 	) as Dictionary
 	_expect(bool(admitted.get("ok", false)), "补位居民可以进入运行中的世界")
 	_expect_equal(RESIDENT_REPLACEMENT.living_resident_count(world), 15, "补位后恢复十五名在世居民")
+	_expect(
+		not RESIDENT_REPLACEMENT.replacement_needed(world),
+		"补位完成后不会继续生成额外居民",
+	)
 	_expect_equal(world.get_resident_ids().size(), 15, "新居民接替原有住宅席位")
 	_expect_equal(
 		(world.get_resident_state(String(deceased.get("residentId", ""))) as Dictionary).get("name"),
@@ -318,6 +343,7 @@ func _run() -> void:
 		"读档后保留新居民身份",
 	)
 	restored_world.stop()
+	_verify_low_population_target_and_restore(data, opening)
 	_finish_suite("RESIDENT_REPLACEMENT_PASS")
 
 
@@ -427,3 +453,146 @@ func _verify_async_recovery(
 	)
 
 	host.free()
+
+
+func _verify_low_population_target_and_restore(
+	data: Dictionary,
+	full_opening: Dictionary,
+) -> void:
+	var opening := _opening_with_resident_count(full_opening, 5)
+	var identities := _identities_from_opening(opening)
+	var world := WORLD.new()
+	var started := world.start(data, opening, identities) as Dictionary
+	_expect(
+		bool(started.get("ok", false)),
+		"五人世界可以启动：%s" % JSON.stringify(started.get("errors", [])),
+	)
+	_expect_equal(
+		RESIDENT_REPLACEMENT.target_resident_count(world),
+		5,
+		"五人世界以五个居民席位作为补位目标",
+	)
+	_expect(
+		not RESIDENT_REPLACEMENT.replacement_needed(world),
+		"五人均在世时不会按十五人目标补位",
+	)
+	var deceased := identities[0]
+	var resident_id := String(deceased.get("residentId", ""))
+	var death := world.confirm_resident_death(
+		resident_id,
+		"少人口补位回归",
+	) as Dictionary
+	_expect(bool(death.get("ok", false)), "五人世界可以确认居民死亡")
+	_expect_equal(
+		RESIDENT_REPLACEMENT.living_resident_count(world),
+		4,
+		"五人世界死亡后剩余四名在世居民",
+	)
+	_expect_equal(
+		RESIDENT_REPLACEMENT.target_resident_count(world),
+		5,
+		"死亡不会改变本局五人目标",
+	)
+	_expect(
+		RESIDENT_REPLACEMENT.replacement_needed(world),
+		"五人世界死亡后只需恢复原有席位",
+	)
+	var saved := world.create_save_snapshot() as Dictionary
+	_expect(bool(saved.get("ok", false)), "五人世界死亡后可以保存")
+	world.stop()
+
+	var restored_world := WORLD.new()
+	var restored := restored_world.restore_from_snapshot(
+		data,
+		opening,
+		(saved.get("snapshot", {}) as Dictionary).duplicate(true),
+		identities,
+	) as Dictionary
+	_expect(
+		bool(restored.get("ok", false)),
+		"五人世界死亡存档可以恢复：%s" % JSON.stringify(restored),
+	)
+	_expect_equal(
+		RESIDENT_REPLACEMENT.target_resident_count(restored_world),
+		5,
+		"读档后仍从居民席位恢复五人目标",
+	)
+	_expect_equal(
+		RESIDENT_REPLACEMENT.living_resident_count(restored_world),
+		4,
+		"读档后保留死亡状态而不虚增居民",
+	)
+	_expect(
+		RESIDENT_REPLACEMENT.replacement_needed(restored_world),
+		"读档后继续等待唯一缺失席位的补位",
+	)
+	var replacement_record := (
+		(opening.get("residents", []) as Array)[0] as Dictionary
+	).duplicate(true)
+	var replacement_attributes := (
+		replacement_record.get("attributes", {}) as Dictionary
+	).duplicate(true)
+	replacement_attributes["name"] = "五人镇补位居民"
+	replacement_record["attributes"] = replacement_attributes
+	var admitted := RESIDENT_REPLACEMENT.admit(
+		restored_world,
+		replacement_record,
+		resident_id,
+	) as Dictionary
+	_expect(bool(admitted.get("ok", false)), "五人世界读档后可以完成补位")
+	_expect_equal(
+		RESIDENT_REPLACEMENT.living_resident_count(restored_world),
+		5,
+		"五人世界补位后只恢复到五名在世居民",
+	)
+	_expect_equal(
+		RESIDENT_REPLACEMENT.target_resident_count(restored_world),
+		5,
+		"补位不会把五人世界扩张到十五人",
+	)
+	_expect(
+		not RESIDENT_REPLACEMENT.replacement_needed(restored_world),
+		"恢复五人目标后补位流程停止",
+	)
+	restored_world.stop()
+
+
+func _opening_with_resident_count(
+	opening: Dictionary,
+	resident_count: int,
+) -> Dictionary:
+	var result := opening.duplicate(true)
+	var residents := (result.get("residents", []) as Array).slice(
+		0,
+		resident_count,
+		1,
+		true,
+	)
+	var resident_ids: Dictionary = {}
+	for resident_value: Variant in residents:
+		resident_ids[String((resident_value as Dictionary).get("residentId", ""))] = true
+	var owners: Dictionary = {}
+	for place_value: Variant in (result.get("ownerAssignments", {}) as Dictionary):
+		var place_name := String(place_value)
+		var owner_id := String(
+			(result.get("ownerAssignments", {}) as Dictionary).get(place_name, ""),
+		)
+		if resident_ids.has(owner_id):
+			owners[place_name] = owner_id
+	result["residents"] = residents
+	result["ownerAssignments"] = owners
+	result["agentSoulProfiles"] = AGENT_SOUL_PROFILE.analyze_all(residents)
+	return result
+
+
+func _identities_from_opening(opening: Dictionary) -> Array[Dictionary]:
+	var identities: Array[Dictionary] = []
+	for resident_value: Variant in opening.get("residents", []) as Array:
+		var resident := resident_value as Dictionary
+		identities.append({
+			"residentId": String(resident.get("residentId", "")),
+			"residentName": String(
+				(resident.get("attributes", {}) as Dictionary).get("name", ""),
+			),
+		})
+	return identities

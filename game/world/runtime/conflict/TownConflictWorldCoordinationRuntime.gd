@@ -22,13 +22,22 @@ const CONFLICT_JUDGMENTS := preload(
 const AGENT_WORLD_QUERY_RUNTIME := preload(
 	"res://world/runtime/agent/TownAgentWorldQueryRuntime.gd"
 )
+const CLINIC_CONTINUITY_RUNTIME := preload(
+	"res://world/runtime/condition/TownClinicContinuityRuntime.gd"
+)
 
 
 static func advance(host) -> void:
-	if host._conflict_controller == null:
+	var conflict_controller = host._conflict_controller
+	if conflict_controller == null:
 		return
+	CLINIC_CONTINUITY_RUNTIME.advance_external_aid(
+		host,
+		conflict_controller,
+		host.ACTION_SUPPORT.absolute_minute(host.get_time()),
+	)
 	var before_revision := runtime_revision(host)
-	var result := host._conflict_controller.advance() as Dictionary
+	var result := conflict_controller.advance() as Dictionary
 	complete_command(host, result, before_revision)
 
 

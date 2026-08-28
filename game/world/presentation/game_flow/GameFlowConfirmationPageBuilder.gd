@@ -52,6 +52,7 @@ static func new_game_overwrite(
 					"cancel": "取消",
 					"retryRestore": "继续旧小镇",
 					"confirmOverwrite": "覆盖并开始",
+					"rediagnose": "",
 				},
 			},
 			"draftRevision": 0,
@@ -76,6 +77,11 @@ static func new_game_overwrite(
 				"intent": "session.retry_restore",
 				"enabled": true,
 				"disabledReason": "",
+			},
+			"rediagnose": {
+				"intent": "session.rediagnose_recovery",
+				"enabled": false,
+				"disabledReason": "ACTION_NOT_AVAILABLE_IN_MODE",
 			},
 		},
 		"operation": UI_VIEW_MODEL.idle_operation(),
@@ -137,6 +143,7 @@ static func delete_save(
 					"cancel": "返回",
 					"retryRestore": "",
 					"confirmOverwrite": "确认删除",
+					"rediagnose": "",
 				},
 			},
 			"draftRevision": 0,
@@ -162,6 +169,11 @@ static func delete_save(
 				"enabled": false,
 				"disabledReason": "ACTION_NOT_AVAILABLE_IN_MODE",
 			},
+			"rediagnose": {
+				"intent": "session.rediagnose_recovery",
+				"enabled": false,
+				"disabledReason": "ACTION_NOT_AVAILABLE_IN_MODE",
+			},
 		},
 		"operation": UI_VIEW_MODEL.idle_operation(),
 		"error": null,
@@ -174,10 +186,20 @@ static func continue_recovery(
 	fallback_slot_id: String,
 ) -> Dictionary:
 	var summary := discovery.get("summary", {}) as Dictionary
-	var damage := discovery.get("damageDetails", {}) as Dictionary
+	var plan := discovery.get("recoveryPlan", {}) as Dictionary
+	var action := String(plan.get("action", ""))
+	var damage := (discovery.get("damageDetails", {}) as Dictionary).duplicate(true)
 	var progress_rollback := bool(damage.get("progressRollback", false))
 	var slot_id := String(summary.get("slotId", fallback_slot_id))
 	var save_revision := int(summary.get("saveRevision", 0))
+	if damage.is_empty():
+		damage = {
+			"damagedSaveRevision": int(
+				plan.get("damagedSaveRevision", save_revision),
+			),
+			"fallbackSaveRevision": save_revision,
+			"progressRollback": false,
+		}
 	var damaged_revision := int(damage.get("damagedSaveRevision", -1))
 	var damaged_saved_at := String(damage.get("damagedSavedAt", ""))
 	var damage_label := (
@@ -185,6 +207,26 @@ static func continue_recovery(
 		if not damaged_saved_at.is_empty()
 		else "revision %d" % damaged_revision
 	)
+	var title := "使用最近完整存档？"
+	var body := (
+		"最新的 %s 已损坏。将恢复最近完整的 "
+		+ "World + Agent 配对 revision %d，并发布新的完整修订。"
+	) % [damage_label, save_revision]
+	var consequence := (
+		"确认后会回退确已保存的游戏进度；原存档和损坏证据都会保留。"
+		if progress_rollback
+		else "确认后将修复为可验证的完整存档；原存档和损坏证据都会保留。"
+	)
+	var execute_copy := "执行修复"
+	if action == "reconcile_interrupted_transactions":
+		title = "完成上次存档事务？"
+		body = "已根据事务日志和已发布的 World + Agent 配对生成协调计划。"
+		consequence = "确认后只封口已核实的中断事务；原存档和日志证据都会保留。"
+	elif action == "export_save_diagnostic":
+		title = "此存档无法安全修复"
+		body = "没有足够证据重建完整的 World + Agent 配对，系统不会猜测游戏进度。"
+		consequence = "可以导出去敏诊断记录；原存档不会被修改或删除。"
+		execute_copy = "导出诊断"
 	return {
 		"scope": "session",
 		"status": "ready",
@@ -215,22 +257,13 @@ static func continue_recovery(
 				"damageDetails": damage.duplicate(true),
 				"copy": {
 					"kicker": "存档处理确认",
-					"title": "使用最近完整存档？",
-					"body": (
-						"最新的 %s 已损坏。继续将使用最近完整的 "
-						+ "World + Agent 配对 revision %d。"
-					) % [damage_label, save_revision],
-					"consequence": (
-						"确认后会回退确已保存的游戏进度；损坏版本不会被静默覆盖。"
-						if progress_rollback
-						else (
-							"确认后将忽略损坏版本，恢复可验证的完整存档；"
-							+ "损坏版本不会被静默覆盖。"
-						)
-					),
-					"cancel": "返回",
-					"retryRestore": "使用最近完整存档",
+					"title": title,
+					"body": body,
+					"consequence": consequence,
+					"cancel": "仅返回",
+					"retryRestore": execute_copy,
 					"confirmOverwrite": "",
+					"rediagnose": "重新诊断",
 				},
 			},
 			"draftRevision": 0,
@@ -253,6 +286,11 @@ static func continue_recovery(
 			},
 			"retryRestore": {
 				"intent": "session.confirm_recovery",
+				"enabled": true,
+				"disabledReason": "",
+			},
+			"rediagnose": {
+				"intent": "session.rediagnose_recovery",
 				"enabled": true,
 				"disabledReason": "",
 			},

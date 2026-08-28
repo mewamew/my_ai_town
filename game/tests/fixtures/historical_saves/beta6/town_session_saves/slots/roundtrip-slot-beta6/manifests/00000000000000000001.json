@@ -1,0 +1,59 @@
+{
+	"components": {
+		"agent": {
+			"context": {
+				"save_revision": 1,
+				"session_id": "roundtrip-session-beta6",
+				"slot_id": "roundtrip-slot-beta6"
+			},
+			"transaction_status": "committed"
+		},
+		"world": {
+			"day": 1,
+			"schema": "town-world-save",
+			"schema_version": 2,
+			"snapshot_ref": "slots/roundtrip-slot-beta6/sessions/roundtrip-session-beta6/revisions/00000000000000000001/world_snapshot.json",
+			"snapshot_sha256": "829b663a7bbc9940489c5777ba1698961e9d381785558413d298f8f7b46262ea",
+			"transaction_status": "committed",
+			"world_data_version": 4,
+			"world_revision": 24
+		},
+		"world_log": {
+			"max_sequence": 0,
+			"schema": "town-world-log-snapshot",
+			"schema_version": 1,
+			"snapshot_ref": "slots/roundtrip-slot-beta6/sessions/roundtrip-session-beta6/revisions/00000000000000000001/world_log_snapshot.json",
+			"snapshot_sha256": "f90d39086beb95688621a62fb7c2482b0aefecef4fcbee2fddd6273dc721c8e9",
+			"timeline_id": "world-log-timeline-1",
+			"transaction_status": "committed",
+			"world_revision": 24
+		}
+	},
+	"resident_ids": [
+		"resident_bai_zhi_01",
+		"resident_cheng_yan_01",
+		"resident_hanako_01",
+		"resident_jiang_cheng_01",
+		"resident_lin_lan_01",
+		"resident_lu_qingzhou_01",
+		"resident_luo_yuan_01",
+		"resident_mi_ya_01",
+		"resident_qiao_yiming_01",
+		"resident_su_tang_01",
+		"resident_tang_xiaoman_01",
+		"resident_wen_xu_01",
+		"resident_xie_mian_01",
+		"resident_xu_zhao_01",
+		"resident_zhou_jiming_01"
+	],
+	"resident_messages": [],
+	"save_revision": 1,
+	"saved_at": "2026-08-24T12:23:09",
+	"schema": "town-session-save-manifest",
+	"schema_version": 3,
+	"session_config_ref": "slots/roundtrip-slot-beta6/sessions/roundtrip-session-beta6/revisions/00000000000000000001/session_config.json",
+	"session_config_sha256": "0a6904219c1f0cdd70e007b830b1f7fe1f5d691a588b7aa1a4799c29891afddc",
+	"session_id": "roundtrip-session-beta6",
+	"slot_id": "roundtrip-slot-beta6",
+	"state": "published"
+}

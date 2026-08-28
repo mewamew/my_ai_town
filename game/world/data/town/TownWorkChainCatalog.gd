@@ -201,7 +201,10 @@ static func validate(catalog: Dictionary) -> PackedStringArray:
 			errors.append("工作链条目必须是对象")
 			continue
 		var chain := value as Dictionary
-		if not _exact_keys(chain, REQUIRED_CHAIN_FIELDS):
+		var expected_chain_fields := REQUIRED_CHAIN_FIELDS.duplicate()
+		if chain.has("helperTaskCapabilities"):
+			expected_chain_fields.append("helperTaskCapabilities")
+		if not _exact_keys(chain, expected_chain_fields):
 			errors.append("工作链条目字段无效")
 		var occupation_id := String(
 			chain.get("occupationId", ""),
@@ -235,6 +238,23 @@ static func validate(catalog: Dictionary) -> PackedStringArray:
 			chains_by_capability[capability] = capability_chains
 		if capabilities != expected_capabilities:
 			errors.append("工作链能力与职业目录不一致：%s" % occupation_id)
+		var helper_capabilities := _string_array(
+			chain.get("helperTaskCapabilities", []),
+			"%s.helperTaskCapabilities" % occupation_id,
+			errors,
+			true,
+		)
+		var entry_rule := String(chain.get("staffingEntryRule", ""))
+		if entry_rule == "helper_only" and helper_capabilities.is_empty():
+			errors.append("帮工岗位缺少明确辅助能力：%s" % occupation_id)
+		elif entry_rule != "helper_only" and not helper_capabilities.is_empty():
+			errors.append("非帮工岗位不能声明辅助能力：%s" % occupation_id)
+		for capability: String in helper_capabilities:
+			if not capabilities.has(capability):
+				errors.append(
+					"帮工能力不属于正式工作链：%s.%s"
+					% [occupation_id, capability],
+				)
 		if _string_array(
 			chain.get("taskSources"),
 			"%s.taskSources" % occupation_id,
@@ -275,7 +295,7 @@ static func validate(catalog: Dictionary) -> PackedStringArray:
 				errors.append(
 					"工作链缺少 %s：%s" % [text_field, occupation_id],
 				)
-		if String(chain.get("staffingEntryRule", "")) not in (
+		if entry_rule not in (
 			STAFFING_ENTRY_RULES
 		):
 			errors.append("工作链转岗条件无效：%s" % occupation_id)

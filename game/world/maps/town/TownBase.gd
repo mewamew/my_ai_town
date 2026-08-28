@@ -17,7 +17,12 @@ const MAP_RUNTIME_LAYER_LOADER_SCRIPT := preload("res://world/runtime/MapRuntime
 const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
 const RUNTIME_LAYER_WATCH_GENERATED_FILES := false
 const RUNTIME_LAYER_PRINT_RELOAD_MESSAGES := false
-const INTERIOR_ROOM_SCENE := preload("res://world/maps/town/interiors/InteriorRoom.tscn")
+const INTERIOR_ROOM_BUILD_QUEUE := preload(
+	"res://world/maps/town/interiors/InteriorRoomBuildQueue.gd"
+)
+const INTERIOR_OCCLUSION_CONTROLLER := preload(
+	"res://world/maps/town/interiors/InteriorOcclusionController.gd"
+)
 const PAPER_DOLL_64_SPRITE_SCRIPT := preload("res://characters/paper_doll/PaperDoll64Sprite.gd")
 # The formal player avatar uses the 64px PaperDoll atlas. Keep its in-map
 # visible height near two thirds of a town door so it reads as a walkable
@@ -41,6 +46,13 @@ const OUTDOOR_GROUND_SHADOW_Z_INDEX := 98
 const INTERIOR_GROUND_SHADOW_Z_INDEX := -9
 const DOOR_THRESHOLD_TRIGGER_SIZE := (
 	PORTAL_CATALOG.DOOR_THRESHOLD_TRIGGER_SIZE
+)
+# Start preparing the closest not-yet-built room while the player is still
+# walking toward its door.  At the normal player speed this gives the queue
+# roughly two seconds to finish without eagerly constructing every interior.
+const INTERIOR_APPROACH_PREWARM_DISTANCE := 720.0
+const INTERIOR_APPROACH_PREWARM_DISTANCE_SQUARED := (
+	INTERIOR_APPROACH_PREWARM_DISTANCE * INTERIOR_APPROACH_PREWARM_DISTANCE
 )
 const PORTAL_FADE_OUT_SECONDS := 0.22
 const PORTAL_BLACK_HOLD_SECONDS := 0.08
@@ -475,6 +487,8 @@ var _zoom_index := DEFAULT_ZOOM_INDEX
 var _outdoor_zoom_index := DEFAULT_ZOOM_INDEX
 var _interior_root: InteriorRoom
 var _interior_roots: Dictionary = {}
+var _interior_build_queue: Node
+var _interior_occlusion_controller: Node
 var _active_interior_id := ""
 var _active_exterior_portal_id := ""
 var _blocked_exterior_reentry_portal_id := ""
@@ -512,6 +526,7 @@ func _ready() -> void:
 	_set_preset("elder_man")
 	_focus_player()
 	_sync_player_visual()
+	call_deferred("_prewarm_nearest_interior")
 
 
 func _exit_tree() -> void:
@@ -591,12 +606,17 @@ func _physics_process(delta: float) -> void:
 	_capture_player_blocking_normals(input_vector * PLAYER_SPEED)
 	_clamp_player_position()
 	var moved_distance := _player.position.distance_to(previous_position)
+	if moved_distance > 0.0 and is_instance_valid(_interior_occlusion_controller):
+		_interior_occlusion_controller.mark_subject_dirty(
+			_player_occlusion_foot_point,
+		)
 	if _player_sprite != null:
 		_player_sprite.set_motion(input_vector, moved_distance)
 		var current_frame_column := _player_sprite.frame_coords.x
 		if current_frame_column != previous_frame_column and current_frame_column in [1, 3]:
 			_emit_footstep_effect()
 	_check_interior_auto_portals()
+	_prewarm_approaching_interior()
 	_update_camera_target()
 	_update_camera_feedback(delta)
 	_update_status()
@@ -775,39 +795,21 @@ func _build_water_animation() -> void:
 
 
 func _build_interior_portals() -> void:
-	for interior_id_value in INTERIOR_DEFINITIONS:
-		var interior_id := str(interior_id_value)
-		var definition := INTERIOR_DEFINITIONS[interior_id] as Dictionary
-		var room := INTERIOR_ROOM_SCENE.instantiate() as Node2D
-		room.configure(str(definition["shell_path"]),
-			definition["entry_point"] as Vector2,
-			definition["exit_point"] as Vector2,
-			str(definition.get("geometry_path", "")),
-			str(definition.get("occlusion_path", "")),
-			str(definition.get("furniture_manifest_path", "")),
-			str(definition.get("layout_path", "")))
-		room.name = str(definition["node_name"])
-		room.position = definition["origin"] as Vector2
-		room.visible = false
-		add_child(room)
-		_interior_roots[interior_id] = room
-
-		var exit_marker := room.get_node("IndoorExitPoint") as Marker2D
-		var exit_portal := _create_auto_portal(
-			_interior_exit_portal_name(interior_id),
-			room.position + exit_marker.position,
-			DOOR_THRESHOLD_TRIGGER_SIZE
-		)
-		add_child(exit_portal)
-		exit_portal.body_entered.connect(_exit_interior.bind(interior_id))
-
-	var cafe_room := _interior_roots["cafe"] as Node2D
-	_interior_root = cafe_room
+	_interior_roots.clear()
+	_interior_root = null
 	_cafe_layout = null
 	_library_layout = null
 	_town_hall_layout = null
 	_clinic_layout = null
 	_active_furniture_layout = null
+	_interior_build_queue = INTERIOR_ROOM_BUILD_QUEUE.new()
+	_interior_build_queue.name = "InteriorRoomBuildQueue"
+	_interior_build_queue.room_prepared.connect(_on_interior_room_prepared)
+	_interior_build_queue.room_failed.connect(_on_interior_room_failed)
+	add_child(_interior_build_queue)
+	_interior_occlusion_controller = INTERIOR_OCCLUSION_CONTROLLER.new()
+	_interior_occlusion_controller.name = "InteriorOcclusionController"
+	add_child(_interior_occlusion_controller)
 
 	for portal_spec in EXTERIOR_INTERIOR_PORTALS:
 		var portal_id := str(portal_spec["id"])
@@ -818,6 +820,135 @@ func _build_interior_portals() -> void:
 		)
 		add_child(exterior_portal)
 		exterior_portal.body_entered.connect(_enter_interior.bind(portal_id))
+
+
+func _prepare_interior_room(interior_id: String) -> InteriorRoom:
+	var cached := _interior_roots.get(interior_id) as InteriorRoom
+	if is_instance_valid(cached):
+		return cached
+	var definition := INTERIOR_DEFINITIONS.get(interior_id, {}) as Dictionary
+	if definition.is_empty() or not is_instance_valid(_interior_build_queue):
+		return null
+	if (
+		not _interior_build_queue.is_pending(interior_id)
+		and not _interior_build_queue.request(interior_id, definition, true)
+	):
+		return null
+	while is_inside_tree() and _interior_build_queue.is_pending(interior_id):
+		await get_tree().process_frame
+	return _interior_roots.get(interior_id) as InteriorRoom
+
+
+func _on_interior_room_prepared(
+	interior_id: String,
+	room: InteriorRoom,
+	_profile: Dictionary,
+) -> void:
+	if not is_instance_valid(room) or not is_inside_tree():
+		if is_instance_valid(room):
+			room.free()
+		return
+	if _interior_roots.has(interior_id):
+		room.free()
+		return
+	var definition := INTERIOR_DEFINITIONS.get(interior_id, {}) as Dictionary
+	if definition.is_empty():
+		room.free()
+		return
+	room.name = str(definition["node_name"])
+	room.position = definition["origin"] as Vector2
+	room.visible = false
+	add_child(room)
+	_interior_roots[interior_id] = room
+	var exit_marker := room.get_node("IndoorExitPoint") as Marker2D
+	var exit_portal := _create_auto_portal(
+		_interior_exit_portal_name(interior_id),
+		room.position + exit_marker.position,
+		DOOR_THRESHOLD_TRIGGER_SIZE,
+	)
+	add_child(exit_portal)
+	exit_portal.body_entered.connect(_exit_interior.bind(interior_id))
+
+
+func _on_interior_room_failed(
+	interior_id: String,
+	error: String,
+	_profile: Dictionary,
+) -> void:
+	push_error("Interior could not be prepared: %s (%s)" % [interior_id, error])
+
+
+func _prewarm_nearest_interior() -> void:
+	# 先让正式 Town 完成世界启动和第一帧提交，再准备玩家出生点最近的房间。
+	# 只预热一个房间；其余房间仍在首次需要时创建并缓存。
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if not is_inside_tree() or _is_inside_interior() or _portal_transition_active:
+		return
+	var nearest_interior_id := ""
+	var nearest_distance_squared := INF
+	for portal_spec in EXTERIOR_INTERIOR_PORTALS:
+		var distance_squared := _player.position.distance_squared_to(
+			portal_spec.get("door", _player.position) as Vector2,
+		)
+		if distance_squared < nearest_distance_squared:
+			nearest_distance_squared = distance_squared
+			nearest_interior_id = String(portal_spec.get("interior_id", ""))
+	if (
+		not nearest_interior_id.is_empty()
+		and not _interior_roots.has(nearest_interior_id)
+		and not _interior_build_queue.is_pending(nearest_interior_id)
+	):
+		_interior_build_queue.request(
+			nearest_interior_id,
+			INTERIOR_DEFINITIONS.get(nearest_interior_id, {}) as Dictionary,
+			true,
+		)
+
+
+func _prewarm_approaching_interior() -> void:
+	if (
+		not is_inside_tree()
+		or not is_instance_valid(_player)
+		or not _player.is_inside_tree()
+		or _is_inside_interior()
+		or _portal_transition_active
+		or not is_instance_valid(_interior_build_queue)
+	):
+		return
+	var nearest_interior_id := ""
+	var nearest_distance_squared := INF
+	for portal_spec in EXTERIOR_INTERIOR_PORTALS:
+		var interior_id := String(portal_spec.get("interior_id", ""))
+		if (
+			interior_id.is_empty()
+			or _interior_roots.has(interior_id)
+			or _interior_build_queue.is_pending(interior_id)
+		):
+			continue
+		var door := portal_spec.get("door", Vector2.INF) as Vector2
+		if not door.is_finite():
+			continue
+		var distance_squared := _player.position.distance_squared_to(door)
+		if distance_squared < nearest_distance_squared:
+			nearest_distance_squared = distance_squared
+			nearest_interior_id = interior_id
+	if (
+		nearest_interior_id.is_empty()
+		or nearest_distance_squared > INTERIOR_APPROACH_PREWARM_DISTANCE_SQUARED
+	):
+		return
+	var definition := INTERIOR_DEFINITIONS.get(nearest_interior_id, {}) as Dictionary
+	if definition.is_empty():
+		return
+	_interior_build_queue.request(nearest_interior_id, definition, true)
+
+
+func _bind_interior_occlusion_presentation(presentation: Node) -> bool:
+	return (
+		is_instance_valid(_interior_occlusion_controller)
+		and _interior_occlusion_controller.bind_resident_presentation(presentation)
+	)
 
 func _interior_exit_portal_name(interior_id: String) -> String:
 	if interior_id == "cafe":
@@ -985,16 +1116,31 @@ func _enter_interior(body: Node2D, portal_id: String) -> void:
 		return
 	var interior_id := str(portal_spec["interior_id"])
 	var definition := INTERIOR_DEFINITIONS.get(interior_id, {}) as Dictionary
-	var room := _interior_roots.get(interior_id) as Node2D
-	if definition.is_empty() or room == null:
+	if definition.is_empty():
 		push_error("Interior is not available: %s" % interior_id)
 		return
 
 	var previous_visual_state := _portal_visual_state_snapshot()
 	_portal_transition_active = true
 	_player.velocity = Vector2.ZERO
+	# The approach prewarm normally has this job pending already.  Request it
+	# here as a fallback for teleports or an immediate threshold crossing so the
+	# fade-to-black itself overlaps as much of room preparation as possible.
+	if (
+		not _interior_roots.has(interior_id)
+		and is_instance_valid(_interior_build_queue)
+		and not _interior_build_queue.is_pending(interior_id)
+	):
+		_interior_build_queue.request(interior_id, definition, true)
 	await _fade_portal_to_black()
 	if not is_inside_tree():
+		return
+	var room := await _prepare_interior_room(interior_id)
+	if room == null:
+		_restore_portal_visual_state(previous_visual_state)
+		await _fade_portal_from_black()
+		if is_inside_tree():
+			_portal_transition_active = false
 		return
 
 	_outdoor_zoom_index = _zoom_index
@@ -1036,10 +1182,14 @@ func _enter_interior(body: Node2D, portal_id: String) -> void:
 	if prepared.get("ok") != true:
 		room.visible = false
 		_restore_portal_visual_state(previous_visual_state)
+		_interior_occlusion_controller.set_active_room(
+			_interior_root if _is_inside_interior() else null,
+		)
 		await _fade_portal_from_black()
 		if is_inside_tree():
 			_portal_transition_active = false
 		return
+	_interior_occlusion_controller.set_active_room(room)
 	await _fade_portal_from_black()
 	if not is_inside_tree():
 		return
@@ -1075,6 +1225,7 @@ func _exit_interior(body: Node2D, interior_id: String) -> void:
 	_active_exterior_portal_id = ""
 	_inside_furniture_room = false
 	_interior_root = null
+	_interior_occlusion_controller.set_active_room(null)
 	_set_camera_limits(Rect2(Vector2.ZERO, MAP_SIZE))
 	_set_zoom_index(return_zoom_index)
 	_weather_layer.visible = true
@@ -1093,6 +1244,9 @@ func _exit_interior(body: Node2D, interior_id: String) -> void:
 	var prepared := _on_portal_black_covering(false)
 	if prepared.get("ok") != true:
 		_restore_portal_visual_state(previous_visual_state)
+		_interior_occlusion_controller.set_active_room(
+			_interior_root if _is_inside_interior() else null,
+		)
 		await _fade_portal_from_black()
 		if is_inside_tree():
 			_portal_transition_active = false
@@ -1262,6 +1416,7 @@ func _build_player() -> void:
 	_player_occlusion_foot_point.z_as_relative = false
 	_player_occlusion_foot_point.add_to_group(PLAYER_OCCLUSION_SUBJECT_GROUP)
 	_player.add_child(_player_occlusion_foot_point)
+	_interior_occlusion_controller.bind_player(_player_occlusion_foot_point)
 	_player_feet_collision = CollisionShape2D.new()
 	_player_feet_collision.name = "FeetCollision"
 	_player_feet_collision.position = Vector2(0.0, -12.0)
@@ -2145,12 +2300,30 @@ func _update_cafe_depth_order() -> void:
 	_update_player_ground_shadow_depth()
 	if not _inside_furniture_room or not is_instance_valid(_interior_root):
 		_player.z_index = 100
+		_sync_player_occlusion_depth()
 		return
 	_player.z_as_relative = false
 	# 室内人物始终是一张完整图，只用 CharacterBody2D 原点这个脚点参与遮挡命中。
 	_player.z_index = CAFE_PLAYER_DEPTH
+	_sync_player_occlusion_depth()
 	if is_instance_valid(_active_furniture_layout):
 		_active_furniture_layout.call("update_depth_for_subject", _player)
+
+
+func _sync_player_occlusion_depth() -> void:
+	if not is_instance_valid(_player_occlusion_foot_point):
+		return
+	if (
+		_player_occlusion_foot_point.z_index == _player.z_index
+		and not _player_occlusion_foot_point.z_as_relative
+	):
+		return
+	_player_occlusion_foot_point.z_as_relative = false
+	_player_occlusion_foot_point.z_index = _player.z_index
+	if is_instance_valid(_interior_occlusion_controller):
+		_interior_occlusion_controller.mark_subject_dirty(
+			_player_occlusion_foot_point,
+		)
 
 
 func _update_player_ground_shadow_depth() -> void:

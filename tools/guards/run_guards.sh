@@ -12,6 +12,16 @@ python3 "$guards_dir/required_tests_check.py" || status=1
 python3 "$guards_dir/preload_resource_check.py" || status=1
 python3 "$guards_dir/cross_platform_text_check.py" || status=1
 python3 "$guards_dir/foreground_shader_check.py" || status=1
+python3 "$guards_dir/test_persistence_change_check.py" || status=1
+if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
+	python3 "$guards_dir/persistence_change_check.py" \
+		--base-ref "origin/${GITHUB_BASE_REF}" || status=1
+elif git -C "$guards_dir/../.." rev-parse --verify origin/main >/dev/null 2>&1; then
+	python3 "$guards_dir/persistence_change_check.py" \
+		--base-ref origin/main || status=1
+else
+	python3 "$guards_dir/persistence_change_check.py" || status=1
+fi
 python3 "$guards_dir/../sync_readme_updates.py" --check || status=1
 python3 -m unittest discover -s "$guards_dir/../release" -p 'test_*.py' || status=1
 python3 "$guards_dir/../release/release_tool.py" source-check \

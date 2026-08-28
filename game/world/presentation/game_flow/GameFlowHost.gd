@@ -4,6 +4,7 @@ extends Node
 const RESULT_SHAPES := preload(
 	"res://world/contract/TownWorldResultShapes.gd"
 )
+const POPULATION_RULES := preload("res://world/runtime/TownPopulationRules.gd")
 const STARTUP_SCENE_PATH := "res://ui/startup/StartupScreen.tscn"
 const LOAD_GAME_SCENE_PATH := "res://ui/startup/StartupLoadGameScreen.tscn"
 const WORLD_INTRO_SCENE_PATH := "res://ui/world_intro/WorldIntroScreen.tscn"
@@ -19,6 +20,9 @@ const TOWN_UI_RUNTIME_HOST_SCRIPT_PATH := (
 const SESSION_UI_SERVICE := preload(
 	"res://world/presentation/session/TownSessionUiService.gd"
 )
+const SAVE_COMPATIBILITY := preload(
+	"res://world/presentation/session/TownSaveCompatibilityRegistry.gd"
+)
 const SESSION_SAVE_STORE := preload(
 	"res://world/presentation/session/TownSessionSaveStore.gd"
 )
@@ -30,6 +34,12 @@ const SESSION_SAVE_MANIFEST := preload(
 )
 const STARTUP_SAVE_CATALOG := preload(
 	"res://world/presentation/session/TownStartupSaveCatalog.gd"
+)
+const SAVE_RECONCILIATION_SERVICE := preload(
+	"res://world/presentation/session/TownSaveReconciliationService.gd"
+)
+const SAVE_RECOVERY_PLANNER := preload(
+	"res://world/presentation/session/TownSaveRecoveryPlanner.gd"
 )
 const AUDIO_DISPLAY_SETTINGS_SERVICE := preload(
 	"res://world/presentation/ui/TownAudioDisplaySettingsService.gd"
@@ -240,6 +250,8 @@ var _pending_new_game_discovery: Dictionary = {}
 var _pending_save_handling_mode := ""
 var _pending_save_handling_origin := ""
 var _pending_continue_notice: Dictionary = {}
+var _pending_model_unavailable_notice: Dictionary = {}
+var _model_unavailable_notice_sequence := 0
 var _overwrite_compensator := FORMAL_OVERWRITE_COMPENSATOR.new()
 var _pending_formal_overwrite_archive: Dictionary:
 	get:
@@ -285,6 +297,9 @@ var _replacement_admission_committed := false
 var _daily_auto_save_last_revision := 0
 var _daily_auto_save_failures: Array[Dictionary] = []
 var _daily_auto_save_inflight := false
+var _daily_auto_save_pending_day := -1
+var _daily_auto_save_last_request_msec := 0.0
+var _daily_auto_save_last_total_msec := 0.0
 
 
 func _ready() -> void:
@@ -358,6 +373,7 @@ func _notification(what: int) -> void:
 
 
 func _process(_delta: float) -> void:
+	_poll_daily_auto_save()
 	_bind_current_scene()
 	_poll_resident_replacement()
 	if _formal_runtime_audit_requested:
@@ -395,7 +411,7 @@ func _poll_resident_replacement() -> void:
 	if current_minute < 0 or current_minute == _replacement_last_checked_minute:
 		return
 	_replacement_last_checked_minute = current_minute
-	if RESIDENT_REPLACEMENT.living_resident_count(world) >= 15:
+	if not RESIDENT_REPLACEMENT.replacement_needed(world):
 		return
 	var death_events := world.get_public_death_events() as Array
 	for death_event_value: Variant in death_events:
@@ -605,7 +621,7 @@ func _build_replacement_candidate(
 		"说话简洁，熟悉之后会偶尔开玩笑",
 	)
 	template["attributes"] = attributes
-	# World 的十五个住宅席位与 residentId 一一对应。新居民接替死亡
+	# World 的本局住宅席位与 residentId 一一对应。新居民接替死亡
 	# 居民的席位，保留内部稳定 ID，但姓名、人设、记忆和 Agent 运行时
 	# 都会换成新居民，死亡记录仍留在公共世界日志中。
 	var resident_id := deceased_id
@@ -961,6 +977,9 @@ func _apply_pending_replacement_admission(
 		return _failure("REPLACEMENT_RESIDENT_CANDIDATE_MISSING", false)
 	if assignment_bindings.size() != 1 or not assignment_bindings[0] is Dictionary:
 		return _failure("SESSION_LLM_BINDINGS_INVALID", false)
+	var save_barrier := _finish_auto_save_before_session_mutation()
+	if not bool(save_barrier.get("ok", false)):
+		return save_barrier
 	var candidate := _pending_replacement_candidate.duplicate(true)
 	var record := candidate.get("record", {}) as Dictionary
 	var identity := candidate.get("identity", {}) as Dictionary
@@ -1483,6 +1502,9 @@ func get_daily_auto_save_diagnostics() -> Dictionary:
 		"lastRevision": _daily_auto_save_last_revision,
 		"failures": _daily_auto_save_failures.duplicate(true),
 		"inflight": _daily_auto_save_inflight,
+		"pendingDay": _daily_auto_save_pending_day,
+		"lastRequestMsec": _daily_auto_save_last_request_msec,
+		"lastTotalMsec": _daily_auto_save_last_total_msec,
 	}
 
 
@@ -1726,6 +1748,9 @@ func _release_internal_session_refs() -> void:
 	_daily_auto_save_last_revision = 0
 	_daily_auto_save_failures.clear()
 	_daily_auto_save_inflight = false
+	_daily_auto_save_pending_day = -1
+	_daily_auto_save_last_request_msec = 0.0
+	_daily_auto_save_last_total_msec = 0.0
 	_replacement_generation_sequence += 1
 	_replacement_generation_pending = false
 	_active_replacement_generation_id = 0
@@ -1809,6 +1834,7 @@ func _on_startup_intent_requested(intent: StringName, payload: Dictionary) -> vo
 	match String(intent):
 		"session.new_game":
 			_pending_continue_notice.clear()
+			_pending_model_unavailable_notice.clear()
 			if not _startup_new_game_payload_is_authorized(payload):
 				_publish_startup_action_failure(
 					intent,
@@ -1839,7 +1865,7 @@ func _on_startup_intent_requested(intent: StringName, payload: Dictionary) -> vo
 					String(selected_slot.get("state", "")) != "empty"
 					and not bool(route_payload.get("overwriteConfirmed", false))
 				):
-					var existing_save := _discover_startup_slot(slot_id)
+					var existing_save := _discover_startup_slot_for_overwrite(slot_id)
 					if not bool(existing_save.get("ok", false)):
 						_publish_startup_action_failure(intent, existing_save)
 						return
@@ -2124,7 +2150,15 @@ func _on_startup_load_game_intent_requested(
 		"startup.close_load_game":
 			_close_startup_load_game()
 		"session.continue_slot":
-			_on_startup_intent_requested(intent, payload)
+			var selected_slot_id := String(payload.get("slotId", "")).strip_edges()
+			var selected_catalog := _startup_catalog_snapshot()
+			var selected_slot := _startup_slot_by_id(selected_catalog, selected_slot_id)
+			if bool(selected_slot.get("diagnosticAvailable", false)):
+				var diagnostic_discovery := _catalog_slot_discovery(selected_slot, false)
+				_close_startup_load_game()
+				_open_continue_recovery(diagnostic_discovery, "load_game")
+			else:
+				_on_startup_intent_requested(intent, payload)
 		"save.request_delete_slot":
 			if _startup_load_game_mode != "load":
 				_last_result = _failure(
@@ -2282,10 +2316,56 @@ func _on_new_game_overwrite_intent_requested(
 	match String(intent):
 		"session.cancel_new_game_overwrite", "session.cancel_continue_recovery":
 			_close_new_game_overwrite()
+			_refresh_startup_main_menu_view_models()
+		"session.rediagnose_recovery":
+			_rediagnose_continue_recovery()
 		"save.cancel_delete_slot":
 			_close_new_game_overwrite()
 			_open_startup_load_game("load")
 		"session.retry_restore", "session.confirm_recovery":
+			var pending_plan := (
+				_pending_new_game_discovery.get("recoveryPlan", {}) as Dictionary
+			)
+			if (
+				String(pending_plan.get("action", ""))
+				== SAVE_RECONCILIATION_SERVICE.RECONCILE_ACTION
+				and (
+					_pending_new_game_discovery.get("manifest", {}) as Dictionary
+				).is_empty()
+			):
+				var reconciliation_store := SESSION_SAVE_STORE.new()
+				var reconciliation := SAVE_RECONCILIATION_SERVICE.new()
+				var configured := reconciliation.configure(
+					reconciliation_store,
+					AGENT_SAVE_STORE.new(),
+				) as Dictionary
+				var reconciled := (
+					reconciliation.execute(pending_plan, {
+						"confirmed": true,
+						"planId": String(pending_plan.get("planId", "")),
+					}) as Dictionary
+					if configured.get("ok") == true
+					else configured
+				)
+				_last_result = reconciled.duplicate(true)
+				_close_new_game_overwrite()
+				if reconciled.get("ok") != true:
+					_publish_startup_action_failure(intent, reconciled)
+				else:
+					_refresh_startup_main_menu_view_models()
+				return
+			if String(pending_plan.get("action", "")) == (
+				SAVE_RECONCILIATION_SERVICE.EXPORT_ACTION
+			):
+				var exporter := SAVE_RECONCILIATION_SERVICE.new()
+				var exported := exporter.export_diagnostic(pending_plan) as Dictionary
+				_last_result = exported.duplicate(true)
+				_close_new_game_overwrite()
+				if exported.get("ok") != true:
+					_publish_startup_action_failure(intent, exported)
+				else:
+					_refresh_startup_main_menu_view_models()
+				return
 			var recovery_mode := _pending_save_handling_mode
 			var route_origin := _pending_save_handling_origin
 			var summary := (
@@ -2308,6 +2388,38 @@ func _on_new_game_overwrite_intent_requested(
 			_last_result = _failure("SESSION_OVERWRITE_INTENT_UNSUPPORTED", false)
 
 
+func _rediagnose_continue_recovery() -> void:
+	if _pending_save_handling_mode != "continue_recovery":
+		_last_result = _failure("SESSION_RECOVERY_DIAGNOSIS_NOT_AUTHORIZED", false)
+		return
+	var summary := (
+		_pending_new_game_discovery.get("summary", {}) as Dictionary
+	).duplicate(true)
+	var slot_id := String(summary.get("slotId", "")).strip_edges()
+	if slot_id.is_empty():
+		_last_result = _failure("STARTUP_SAVE_SLOT_ID_INVALID", false)
+		return
+	var route_origin := _pending_save_handling_origin
+	var inspected := _discover_startup_slot(slot_id, true)
+	_last_result = inspected.duplicate(true)
+	if not bool(inspected.get("ok", false)):
+		_close_new_game_overwrite()
+		_publish_startup_action_failure(
+			&"session.rediagnose_recovery",
+			inspected,
+		)
+		return
+	if (
+		bool(inspected.get("requiresRecoveryConfirmation", false))
+		or bool(inspected.get("diagnosticAvailable", false))
+	):
+		_open_continue_recovery(inspected, route_origin)
+		return
+	_close_new_game_overwrite()
+	if route_origin == "load_game":
+		_open_startup_load_game("load")
+
+
 func _confirm_new_game_overwrite() -> void:
 	if not is_instance_valid(_startup_overwrite_page):
 		_last_result = _failure("STARTUP_OVERWRITE_HOST_UNAVAILABLE", false)
@@ -2315,7 +2427,7 @@ func _confirm_new_game_overwrite() -> void:
 	var expected_summary := (
 		_pending_new_game_discovery.get("summary", {}) as Dictionary
 	)
-	var latest := _discover_startup_slot(
+	var latest := _discover_startup_slot_for_overwrite(
 		String(expected_summary.get("slotId", "")),
 	)
 	if not bool(latest.get("ok", false)):
@@ -3028,7 +3140,10 @@ func _on_residents_delete_requested(
 			_failure("RESIDENT_DELETE_SELECTION_EMPTY", false),
 		)
 		return
-	if residents.size() - delete_ids.size() < 15:
+	if (
+		residents.size() - delete_ids.size()
+		< POPULATION_RULES.DEFAULT_RESIDENT_COUNT
+	):
 		_set_resident_selection_delete_failure(
 			_failure("RESIDENT_DELETE_MINIMUM_CANDIDATES_REQUIRED", false),
 		)
@@ -3096,7 +3211,7 @@ func _on_residents_delete_requested(
 		if kept_ids.has(resident_id) and not recommended.has(resident_id):
 			recommended.append(resident_id)
 	for value: Variant in kept_residents:
-		if recommended.size() >= 15:
+		if recommended.size() >= POPULATION_RULES.DEFAULT_RESIDENT_COUNT:
 			break
 		var resident_id := String((value as Dictionary).get("resident_id", ""))
 		if not resident_id.is_empty() and not recommended.has(resident_id):
@@ -3613,8 +3728,8 @@ func _project_resident_model_assignment_catalog(
 	if not slots_value is Array:
 		return _failure("SESSION_DRAFT_SLOTS_INVALID", false)
 	var slots := slots_value as Array
-	if slots.size() != RESIDENT_MODEL_ASSIGNMENT_SERVICE.SLOT_COUNT:
-		return _failure("SESSION_HOME_SPACE_COUNT_MISMATCH", false)
+	if not POPULATION_RULES.supports_resident_count(slots.size()):
+		return _failure("SESSION_RESIDENT_COUNT_OUT_OF_RANGE", false)
 	var selected_residents: Array[Dictionary] = []
 	var selected_ids: Dictionary = {}
 	for slot_value: Variant in slots:
@@ -4277,6 +4392,7 @@ func _bind_town_runtime(runtime: Node) -> void:
 		)
 		_daily_auto_save_last_attempt_day = -1
 	_present_pending_continue_notice()
+	_present_pending_model_unavailable_notice()
 
 
 func _on_town_environment_changed(time: Dictionary, _weather: String) -> void:
@@ -4289,24 +4405,70 @@ func _on_town_environment_changed(time: Dictionary, _weather: String) -> void:
 	var day := int(time.get("day", -1))
 	if day <= 0 or day <= _daily_auto_save_day:
 		return
+	if _daily_auto_save_inflight:
+		if day > _daily_auto_save_last_attempt_day:
+			_daily_auto_save_pending_day = maxi(
+				_daily_auto_save_pending_day,
+				day,
+			)
+		return
 	var now_msec := Time.get_ticks_msec()
 	if (
-		_daily_auto_save_inflight
-		or (
-			_daily_auto_save_last_attempt_day == day
-			and now_msec - _daily_auto_save_last_attempt_msec
-			< DAILY_AUTO_SAVE_RETRY_INTERVAL_MSEC
-		)
+		_daily_auto_save_last_attempt_day == day
+		and now_msec - _daily_auto_save_last_attempt_msec
+		< DAILY_AUTO_SAVE_RETRY_INTERVAL_MSEC
 	):
 		return
+	_begin_daily_auto_save(day)
+
+
+func _begin_daily_auto_save(day: int) -> void:
+	var request_started_usec := Time.get_ticks_usec()
 	_daily_auto_save_inflight = true
 	_daily_auto_save_last_attempt_day = day
-	_daily_auto_save_last_attempt_msec = now_msec
+	_daily_auto_save_last_attempt_msec = Time.get_ticks_msec()
 	_daily_auto_save_attempts += 1
-	var result := _session_ui_service.call("create_save", {
-		"reason": DAILY_AUTO_SAVE_REASON,
-	}) as Dictionary
+	var result: Dictionary
+	if _session_ui_service.has_method("begin_create_save_async"):
+		result = _session_ui_service.begin_create_save_async({
+			"reason": DAILY_AUTO_SAVE_REASON,
+		}) as Dictionary
+	else:
+		result = _failure("SESSION_ASYNC_SAVE_CONTRACT_INVALID", false)
+	_daily_auto_save_last_request_msec = (
+		float(Time.get_ticks_usec() - request_started_usec) / 1000.0
+	)
+	if bool(result.get("pending", false)):
+		return
+	_complete_daily_auto_save(day, result)
+
+
+func _poll_daily_auto_save() -> void:
+	if not _daily_auto_save_inflight:
+		return
+	if (
+		_session_ui_service == null
+		or not is_instance_valid(_session_ui_service)
+		or not _session_ui_service.has_method("poll_create_save_async")
+	):
+		_complete_daily_auto_save(
+			_daily_auto_save_last_attempt_day,
+			_failure("SESSION_ASYNC_SAVE_CONTRACT_INVALID", false),
+		)
+		return
+	var result := _session_ui_service.poll_create_save_async() as Dictionary
+	if bool(result.get("pending", false)):
+		return
+	if bool(result.get("idle", false)):
+		result = _failure("SESSION_ASYNC_SAVE_RESULT_MISSING", true)
+	_complete_daily_auto_save(_daily_auto_save_last_attempt_day, result)
+
+
+func _complete_daily_auto_save(day: int, result: Dictionary) -> void:
 	_daily_auto_save_inflight = false
+	_daily_auto_save_last_total_msec = float(
+		(result.get("timing", {}) as Dictionary).get("totalMsec", 0.0),
+	)
 	if bool(result.get("ok", false)):
 		_daily_auto_save_day = day
 		_daily_auto_save_successes += 1
@@ -4316,17 +4478,37 @@ func _on_town_environment_changed(time: Dictionary, _weather: String) -> void:
 				_daily_auto_save_last_revision,
 			)
 		)
-		return
-	var failure := {
-		"day": day,
-		"errorCode": String(
-			result.get("errorCode", "SESSION_SAVE_DAILY_AUTO_SAVE_FAILED")
-		),
-		"retryable": bool(result.get("retryable", false)),
-	}
-	_daily_auto_save_failures.append(failure)
-	if _daily_auto_save_failures.size() > DAILY_AUTO_SAVE_ERROR_HISTORY_LIMIT:
-		_daily_auto_save_failures.pop_front()
+	else:
+		var failure := {
+			"day": day,
+			"errorCode": String(
+				result.get("errorCode", "SESSION_SAVE_DAILY_AUTO_SAVE_FAILED")
+			),
+			"retryable": bool(result.get("retryable", false)),
+		}
+		_daily_auto_save_failures.append(failure)
+		if _daily_auto_save_failures.size() > DAILY_AUTO_SAVE_ERROR_HISTORY_LIMIT:
+			_daily_auto_save_failures.pop_front()
+	_start_pending_daily_auto_save()
+
+
+func _start_pending_daily_auto_save() -> void:
+	var pending_day := _daily_auto_save_pending_day
+	_daily_auto_save_pending_day = -1
+	if pending_day > _daily_auto_save_day:
+		_begin_daily_auto_save(pending_day)
+
+
+func _finish_auto_save_before_session_mutation() -> Dictionary:
+	if (
+		_session_ui_service == null
+		or not is_instance_valid(_session_ui_service)
+		or not _session_ui_service.has_method("has_active_create_save_async")
+		or not _session_ui_service.has_method("finish_create_save_async")
+		or not bool(_session_ui_service.has_active_create_save_async())
+	):
+		return {"ok": true, "errorCode": "", "retryable": false}
+	return _session_ui_service.finish_create_save_async() as Dictionary
 
 
 func _agent_save_participant() -> Object:
@@ -4485,7 +4667,9 @@ func _on_resident_selection_requested(
 		return
 	var data := _resident_selection_vm.get("data", {}) as Dictionary
 	var selected: Array = (data.get("selected_resident_ids", []) as Array).duplicate()
-	var selection_limit := int(data.get("selection_limit", 15))
+	var selection_limit := int(
+		data.get("selection_limit", POPULATION_RULES.MAX_RESIDENT_COUNT)
+	)
 	if should_select and not selected.has(resident_id) and selected.size() < selection_limit:
 		selected.append(resident_id)
 	elif not should_select:
@@ -4493,6 +4677,8 @@ func _on_resident_selection_requested(
 	data["selected_resident_ids"] = selected
 	data["focused_resident_id"] = resident_id
 	_update_confirmation_payload(data)
+	_resident_selection_vm["operation"] = _idle_operation()
+	_resident_selection_vm["error"] = null
 	_advance_resident_selection_revision()
 
 
@@ -4504,6 +4690,8 @@ func _on_recommended_selection_requested(revision: int) -> void:
 		data.get("recommended_resident_ids", []) as Array
 	).duplicate()
 	_update_confirmation_payload(data)
+	_resident_selection_vm["operation"] = _idle_operation()
+	_resident_selection_vm["error"] = null
 	_advance_resident_selection_revision()
 
 
@@ -4513,6 +4701,8 @@ func _on_selection_clear_requested(revision: int) -> void:
 	var data := _resident_selection_vm.get("data", {}) as Dictionary
 	data["selected_resident_ids"] = []
 	_update_confirmation_payload(data)
+	_resident_selection_vm["operation"] = _idle_operation()
+	_resident_selection_vm["error"] = null
 	_advance_resident_selection_revision()
 
 
@@ -4897,6 +5087,9 @@ func _apply_in_session_resident_model_bindings(
 			"RESIDENT_MODEL_ASSIGNMENT_RUNTIME_DEPENDENCY_MISSING",
 			false,
 		)
+	var save_barrier := _finish_auto_save_before_session_mutation()
+	if not bool(save_barrier.get("ok", false)):
+		return save_barrier
 	var previous_bindings := (
 		_active_session_config.get("residentBindings", []) as Array
 	).duplicate(true)
@@ -4996,7 +5189,7 @@ func _archive_confirmed_formal_slot() -> Dictionary:
 	if target_slot_id.is_empty():
 		return _failure("STARTUP_SAVE_SLOT_ID_INVALID", false)
 	if not bool(_new_game_route_context.get("overwriteConfirmed", false)):
-		var unexpected_save := _discover_startup_slot(target_slot_id)
+		var unexpected_save := _discover_startup_slot_for_overwrite(target_slot_id)
 		if bool(unexpected_save.get("ok", false)):
 			return _failure("FORMAL_SLOT_OVERWRITE_CONFIRMATION_REQUIRED", false)
 		if String(unexpected_save.get("errorCode", "")) not in [
@@ -5021,7 +5214,7 @@ func _archive_confirmed_formal_slot() -> Dictionary:
 	if not expected_value is Dictionary:
 		return _failure("FORMAL_SLOT_ARCHIVE_CONTEXT_INVALID", false)
 	var expected := expected_value as Dictionary
-	var latest := _discover_startup_slot(target_slot_id)
+	var latest := _discover_startup_slot_for_overwrite(target_slot_id)
 	if not bool(latest.get("ok", false)):
 		return latest
 	var latest_summary := latest.get("summary", {}) as Dictionary
@@ -5063,6 +5256,12 @@ func _start_formal_continue(
 	if not bool(discovery.get("ok", false)):
 		_publish_startup_result(discovery)
 		return
+	var compatibility_gate := SAVE_COMPATIBILITY.restore_gate(
+		discovery.get("compatibility", {}) as Dictionary,
+	)
+	if compatibility_gate.get("ok") != true:
+		_publish_startup_result(compatibility_gate)
+		return
 	if (
 		bool(discovery.get("requiresRecoveryConfirmation", false))
 		and not bool(recovery_confirmed)
@@ -5074,6 +5273,7 @@ func _start_formal_continue(
 			else "continue",
 		)
 		return
+	discovery["recoveryConfirmed"] = bool(recovery_confirmed)
 	var route_kind := route_kind_override.strip_edges()
 	if not route_kind in ["continue", "load_game"]:
 		route_kind = (
@@ -5142,8 +5342,53 @@ func _start_formal_continue(
 			provider_runtime.get("providerConfigs", {}) as Dictionary
 		).duplicate(true),
 	}, self) as Dictionary
+	var recovery_plan_for_gate := (
+		discovery.get("recoveryPlan", {}) as Dictionary
+	).duplicate(true)
+	var recovery_action := String(recovery_plan_for_gate.get("action", ""))
+	var recovery_mode := recovery_action in [
+		SAVE_RECONCILIATION_SERVICE.RECONCILE_ACTION,
+		SAVE_RECOVERY_PLANNER.REPUBLISH_ACTION,
+	]
 	if not bool(provider_configuration.get("ok", false)):
-		_publish_startup_result(provider_configuration)
+		if not recovery_mode:
+			_publish_startup_result(provider_configuration)
+			return
+		_queue_model_unavailable_notice(provider_configuration)
+	if recovery_mode:
+		# Recovery only republishes the last complete World + Agent pair. It must
+		# not depend on a live model connection: a depleted quota or an offline
+		# provider should be reported after the data repair, not prevent it.
+		_advance_town_entry_loading(0.34, "正在检查存档完整性…")
+		var provider_service := _provider_service as TownAgentProviderService
+		var health_started := provider_service.request_health_check(
+			bindings.duplicate(true),
+			func(health_result: Dictionary) -> void:
+				_on_formal_recovery_provider_health_completed(
+					health_result,
+					generation,
+				)
+		) as Dictionary
+		if not bool(health_started.get("accepted", false)):
+			_queue_model_unavailable_notice(health_started)
+		_on_formal_continue_provider_health_completed(
+			{
+				"ok": true,
+				"accepted": true,
+				"status": "available",
+				"errorCode": "",
+				"retryable": false,
+			},
+			generation,
+			discovery.duplicate(true),
+			world_data.duplicate(true),
+			identities.duplicate(true),
+			bindings.duplicate(true),
+			resident_names.duplicate(),
+			provider_runtime.duplicate(true),
+			{},
+			true,
+		)
 		return
 	_advance_town_entry_loading(0.34, "正在检查居民连接…")
 	var health_started := _provider_service.call(
@@ -5156,10 +5401,26 @@ func _start_formal_continue(
 			identities.duplicate(true),
 			bindings.duplicate(true),
 			resident_names.duplicate(),
+			provider_runtime.duplicate(true),
+			{},
 		),
 	) as Dictionary
 	if not bool(health_started.get("accepted", false)):
-		_publish_startup_result(health_started)
+		var repair_started := _start_formal_continue_binding_repair(
+			health_started,
+			generation,
+			discovery,
+			world_data,
+			identities,
+			bindings,
+			resident_names,
+			provider_runtime,
+		)
+		if not bool(repair_started.get("accepted", false)):
+			_publish_startup_result(_with_continue_binding_recovery(
+				health_started,
+				repair_started,
+			))
 
 
 func _on_formal_continue_provider_health_completed(
@@ -5170,19 +5431,41 @@ func _on_formal_continue_provider_health_completed(
 	identities: Array,
 	bindings: Array,
 	resident_names: Array,
+	provider_runtime: Dictionary,
+	repair_notice: Dictionary = {},
+	bypass_model_gate := false,
 ) -> void:
 	if generation != _flow_generation:
 		return
 	if not bool(health_result.get("ok", false)):
-		_publish_startup_result(health_result)
-		return
-	var binding_validation := _provider_service.call(
-		"check_entry_availability",
-		bindings.duplicate(true),
-	) as Dictionary
-	if not bool(binding_validation.get("ok", false)):
-		_publish_startup_result(binding_validation)
-		return
+		if bypass_model_gate:
+			_queue_model_unavailable_notice(health_result)
+		else:
+			var repair_started := _start_formal_continue_binding_repair(
+				health_result,
+				generation,
+				discovery,
+				world_data,
+				identities,
+				bindings,
+				resident_names,
+				provider_runtime,
+			)
+			if bool(repair_started.get("accepted", false)):
+				return
+			_publish_startup_result(_with_continue_binding_recovery(
+				health_result,
+				repair_started,
+			))
+			return
+	if not bypass_model_gate:
+		var binding_validation := _provider_service.call(
+			"check_entry_availability",
+			bindings.duplicate(true),
+		) as Dictionary
+		if not bool(binding_validation.get("ok", false)):
+			_publish_startup_result(binding_validation)
+			return
 	_advance_town_entry_loading(0.52, "正在准备小镇地图…")
 	var manifest := discovery.get("manifest", {}) as Dictionary
 	var saved_config := discovery.get("sessionConfig", {}) as Dictionary
@@ -5202,6 +5485,7 @@ func _on_formal_continue_provider_health_completed(
 		"residentBindings": bindings.duplicate(true),
 		"capabilityMode": "formal",
 		"formalReady": true,
+		"allowUnavailableModelDuringRestore": bypass_model_gate,
 	}
 	var gateway_result := _gateway.call(
 		"configure_session",
@@ -5244,6 +5528,7 @@ func _on_formal_continue_provider_health_completed(
 		"source": "runtime",
 		"formalReady": true,
 		"providerFormalReady": true,
+		"allowUnavailableModelDuringRestore": bypass_model_gate,
 		"internalPlaytest": false,
 		"internalLivePlaytest": false,
 		"requireAgentGateway": true,
@@ -5286,20 +5571,65 @@ func _on_formal_continue_provider_health_completed(
 		_discard_pending_runtime()
 		_publish_startup_result(service_result)
 		return
-	var restored := restore_service.call(
-		"continue_revision",
-		session_id,
-		restore_revision,
-		world_data,
-		identities,
-		_gateway,
-	) as Dictionary
+	var recovery_plan := (
+		discovery.get("recoveryPlan", {}) as Dictionary
+	).duplicate(true)
+	var reconciliation_receipt: Dictionary = {}
+	if String(recovery_plan.get("action", "")) == (
+		SAVE_RECONCILIATION_SERVICE.RECONCILE_ACTION
+	):
+		if not bool(discovery.get("recoveryConfirmed", false)):
+			_discard_pending_runtime()
+			_publish_startup_result(
+				_failure("SESSION_SAVE_RECOVERY_CONFIRMATION_REQUIRED", false),
+			)
+			return
+		var reconciled := restore_service.execute_reconciliation_plan(
+			recovery_plan,
+			{
+				"confirmed": true,
+				"planId": String(recovery_plan.get("planId", "")),
+			},
+		) as Dictionary
+		if reconciled.get("ok") != true:
+			_discard_pending_runtime()
+			_publish_startup_result(reconciled)
+			return
+		reconciliation_receipt = reconciled.duplicate(true)
+		recovery_plan.clear()
+	var restored: Dictionary
+	if recovery_plan.is_empty():
+		restored = restore_service.restore_discovered_revision(
+			discovery,
+			world_data,
+			identities,
+			_gateway,
+			{
+				"slotDefinitions": FORMAL_SLOT_DEFINITIONS.duplicate(true),
+				"residentMessages": (
+					discovery.get("residentMessages", []) as Array
+				).duplicate(true),
+			},
+			_startup_save_catalog,
+		)
+	else:
+		restored = restore_service.call(
+			"continue_revision",
+			session_id,
+			restore_revision,
+			world_data,
+			identities,
+			_gateway,
+		) as Dictionary
 	if not bool(restored.get("ok", false)):
 		_discard_pending_runtime()
 		_publish_startup_result(restored)
 		return
+	if not reconciliation_receipt.is_empty():
+		restored["reconciliationReceipt"] = reconciliation_receipt
+	var upgraded_on_restore := bool(restored.get("completedByUpgrade", false))
 	_advance_town_entry_loading(0.88, "正在布置小镇…")
-	if runtime.has_method("complete_restored_session"):
+	if not upgraded_on_restore and runtime.has_method("complete_restored_session"):
 		var completion := runtime.call(
 			"complete_restored_session",
 			restored.get("context", {}) as Dictionary,
@@ -5308,6 +5638,63 @@ func _on_formal_continue_provider_health_completed(
 			_discard_pending_runtime()
 			_publish_startup_result(completion)
 			return
+	if not recovery_plan.is_empty():
+		if not bool(discovery.get("recoveryConfirmed", false)):
+			_discard_pending_runtime()
+			_publish_startup_result(
+				_failure("SESSION_SAVE_RECOVERY_CONFIRMATION_REQUIRED", false),
+			)
+			return
+		_advance_town_entry_loading(0.94, "正在发布修复后的完整存档…")
+		var repaired := restore_service.execute_recovery_plan(
+			recovery_plan,
+			{
+				"confirmed": true,
+				"planId": String(recovery_plan.get("planId", "")),
+			},
+			{
+				"residentMessages": (
+					discovery.get("residentMessages", []) as Array
+				).duplicate(true),
+			},
+		) as Dictionary
+		if not bool(repaired.get("ok", false)):
+			_discard_pending_runtime()
+			_publish_startup_result(repaired)
+			return
+		restored["restoredContext"] = (
+			restored.get("context", {}) as Dictionary
+		).duplicate(true)
+		restored["context"] = (
+			repaired.get("context", {}) as Dictionary
+		).duplicate(true)
+		restored["repairReceipt"] = (
+			repaired.get("repairReceipt", {}) as Dictionary
+		).duplicate(true)
+		var repaired_context := repaired.get("context", {}) as Dictionary
+		var verified := _discover_startup_slot(slot_id)
+		var verified_summary := verified.get("summary", {}) as Dictionary
+		if (
+			not bool(verified.get("ok", false))
+			or String(verified.get("slotState", "")) != "healthy"
+			or int(verified_summary.get("saveRevision", -1))
+			!= int(repaired_context.get("save_revision", -1))
+		):
+			_discard_pending_runtime()
+			_publish_startup_result(
+				_failure("SESSION_SAVE_RECOVERY_VERIFICATION_FAILED", false),
+			)
+			return
+		var runtime_revision_update := runtime.record_published_save(
+			repaired_context,
+		) as Dictionary
+		if not bool(runtime_revision_update.get("ok", false)):
+			_discard_pending_runtime()
+			_publish_startup_result(runtime_revision_update)
+			return
+		(restored["repairReceipt"] as Dictionary)["verification"] = (
+			"world_agent_pair_verified"
+		)
 	restored_session_config["restorePending"] = false
 	restored_session_config["saveRevision"] = int(
 		(restored.get("context", {}) as Dictionary).get(
@@ -5316,10 +5703,14 @@ func _on_formal_continue_provider_health_completed(
 		)
 	)
 	restored_session_config["identityStatus"] = "confirmed"
+	if not repair_notice.is_empty():
+		restored_session_config["bindingRepair"] = repair_notice.duplicate(true)
 	_active_session_config = restored_session_config.duplicate(true)
 	_pending_continue_notice = (
 		discovery.get("continueNotice", {}) as Dictionary
 	).duplicate(true)
+	if not repair_notice.is_empty():
+		_pending_continue_notice["automaticBindingRepair"] = repair_notice.duplicate(true)
 	var profile_result := _record_last_played_slot(slot_id)
 	_last_result = (
 		restored.duplicate(true)
@@ -5329,6 +5720,366 @@ func _on_formal_continue_provider_health_completed(
 	if runtime is CanvasItem:
 		(runtime as CanvasItem).show()
 	call_deferred("_enter_pending_town", generation)
+
+
+func _start_formal_continue_binding_repair(
+	original_result: Dictionary,
+	generation: int,
+	discovery: Dictionary,
+	world_data: Dictionary,
+	identities: Array,
+	bindings: Array,
+	resident_names: Array,
+	provider_runtime: Dictionary,
+) -> Dictionary:
+	var candidates := _continue_binding_repair_candidates(
+		provider_runtime,
+		bindings,
+	)
+	if candidates.is_empty():
+		return {
+			"ok": false,
+			"accepted": false,
+			"errorCode": "CONTINUE_BINDING_REPAIR_NO_CANDIDATE",
+			"retryable": false,
+			"candidatesTested": 0,
+		}
+	return _probe_formal_continue_binding_repair_candidate(
+		original_result,
+		generation,
+		discovery,
+		world_data,
+		identities,
+		bindings,
+		resident_names,
+		provider_runtime,
+		candidates,
+		0,
+	)
+
+
+func _continue_binding_repair_candidates(
+	provider_runtime: Dictionary,
+	bindings: Array,
+) -> Array[Dictionary]:
+	var candidates: Array[Dictionary] = []
+	var excluded: Dictionary = {}
+	for value: Variant in bindings:
+		if not value is Dictionary:
+			continue
+		var binding := value as Dictionary
+		var llm := binding.get("llmBinding", {}) as Dictionary
+		var key := _continue_binding_target_key(
+			String(llm.get("providerId", "")),
+			String(llm.get("modelId", "")),
+		)
+		if not key.is_empty():
+			excluded[key] = true
+	_add_continue_binding_repair_candidate(
+		candidates,
+		excluded,
+		String(provider_runtime.get("providerId", "")),
+		String(provider_runtime.get("modelId", "")),
+	)
+	var configs := provider_runtime.get("providerConfigs", {}) as Dictionary
+	for provider_id_value: Variant in configs.keys():
+		if candidates.size() >= 8:
+			break
+		var provider_id := String(provider_id_value)
+		var config := configs.get(provider_id, {}) as Dictionary
+		_add_continue_binding_repair_candidate(
+			candidates,
+			excluded,
+			provider_id,
+			String(config.get("api_model", "")),
+		)
+		if candidates.size() >= 8:
+			break
+		var models_value: Variant = config.get("api_models", [])
+		if models_value is Array:
+			for model_value: Variant in models_value as Array:
+				_add_continue_binding_repair_candidate(
+					candidates,
+					excluded,
+					provider_id,
+					String(model_value),
+				)
+	var listed_value: Variant = _provider_service.call("list_available_models")
+	if listed_value is Array:
+		for model_value: Variant in listed_value as Array:
+			if not model_value is Dictionary:
+				continue
+			var model := model_value as Dictionary
+			if model.has("available") and not bool(model.get("available", false)):
+				continue
+			_add_continue_binding_repair_candidate(
+				candidates,
+				excluded,
+				String(model.get("providerId", model.get("provider_id", ""))),
+				String(model.get("modelId", model.get("id", ""))),
+			)
+			if candidates.size() >= 8:
+				break
+	return candidates
+
+
+func _add_continue_binding_repair_candidate(
+	candidates: Array[Dictionary],
+	excluded: Dictionary,
+	provider_id: String,
+	model_id: String,
+) -> void:
+	provider_id = provider_id.strip_edges()
+	model_id = model_id.strip_edges()
+	if provider_id.is_empty() or model_id.is_empty():
+		return
+	var key := _continue_binding_target_key(provider_id, model_id)
+	if excluded.has(key):
+		return
+	for existing_value: Variant in candidates:
+		var existing := existing_value as Dictionary
+		if _continue_binding_target_key(
+				String(existing.get("providerId", "")),
+				String(existing.get("modelId", "")),
+			) == key:
+			return
+	candidates.append({"providerId": provider_id, "modelId": model_id})
+
+
+func _continue_binding_target_key(provider_id: String, model_id: String) -> String:
+	return "%s\n%s" % [provider_id.strip_edges(), model_id.strip_edges()]
+
+
+func _probe_formal_continue_binding_repair_candidate(
+	original_result: Dictionary,
+	generation: int,
+	discovery: Dictionary,
+	world_data: Dictionary,
+	identities: Array,
+	bindings: Array,
+	resident_names: Array,
+	provider_runtime: Dictionary,
+	candidates: Array,
+	candidate_index: int,
+) -> Dictionary:
+	var candidate := candidates[candidate_index] as Dictionary
+	var started := _provider_service.call(
+		"request_health_check",
+		[candidate.duplicate(true)],
+		Callable(self, "_on_formal_continue_binding_repair_health_completed").bind(
+			original_result.duplicate(true),
+			generation,
+			discovery.duplicate(true),
+			world_data.duplicate(true),
+			identities.duplicate(true),
+			bindings.duplicate(true),
+			resident_names.duplicate(),
+			provider_runtime.duplicate(true),
+			candidates.duplicate(true),
+			candidate_index,
+		),
+	) as Dictionary
+	if not bool(started.get("accepted", false)):
+		return started
+	return started
+
+
+func _on_formal_continue_binding_repair_health_completed(
+	candidate_result: Dictionary,
+	original_result: Dictionary,
+	generation: int,
+	discovery: Dictionary,
+	world_data: Dictionary,
+	identities: Array,
+	bindings: Array,
+	resident_names: Array,
+	provider_runtime: Dictionary,
+	candidates: Array,
+	candidate_index: int,
+) -> void:
+	if generation != _flow_generation:
+		return
+	if not bool(candidate_result.get("ok", false)):
+		var next_index := candidate_index + 1
+		if next_index < candidates.size():
+			var next_started := _probe_formal_continue_binding_repair_candidate(
+				original_result,
+				generation,
+				discovery,
+				world_data,
+				identities,
+				bindings,
+				resident_names,
+				provider_runtime,
+				candidates,
+				next_index,
+			)
+			if bool(next_started.get("accepted", false)):
+				return
+		_publish_startup_result(_with_continue_binding_recovery(
+			original_result,
+			{
+				"errorCode": "CONTINUE_BINDING_REPAIR_NO_AVAILABLE_CANDIDATE",
+				"retryable": bool(candidate_result.get("retryable", false)),
+				"candidatesTested": candidate_index + 1,
+			},
+		))
+		return
+	var candidate := candidates[candidate_index] as Dictionary
+	var repaired: Array[Dictionary] = []
+	var replaced_count := 0
+	for value: Variant in bindings:
+		if not value is Dictionary:
+			continue
+		var binding := (value as Dictionary).duplicate(true)
+		var llm := binding.get("llmBinding", {}) as Dictionary
+		var provider_id := String(llm.get("providerId", ""))
+		var model_id := String(llm.get("modelId", ""))
+		if not _continue_health_target_available(original_result, provider_id, model_id):
+			binding["llmBinding"] = {
+				"mode": "model",
+				"providerId": String(candidate.get("providerId", "")),
+				"modelId": String(candidate.get("modelId", "")),
+			}
+			replaced_count += 1
+		repaired.append(binding)
+	if replaced_count <= 0:
+		_publish_startup_result(_with_continue_binding_recovery(
+			original_result,
+			{
+				"errorCode": "CONTINUE_BINDING_REPAIR_NO_CHANGED_BINDING",
+				"retryable": false,
+				"candidatesTested": candidate_index + 1,
+			},
+		))
+		return
+	var repair_notice := {
+		"applied": true,
+		"replacedCount": replaced_count,
+		"providerId": String(candidate.get("providerId", "")),
+		"modelId": String(candidate.get("modelId", "")),
+		"candidatesTested": candidate_index + 1,
+	}
+	_on_formal_continue_provider_health_completed(
+		{
+			"ok": true,
+			"accepted": true,
+			"status": "available",
+			"errorCode": "",
+			"retryable": false,
+		},
+		generation,
+		discovery,
+		world_data,
+		identities,
+		repaired,
+		resident_names,
+		provider_runtime,
+		repair_notice,
+	)
+
+
+func _continue_health_target_available(
+	health_result: Dictionary,
+	provider_id: String,
+	model_id: String,
+) -> bool:
+	for value: Variant in health_result.get("targets", []) as Array:
+		if not value is Dictionary:
+			continue
+		var target := value as Dictionary
+		if (
+			String(target.get("providerId", "")) == provider_id
+			and String(target.get("modelId", "")) == model_id
+		):
+			return String(target.get("status", "")) == "available"
+	return false
+
+
+func _with_continue_binding_recovery(
+	result: Dictionary,
+	recovery_result: Dictionary,
+) -> Dictionary:
+	var final_result := result.duplicate(true)
+	final_result["recovery"] = {
+		"attempted": true,
+		"automatic": true,
+		"errorCode": String(recovery_result.get("errorCode", "")),
+		"candidatesTested": int(recovery_result.get("candidatesTested", 0)),
+	}
+	return final_result
+
+
+func _on_formal_recovery_provider_health_completed(
+	health_result: Dictionary,
+	generation: int,
+) -> void:
+	if generation != _flow_generation:
+		return
+	if (
+		bool(health_result.get("ok", false))
+		and String(health_result.get("status", "")) == "available"
+	):
+		return
+	_queue_model_unavailable_notice(health_result)
+
+
+func _queue_model_unavailable_notice(result: Dictionary) -> void:
+	_model_unavailable_notice_sequence += 1
+	_pending_model_unavailable_notice = {
+		"noticeId": "model_unavailable_after_recovery-%d" % _model_unavailable_notice_sequence,
+		"errorCode": String(result.get("errorCode", "LLM_MODEL_UNAVAILABLE")),
+	}
+	if is_instance_valid(_town_ui_host):
+		call_deferred("_present_pending_model_unavailable_notice")
+
+
+func _present_pending_model_unavailable_notice() -> void:
+	if _pending_model_unavailable_notice.is_empty():
+		return
+	if (
+		not is_instance_valid(_town_ui_host)
+		or not _town_ui_host.has_method("present_feedback")
+	):
+		return
+	var notice := _pending_model_unavailable_notice.duplicate(true)
+	var notice_id := String(notice.get("noticeId", "model_unavailable_after_recovery"))
+	var town_ui_host := _town_ui_host as TownUiRuntimeHost
+	if town_ui_host == null:
+		return
+	var presented := town_ui_host.present_feedback({
+		"scope": "startup",
+		"status": "ready",
+		"revision": _model_unavailable_notice_sequence,
+		"data": {
+			"source": "runtime",
+			"capabilityMode": "formal",
+			"formalReady": true,
+			"feedback": {
+				"feedbackId": "startup-%s" % notice_id,
+				"component": "toast",
+				"tone": "warning",
+				"title": "模型不可用",
+				"message": "存档已修复，请打开暂停菜单中的“模型设置”更换模型。",
+				"blocking": false,
+				"dismissPolicy": "auto_or_manual",
+				"durationMsec": 9000,
+				"anchor": "viewport_top_right",
+				"dedupeKey": "startup.%s" % notice_id,
+			},
+		},
+		"actions": {},
+		"operation": {
+			"requestId": "startup-%s" % notice_id,
+			"intent": "session.continue",
+			"status": "success",
+			"submittedAtMsec": 0,
+			"completedAtMsec": Time.get_ticks_msec(),
+		},
+		"error": null,
+	}) as Dictionary
+	if bool(presented.get("ok", false)):
+		_pending_model_unavailable_notice.clear()
 
 
 func _on_bootstrap_completed(result: Dictionary, generation: int) -> void:
@@ -5962,6 +6713,7 @@ func _startup_slot_projection(slot: Dictionary) -> Dictionary:
 		"state": String(slot.get("state", "empty")),
 		"recoveryState": String(slot.get("recoveryState", "none")),
 		"continueAvailable": bool(slot.get("continueAvailable", false)),
+		"diagnosticAvailable": bool(slot.get("diagnosticAvailable", false)),
 		"requiresRecoveryConfirmation": bool(
 			slot.get("requiresRecoveryConfirmation", false),
 		),
@@ -6358,7 +7110,9 @@ func _set_resident_selection_delete_failure(result: Dictionary) -> void:
 func _resident_selection_delete_failure_message(error_code: String) -> String:
 	match error_code:
 		"RESIDENT_DELETE_MINIMUM_CANDIDATES_REQUIRED":
-			return "本局至少需要保留 15 名候选居民。"
+			return "本局至少需要保留 %d 名候选居民。" % (
+				POPULATION_RULES.DEFAULT_RESIDENT_COUNT
+			)
 		"RESIDENT_DELETE_REVISION_STALE", \
 		"CUSTOM_RESIDENT_DELETE_REVISION_STALE", \
 		"CUSTOM_RESIDENT_CANDIDATE_POOL_REVISION_STALE", \
@@ -6543,28 +7297,47 @@ func _discover_startup_slot(slot_id: String, include_config := false) -> Diction
 	var catalog := _startup_catalog_snapshot()
 	if not bool(catalog.get("ok", false)):
 		return catalog
-	for slot_value: Variant in catalog.get("slots", []) as Array:
-		if not slot_value is Dictionary:
-			continue
-		var slot := slot_value as Dictionary
-		if String(slot.get("slotId", "")) != slot_id:
-			continue
-		if not bool(slot.get("continueAvailable", false)):
-			var error_code := String(slot.get("errorCode", "")).strip_edges()
-			if error_code.is_empty():
-				error_code = "SESSION_SAVE_NO_PUBLISHED_REVISION"
-			return _failure(
-				error_code,
-				false,
-			)
-		return _catalog_slot_discovery(slot, include_config)
-	return _failure("STARTUP_SAVE_SLOT_ID_INVALID", false)
+	var slot := _startup_slot_by_id(catalog, slot_id)
+	if slot.is_empty():
+		return _failure("STARTUP_SAVE_SLOT_ID_INVALID", false)
+	if (
+		not bool(slot.get("continueAvailable", false))
+		and not bool(slot.get("diagnosticAvailable", false))
+	):
+		var error_code := String(slot.get("errorCode", "")).strip_edges()
+		if error_code.is_empty():
+			error_code = "SESSION_SAVE_NO_PUBLISHED_REVISION"
+		return _failure(error_code, false)
+	return _catalog_slot_discovery(slot, include_config)
+
+
+func _discover_startup_slot_for_overwrite(slot_id: String) -> Dictionary:
+	var catalog := _startup_catalog_snapshot()
+	if not bool(catalog.get("ok", false)):
+		return catalog
+	var slot := _startup_slot_by_id(catalog, slot_id)
+	if slot.is_empty():
+		return _failure("STARTUP_SAVE_SLOT_ID_INVALID", false)
+	if String(slot.get("state", "empty")) == "empty":
+		return _failure("SESSION_SAVE_NO_PUBLISHED_REVISION", false)
+	return _catalog_slot_discovery(slot, false)
 
 
 func _catalog_slot_discovery(slot: Dictionary, include_config: bool) -> Dictionary:
 	var manifest := (slot.get("manifest", {}) as Dictionary).duplicate(true)
 	var summary := (slot.get("summary", {}) as Dictionary).duplicate(true)
-	if manifest.is_empty() or summary.is_empty():
+	var diagnostic_only := bool(slot.get("diagnosticAvailable", false))
+	if summary.is_empty() and diagnostic_only:
+		summary = {
+			"slotId": String(slot.get("slotId", "")),
+			"sessionId": "",
+			"saveRevision": int(slot.get("latestEvidenceRevision", 0)),
+			"savedAt": "",
+			"residentCount": 0,
+			"worldRevision": -1,
+			"day": 0,
+		}
+	if (manifest.is_empty() and not diagnostic_only) or summary.is_empty():
 		return _failure("SESSION_SAVE_NO_PUBLISHED_REVISION", false)
 	var result := {
 		"ok": true,
@@ -6577,6 +7350,7 @@ func _catalog_slot_discovery(slot: Dictionary, include_config: bool) -> Dictiona
 		"requiresRecoveryConfirmation": bool(
 			slot.get("requiresRecoveryConfirmation", false),
 		),
+		"diagnosticAvailable": bool(slot.get("diagnosticAvailable", false)),
 		"recoveryProgressRollback": bool(
 			slot.get("recoveryProgressRollback", false),
 		),
@@ -6589,6 +7363,18 @@ func _catalog_slot_discovery(slot: Dictionary, include_config: bool) -> Dictiona
 		"agentIntegrity": String(
 			slot.get("agentIntegrity", "manifest_committed_unverified"),
 		),
+		"recoveryPlan": (
+			slot.get("recoveryPlan", {}) as Dictionary
+		).duplicate(true),
+		"residentMessages": (
+			slot.get("residentMessages", []) as Array
+		).duplicate(true),
+		"compatibilityEvidence": (
+			slot.get("compatibilityEvidence", {}) as Dictionary
+		).duplicate(true),
+		"compatibility": (
+			slot.get("compatibility", {}) as Dictionary
+		).duplicate(true),
 	}
 	if include_config:
 		result["sessionConfig"] = (
@@ -6747,6 +7533,9 @@ func _startup_failure_message(result: Dictionary, prefix: String) -> String:
 	).strip_edges()
 	if error_code.is_empty():
 		error_code = "SESSION_CONTINUE_FAILED"
+	var recovery := result.get("recovery", {}) as Dictionary
+	if bool(recovery.get("attempted", false)):
+		return "%s：存档中的模型绑定已失效，系统已自动尝试迁移；当前配置仍没有可用模型，请补充有效 API Key 或可用模型后重试" % prefix
 	var player_code := UI_VIEW_MODEL.player_reason(error_code)
 	var player_message := _explicit_player_message(result)
 	if player_message.is_empty():

@@ -11,6 +11,8 @@ static func definition(kind: String) -> Dictionary:
 	return (
 		{
 			"clinic": {
+				"serviceLabel": "问诊",
+				"unstaffedBehavior": "continuity",
 				"placeId": CONTENT_CATALOG.PLACE_CLINIC,
 				"placeService": true,
 				"capability": "care.consult",
@@ -20,6 +22,8 @@ static func definition(kind: String) -> Dictionary:
 				"targetKind": "service_request",
 			},
 			"library_loan": {
+				"serviceLabel": "借阅",
+				"unstaffedBehavior": "pause",
 				"placeId": CONTENT_CATALOG.PLACE_LIBRARY,
 				"placeService": true,
 				"capability": "library.loan",
@@ -29,6 +33,8 @@ static func definition(kind: String) -> Dictionary:
 				"targetKind": "service_request",
 			},
 			"library_return": {
+				"serviceLabel": "还书",
+				"unstaffedBehavior": "pause",
 				"placeId": CONTENT_CATALOG.PLACE_LIBRARY,
 				"placeService": false,
 				"capability": "library.return",
@@ -38,6 +44,8 @@ static func definition(kind: String) -> Dictionary:
 				"targetKind": "service_request",
 			},
 			"library_assist": {
+				"serviceLabel": "馆员协助",
+				"unstaffedBehavior": "pause",
 				"placeId": CONTENT_CATALOG.PLACE_LIBRARY,
 				"placeService": false,
 				"capability": "library.assist",
@@ -47,6 +55,8 @@ static func definition(kind: String) -> Dictionary:
 				"targetKind": "service_request",
 			},
 			"civic_request": {
+				"serviceLabel": "镇务办理",
+				"unstaffedBehavior": "pause",
 				"placeId": CONTENT_CATALOG.PLACE_TOWN_HALL,
 				"placeService": false,
 				"capability": "civic.service",
@@ -56,6 +66,8 @@ static func definition(kind: String) -> Dictionary:
 				"targetKind": "service_request",
 			},
 			"repair": {
+				"serviceLabel": "维修",
+				"unstaffedBehavior": "pause",
 				"placeId": CONTENT_CATALOG.PLACE_WORKSHOP,
 				"placeService": true,
 				"capability": "craft.repair",
@@ -65,6 +77,8 @@ static func definition(kind: String) -> Dictionary:
 				"targetKind": "service_request",
 			},
 			"dining_order": {
+				"serviceLabel": "正式供餐",
+				"unstaffedBehavior": "continuity",
 				"placeId": CONTENT_CATALOG.PLACE_DINING_HALL,
 				"placeService": true,
 				"capability": "food.service",
@@ -75,6 +89,8 @@ static func definition(kind: String) -> Dictionary:
 				"defaultItemId": "meal",
 			},
 			"cafe_order": {
+				"serviceLabel": "咖啡点单",
+				"unstaffedBehavior": "pause",
 				"placeId": CONTENT_CATALOG.PLACE_CAFE,
 				"placeService": true,
 				"capability": "cafe.order",
@@ -85,6 +101,8 @@ static func definition(kind: String) -> Dictionary:
 				"defaultItemId": CONTENT_CATALOG.ITEM_BREWED_COFFEE,
 			},
 			"grocer_sale": {
+				"serviceLabel": "杂货销售",
+				"unstaffedBehavior": "pause",
 				"placeId": CONTENT_CATALOG.PLACE_MARKET,
 				"placeService": false,
 				"capability": "retail.sale",
@@ -95,6 +113,8 @@ static func definition(kind: String) -> Dictionary:
 				"defaultItemId": CONTENT_CATALOG.ITEM_GENERAL_GOODS,
 			},
 			"flower_sale": {
+				"serviceLabel": "鲜花销售",
+				"unstaffedBehavior": "pause",
 				"placeId": CONTENT_CATALOG.PLACE_MARKET,
 				"placeService": false,
 				"capability": "retail.sale",
@@ -105,6 +125,8 @@ static func definition(kind: String) -> Dictionary:
 				"defaultItemId": CONTENT_CATALOG.ITEM_FRESH_FLOWERS,
 			},
 			"performance": {
+				"serviceLabel": "演出",
+				"unstaffedBehavior": "pause",
 				"placeId": CONTENT_CATALOG.PLACE_PLAZA,
 				"placeService": false,
 				"capability": "music.perform",

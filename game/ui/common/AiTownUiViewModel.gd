@@ -183,6 +183,8 @@ static func player_reason(reason: Variant) -> String:
 		"REQUEST_ALREADY_SUBMITTED", "DUPLICATE_REQUEST_PENDING", \
 		"OPERATION_IN_FLIGHT", "SAVE_CREATE_ALREADY_PENDING":
 			return "操作正在进行，请稍候"
+		"OCCUPATION_SERVICE_UNSTAFFED":
+			return "对应岗位当前无人可执行，这项服务已经暂停"
 		"SESSION_SAVE_NO_PUBLISHED_REVISION":
 			return "当前没有可用的完整存档"
 		"SESSION_SAVE_CORRUPT":

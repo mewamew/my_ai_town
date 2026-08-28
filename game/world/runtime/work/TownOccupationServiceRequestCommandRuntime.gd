@@ -8,6 +8,9 @@ const OCCUPATION_SERVICE_DEFINITION := preload(
 const OCCUPATION_SERVICE_REQUEST_RUNTIME := preload(
 	"res://world/runtime/work/TownOccupationServiceRequestRuntime.gd"
 )
+const OCCUPATION_SERVICE_STAFFING_RUNTIME := preload(
+	"res://world/runtime/work/TownOccupationServiceStaffingRuntime.gd"
+)
 const OCCUPATION_SERVICE_REQUEST_COMMIT := preload(
 	"res://world/runtime/work/TownOccupationServiceRequestCommit.gd"
 )
@@ -55,6 +58,15 @@ static func create(host, spec: Dictionary) -> Dictionary:
 	if prepared.get("ok") != true:
 		return host._decorate_command_result(prepared)
 	definition = prepared.get("definition", {}) as Dictionary
+	var staffing_failure := (
+		OCCUPATION_SERVICE_STAFFING_RUNTIME.paused_request_failure(
+			host,
+			kind,
+			definition,
+		) as Dictionary
+	)
+	if not staffing_failure.is_empty():
+		return host._decorate_command_result(staffing_failure)
 	var request_context := prepared.get("context", {}) as Dictionary
 	if kind == "dining_order":
 		var reused: Dictionary = host.DINING_ORDER_COORDINATION_RUNTIME.reuse_existing(host,

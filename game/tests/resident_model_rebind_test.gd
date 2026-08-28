@@ -30,6 +30,14 @@ class FakeSessionService:
 	extends RefCounted
 	var bindings: Array = []
 	var saved := false
+	var async_active := true
+	var finish_calls := 0
+	func has_active_create_save_async() -> bool:
+		return async_active
+	func finish_create_save_async() -> Dictionary:
+		finish_calls += 1
+		async_active = false
+		return {"ok": true, "errorCode": "", "retryable": false}
 	func update_resident_bindings(value: Variant) -> Dictionary:
 		bindings = (value as Array).duplicate(true)
 		return {"ok": true, "errorCode": "", "retryable": false, "changed": true}
@@ -63,6 +71,14 @@ class FakeProviderService:
 		return {"ok": true, "errorCode": "", "retryable": false}
 
 
+class FakeAdapter:
+	extends Node
+	var bound_service: Object
+	func bind_resident_model_assignment_service(service: Object) -> Dictionary:
+		bound_service = service
+		return {"ok": true, "errorCode": "", "retryable": false}
+
+
 var _failures: Array[String] = []
 
 
@@ -92,8 +108,10 @@ func _run() -> void:
 	_expect(gateway.bindings == updated, "Agent 网关收到新绑定")
 	_expect(runtime.bindings == updated, "小镇运行时收到新绑定")
 	_expect(session.bindings == updated and session.saved, "改绑会更新存档并立即保存")
+	_expect(session.finish_calls == 1, "改绑前先收口活动自动保存")
 	_test_completed_assignment_rebind_action()
 	_test_single_resident_assignment_mode()
+	_test_low_population_in_session_assignment()
 	host.set("_gateway", null)
 	host.set("_town_runtime", null)
 	host.set("_session_ui_service", null)
@@ -153,6 +171,53 @@ func _test_single_resident_assignment_mode() -> void:
 		not bool((actions.get("selectAllBatch", {}) as Dictionary).get("enabled", true)),
 		"入镇绑定页禁用全选",
 	)
+
+
+func _test_low_population_in_session_assignment() -> void:
+	var host := HOST.new()
+	var adapter := FakeAdapter.new()
+	var residents: Array[Dictionary] = []
+	var bindings: Array[Dictionary] = []
+	for index in 5:
+		var resident_id := "custom_low_population_%02d" % (index + 1)
+		residents.append({
+			"residentId": resident_id,
+			"attributes": {"name": "少人口居民%d" % (index + 1)},
+		})
+		bindings.append({
+			"residentId": resident_id,
+			"llmBinding": {
+				"mode": "model",
+				"providerId": "deepseek",
+				"modelId": "deepseek-chat",
+			},
+		})
+	host.set("_provider_service", FakeProviderService.new())
+	host.set("_active_session_config", {
+		"openingConfig": {"residents": residents},
+		"residentBindings": bindings,
+	})
+	var configured := host._configure_in_session_resident_model_assignment(
+		adapter,
+	) as Dictionary
+	_expect(
+		bool(configured.get("ok", false)),
+		"五人存档可以打开局内居民模型批量编辑",
+	)
+	_expect(adapter.bound_service != null, "五人模型编辑服务已绑定到正式界面适配器")
+	if adapter.bound_service != null:
+		var view_model := adapter.bound_service.call("get_view_model") as Dictionary
+		var data := view_model.get("data", {}) as Dictionary
+		_expect(
+			int(data.get("residentCount", 0)) == 5,
+			"局内模型批量编辑只显示存档中的五位居民",
+		)
+		_expect(
+			(data.get("residents", []) as Array).size() == 5,
+			"局内模型批量编辑不会补出十个虚假槽位",
+		)
+	host.free()
+	adapter.free()
 
 
 func _test_completed_assignment_rebind_action() -> void:

@@ -6,6 +6,7 @@ const UiNodeRetirement := preload("res://ui/common/AiTownUiNodeRetirement.gd")
 
 const UiViewModel := preload("res://ui/common/AiTownUiViewModel.gd")
 const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
+const POPULATION_RULES := preload("res://world/runtime/TownPopulationRules.gd")
 
 
 signal resident_selection_requested(resident_id: String, should_select: bool, revision: int)
@@ -88,7 +89,9 @@ const FONT_STATUS := 20
 const FONT_BODY := 32
 const FONT_EMPHASIS := 48
 const LINE_SPACING := 6
-const STRICT_SESSION_SLOT_COUNT := 15
+const MIN_SESSION_RESIDENT_COUNT := POPULATION_RULES.MIN_RESIDENT_COUNT
+const DEFAULT_SESSION_RESIDENT_COUNT := POPULATION_RULES.DEFAULT_RESIDENT_COUNT
+const MAX_SESSION_RESIDENT_COUNT := POPULATION_RULES.MAX_RESIDENT_COUNT
 const SELECTION_SUMMARY_MAX_CHARACTERS := 24
 const TOUCH_TARGET_MIN := 48
 
@@ -122,7 +125,9 @@ var _view_model: Dictionary = {}
 var _view_model_actions: Dictionary = {}
 var _view_model_revision := 0
 var _candidate_pool_revision := 0
-var _selection_limit := STRICT_SESSION_SLOT_COUNT
+var _selection_minimum := MIN_SESSION_RESIDENT_COUNT
+var _selection_default := DEFAULT_SESSION_RESIDENT_COUNT
+var _selection_limit := MAX_SESSION_RESIDENT_COUNT
 var _connection_label := "开发占位 · 未连接真实 AI"
 var _formal_ready := false
 var _capability_mode := "placeholder"
@@ -130,6 +135,7 @@ var _data_source := "placeholder"
 var _resident_catalog_status := "placeholder"
 var _internal_playtest := false
 var _confirmation_payload: Dictionary = {}
+var _staffing_warnings: Array[Dictionary] = []
 var _draft_revision_floor := 0
 var _operation: Dictionary = {}
 var _error_value: Variant = null
@@ -494,6 +500,8 @@ func _consume_view_model(snapshot: Dictionary) -> bool:
 		"source",
 		"formalReady",
 		"internalPlaytest",
+		"selection_minimum",
+		"selection_default",
 		"selection_limit",
 		"connection_label",
 		"candidate_pool_revision",
@@ -512,17 +520,23 @@ func _consume_view_model(snapshot: Dictionary) -> bool:
 	var resident_entries: Variant = data.get("residents", [])
 	if (
 		not resident_entries is Array
-		or resident_entries.size() < STRICT_SESSION_SLOT_COUNT
+		or resident_entries.size() < DEFAULT_SESSION_RESIDENT_COUNT
 	):
-		push_error("居民选择页本局候选列表至少需要 15 位居民。")
+		push_error("居民选择页候选列表不足默认开局人数。")
 		return false
 
 	_view_model = snapshot.duplicate(true)
 	_view_model_revision = int(snapshot.get("revision", 0))
 	_view_model_actions = (actions_value as Dictionary).duplicate(true)
-	_selection_limit = int(data.get("selection_limit", STRICT_SESSION_SLOT_COUNT))
-	if _selection_limit != STRICT_SESSION_SLOT_COUNT:
-		push_error("居民选择页 selection_limit 必须固定为 15。")
+	_selection_minimum = int(data.get("selection_minimum", MIN_SESSION_RESIDENT_COUNT))
+	_selection_default = int(data.get("selection_default", DEFAULT_SESSION_RESIDENT_COUNT))
+	_selection_limit = int(data.get("selection_limit", MAX_SESSION_RESIDENT_COUNT))
+	if (
+		_selection_minimum != MIN_SESSION_RESIDENT_COUNT
+		or _selection_default != DEFAULT_SESSION_RESIDENT_COUNT
+		or _selection_limit != MAX_SESSION_RESIDENT_COUNT
+	):
+		push_error("居民选择页人口规则与正式规则不一致。")
 		return false
 	_connection_label = str(data.get("connection_label", "开发占位 · 未连接真实 AI"))
 	_candidate_pool_revision = int(data.get("candidate_pool_revision", 0))
@@ -534,6 +548,14 @@ func _consume_view_model(snapshot: Dictionary) -> bool:
 	_confirmation_payload = _normalize_roster_draft_for_selection(
 		data.get("confirmation_payload", {}) as Dictionary
 	)
+	_staffing_warnings.clear()
+	var staffing_warnings_value: Variant = data.get("staffing_warnings", [])
+	if staffing_warnings_value is Array:
+		for warning_value: Variant in staffing_warnings_value as Array:
+			if warning_value is Dictionary:
+				_staffing_warnings.append(
+					(warning_value as Dictionary).duplicate(true),
+				)
 	_draft_revision_floor = maxi(
 		_draft_revision_floor,
 		int(_confirmation_payload.get("draftRevision", 0))
@@ -568,8 +590,8 @@ func _consume_view_model(snapshot: Dictionary) -> bool:
 				resident["speech"] = str(catalog_attributes.get("speech", "")).strip_edges()
 			candidate_ids[resident_id] = true
 			_residents.append(resident)
-	if _residents.size() < STRICT_SESSION_SLOT_COUNT:
-		push_error("居民选择页必须至少保留 15 名候选居民。")
+	if _residents.size() < DEFAULT_SESSION_RESIDENT_COUNT:
+		push_error("居民选择页必须保留足够生成默认名单的候选居民。")
 		return false
 	for deleted_id: Variant in _delete_selected_by_id.keys():
 		if not candidate_ids.has(String(deleted_id)):
@@ -1475,7 +1497,7 @@ func _toggle_delete_candidate(index: int) -> void:
 		return
 	var is_marked := _delete_selected_by_id.has(resident_id)
 	if not is_marked and _delete_selected_by_id.size() >= _maximum_deletable_count():
-		_show_notice("本局至少需要保留 15 名候选居民。")
+		_show_notice("本局至少需要保留 %d 名候选居民。" % _selection_default)
 		_refresh_all()
 		return
 	if is_marked:
@@ -1782,7 +1804,7 @@ func _apply_recommended_selection(show_feedback: bool = true) -> void:
 	var request_revision := _view_model_revision
 	_selected_by_id.clear()
 	for resident_id: String in _recommended_ids:
-		if _selected_by_id.size() >= STRICT_SESSION_SLOT_COUNT:
+		if _selected_by_id.size() >= _selection_default:
 			break
 		_selected_by_id[resident_id] = true
 	_invalidate_roster_draft_for_selection_change()
@@ -1828,9 +1850,18 @@ func _refresh_operation() -> void:
 	if capture_status in ["idle", "loading", "success", "rejected", "error", "disabled"]:
 		status = capture_status
 	if status == "idle":
-		_notice_label.text = ""
-		_notice_label.visible = false
-		_subtitle.visible = _layout_mode == LayoutMode.DESKTOP
+		var show_staffing_warning := (
+			not _delete_mode_active
+			and POPULATION_RULES.supports_resident_count(_selected_by_id.size())
+			and not _staffing_warnings.is_empty()
+		)
+		_notice_label.text = (
+			_staffing_warning_summary() if show_staffing_warning else ""
+		)
+		_notice_label.visible = show_staffing_warning
+		_subtitle.visible = (
+			_layout_mode == LayoutMode.DESKTOP and not show_staffing_warning
+		)
 		return
 	var message := str(_operation.get("message", ""))
 	if status in ["rejected", "error", "disabled"] and _error_value is Dictionary:
@@ -2089,7 +2120,7 @@ func _refresh_count() -> void:
 		_confirm_button.tooltip_text = (
 			"确认从本局候选列表删除已标记居民"
 			if not _confirm_button.disabled
-			else "请先勾选要删除的居民；本局至少保留 15 人"
+			else "请先勾选要删除的居民；候选库至少保留 %d 人" % _selection_default
 		)
 		return
 	var count := _selected_by_id.size()
@@ -2100,22 +2131,22 @@ func _refresh_count() -> void:
 	_recommended_text.text = "推荐组合" if _layout_mode == LayoutMode.DESKTOP else "推荐"
 	_clear_text.text = "清空"
 	_count_label.text = (
-		"已选 %d / %d · 本局入镇名单" % [count, STRICT_SESSION_SLOT_COUNT]
+		"已选 %d 人 · 可入镇 %d～%d 人" % [count, _selection_minimum, _selection_limit]
 		if _layout_mode == LayoutMode.DESKTOP
-		else "已选 %d / %d" % [count, STRICT_SESSION_SLOT_COUNT]
+		else "已选 %d / %d" % [count, _selection_limit]
 	)
 	_count_label.visible = _layout_mode != LayoutMode.PHONE_PORTRAIT
 	_confirm_text.text = (
-		"确认 · %d/%d" % [count, STRICT_SESSION_SLOT_COUNT]
+		"确认 · %d 人" % count
 		if _layout_mode == LayoutMode.PHONE_PORTRAIT
-		else "选择居民模型"
+		else "选择 %d 位居民的模型" % count
 	)
 	_clear_button.disabled = count == 0 or not _action_is_enabled("clear")
 	var current_draft := _build_current_roster_draft()
 	var payload_validation := _validate_confirmation_payload(current_draft)
 	var can_submit_session := (
 		_submission_is_authorized()
-		and count == STRICT_SESSION_SLOT_COUNT
+		and POPULATION_RULES.supports_resident_count(count)
 		and bool(payload_validation.get("passed", false))
 		and _payload_matches_selection(current_draft)
 	)
@@ -2129,14 +2160,42 @@ func _refresh_count() -> void:
 		)
 	elif not _submission_is_authorized():
 		_confirm_button.tooltip_text = "当前会话尚未就绪，不能进入居民模型选择"
-	elif count < STRICT_SESSION_SLOT_COUNT:
-		_confirm_button.tooltip_text = "还差 %d 位居民；选满 15 位后进入模型选择" % (
-			STRICT_SESSION_SLOT_COUNT - count
-		)
+	elif count < _selection_minimum:
+		_confirm_button.tooltip_text = "请至少选择 %d 位居民" % _selection_minimum
 	elif not bool(payload_validation.get("passed", false)):
-		_confirm_button.tooltip_text = "15 槽居民草稿不完整"
+		_confirm_button.tooltip_text = "当前居民名单草稿不完整"
+	elif not _staffing_warnings.is_empty():
+		_confirm_button.tooltip_text = _staffing_warning_summary()
 	else:
 		_confirm_button.tooltip_text = "保留本局名单并进入居民模型选择"
+
+
+func _staffing_warning_summary() -> String:
+	var details: Array[String] = []
+	for warning: Dictionary in _staffing_warnings:
+		var occupation_label := String(
+			warning.get("occupationLabel", ""),
+		).strip_edges()
+		if occupation_label.is_empty():
+			continue
+		var vacancy_effect := String(
+			warning.get("vacancyEffect", ""),
+		).strip_edges()
+		details.append(
+			occupation_label
+			if vacancy_effect.is_empty()
+			else "%s：%s" % [occupation_label, vacancy_effect]
+		)
+		if details.size() >= 3:
+			break
+	var omitted_count := maxi(_staffing_warnings.size() - details.size(), 0)
+	var omitted_suffix := ""
+	if omitted_count > 0:
+		omitted_suffix = "；另有 %d 个职业空缺" % omitted_count
+	return (
+		"职业空缺不会阻止开局。%s%s"
+		% ["；".join(details), omitted_suffix]
+	)
 
 
 func _open_custom_resident_entry() -> void:
@@ -2163,7 +2222,7 @@ func _refresh_delete_mode_control() -> void:
 		if _delete_mode_active
 		else "进入居民删除模式"
 		if not _custom_delete_button.disabled
-		else "本局至少需要保留 15 名候选居民"
+		else "本局至少需要保留 %d 名候选居民" % _selection_default
 	)
 	if _custom_button != null:
 		_custom_button.disabled = (
@@ -2180,7 +2239,7 @@ func _delete_action_is_enabled() -> bool:
 
 
 func _maximum_deletable_count() -> int:
-	return maxi(0, _residents.size() - STRICT_SESSION_SLOT_COUNT)
+	return maxi(0, _residents.size() - DEFAULT_SESSION_RESIDENT_COUNT)
 
 
 func _toggle_delete_mode() -> void:
@@ -2191,7 +2250,10 @@ func _toggle_delete_mode() -> void:
 		_show_notice("当前会话不能删除居民。")
 		return
 	if _maximum_deletable_count() <= 0:
-		_show_notice("本局至少需要保留 15 名候选居民，当前没有可删除名额。")
+		_show_notice(
+			"本局至少需要保留 %d 名候选居民，当前没有可删除名额。"
+			% _selection_default
+		)
 		return
 	_delete_mode_active = true
 	_delete_selected_by_id.clear()
@@ -2219,7 +2281,7 @@ func _confirm_delete_selection() -> void:
 		_show_notice("请先勾选要删除的居民。")
 		return
 	if delete_count > _maximum_deletable_count():
-		_show_notice("本局至少需要保留 15 名候选居民。")
+		_show_notice("本局至少需要保留 %d 名候选居民。" % _selection_default)
 		return
 	var resident_ids: Array = []
 	for resident: Dictionary in _residents:
@@ -2274,23 +2336,24 @@ func _confirm_roster() -> void:
 	if not _submission_is_authorized():
 		_show_notice("当前会话尚未就绪，未进入居民模型选择。")
 		return
-	if _selected_by_id.size() != STRICT_SESSION_SLOT_COUNT:
-		_show_notice("还差 %d 位居民；选满 15 位后才能进入模型选择。" % (
-			STRICT_SESSION_SLOT_COUNT - _selected_by_id.size()
-		))
+	if not POPULATION_RULES.supports_resident_count(_selected_by_id.size()):
+		_show_notice("请先选择 %d～%d 位居民。" % [
+			_selection_minimum,
+			_selection_limit,
+		])
 		return
 	var roster_draft := _build_current_roster_draft()
 	var validation := _validate_confirmation_payload(roster_draft)
 	if not bool(validation.get("passed", false)):
-		_show_notice("15 槽居民草稿不完整，未进入模型选择。")
+		_show_notice("当前居民名单草稿不完整，未进入模型选择。")
 		return
 	if not _payload_matches_selection(roster_draft):
-		_show_notice("15 槽草稿与当前已选居民不一致，未发出提交意图。")
+		_show_notice("名单草稿与当前已选居民不一致，未发出提交意图。")
 		return
 	_confirmation_payload = roster_draft.duplicate(true)
 	_draft_revision_floor = int(roster_draft.get("draftRevision", 1))
 	roster_confirmation_requested.emit(roster_draft, _view_model_revision)
-	_show_notice("名单草稿已保留；正在进入居民模型选择。")
+	_show_notice("%d 位居民的名单已保留；正在进入模型选择。" % _selected_by_id.size())
 
 
 func _build_current_roster_draft() -> Dictionary:
@@ -2367,9 +2430,9 @@ func _payload_matches_selection(payload: Dictionary) -> bool:
 		if not slot_value is Dictionary:
 			return false
 		payload_ids[str((slot_value as Dictionary).get("residentId", ""))] = true
-	if payload_ids.size() != STRICT_SESSION_SLOT_COUNT:
+	if payload_ids.size() != _selected_by_id.size():
 		return false
-	if _selected_by_id.size() != STRICT_SESSION_SLOT_COUNT:
+	if not POPULATION_RULES.supports_resident_count(_selected_by_id.size()):
 		return false
 	for resident_id: Variant in _selected_by_id:
 		if not payload_ids.has(str(resident_id)):
@@ -2393,7 +2456,7 @@ func _validate_confirmation_payload(payload: Dictionary) -> Dictionary:
 			"failures": ["slots_not_array"],
 		}
 	var slots := slots_value as Array
-	if slots.size() != STRICT_SESSION_SLOT_COUNT:
+	if not POPULATION_RULES.supports_resident_count(slots.size()):
 		failures.append("slot_count")
 	var homes: Dictionary = {}
 	var residents: Dictionary = {}
@@ -2412,7 +2475,7 @@ func _validate_confirmation_payload(payload: Dictionary) -> Dictionary:
 		homes[space_id] = true
 		if slot.has("llmBinding"):
 			failures.append("resident_selection_must_not_assign_llm_binding")
-	for home_index in range(1, STRICT_SESSION_SLOT_COUNT + 1):
+	for home_index in range(1, slots.size() + 1):
 		var expected_home := "home_%02d" % home_index
 		if not homes.has(expected_home):
 			failures.append("missing_" + expected_home)
@@ -2707,7 +2770,7 @@ func _apply_header_layout() -> void:
 	if not mobile:
 		_title.text = "选择要删除的居民" if _delete_mode_active else "选择初始居民"
 		_subtitle.text = (
-			"勾选后从本局候选列表移除 · 至少保留 15 人"
+			"勾选后从本局候选列表移除 · 至少保留 %d 人" % _selection_default
 			if _delete_mode_active
 			else "决定谁会在小镇开始生活"
 		)

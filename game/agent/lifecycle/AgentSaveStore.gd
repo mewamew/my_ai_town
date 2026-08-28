@@ -3,6 +3,10 @@ extends RefCounted
 
 
 const AgentFileSystemScript := preload("res://agent/AgentFileSystem.gd")
+const RESIDENT_STATE_CODEC := preload(
+	"res://agent/lifecycle/ResidentStateCodec.gd"
+)
+const RESIDENT_RUNTIME := preload("res://agent/ResidentRuntime.gd")
 const FORMAT_VERSION := 3
 const DEFAULT_STORE_ROOT := "user://agent_saves"
 const TEST_STORE_ROOT := "user://agent_save_tests"
@@ -43,6 +47,12 @@ func configure_test_root(test_root: String) -> Dictionary:
 		return {"ok": false, "errors": ["Agent 测试存储根目录必须位于 %s 下" % TEST_STORE_ROOT]}
 	_store_root = normalized
 	return {"ok": true}
+
+
+func create_isolated_peer() -> RefCounted:
+	var peer: RefCounted = AgentSaveStore.new()
+	peer.set("_store_root", _store_root)
+	return peer
 
 
 func cleanup_test_root() -> Dictionary:
@@ -163,9 +173,6 @@ func load_snapshot(context: Variant) -> Dictionary:
 		var entry := value as Dictionary
 		var resident_id := String(entry.get("resident_id", ""))
 		var resident_name := String(entry.get("resident_name", ""))
-		var file_name := String(entry.get("file", ""))
-		var expected_length: Variant = entry.get("byte_length")
-		var expected_sha256: Variant = entry.get("sha256")
 		if (
 			not _is_safe_resident_id(resident_id)
 			or resident_name.is_empty()
@@ -173,23 +180,14 @@ func load_snapshot(context: Variant) -> Dictionary:
 		):
 			return {"ok": false, "errors": ["Agent 快照居民身份损坏或重复"]}
 		loaded_resident_ids.append(resident_id)
-		if file_name.is_empty() or file_name.get_file() != file_name or used_files.has(file_name):
-			return {"ok": false, "errors": ["Agent 快照居民文件引用无效"]}
+		var payload_result := _read_checked_resident_payload(snapshot_root, entry)
+		if payload_result.get("ok") != true:
+			return payload_result
+		var file_name := String(payload_result.get("fileName", ""))
+		if used_files.has(file_name):
+			return {"ok": false, "errors": ["Agent 快照居民文件引用重复"]}
 		used_files[file_name] = true
-		if not _is_non_negative_integer_number(expected_length):
-			return {"ok": false, "errors": ["Agent 快照居民 %s 的 byte_length 无效" % resident_id]}
-		if typeof(expected_sha256) != TYPE_STRING or String(expected_sha256).length() != 64:
-			return {"ok": false, "errors": ["Agent 快照居民 %s 的 SHA-256 无效" % resident_id]}
-		var payload_path := _join(snapshot_root, file_name)
-		var payload_file := FileAccess.open(payload_path, FileAccess.READ)
-		if payload_file == null:
-			return {"ok": false, "errors": ["Agent 快照缺少居民 %s 的载荷" % resident_id]}
-		var payload := payload_file.get_buffer(payload_file.get_length())
-		payload_file = null
-		if payload.size() != int(expected_length):
-			return {"ok": false, "errors": ["Agent 快照居民 %s 的 byte_length 不一致" % resident_id]}
-		if _sha256(payload) != String(expected_sha256):
-			return {"ok": false, "errors": ["Agent 快照居民 %s 的 SHA-256 不一致" % resident_id]}
+		var payload := payload_result.get("payload") as PackedByteArray
 		resident_payloads[resident_id] = {
 			"resident_name": resident_name,
 			"payload": payload,
@@ -204,6 +202,99 @@ func load_snapshot(context: Variant) -> Dictionary:
 		"context": context_data,
 		"resident_payloads": resident_payloads,
 	}
+
+
+func inspect_snapshot_versions(context: Variant) -> Dictionary:
+	var errors := _validate_context(context)
+	if not errors.is_empty():
+		return {"ok": false, "errors": errors}
+	var context_data := (context as Dictionary).duplicate(true)
+	var slot_result := _read_json(
+		_join(_slot_root(context_data), SLOT_MANIFEST_FILE),
+	)
+	var snapshot_root := _snapshot_root(context_data)
+	var snapshot_result := _read_json(
+		_join(snapshot_root, SNAPSHOT_MANIFEST_FILE),
+	)
+	if slot_result.get("ok") != true:
+		return slot_result
+	if snapshot_result.get("ok") != true:
+		return snapshot_result
+	var slot_manifest := slot_result.get("value", {}) as Dictionary
+	var snapshot_manifest := snapshot_result.get("value", {}) as Dictionary
+	var slot_version: Variant = slot_manifest.get("format_version")
+	var snapshot_version: Variant = snapshot_manifest.get("format_version")
+	if (
+		not _is_non_negative_integer_number(slot_version)
+		or not _is_non_negative_integer_number(snapshot_version)
+	):
+		return {"ok": false, "errors": ["Agent 存档版本字段损坏"]}
+	var agent_version := maxi(int(slot_version), int(snapshot_version))
+	var versions := {"agent": agent_version}
+	if agent_version != FORMAT_VERSION:
+		return {"ok": true, "versions": versions}
+	var entries_value: Variant = snapshot_manifest.get("residents")
+	if not entries_value is Array or (entries_value as Array).is_empty():
+		return {"ok": false, "errors": ["Agent 快照居民版本证据缺失"]}
+	var observed := {
+		"residentPayload": {},
+		"residentRuntime": {},
+		"residentMemory": {},
+	}
+	for entry_value: Variant in entries_value as Array:
+		if not entry_value is Dictionary:
+			return {"ok": false, "errors": ["Agent 快照居民条目损坏"]}
+		var entry := entry_value as Dictionary
+		var payload_result := _read_checked_resident_payload(snapshot_root, entry)
+		if payload_result.get("ok") != true:
+			return payload_result
+		var payload := payload_result.get("payload") as PackedByteArray
+		if payload.size() < 4:
+			return {"ok": false, "errors": ["居民状态版本证据损坏"]}
+		var decoded: Variant = bytes_to_var(payload)
+		if not decoded is Dictionary:
+			return {"ok": false, "errors": ["居民状态版本证据损坏"]}
+		var envelope := decoded as Dictionary
+		var payload_version := _integer_version(envelope.get("format_version"))
+		if payload_version < 0:
+			return {"ok": false, "errors": ["居民载荷版本字段损坏"]}
+		(observed["residentPayload"] as Dictionary)[payload_version] = true
+		if payload_version != RESIDENT_STATE_CODEC.FORMAT_VERSION:
+			versions["residentPayload"] = payload_version
+			return {"ok": true, "versions": versions}
+		var state_value: Variant = envelope.get("resident_state")
+		if not state_value is Dictionary:
+			return {"ok": false, "errors": ["居民运行时版本证据损坏"]}
+		var state := state_value as Dictionary
+		var runtime_version := _integer_version(
+			state.get("runtime_state_version"),
+		)
+		if runtime_version < 0:
+			return {"ok": false, "errors": ["居民运行时版本字段损坏"]}
+		(observed["residentRuntime"] as Dictionary)[runtime_version] = true
+		if runtime_version not in [
+			RESIDENT_RUNTIME.LEGACY_PERSISTENT_STATE_VERSION,
+			RESIDENT_RUNTIME.PERSISTENT_STATE_VERSION,
+		]:
+			versions["residentPayload"] = payload_version
+			versions["residentRuntime"] = runtime_version
+			return {"ok": true, "versions": versions}
+		var memory_value: Variant = state.get("memory_system")
+		if not memory_value is Dictionary:
+			return {"ok": false, "errors": ["居民记忆版本证据损坏"]}
+		var memory_version := _integer_version(
+			(memory_value as Dictionary).get("memory_state_version"),
+		)
+		if memory_version < 0:
+			return {"ok": false, "errors": ["居民记忆版本字段损坏"]}
+		(observed["residentMemory"] as Dictionary)[memory_version] = true
+	for key_value: Variant in observed:
+		var key := String(key_value)
+		var found := (observed.get(key, {}) as Dictionary).keys()
+		if found.size() != 1:
+			return {"ok": false, "errors": ["Agent 居民版本组合不一致"]}
+		versions[key] = int(found[0])
+	return {"ok": true, "versions": versions}
 
 
 func delete_slot(context: Variant) -> Dictionary:
@@ -356,6 +447,37 @@ func _validate_context(context: Variant) -> Array[String]:
 		if not _is_safe_identifier(String(value["session_id"])):
 			errors.append("存档上下文 session_id 包含非法字符")
 	return errors
+
+
+func _integer_version(value: Variant) -> int:
+	return int(value) if _is_non_negative_integer_number(value) else -1
+
+
+func _read_checked_resident_payload(
+	snapshot_root: String,
+	entry: Dictionary,
+) -> Dictionary:
+	var file_name := String(entry.get("file", ""))
+	if file_name.is_empty() or file_name.get_file() != file_name:
+		return {"ok": false, "errors": ["Agent 快照居民文件引用无效"]}
+	var expected_length: Variant = entry.get("byte_length")
+	var expected_sha256: Variant = entry.get("sha256")
+	if (
+		not _is_non_negative_integer_number(expected_length)
+		or typeof(expected_sha256) != TYPE_STRING
+		or String(expected_sha256).length() != 64
+	):
+		return {"ok": false, "errors": ["Agent 快照居民载荷清单损坏"]}
+	var file := FileAccess.open(_join(snapshot_root, file_name), FileAccess.READ)
+	if file == null:
+		return {"ok": false, "errors": ["Agent 快照居民载荷缺失"]}
+	var payload := file.get_buffer(file.get_length())
+	file = null
+	if payload.size() != int(expected_length):
+		return {"ok": false, "errors": ["Agent 快照居民 byte_length 不一致"]}
+	if _sha256(payload) != String(expected_sha256):
+		return {"ok": false, "errors": ["Agent 快照居民 SHA-256 不一致"]}
+	return {"ok": true, "fileName": file_name, "payload": payload}
 
 
 func _validate_payloads(resident_payloads: Variant) -> Array[String]:

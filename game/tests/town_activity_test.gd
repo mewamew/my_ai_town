@@ -5,6 +5,9 @@ const RESIDENT_RUNTIME_FACTORY := preload(
 const AGENT_WORLD_QUERY_RUNTIME := preload(
 	"res://world/runtime/agent/TownAgentWorldQueryRuntime.gd"
 )
+const AGENT_LIFE_DESTINATION_QUERY := preload(
+	"res://world/runtime/agent/TownAgentLifeDestinationQuery.gd"
+)
 const AGENT_WAKE_CONTEXT_RUNTIME := preload(
 	"res://world/runtime/agent/TownAgentWakeContextRuntime.gd"
 )
@@ -2734,6 +2737,13 @@ func _verify_save_restore(
 		true,
 		"beta.2 save records the dining routine compatibility migration",
 	)
+	_expect_equal(
+		(beta2_compatibility_migration.get("applied", []) as Array).has(
+			"2026-08-24-unstaffed-public-place-access"
+		),
+		true,
+		"旧存档会经过无人值守公共场所访问兼容节点",
+	)
 	var active_legacy_snapshot := snapshot.duplicate(true)
 	var active_legacy_state := active_legacy_snapshot.get("state", {}) as Dictionary
 	var active_legacy_runtime := (
@@ -3547,6 +3557,10 @@ func _scenario_activity_routine() -> void:
 	).duplicate(true)
 	_verify_all_workplaces(data, opening)
 	_verify_dining_prep_schedule()
+	_verify_no_cook_communal_meal(data, opening)
+	_verify_no_doctor_clinic_continuity(data, opening)
+	_verify_unstaffed_public_place_continuity(data, opening)
+	_verify_unstaffed_noncritical_services_pause(data, opening)
 	_verify_dining_departure_awareness(data, opening)
 	_verify_meal_sequence(data, opening)
 	_verify_meal_period_boundary_consumption(data, opening)
@@ -3555,6 +3569,1338 @@ func _scenario_activity_routine() -> void:
 	_verify_meal_presentation_progress(data, opening)
 	_verify_active_routine_save_restore(data, opening)
 	return
+
+
+func _verify_no_cook_communal_meal(
+	data: Dictionary,
+	opening: Dictionary,
+) -> void:
+	var no_cook_opening := opening.duplicate(true)
+	(no_cook_opening.get("environment", {}) as Dictionary)["clock"] = "10:00"
+	for value: Variant in no_cook_opening.get("residents", []) as Array:
+		var opening_resident := value as Dictionary
+		if String(opening_resident.get("residentId", "")) != "resident_lu_qing_01":
+			continue
+		var social_state := opening_resident.get("socialState", {}) as Dictionary
+		social_state["job"] = "工匠"
+		social_state["workplace"] = "工作坊"
+		break
+	var world: RefCounted = WORLD.new()
+	_expect_equal(
+		(world.call("start", data, no_cook_opening) as Dictionary).get("ok"),
+		true,
+		"无厨师开局仍能启动 World",
+	)
+	var resident_id := "resident_tang_xiaoman_01"
+	var resident_name := "唐小满"
+	var resident := (
+		((world.get("resident_registry") as TownResidentRegistry).records as Dictionary)
+		.get(resident_id, {}) as Dictionary
+	)
+	var activity_state := (resident.get("activityState", {}) as Dictionary).duplicate(true)
+	activity_state["satiety"] = 20
+	resident["activityState"] = activity_state
+	ACTIVITY_SCALARS.sync_body_from_activity_needs(resident, activity_state)
+	_expect_equal(
+		(
+			(world.call("get_staffing_snapshot") as Dictionary).get("vacantPostIds", [])
+			as Array
+		).has("post:occupation_dining_operator"),
+		true,
+		"无厨师开局明确报告食堂岗位空缺",
+	)
+	_expect_equal(
+		(
+			(world.get("work_domain") as TownWorkDomainRuntime).place_services
+			as TownPlaceServiceRuntime
+		).state("公共食堂").get("open"),
+		false,
+		"食堂没有正式职员时不会伪造负责人和营业状态",
+	)
+	var travel_destinations := AGENT_WORLD_QUERY_RUNTIME.travel_destinations(
+		world,
+		resident,
+	) as Array
+	_expect(
+		travel_destinations.has("公共食堂"),
+		"很饿且没有厨师时，居民仍可前往公共自助厨房",
+	)
+	var life_options := AGENT_WORLD_QUERY_RUNTIME.life_destination_options(
+		world,
+		resident,
+		travel_destinations,
+	) as Array
+	var simple_meal_destination_found := false
+	var unavailable_formal_meal_found := false
+	var ordinary_activity_found := false
+	for destination_value: Variant in life_options:
+		var destination := destination_value as Dictionary
+		for option_value: Variant in destination.get("activities", []) as Array:
+			var activity_id := String(
+				(option_value as Dictionary).get("activity_id", ""),
+			)
+			if activity_id == "activity_dining_prepare_simple_meal":
+				simple_meal_destination_found = true
+			if activity_id in [
+				"activity_dining_collect_meal",
+				"activity_dining_eat_meal",
+			]:
+				unavailable_formal_meal_found = true
+			if activity_id not in [
+				"activity_cafe_eat_pastry",
+				"activity_dining_collect_meal",
+				"activity_dining_eat_meal",
+				"activity_dining_prepare_simple_meal",
+				"activity_home_sleep",
+			]:
+				ordinary_activity_found = true
+	_expect(
+		simple_meal_destination_found,
+		"严重饥饿时会出现可执行的自行做简餐路径",
+	)
+	_expect(
+		not ordinary_activity_found,
+		"严重饥饿时不会继续推荐逛店、休闲或普通工作路径",
+	)
+	_expect(
+		not unavailable_formal_meal_found,
+		"没有备餐时不会把正式取餐或吃饭伪装成可执行食物路径",
+	)
+	_expect(
+		_move_to_place(world, resident_name, "公共食堂"),
+		"没有厨师时，很饿的居民可以进入公共食堂",
+	)
+	var simple_option := _activity_option(
+		(world.call("query_activity_options", resident_id) as Dictionary).get(
+			"options",
+			[],
+		) as Array,
+		"activity_dining_prepare_simple_meal",
+	)
+	_expect_equal(
+		simple_option.get("available"),
+		true,
+		"无厨师且没有备餐时，自行做简餐可以真实执行",
+	)
+	var formal_eat_option := _activity_option(
+		(world.call("query_activity_options", resident_id) as Dictionary).get(
+			"options",
+			[],
+		) as Array,
+		"activity_dining_eat_meal",
+	)
+	_expect_equal(
+		formal_eat_option.get("disabledReason"),
+		"DINING_MEAL_NOT_READY",
+		"自助厨房不会把尚未备好的正式餐食提供给居民",
+	)
+	var satiety_before := int(activity_state.get("satiety", 0))
+	var performed := world.call(
+		"perform_activity_step",
+		resident_id,
+		"communal-simple-meal-plan",
+		0,
+		_activity_step(
+			"communal-simple-meal-step",
+			"activity_dining_prepare_simple_meal",
+			"公共食堂",
+		),
+	) as Dictionary
+	_expect_equal(performed.get("ok"), true, "自行做简餐活动可以开始")
+	world.call("advance", 5.0)
+	var prepared := world.call("prepare_save_candidate") as Dictionary
+	_expect_equal(
+		prepared.get("ok"),
+		true,
+		"自行做简餐执行中可以保存",
+	)
+	var restored: RefCounted = WORLD.new()
+	var restore_result := restored.call(
+		"restore_from_snapshot",
+		data,
+		no_cook_opening,
+		prepared.get("snapshot", {}) as Dictionary,
+	) as Dictionary
+	_expect_equal(
+		restore_result.get("ok"),
+		true,
+		"自行做简餐执行中保存后可以恢复",
+	)
+	world.call("stop")
+	if restore_result.get("ok") != true:
+		restored.call("stop")
+		return
+	_expect(
+		_advance_until_action_clears(restored, resident_name, 120),
+		"恢复后自行做简餐可以继续完成",
+	)
+	var restored_state := restored.call("get_resident_state", resident_id) as Dictionary
+	_expect(
+		int((restored_state.get("activityNeeds", {}) as Dictionary).get("satiety", 0))
+		> satiety_before,
+		"自行做简餐只给执行居民补充真实饱腹度",
+	)
+	var completed_option := _activity_option(
+		(restored.call("query_activity_options", resident_id) as Dictionary).get(
+			"options",
+			[],
+		) as Array,
+		"activity_dining_prepare_simple_meal",
+	)
+	_expect_equal(
+		completed_option.get("disabledReason"),
+		"COMMUNAL_MEAL_NOT_NEEDED",
+		"吃完简餐后不会无条件重复做饭",
+	)
+	var settled_save := restored.call("prepare_save_candidate") as Dictionary
+	_expect_equal(
+		settled_save.get("ok"),
+		true,
+		"自行做简餐结算后可以保存",
+	)
+	var settled_restored: RefCounted = WORLD.new()
+	var settled_restore_result := settled_restored.call(
+		"restore_from_snapshot",
+		data,
+		no_cook_opening,
+		settled_save.get("snapshot", {}) as Dictionary,
+	) as Dictionary
+	_expect_equal(
+		settled_restore_result.get("ok"),
+		true,
+		"已结算的自行做简餐存档可以恢复",
+	)
+	if settled_restore_result.get("ok") == true:
+		var settled_satiety := int(
+			(
+				(settled_restored.call("get_resident_state", resident_id) as Dictionary)
+				.get("activityNeeds", {}) as Dictionary
+			).get("satiety", 0),
+		)
+		settled_restored.call("advance", 1.0)
+		_expect_equal(
+			(
+				(settled_restored.call("get_resident_state", resident_id) as Dictionary)
+				.get("activityNeeds", {}) as Dictionary
+			).get("satiety"),
+			settled_satiety,
+			"已结算的简餐恢复后不会再次增加饱腹度",
+		)
+	settled_restored.call("stop")
+	restored.call("advance", 3.0 * 1440.0)
+	var multi_day_state := restored.call("get_resident_state", resident_id) as Dictionary
+	_expect_equal(
+		(multi_day_state.get("activityNeeds", {}) as Dictionary).get("satiety"),
+		0,
+		"无厨师多日运行时饱腹度仍按原规则下降到下限",
+	)
+	var multi_day_life_options := AGENT_WORLD_QUERY_RUNTIME.life_destination_options(
+		restored,
+		(restored.get("resident_registry") as TownResidentRegistry).records.get(
+			resident_id,
+			{},
+		) as Dictionary,
+	) as Array
+	var multi_day_simple_meal_found := false
+	for destination_value: Variant in multi_day_life_options:
+		for activity_value: Variant in (
+			(destination_value as Dictionary).get("activities", []) as Array
+		):
+			if String((activity_value as Dictionary).get("activity_id", "")) == (
+				"activity_dining_prepare_simple_meal"
+			):
+				multi_day_simple_meal_found = true
+	_expect(
+		multi_day_simple_meal_found,
+		"无厨师运行多日后，居民仍能获得前往食堂自行做简餐的路径",
+	)
+
+	var helper_id := "resident_a_he_01"
+	var now := int(
+		(restored.get("_environment") as RefCounted).call("get_absolute_minute"),
+	)
+	var helper_arrangement := (
+		(restored.get("work_domain") as TownWorkDomainRuntime).staffing as RefCounted
+	).call(
+		"create_arrangement",
+		helper_id,
+		"occupation_dining_operator",
+		"part_time",
+		now,
+	) as Dictionary
+	_expect_equal(
+		helper_arrangement.get("ok"),
+		true,
+		"空缺食堂岗位可以建立真实兼职帮工安排",
+	)
+	var staffing := (
+		(restored.get("work_domain") as TownWorkDomainRuntime).staffing as RefCounted
+	)
+	staffing.call(
+		"rebuild",
+		(restored.get("resident_registry") as TownResidentRegistry).records,
+		now,
+	)
+	restored.PLACE_SERVICE_COMMAND_RUNTIME.refresh_staffing(restored)
+	var dining_post := staffing.call(
+		"post_for_occupation",
+		"occupation_dining_operator",
+	) as Dictionary
+	_expect_equal(
+		dining_post.get("status"),
+		"vacant",
+		"兼职帮工不会冒充食堂正式负责人",
+	)
+	_expect(
+		(dining_post.get("supportingResidentIds", []) as Array).has(helper_id),
+		"兼职帮工会进入食堂的实际支持人员列表",
+	)
+	_expect_equal(
+		restored.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.primary_id(
+			restored,
+			(restored.get("resident_registry") as TownResidentRegistry).records.get(
+				helper_id,
+				{},
+			) as Dictionary,
+		),
+		"occupation_cafe_worker",
+		"兼职帮工保留原来的正式职业",
+	)
+	_expect_equal(
+		(
+			restored.call(
+				"create_work_task",
+				{
+					"taskId": "dining-helper-forbidden-service",
+					"capability": "food.service",
+					"sourceKind": "meal_demand",
+					"sourceRef": "dining-helper-forbidden-service-request",
+					"targets": [{"kind": "prop", "ref": "公共食堂递餐口"}],
+					"requestedResultKind": "meal_handoff",
+					"priority": 90,
+				},
+			) as Dictionary
+		).get("ok"),
+		true,
+		"帮工权限检查会建立一项真实递餐任务",
+	)
+	var helper_tasks := restored.call(
+		"get_work_tasks_for_resident",
+		helper_id,
+	) as Array
+	_expect(
+		not helper_tasks.filter(
+			func(task: Dictionary) -> bool:
+				return String(task.get("capability", "")) == "food.production",
+		).is_empty(),
+		"兼职帮工能够接到真实备餐任务",
+	)
+	_expect(
+		helper_tasks.filter(
+			func(task: Dictionary) -> bool:
+				return String(task.get("capability", "")) == "food.service",
+		).is_empty(),
+		"兼职帮工不会看到未获授权的正式递餐任务",
+	)
+	_expect(
+		_move_to_place(restored, "阿禾", "公共食堂"),
+		"兼职帮工可以进入未营业的食堂执行任务",
+	)
+	var helper_performed := restored.call(
+		"perform_activity_step",
+		helper_id,
+		"dining-helper-meal-plan",
+		0,
+		_activity_step(
+			"dining-helper-meal-step",
+			"activity_dining_prepare_meal",
+			"公共食堂",
+		),
+	) as Dictionary
+	_expect_equal(
+		helper_performed.get("ok"),
+		true,
+		"兼职帮工能够开始正式备餐活动",
+	)
+	_expect(
+		_advance_until_action_clears(restored, "阿禾", 180),
+		"兼职帮工能够完成正式备餐活动",
+	)
+	_expect(
+		(restored.get("work_domain") as TownWorkDomainRuntime).meal_period_is_prepared(
+			int((restored.get("_environment") as RefCounted).call("get_absolute_minute")),
+		),
+		"兼职帮工的备餐会形成真实公共餐食",
+	)
+	restored.call("stop")
+
+
+func _verify_no_doctor_clinic_continuity(
+	data: Dictionary,
+	opening: Dictionary,
+) -> void:
+	var no_doctor_opening := _opening_without_doctor(opening)
+	_verify_no_doctor_self_care(data, no_doctor_opening)
+	_verify_no_doctor_external_aid(data, no_doctor_opening)
+
+
+func _verify_unstaffed_public_place_continuity(
+	data: Dictionary,
+	opening: Dictionary,
+) -> void:
+	var unstaffed_opening := _opening_without_public_place_staff(opening)
+	var world: RefCounted = WORLD.new()
+	_expect_equal(
+		(world.call("start", data, unstaffed_opening) as Dictionary).get("ok"),
+		true,
+		"公共场所岗位空缺时 World 仍能启动",
+	)
+	var staffing := world.call("get_staffing_snapshot") as Dictionary
+	var vacant_post_ids := staffing.get("vacantPostIds", []) as Array
+	_expect(
+		vacant_post_ids.has("post:occupation_cafe_worker"),
+		"咖啡师空缺会保留真实空缺岗位",
+	)
+	_expect(
+		vacant_post_ids.has("post:occupation_librarian"),
+		"图书管理员空缺会保留真实空缺岗位",
+	)
+	var place_services := (
+		(world.get("work_domain") as TownWorkDomainRuntime).place_services
+		as TownPlaceServiceRuntime
+	)
+	for place_id: String in ["花房咖啡馆", "图书馆"]:
+		var state := place_services.state(place_id)
+		_expect_equal(
+			state.get("open"),
+			false,
+			"%s 的专业服务在岗位空缺时保持暂停" % place_id,
+		)
+		_expect_equal(
+			state.get("owner_id"),
+			"",
+			"%s 不会为公共访问生成内置负责人" % place_id,
+		)
+	var visitor_id := "resident_tang_xiaoman_01"
+	var visitor_name := "唐小满"
+	var visitor := (
+		(world.get("resident_registry") as TownResidentRegistry).records.get(
+			visitor_id,
+			{},
+		) as Dictionary
+	)
+	var destinations := AGENT_WORLD_QUERY_RUNTIME.travel_destinations(
+		world,
+		visitor,
+	) as Array
+	_expect(
+		destinations.has("花房咖啡馆"),
+		"咖啡师空缺时居民仍可前往使用公共座位",
+	)
+	_expect(
+		destinations.has("图书馆"),
+		"图书管理员空缺时居民仍可前往现场阅读",
+	)
+	var life_options := AGENT_LIFE_DESTINATION_QUERY.options(
+		visitor,
+		destinations,
+		false,
+		false,
+		_activity_world_absolute_minute(world),
+		String(world.call("get_weather")),
+		world.get("_activity_runtime"),
+		world,
+	) as Array
+	_expect(
+		_activity_life_options_have(life_options, "activity_cafe_rest"),
+		"无人值守咖啡馆会形成真实的公共座位休息路径",
+	)
+	_expect(
+		_activity_life_options_have(life_options, "activity_library_read"),
+		"无人值守图书馆会形成真实的现场阅读路径",
+	)
+	_expect(
+		not _activity_life_options_have(
+			life_options,
+			"activity_cafe_eat_pastry",
+		),
+		"无人值守咖啡馆不会把点心伪装成自助食物",
+	)
+	_expect(
+		_move_to_place(world, visitor_name, "花房咖啡馆"),
+		"咖啡师空缺时居民可以进入咖啡馆",
+	)
+	var cafe_options := (
+		(world.call("query_activity_options", visitor_id) as Dictionary).get(
+			"options",
+			[],
+		) as Array
+	)
+	_expect_equal(
+		_activity_option(cafe_options, "activity_cafe_rest").get("available"),
+		true,
+		"咖啡师空缺时公共座位休息可以执行",
+	)
+	_expect_equal(
+		_activity_option(cafe_options, "activity_cafe_order").get("available"),
+		false,
+		"咖啡师空缺时点单暂停",
+	)
+	_expect_equal(
+		_activity_option(cafe_options, "activity_cafe_eat_pastry").get(
+			"available",
+		),
+		false,
+		"咖啡师空缺时点心服务暂停",
+	)
+	var blocked_pastry := world.call(
+		"perform_activity_step",
+		visitor_id,
+		"unstaffed-cafe-pastry-plan",
+		0,
+		_activity_step(
+			"unstaffed-cafe-pastry-step",
+			"activity_cafe_eat_pastry",
+			"花房咖啡馆",
+		),
+	) as Dictionary
+	_expect_equal(
+		blocked_pastry.get("ok"),
+		false,
+		"直接执行入口也会拒绝无人值守的点心服务",
+	)
+	var rested := world.call(
+		"perform_activity_step",
+		visitor_id,
+		"unstaffed-cafe-rest-plan",
+		0,
+		_activity_step(
+			"unstaffed-cafe-rest-step",
+			"activity_cafe_rest",
+			"花房咖啡馆",
+		),
+	) as Dictionary
+	_expect_equal(rested.get("ok"), true, "无人值守咖啡馆休息可以开始")
+	_expect(
+		_advance_until_action_clears(world, visitor_name, 120),
+		"无人值守咖啡馆休息可以完成",
+	)
+	_expect(
+		_move_to_place(world, visitor_name, "图书馆"),
+		"图书管理员空缺时居民可以进入图书馆",
+	)
+	var helper_staffing := (
+		(world.get("work_domain") as TownWorkDomainRuntime).staffing
+		as RefCounted
+	)
+	var helper_arrangement := helper_staffing.call(
+		"create_arrangement",
+		"resident_a_he_01",
+		"occupation_librarian",
+		"part_time",
+		_activity_world_absolute_minute(world),
+	) as Dictionary
+	_expect_equal(
+		helper_arrangement.get("ok"),
+		true,
+		"图书馆空缺时可以建立辅助整理安排",
+	)
+	_expect_equal(
+		(helper_arrangement.get("arrangement", {}) as Dictionary).get(
+			"coversPost",
+		),
+		false,
+		"图书馆帮工不会覆盖图书管理员岗位",
+	)
+	helper_staffing.call(
+		"rebuild",
+		(world.get("resident_registry") as TownResidentRegistry).records,
+		_activity_world_absolute_minute(world),
+	)
+	world.PLACE_SERVICE_COMMAND_RUNTIME.refresh_staffing(world)
+	_expect_equal(
+		helper_staffing.call(
+			"post_for_occupation",
+			"occupation_librarian",
+		).get("status"),
+		"vacant",
+		"辅助整理安排不会让专业服务恢复营业",
+	)
+	var helper_return := world.call(
+		"create_occupation_service_request",
+		{
+			"kind": "library_return",
+			"requesterResidentId": visitor_id,
+			"subjectRef": "helper-capability-return",
+		},
+	) as Dictionary
+	_expect_equal(
+		helper_return.get("ok"),
+		true,
+		"图书馆帮工可以接收明确授权的还书任务",
+	)
+	var helper_loan := world.call(
+		"create_occupation_service_request",
+		{
+			"kind": "library_loan",
+			"requesterResidentId": visitor_id,
+			"itemId": "book_town_history",
+		},
+	) as Dictionary
+	_expect_equal(
+		helper_loan.get("errorCode"),
+		"OCCUPATION_SERVICE_UNSTAFFED",
+		"图书馆帮工不能接收未授权的借阅任务",
+	)
+	world.call("advance", 1.0)
+	var helper_return_state := world.call(
+		"get_occupation_service_request",
+		String(
+			(helper_return.get("request", {}) as Dictionary).get(
+				"requestId",
+				"",
+			),
+		),
+	) as Dictionary
+	_expect(
+		String(helper_return_state.get("state", "")) != "cancelled",
+		"已授权的还书任务进入排队推进后不会被旧岗位空缺判断取消",
+	)
+	var library_options := (
+		(world.call("query_activity_options", visitor_id) as Dictionary).get(
+			"options",
+			[],
+		) as Array
+	)
+	for activity_id: String in [
+		"activity_library_read",
+		"activity_library_write",
+	]:
+		_expect_equal(
+			_activity_option(library_options, activity_id).get("available"),
+			true,
+			"无人值守图书馆保留活动：%s" % activity_id,
+		)
+	for activity_id: String in [
+		"activity_library_checkout",
+		"activity_library_research",
+	]:
+		_expect_equal(
+			_activity_option(library_options, activity_id).get("available"),
+			false,
+			"无人值守图书馆暂停专业服务：%s" % activity_id,
+		)
+	var blocked_checkout := world.call(
+		"perform_activity_step",
+		visitor_id,
+		"unstaffed-library-checkout-plan",
+		0,
+		_activity_step(
+			"unstaffed-library-checkout-step",
+			"activity_library_checkout",
+			"图书馆",
+		),
+	) as Dictionary
+	_expect_equal(
+		blocked_checkout.get("ok"),
+		false,
+		"直接执行入口会拒绝无人值守的借还书服务",
+	)
+	var reading := world.call(
+		"perform_activity_step",
+		visitor_id,
+		"unstaffed-library-read-plan",
+		0,
+		_activity_step(
+			"unstaffed-library-read-step",
+			"activity_library_read",
+			"图书馆",
+		),
+	) as Dictionary
+	_expect_equal(reading.get("ok"), true, "无人值守图书馆阅读可以开始")
+	_expect(
+		_advance_until_action_clears(world, visitor_name, 180),
+		"无人值守图书馆阅读可以完成",
+	)
+	var prepared := world.call("prepare_save_candidate") as Dictionary
+	_expect_equal(prepared.get("ok"), true, "公共场所降级状态可以保存")
+	var restored: RefCounted = WORLD.new()
+	var restore_result := restored.call(
+		"restore_from_snapshot",
+		data,
+		unstaffed_opening,
+		prepared.get("snapshot", {}) as Dictionary,
+	) as Dictionary
+	_expect_equal(restore_result.get("ok"), true, "公共场所降级存档可以恢复")
+	if restore_result.get("ok") == true:
+		var restored_options := (
+			(restored.call("query_activity_options", visitor_id) as Dictionary).get(
+				"options",
+				[],
+			) as Array
+		)
+		_expect_equal(
+			_activity_option(restored_options, "activity_library_read").get(
+				"available",
+			),
+			true,
+			"读档后无人值守图书馆仍可现场阅读",
+		)
+		_expect_equal(
+			_activity_option(restored_options, "activity_library_checkout").get(
+				"available",
+			),
+			false,
+			"读档后借还书服务仍保持暂停",
+		)
+	restored.call("stop")
+	world.call("stop")
+
+	var staffed_world: RefCounted = WORLD.new()
+	_expect_equal(
+		(staffed_world.call("start", data, opening) as Dictionary).get("ok"),
+		true,
+		"正常公共场所回归世界可以启动",
+	)
+	_expect(
+		_move_to_place(staffed_world, visitor_name, "花房咖啡馆"),
+		"有咖啡师时居民仍可进入咖啡馆",
+	)
+	var staffed_cafe_options := (
+		(staffed_world.call("query_activity_options", visitor_id) as Dictionary).get(
+			"options",
+			[],
+		) as Array
+	)
+	_expect_equal(
+		_activity_option(staffed_cafe_options, "activity_cafe_order").get(
+			"available",
+		),
+		true,
+		"有咖啡师时原有点单服务保持可用",
+	)
+	_expect(
+		_move_to_place(staffed_world, visitor_name, "图书馆"),
+		"有图书管理员时居民仍可进入图书馆",
+	)
+	var staffed_library_options := (
+		(staffed_world.call("query_activity_options", visitor_id) as Dictionary).get(
+			"options",
+			[],
+		) as Array
+	)
+	_expect_equal(
+		_activity_option(
+			staffed_library_options,
+			"activity_library_checkout",
+		).get("available"),
+		true,
+		"有图书管理员时原有借还书服务保持可用",
+	)
+	staffed_world.call("stop")
+
+
+func _verify_unstaffed_noncritical_services_pause(
+	data: Dictionary,
+	opening: Dictionary,
+) -> void:
+	var paused_opening := _opening_without_noncritical_service_workers(opening)
+	var world: RefCounted = WORLD.new()
+	_expect_equal(
+		(world.call("start", data, paused_opening) as Dictionary).get("ok"),
+		true,
+		"非关键岗位空缺时 World 仍能启动",
+	)
+	var vacant_post_ids := (
+		(world.call("get_staffing_snapshot") as Dictionary).get(
+			"vacantPostIds",
+			[],
+		) as Array
+	)
+	for occupation_id: String in [
+		"occupation_cafe_worker",
+		"occupation_craftsperson",
+		"occupation_librarian",
+		"occupation_town_manager",
+		"occupation_grocer",
+		"occupation_flower_vendor",
+		"occupation_musician",
+		"occupation_botanist",
+	]:
+		_expect(
+			vacant_post_ids.has("post:%s" % occupation_id),
+			"非关键服务测试保留真实空缺岗位：%s" % occupation_id,
+		)
+	var service_count_before := (
+		(
+			world.call("get_occupation_service_snapshot") as Dictionary
+		).get("requests", []) as Array
+	).size()
+	var paused_specs: Array[Dictionary] = [
+		{
+			"kind": "cafe_order",
+			"requesterResidentId": "resident_tang_xiaoman_01",
+			"itemId": "brewed_coffee",
+		},
+		{
+			"kind": "library_loan",
+			"requesterResidentId": "resident_tang_xiaoman_01",
+			"itemId": "book_town_history",
+		},
+		{
+			"kind": "library_return",
+			"requesterResidentId": "resident_tang_xiaoman_01",
+			"subjectRef": "loan-without-librarian",
+		},
+		{
+			"kind": "library_assist",
+			"requesterResidentId": "resident_tang_xiaoman_01",
+			"subjectRef": "请馆员协助查找资料",
+		},
+		{
+			"kind": "repair",
+			"requesterResidentId": "resident_tang_xiaoman_01",
+			"subjectRef": "需要维修的木凳",
+		},
+		{
+			"kind": "civic_request",
+			"requesterResidentId": "resident_tang_xiaoman_01",
+			"subjectRef": "日常镇务",
+		},
+		{
+			"kind": "performance",
+			"requesterResidentId": "resident_tang_xiaoman_01",
+			"subjectRef": "居民邀请的小演出",
+		},
+		{
+			"kind": "grocer_sale",
+			"requesterResidentId": "resident_tang_xiaoman_01",
+			"itemId": "general_goods",
+		},
+		{
+			"kind": "flower_sale",
+			"requesterResidentId": "resident_tang_xiaoman_01",
+			"itemId": "fresh_flowers",
+		},
+	]
+	for request_spec: Dictionary in paused_specs:
+		for attempt in 2:
+			var rejected := world.call(
+				"create_occupation_service_request",
+				request_spec,
+			) as Dictionary
+			_expect_equal(
+				rejected.get("ok"),
+				false,
+				"无人可执行时不会建立非关键服务请求：%s/%d"
+					% [String(request_spec.get("kind", "")), attempt],
+			)
+			_expect_equal(
+				rejected.get("errorCode"),
+				"OCCUPATION_SERVICE_UNSTAFFED",
+				"非关键服务暂停会返回统一且明确的原因",
+			)
+			_expect_equal(
+				(
+					rejected.get("serviceAvailability", {}) as Dictionary
+				).get("state"),
+				"paused",
+				"非关键服务暂停结果会明确报告暂停状态",
+			)
+	_expect_equal(
+		(
+			(
+				world.call("get_occupation_service_snapshot") as Dictionary
+			).get("requests", []) as Array
+		).size(),
+		service_count_before,
+		"重复提交无人可执行的非关键服务不会留下待办请求",
+	)
+	var research_count_before := (
+		world.call("get_plant_research_projects") as Array
+	).size()
+	for attempt in 2:
+		var research := world.call(
+			"create_plant_research",
+			"resident_tang_xiaoman_01",
+			"检查社区花园的长期变化",
+			"research_question",
+		) as Dictionary
+		_expect_equal(
+			research.get("errorCode"),
+			"OCCUPATION_SERVICE_UNSTAFFED",
+			"植物研究无人可执行时明确暂停：%d" % attempt,
+		)
+	_expect_equal(
+		(world.call("get_plant_research_projects") as Array).size(),
+		research_count_before,
+		"重复提交无人可执行的植物研究不会留下研究项目",
+	)
+	_expect(
+		_move_to_place(world, "唐小满", "镇公所"),
+		"管理者空缺时居民仍能进入镇公所查看可用活动",
+	)
+	var town_hall_options := (
+		(
+			world.call(
+				"query_activity_options",
+				"resident_tang_xiaoman_01",
+			) as Dictionary
+		).get("options", []) as Array
+	)
+	for activity_id: String in [
+		"activity_town_hall_civic_service",
+		"activity_town_hall_fill_form",
+	]:
+		var option := _activity_option(town_hall_options, activity_id)
+		_expect_equal(
+			option.get("available"),
+			false,
+			"无人可执行时居民活动入口会暂停：%s" % activity_id,
+		)
+		_expect_equal(
+			option.get("disabledReason"),
+			"OCCUPATION_SERVICE_UNSTAFFED",
+			"居民活动入口会显示真实的岗位空缺原因：%s" % activity_id,
+		)
+	var direct_civic := world.call(
+		"perform_activity_step",
+		"resident_tang_xiaoman_01",
+		"unstaffed-civic-plan",
+		0,
+		_activity_step(
+			"unstaffed-civic-step",
+			"activity_town_hall_civic_service",
+			"镇公所",
+		),
+	) as Dictionary
+	_expect_equal(
+		direct_civic.get("errorCode"),
+		"OCCUPATION_SERVICE_UNSTAFFED",
+		"直接执行入口不能绕过非关键服务暂停规则",
+	)
+	world.call("stop")
+
+
+func _verify_no_doctor_self_care(
+	data: Dictionary,
+	no_doctor_opening: Dictionary,
+) -> void:
+	var world: RefCounted = WORLD.new()
+	_expect_equal(
+		(world.call("start", data, no_doctor_opening) as Dictionary).get("ok"),
+		true,
+		"无医生开局仍能启动 World",
+	)
+	var patient_id := "resident_tang_xiaoman_01"
+	var patient_name := "唐小满"
+	var condition_id := "condition-%s-910001" % patient_id
+	var clinic_state := (
+		(world.get("work_domain") as TownWorkDomainRuntime).place_services
+		as TownPlaceServiceRuntime
+	).state("诊所")
+	_expect_equal(clinic_state.get("open"), false, "无医生时诊所不会伪装成营业")
+	_expect_equal(clinic_state.get("owner_id"), "", "无医生时诊所没有写死的负责人")
+	_expect(
+		(
+			(world.call("get_staffing_snapshot") as Dictionary).get(
+				"vacantPostIds",
+				[],
+			) as Array
+		).has("post:occupation_clinic_practitioner"),
+		"无医生时诊疗岗位会明确保持空缺",
+	)
+	var staffing := (
+		(world.get("work_domain") as TownWorkDomainRuntime).staffing as RefCounted
+	)
+	var now := _activity_world_absolute_minute(world)
+	var helper_arrangement := staffing.call(
+		"create_arrangement",
+		"resident_a_he_01",
+		"occupation_clinic_practitioner",
+		"part_time",
+		now,
+	) as Dictionary
+	_expect_equal(
+		helper_arrangement.get("ok"),
+		true,
+		"无诊疗资格居民可以建立诊所帮工安排",
+	)
+	_expect_equal(
+		(helper_arrangement.get("arrangement", {}) as Dictionary).get(
+			"coversPost",
+		),
+		false,
+		"诊所帮工不会覆盖正式诊疗岗位",
+	)
+	_expect_equal(
+		(helper_arrangement.get("arrangement", {}) as Dictionary).get(
+			"authorizesWork",
+		),
+		false,
+		"诊所帮工不会获得专业诊疗权限",
+	)
+	staffing.call(
+		"rebuild",
+		(world.get("resident_registry") as TownResidentRegistry).records,
+		now,
+	)
+	world.PLACE_SERVICE_COMMAND_RUNTIME.refresh_staffing(world)
+	_inject_activity_test_condition(world, patient_id, condition_id)
+	var patient := (
+		(world.get("resident_registry") as TownResidentRegistry).records.get(
+			patient_id,
+			{},
+		) as Dictionary
+	)
+	var travel_destinations := AGENT_WORLD_QUERY_RUNTIME.travel_destinations(
+		world,
+		patient,
+	) as Array
+	_expect(
+		travel_destinations.has("诊所"),
+		"轻伤居民在没有医生时仍能前往诊所做基础处理",
+	)
+	var life_options := AGENT_WORLD_QUERY_RUNTIME.life_destination_options(
+		world,
+		patient,
+		travel_destinations,
+	) as Array
+	_expect(
+		_activity_life_options_have(
+			life_options,
+			"activity_clinic_self_care",
+		),
+		"轻伤会形成真实的基础自我处理生活路径",
+	)
+	_expect(
+		_move_to_place(world, patient_name, "诊所"),
+		"没有医生时轻伤居民仍能进入诊所",
+	)
+	var options := (
+		(world.call("query_activity_options", patient_id) as Dictionary).get(
+			"options",
+			[],
+		) as Array
+	)
+	_expect_equal(
+		_activity_option(options, "activity_clinic_self_care").get("available"),
+		true,
+		"没有医生时基础自我处理可以真实执行",
+	)
+	_expect_equal(
+		_activity_option(options, "activity_clinic_consult").get("available"),
+		false,
+		"没有医生时不会把正式问诊伪装成可执行活动",
+	)
+	var performed := world.call(
+		"perform_activity_step",
+		patient_id,
+		"clinic-self-care-plan",
+		0,
+		_activity_step(
+			"clinic-self-care-step",
+			"activity_clinic_self_care",
+			"诊所",
+		),
+	) as Dictionary
+	_expect_equal(performed.get("ok"), true, "基础自我处理活动可以开始")
+	_expect(
+		_advance_until_action_clears(world, patient_name, 120),
+		"基础自我处理活动可以完成",
+	)
+	_expect_equal(
+		_activity_test_condition(world, patient_id, condition_id).get("state"),
+		"recovering",
+		"基础自我处理会让轻伤进入恢复阶段",
+	)
+	var recovering_condition := _activity_test_condition(
+		world,
+		patient_id,
+		condition_id,
+	)
+	_expect(
+		int(recovering_condition.get("nextChangeAtMinute", -1))
+		> int(recovering_condition.get("lastChangedAtMinute", -1)),
+		"基础自我处理会安排后续自然恢复时间",
+	)
+	world.call("stop")
+
+
+func _verify_no_doctor_external_aid(
+	data: Dictionary,
+	no_doctor_opening: Dictionary,
+) -> void:
+	var external_opening := no_doctor_opening.duplicate(true)
+	var patient_id := "resident_tang_xiaoman_01"
+	var patient_world_state: Dictionary = {}
+	for resident_value: Variant in external_opening.get("residents", []) as Array:
+		var opening_resident := resident_value as Dictionary
+		if String(opening_resident.get("residentId", "")) == patient_id:
+			patient_world_state = (
+				opening_resident.get("worldState", {}) as Dictionary
+			).duplicate(true)
+			break
+	(external_opening.get("playerAvatar", {}) as Dictionary)["worldState"] = (
+		patient_world_state
+	)
+	(
+		(external_opening.get("playerAvatar", {}) as Dictionary).get(
+			"worldState",
+			{},
+		) as Dictionary
+	).erase("body")
+	var world: RefCounted = WORLD.new()
+	_expect_equal(
+		(world.call("start", data, external_opening) as Dictionary).get("ok"),
+		true,
+		"无医生的重伤回归世界可以启动",
+	)
+	world.call("set_player_avatar_present", true, false)
+	var avatar_id := String(world.call("player_avatar_id"))
+	for attack_index in 2:
+		var request_id := "clinic-external-aid-attack-%d" % attack_index
+		var attack := world.call(
+			"submit_avatar_area_attack",
+			{
+				"requestId": request_id,
+				"attackerId": avatar_id,
+				"attackKind": "unarmed",
+				"sourceKind": "avatar_intent",
+				"sourceRef": request_id,
+			},
+		) as Dictionary
+		_expect_equal(attack.get("ok"), true, "重伤测试攻击进入正式冲突路径")
+		_expect(
+			(attack.get("hitTargetIds", []) as Array).has(patient_id),
+			"重伤测试攻击真实命中目标居民",
+		)
+	var injury := _activity_test_conflict_injury(world, patient_id)
+	_expect_equal(injury.get("severity"), "heavy", "连续受伤会形成真实重伤")
+	_expect_equal(
+		injury.get("treatmentStatus"),
+		"required",
+		"重伤首先进入需要治疗状态",
+	)
+	world.call("advance", 119.0)
+	_expect_equal(
+		(world.call("get_resident_state", patient_id) as Dictionary).get(
+			"isPresent",
+		),
+		true,
+		"重伤等待未到时限前居民仍留在镇内",
+	)
+	world.call("advance", 1.0)
+	var departed_state := world.call("get_resident_state", patient_id) as Dictionary
+	injury = _activity_test_conflict_injury(world, patient_id)
+	_expect_equal(departed_state.get("isPresent"), false, "重伤超时后居民会离镇就医")
+	_expect_equal(
+		(departed_state.get("arrivalState", {}) as Dictionary).get("status"),
+		"pending",
+		"离镇就医会形成可保存的待返回状态",
+	)
+	_expect_equal(
+		injury.get("treatmentStatus"),
+		"in_progress",
+		"镇外医疗会开始真实治疗计时",
+	)
+	_expect_equal(
+		injury.get("treatmentPlaceId"),
+		"镇外医疗援助",
+		"重伤缺少医生时明确转入镇外医疗援助",
+	)
+	var prepared := world.call("prepare_save_candidate") as Dictionary
+	_expect_equal(prepared.get("ok"), true, "居民离镇就医期间可以保存")
+	var restored: RefCounted = WORLD.new()
+	var restore_result := restored.call(
+		"restore_from_snapshot",
+		data,
+		external_opening,
+		prepared.get("snapshot", {}) as Dictionary,
+	) as Dictionary
+	_expect_equal(restore_result.get("ok"), true, "离镇就医存档可以恢复")
+	world.call("stop")
+	if restore_result.get("ok") != true:
+		restored.call("stop")
+		return
+	var restored_state := restored.call("get_resident_state", patient_id) as Dictionary
+	_expect_equal(restored_state.get("isPresent"), false, "读档后居民仍在镇外治疗")
+	injury = _activity_test_conflict_injury(restored, patient_id)
+	_expect_equal(
+		injury.get("treatmentStatus"),
+		"in_progress",
+		"读档不会重置镇外治疗进度",
+	)
+	var scheduled_return := int(
+		(restored_state.get("arrivalState", {}) as Dictionary).get(
+			"scheduledAbsoluteMinute",
+			-1,
+		),
+	)
+	var until_return := scheduled_return - _activity_world_absolute_minute(restored)
+	_expect(until_return > 0, "镇外治疗存档保留有效返回时间")
+	if until_return > 0:
+		restored.call("advance", float(until_return))
+	restored_state = restored.call("get_resident_state", patient_id) as Dictionary
+	injury = _activity_test_conflict_injury(restored, patient_id)
+	_expect_equal(restored_state.get("isPresent"), true, "镇外治疗完成后居民会回到小镇")
+	_expect_equal(
+		(restored_state.get("arrivalState", {}) as Dictionary).get("status"),
+		"arrived",
+		"镇外治疗完成后待返回状态会结算",
+	)
+	_expect_equal(injury.get("severity"), "light", "镇外治疗会把重伤降为轻伤")
+	_expect_equal(
+		injury.get("treatmentStatus"),
+		"completed",
+		"居民返回时镇外治疗已经完成",
+	)
+	restored.call("advance", 180.0)
+	_expect(
+		_activity_test_conflict_injury(restored, patient_id).is_empty(),
+		"返回后的轻伤会继续按原规则完全恢复",
+	)
+	_expect_equal(
+		(
+			(
+				(restored.get("resident_registry") as TownResidentRegistry).records.get(
+					patient_id,
+					{},
+				) as Dictionary
+			).get("attendanceState", {}) as Dictionary
+		).get("status"),
+		"available",
+		"镇外治疗归来后居民会恢复可工作状态",
+	)
+	restored.call("stop")
+
+
+func _opening_without_doctor(opening: Dictionary) -> Dictionary:
+	var result := opening.duplicate(true)
+	(result.get("environment", {}) as Dictionary)["clock"] = "10:00"
+	for resident_value: Variant in result.get("residents", []) as Array:
+		var resident := resident_value as Dictionary
+		if String(resident.get("residentId", "")) not in [
+			"resident_gu_chuan_01",
+			"resident_zhou_ning_01",
+		]:
+			continue
+		var social_state := resident.get("socialState", {}) as Dictionary
+		social_state["job"] = "工匠"
+		social_state["workplace"] = "工作坊"
+	return result
+
+
+func _opening_without_public_place_staff(opening: Dictionary) -> Dictionary:
+	var result := opening.duplicate(true)
+	(result.get("environment", {}) as Dictionary)["clock"] = "10:00"
+	for resident_value: Variant in result.get("residents", []) as Array:
+		var resident := resident_value as Dictionary
+		if String(resident.get("residentId", "")) not in [
+			"resident_a_he_01",
+			"resident_su_he_01",
+		]:
+			continue
+		var social_state := resident.get("socialState", {}) as Dictionary
+		social_state["job"] = "工匠"
+		social_state["workplace"] = "工作坊"
+	return result
+
+
+func _opening_without_noncritical_service_workers(
+	opening: Dictionary,
+) -> Dictionary:
+	var result := opening.duplicate(true)
+	(result.get("environment", {}) as Dictionary)["clock"] = "10:00"
+	for resident_value: Variant in result.get("residents", []) as Array:
+		var resident := resident_value as Dictionary
+		if String(resident.get("residentId", "")) not in [
+			"resident_lin_lan_01",
+			"resident_a_he_01",
+			"resident_su_he_01",
+			"resident_zhao_tang_01",
+			"resident_he_yu_01",
+			"resident_jiang_lin_01",
+		]:
+			continue
+		var social_state := resident.get("socialState", {}) as Dictionary
+		social_state["job"] = "园艺师"
+		social_state["workplace"] = "社区花园"
+	return result
+
+
+func _inject_activity_test_condition(
+	world: RefCounted,
+	resident_id: String,
+	condition_id: String,
+) -> void:
+	var condition_runtime := world.get("_resident_conditions") as RefCounted
+	var condition_residents := condition_runtime.get("_residents") as Dictionary
+	var entry := condition_residents.get(resident_id, {}) as Dictionary
+	(entry.get("conditions", []) as Array).append({
+		"conditionId": condition_id,
+		"kind": "minor_injury",
+		"label": "擦伤已经影响行动",
+		"severity": "noticeable",
+		"sourceKind": "formal_activity",
+		"sourceRef": "no-doctor-clinic-continuity",
+		"startedAtMinute": _activity_world_absolute_minute(world),
+		"lastChangedAtMinute": _activity_world_absolute_minute(world),
+		"state": "active",
+		"nextChangeAtMinute": 999999,
+	})
+
+
+func _activity_test_condition(
+	world: RefCounted,
+	resident_id: String,
+	condition_id: String,
+) -> Dictionary:
+	for condition_value: Variant in (
+		(world.call("get_resident_state", resident_id) as Dictionary).get(
+			"conditions",
+			[],
+		) as Array
+	):
+		var condition := condition_value as Dictionary
+		if String(condition.get("conditionId", "")) == condition_id:
+			return condition
+	return {}
+
+
+func _activity_test_conflict_injury(
+	world: RefCounted,
+	resident_id: String,
+) -> Dictionary:
+	for injury_value: Variant in (
+		(world.call("get_public_conflict_projection") as Dictionary).get(
+			"injuries",
+			[],
+		) as Array
+	):
+		var injury := injury_value as Dictionary
+		if String(injury.get("actorId", "")) == resident_id:
+			return injury
+	return {}
+
+
+func _activity_life_options_have(
+	options: Array,
+	activity_id: String,
+) -> bool:
+	for destination_value: Variant in options:
+		for activity_value: Variant in (
+			(destination_value as Dictionary).get("activities", []) as Array
+		):
+			if String((activity_value as Dictionary).get("activity_id", "")) == activity_id:
+				return true
+	return false
+
+
+func _activity_world_absolute_minute(world: RefCounted) -> int:
+	return int(
+		(world.get("_environment") as RefCounted).call("get_absolute_minute"),
+	)
 
 
 func _verify_dining_prep_schedule() -> void:
@@ -4985,12 +6331,12 @@ func _scenario_activity_catalog_contract() -> void:
 	)
 	_expect_equal(
 		CATALOG.activity_templates(catalog).size(),
-		66,
+		68,
 		"catalog exposes the authored activity definitions",
 	)
 	_expect_equal(
 		CATALOG.slot_templates(catalog).size(),
-		89,
+		91,
 		"catalog exposes the authored prop slots",
 	)
 	_expect_equal(
@@ -6267,6 +7613,70 @@ func _verify_place_service_profile_rejected() -> void:
 			"引用未知 helperActivityId",
 		),
 		"地点服务来源不能引用并不存在的帮助活动",
+	)
+	var invalid_unstaffed_places := _places_document.duplicate(true)
+	for place_value: Variant in invalid_unstaffed_places.get(
+		"places",
+		[],
+	) as Array:
+		var place := place_value as Dictionary
+		if String(place.get("name", "")) != "花房咖啡馆":
+			continue
+		(
+			place.get("serviceProfile", {}) as Dictionary
+		)["unstaffedVisitorActivityIds"] = [
+			"activity_cafe_brew_coffee",
+			"activity_missing_unstaffed_visitor",
+		]
+	var invalid_unstaffed_errors := VALIDATOR.validate(
+		_occupation_document,
+		_activity_document,
+		_slot_document,
+		invalid_unstaffed_places,
+		_props_document,
+		_indoor_authoring_document,
+		_schedule_document,
+	)
+	_expect(
+		_errors_contain(
+			invalid_unstaffed_errors,
+			"无人值守活动没有同地点 visitor slot",
+		)
+		and _errors_contain(
+			invalid_unstaffed_errors,
+			"引用未知无人值守访客 activityId",
+		),
+		"无人值守公共活动必须引用同地点的真实访客活动位",
+	)
+	var missing_unstaffed_profile := _places_document.duplicate(true)
+	for place_value: Variant in missing_unstaffed_profile.get(
+		"places",
+		[],
+	) as Array:
+		var place := place_value as Dictionary
+		if String(place.get("name", "")) == "花房咖啡馆":
+			(place.get("serviceProfile", {}) as Dictionary).erase(
+				"unstaffedVisitorActivityIds",
+			)
+	var missing_unstaffed_errors := VALIDATOR.validate(
+		_occupation_document,
+		_activity_document,
+		_slot_document,
+		missing_unstaffed_profile,
+		_props_document,
+		_indoor_authoring_document,
+		_schedule_document,
+	)
+	_expect(
+		_errors_contain(
+			missing_unstaffed_errors,
+			"字段必须精确为",
+		)
+		and _errors_contain(
+			missing_unstaffed_errors,
+			"unstaffedVisitorActivityIds 必须为数组",
+		),
+		"每个服务地点必须明确声明无人值守公共活动列表",
 	)
 
 

@@ -8,8 +8,9 @@ signal view_model_changed(scope: String, view_model: Dictionary)
 const RESULT_SHAPES := preload(
 	"res://world/contract/TownWorldResultShapes.gd"
 )
+const POPULATION_RULES := preload("res://world/runtime/TownPopulationRules.gd")
 const SCOPE := "resident_editor"
-const SLOT_COUNT := 15
+const SLOT_COUNT := POPULATION_RULES.DEFAULT_RESIDENT_COUNT
 const CATALOG := preload("res://world/presentation/session/TownResidentCatalog.gd")
 const INTERESTS := preload(
 	"res://world/data/town/TownInterestCatalog.gd"
@@ -68,6 +69,7 @@ var _workplace_by_id: Dictionary = {}
 var _gender_options: Array[Dictionary] = []
 var _saved_catalog: Dictionary = {}
 var _saved_draft: Dictionary = {}
+var _slot_count := SLOT_COUNT
 
 
 func configure(
@@ -108,9 +110,10 @@ func configure(
 	_catalog = catalog.duplicate(true)
 	_world_data = world_data.duplicate(true)
 	_draft = session_draft.duplicate(true)
+	_slot_count = (_draft.get("slots", []) as Array).size()
 	_build_options()
 	var residents_by_id := _residents_by_id(_catalog)
-	for index in SLOT_COUNT:
+	for index in _slot_count:
 		var binding := (_draft.get("slots", []) as Array)[index] as Dictionary
 		var resident_id := String(binding.get("residentId", ""))
 		var resident := (residents_by_id.get(resident_id, {}) as Dictionary).duplicate(true)
@@ -553,9 +556,9 @@ func _data_snapshot(validation: Dictionary) -> Dictionary:
 		"draftId": _draft_id,
 		"flowMode": "new_game",
 		"selectedSlotId": _selected_slot_id,
-		"slotCount": SLOT_COUNT,
+		"slotCount": _slot_count,
 		"completedSlotCount": completed_count,
-		"invalidSlotCount": SLOT_COUNT - completed_count,
+		"invalidSlotCount": _slot_count - completed_count,
 		"dirty": _dirty,
 		"slots": slots,
 		"editor": {
@@ -603,9 +606,9 @@ func _data_snapshot(validation: Dictionary) -> Dictionary:
 		"validation": {
 			"status": String(validation.get("status", "invalid")),
 			"summaryLabel": (
-				"15 个居民槽位资料完整"
-				if completed_count == SLOT_COUNT
-				else "%d 个居民槽位需要处理" % (SLOT_COUNT - completed_count)
+				"%d 个居民槽位资料完整" % _slot_count
+				if completed_count == _slot_count
+				else "%d 个居民槽位需要处理" % (_slot_count - completed_count)
 			),
 			"issues": (validation.get("issues", []) as Array).duplicate(true),
 			"fieldIssues": (
@@ -709,7 +712,7 @@ func _validate_entries(entries: Array[Dictionary]) -> Dictionary:
 		if bool(slot_valid):
 			completed_count += 1
 	return {
-		"status": "valid" if issues.is_empty() and entries.size() == SLOT_COUNT else "invalid",
+		"status": "valid" if issues.is_empty() and entries.size() == _slot_count else "invalid",
 		"issues": issues,
 		"issuesBySlot": issues_by_slot,
 		"validSlots": valid_slots,
@@ -1179,3 +1182,4 @@ func _reset() -> void:
 	_configuration_error = "RESIDENT_EDITOR_SERVICE_NOT_CONFIGURED"
 	_saved_catalog.clear()
 	_saved_draft.clear()
+	_slot_count = SLOT_COUNT

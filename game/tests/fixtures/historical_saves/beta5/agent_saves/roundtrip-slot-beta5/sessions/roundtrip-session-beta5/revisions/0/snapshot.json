@@ -1,0 +1,115 @@
+{
+	"format_version": 3,
+	"resident_count": 15,
+	"resident_set_sha256": "6e164a5b71f68b3ec836e1a4b5cdd2ffcb3d587cc99546b5ec000ebb119e6a0e",
+	"residents": [
+		{
+			"byte_length": 16936,
+			"file": "resident_0000.bin",
+			"resident_id": "resident_bai_zhi_01",
+			"resident_name": "白芷",
+			"sha256": "4e96a4f881e28fed9baf3bf2564f4f787ccf8bba27430a88e1bd14a25d3efe04"
+		},
+		{
+			"byte_length": 17000,
+			"file": "resident_0001.bin",
+			"resident_id": "resident_cheng_yan_01",
+			"resident_name": "程砚",
+			"sha256": "f83840320cf21de99cec10e07d84500b2d368ab03cb0480ace54155ac564cc6d"
+		},
+		{
+			"byte_length": 16908,
+			"file": "resident_0002.bin",
+			"resident_id": "resident_hanako_01",
+			"resident_name": "花子",
+			"sha256": "0ea0efadf38f3285199939011ba2ed881de7fee4bae957da12ebb57d3588ee2d"
+		},
+		{
+			"byte_length": 16924,
+			"file": "resident_0003.bin",
+			"resident_id": "resident_jiang_cheng_01",
+			"resident_name": "姜澄",
+			"sha256": "cae1e6577c8fecbd303739d163ca5e91b309cf6b94e08c4484d83159779d14f9"
+		},
+		{
+			"byte_length": 16984,
+			"file": "resident_0004.bin",
+			"resident_id": "resident_lin_lan_01",
+			"resident_name": "林岚",
+			"sha256": "1ecfe26b1e3391102b2b70eb7b1eb55cd22bfa3ed4cfc02affeb07d863c53e2b"
+		},
+		{
+			"byte_length": 16932,
+			"file": "resident_0005.bin",
+			"resident_id": "resident_lu_qingzhou_01",
+			"resident_name": "陆青舟",
+			"sha256": "adfc2d25936180f73ec27bf0c0e2d51c2956c02a60457e97a7d448e0c5ccec1d"
+		},
+		{
+			"byte_length": 16892,
+			"file": "resident_0006.bin",
+			"resident_id": "resident_luo_yuan_01",
+			"resident_name": "罗远",
+			"sha256": "b85e59cfa8a9608fcf576cf357bc96e664033437c291f9ed47372120e8d8bebe"
+		},
+		{
+			"byte_length": 16920,
+			"file": "resident_0007.bin",
+			"resident_id": "resident_mi_ya_01",
+			"resident_name": "米芽",
+			"sha256": "7eae8ba446e37a2e246b12faa8b2d1d3e417d8b6541c49e09965cd0fdfbb6865"
+		},
+		{
+			"byte_length": 16936,
+			"file": "resident_0008.bin",
+			"resident_id": "resident_qiao_yiming_01",
+			"resident_name": "乔一鸣",
+			"sha256": "e60d9fe2561a1bdeb71fcc160401ed2283a2bc872dfae55fee51a2a413119bdc"
+		},
+		{
+			"byte_length": 16912,
+			"file": "resident_0009.bin",
+			"resident_id": "resident_su_tang_01",
+			"resident_name": "苏棠",
+			"sha256": "3b703851de60ca58f39f82ef9121dba6325edf8ab653686e562513e9c2988787"
+		},
+		{
+			"byte_length": 16896,
+			"file": "resident_0010.bin",
+			"resident_id": "resident_tang_xiaoman_01",
+			"resident_name": "唐小满",
+			"sha256": "c3d0dcf76d4023bd8cb4302762b38692c3aee37cecb586f8a5fa8848fe75cf9c"
+		},
+		{
+			"byte_length": 16952,
+			"file": "resident_0011.bin",
+			"resident_id": "resident_wen_xu_01",
+			"resident_name": "闻叙",
+			"sha256": "f806dbc9d050a97b117119360f42aae07c9be9289fb3be67dc42a070367d14d7"
+		},
+		{
+			"byte_length": 16920,
+			"file": "resident_0012.bin",
+			"resident_id": "resident_xie_mian_01",
+			"resident_name": "谢眠",
+			"sha256": "d2aadfdc1b2942b638eb04b6036e00c0314bd3b7eb74edce0984cfac1363d5f8"
+		},
+		{
+			"byte_length": 16844,
+			"file": "resident_0013.bin",
+			"resident_id": "resident_xu_zhao_01",
+			"resident_name": "许照",
+			"sha256": "13183642905834706f875cc5b54ede7f8ffa4305365f8bc54ebc9a75bdc7245b"
+		},
+		{
+			"byte_length": 16916,
+			"file": "resident_0014.bin",
+			"resident_id": "resident_zhou_jiming_01",
+			"resident_name": "周既明",
+			"sha256": "f7de3b73953aa797c15b664d9a9648faeaa83823f5cb4534873709b1a383fea9"
+		}
+	],
+	"save_revision": 0,
+	"session_id": "roundtrip-session-beta5",
+	"slot_id": "roundtrip-slot-beta5"
+}

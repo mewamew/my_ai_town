@@ -11,6 +11,9 @@ const RESULT_SHAPES := preload(
 )
 const AGENT_SYSTEM := preload("res://agent/AgentSystem.gd")
 const TOWN_LOG := preload("res://world/runtime/TownLog.gd")
+const UNAVAILABLE_MODEL_PROVIDER := preload(
+	"res://agent/model/UnavailableModelProvider.gd"
+)
 const PHOTO_STORE := preload(
 	"res://world/integration/TownConversationPhotoStore.gd"
 )
@@ -1769,6 +1772,19 @@ func hydrate_agent_restore(
 		var binding := _bindings_by_id.get(resident_id, {}) as Dictionary
 		var provider_result := _provider_service.create_provider_for_resident(binding,) as Dictionary
 		if not bool(provider_result.get("ok", false)):
+			if _allow_unavailable_model_during_restore():
+				var unavailable_provider := UNAVAILABLE_MODEL_PROVIDER.new()
+				var hydrated_unavailable := _agent_system.hydrate_restored_resident(
+					initialization,
+					unavailable_provider,
+					_photo_store,
+				) as Dictionary
+				if not bool(hydrated_unavailable.get("ok", false)):
+					return _agent_restore_hydration_failure(
+						hydrated_unavailable,
+						resident_id,
+					)
+				continue
 			return _normalized_failure(
 				provider_result,
 				"LLM_MODEL_PROVIDER_CREATION_FAILED",
@@ -1794,6 +1810,24 @@ func hydrate_agent_restore(
 		"retryable": false,
 		"residentCount": requested_ids.size(),
 	}
+
+
+func _allow_unavailable_model_during_restore() -> bool:
+	return bool(
+		_session_config.get("allowUnavailableModelDuringRestore", false)
+	)
+
+
+func _agent_restore_hydration_failure(
+	result: Dictionary,
+	resident_id: String,
+) -> Dictionary:
+	return _agent_stage_failure(
+		"SESSION_CONTINUE_AGENT_HYDRATE_FAILED",
+		"hydrate_restored_resident",
+		resident_id,
+		result,
+	)
 
 
 func close_session() -> Dictionary:

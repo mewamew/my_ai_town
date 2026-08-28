@@ -8,6 +8,12 @@ const DINING_SERVICE := preload(
 const CONTENT_CATALOG := preload(
 	"res://world/data/town/TownWorkContentCatalog.gd"
 )
+const OCCUPATION_SERVICE_DEFINITION := preload(
+	"res://world/runtime/work/TownOccupationServiceDefinition.gd"
+)
+const OCCUPATION_SERVICE_STAFFING_RUNTIME := preload(
+	"res://world/runtime/work/TownOccupationServiceStaffingRuntime.gd"
+)
 
 
 static func schedule_worker(host, request: Dictionary) -> void:
@@ -28,14 +34,21 @@ static func schedule_worker(host, request: Dictionary) -> void:
 			assigned_resident_id, can_interrupt, false, can_interrupt,
 		)
 		return
-	var occupation_id := String(context.get("occupationId", ""))
-	if occupation_id.is_empty():
+	var definition := OCCUPATION_SERVICE_DEFINITION.definition(
+		String(request.get("kind", "")),
+	)
+	if definition.is_empty():
 		return
-	for resident_id: String in host.resident_registry.order:
-		if host.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.can_work_occupation(host, resident_id, occupation_id):
-			host._schedule_decision(
-				resident_id, can_interrupt, false, can_interrupt,
-			)
+	for resident_id: String in (
+		OCCUPATION_SERVICE_STAFFING_RUNTIME.executable_worker_ids(
+			host,
+			String(definition.get("occupationId", "")),
+			String(definition.get("capability", "")),
+		)
+	):
+		host._schedule_decision(
+			resident_id, can_interrupt, false, can_interrupt,
+		)
 
 
 static func sync(host, absolute_minute: int) -> void:
@@ -49,7 +62,10 @@ static func sync(host, absolute_minute: int) -> void:
 			request,
 			host.resident_registry.records.get(String(request.get("requesterResidentId", "")), {}) as Dictionary,
 			absolute_minute,
-			host.resident_registry.records,
+			OCCUPATION_SERVICE_STAFFING_RUNTIME.service_has_executable_worker(
+				host,
+				OCCUPATION_SERVICE_DEFINITION.definition(kind),
+			),
 			host.CLINIC_SERVICE_COORDINATION_RUNTIME.request_has_executable_practitioner(host, request) if kind == "clinic" else true,
 			(
 				host.CUSTOMER_SERVICE_WAIT_RUNTIME.onsite_queue_is_advancing(host, request)

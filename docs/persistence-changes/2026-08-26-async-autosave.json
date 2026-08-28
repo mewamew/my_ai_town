@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "decision": "no_migration",
+  "summary": "每日自动保存改为在主线程捕获纯数据、后台执行成对事务写入；磁盘格式、版本号、路径和字段含义均不变。",
+  "affectedModules": [
+    "session_save_scheduling",
+    "session_manifest",
+    "session_config",
+    "world_snapshot",
+    "world_log",
+    "agent_snapshot"
+  ],
+  "migrationIds": [],
+  "samples": [
+    "game/tests/fixtures/historical_saves/catalog.json"
+  ],
+  "tests": [
+    "game/tests/game_flow_daily_auto_save_test.gd",
+    "game/tests/town_session_async_save_job_test.gd",
+    "game/tests/session_save_continue_roundtrip_test.gd"
+  ],
+  "docs": [
+    "docs/persistence-changes/2026-08-26-async-autosave.json"
+  ]
+}

@@ -1,0 +1,332 @@
+{
+  "canvas_size_px": [
+    1254.0,
+    1254.0
+  ],
+  "room_id": "clinic",
+  "schema_version": 2,
+  "segments": [
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        343,
+        423
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/clinic/wall_occlusion_runtime/inner_left-5d09bfe686f9.png",
+      "foreground_texture_sha256": "5d09bfe686f9eb792f6a49752591b43b4d06206578a0072272d2104860d3cc16",
+      "foreground_texture_size_px": [
+        154,
+        127
+      ],
+      "id": "inner_left",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            355.0,
+            398.0
+          ],
+          [
+            483.0,
+            398.0
+          ],
+          [
+            483.0,
+            526.0
+          ],
+          [
+            355.0,
+            526.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        746,
+        423
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/clinic/wall_occlusion_runtime/inner_right-9e43f6ba488c.png",
+      "foreground_texture_sha256": "9e43f6ba488ce8dfcb9e1eb4209f9d8b49ec1516802db4de56672c32174f32ca",
+      "foreground_texture_size_px": [
+        154,
+        127
+      ],
+      "id": "inner_right",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            739.0,
+            398.0
+          ],
+          [
+            867.0,
+            398.0
+          ],
+          [
+            867.0,
+            526.0
+          ],
+          [
+            739.0,
+            526.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 64.0,
+      "foreground_canvas_origin_px": [
+        291,
+        758
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/clinic/wall_occlusion_runtime/separator_left-8b51ce8a09f1.png",
+      "foreground_texture_sha256": "8b51ce8a09f125a83499f0e54e59a64f65f57f402d1782c9ffc0af07d935bc63",
+      "foreground_texture_size_px": [
+        35,
+        188
+      ],
+      "id": "separator_left",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            291.0,
+            654.0
+          ],
+          [
+            323.0,
+            654.0
+          ],
+          [
+            323.0,
+            782.0
+          ],
+          [
+            291.0,
+            782.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 64.0,
+      "foreground_canvas_origin_px": [
+        928,
+        758
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/clinic/wall_occlusion_runtime/separator_right-c81887cfd03d.png",
+      "foreground_texture_sha256": "c81887cfd03dea03e562f629d66c7938ebf605a44b0250dd02d04a7a850e42fb",
+      "foreground_texture_size_px": [
+        35,
+        188
+      ],
+      "id": "separator_right",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            899.0,
+            654.0
+          ],
+          [
+            931.0,
+            654.0
+          ],
+          [
+            931.0,
+            782.0
+          ],
+          [
+            899.0,
+            782.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        58,
+        930
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/clinic/wall_occlusion_runtime/south_left_wing-8aa0099d9d3d.png",
+      "foreground_texture_sha256": "8aa0099d9d3d157b4bdfb24e63cf9a5ea55fa276677e677e9c06379e1268b3d2",
+      "foreground_texture_size_px": [
+        251,
+        143
+      ],
+      "id": "south_left_wing",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            67.0,
+            910.0
+          ],
+          [
+            291.0,
+            910.0
+          ],
+          [
+            291.0,
+            1038.0
+          ],
+          [
+            67.0,
+            1038.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        292,
+        998
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/clinic/wall_occlusion_runtime/south_center_left-a22d3c94d1bf.png",
+      "foreground_texture_sha256": "a22d3c94d1bf6cf5e09423ca8614a6e3c478f4982f7dd92d0c892bc286cfb0aa",
+      "foreground_texture_size_px": [
+        260,
+        157
+      ],
+      "id": "south_center_left",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            323.0,
+            974.0
+          ],
+          [
+            547.0,
+            974.0
+          ],
+          [
+            547.0,
+            1038.0
+          ],
+          [
+            323.0,
+            1038.0
+          ]
+        ],
+        [
+          [
+            552.0,
+            974.0
+          ],
+          [
+            700.0,
+            974.0
+          ],
+          [
+            700.0,
+            1038.0
+          ],
+          [
+            552.0,
+            1038.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        700,
+        998
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/clinic/wall_occlusion_runtime/south_center_right-e379c7ded576.png",
+      "foreground_texture_sha256": "e379c7ded576c691d306d8a2e7b3a5102c2ba484acdf2e450abf41286b624c23",
+      "foreground_texture_size_px": [
+        262,
+        157
+      ],
+      "id": "south_center_right",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            707.0,
+            974.0
+          ],
+          [
+            899.0,
+            974.0
+          ],
+          [
+            899.0,
+            1038.0
+          ],
+          [
+            707.0,
+            1038.0
+          ]
+        ],
+        [
+          [
+            552.0,
+            974.0
+          ],
+          [
+            700.0,
+            974.0
+          ],
+          [
+            700.0,
+            1038.0
+          ],
+          [
+            552.0,
+            1038.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        944,
+        930
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/clinic/wall_occlusion_runtime/south_right_wing-50909cb0890f.png",
+      "foreground_texture_sha256": "50909cb0890ff103f4cc8b7eabe6aabc8b08764815b18d9a6b32efe1a507658b",
+      "foreground_texture_size_px": [
+        254,
+        143
+      ],
+      "id": "south_right_wing",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            931.0,
+            910.0
+          ],
+          [
+            1155.0,
+            910.0
+          ],
+          [
+            1155.0,
+            1038.0
+          ],
+          [
+            931.0,
+            1038.0
+          ]
+        ]
+      ]
+    }
+  ],
+  "source_geometry_revision": "clinic_user_confirmed_manual_layout_functional_anchor_v2",
+  "source_geometry_sha256": "a8da1fea16d83ecd73aeabdd7a4e4657959b173340f0f9f3cd6e943f13c83e24",
+  "source_occlusion_revision": "clinic_calibration_a_space_v3_back_walls_background",
+  "source_occlusion_sha256": "3ad28369211b30bbc22ffb2090c4c679882098841e878082fe35359cda06cf5a",
+  "source_shell_path": "res://world/maps/town/interiors/redesign_v2/rooms/clinic/assets/background/room_shell.png",
+  "source_shell_sha256": "4363c705e510d1936f5b4e098224eed5d85ac1f608c19d2e5187116818799d32"
+}

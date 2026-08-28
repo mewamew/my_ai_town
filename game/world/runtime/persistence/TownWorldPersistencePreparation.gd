@@ -167,6 +167,7 @@ static func prepare_restore_candidate(
 		prepared,
 		prepared_world_log,
 		int(snapshot.get("schemaVersion", 0)),
+		restore_compatibility.get("migrationReceipt", {}) as Dictionary,
 	) as Dictionary
 
 

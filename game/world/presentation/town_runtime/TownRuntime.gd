@@ -1056,6 +1056,25 @@ func complete_restored_session(context: Dictionary) -> Dictionary:
 	}
 
 
+func record_published_save(context: Dictionary) -> Dictionary:
+	var revision := int(context.get("save_revision", 0))
+	if (
+		bool(session_config.get("restorePending", false))
+		or String(context.get("slot_id", ""))
+		!= String(session_config.get("slotId", ""))
+		or String(context.get("session_id", ""))
+		!= String(session_config.get("sessionId", ""))
+		or revision <= int(session_config.get("saveRevision", 0))
+	):
+		return RESULT_SHAPES.failure("SESSION_SAVE_CONTEXT_MISMATCH")
+	session_config["saveRevision"] = revision
+	return {
+		"ok": true,
+		"errorCode": "",
+		"retryable": false,
+	}
+
+
 func get_lifecycle_state() -> Dictionary:
 	return _lifecycle_state.duplicate(true)
 
@@ -1973,6 +1992,10 @@ func _start_world() -> void:
 				)
 			)
 		)
+		return
+	if not _bind_interior_occlusion_presentation(_resident_presentation):
+		_world.stop()
+		_fail_start("居民遮挡事件绑定失败")
 		return
 	var animal_world_binding := _animal_presentation.bind_world_props(
 		_world,
@@ -3866,32 +3889,6 @@ func _enter_interior(body: Node2D, portal_id: String) -> void:
 		_avatar_place_change_active = false
 		_sync_avatar_visual_from_world(true)
 		return
-	var target_interior_id := String(
-		_exterior_portal_spec(portal_id).get("interior_id", ""),
-	)
-	var target_room := _interior_roots.get(target_interior_id) as Node2D
-	var presentation_result := (
-		_resident_presentation.set_observed_interior(
-			place_name,
-			target_room.position,
-		) as Dictionary
-		if target_room != null
-		else {
-			"ok": false,
-			"code": "PRESENTATION_INTERIOR_ROOM_UNAVAILABLE",
-		}
-	)
-	if presentation_result.get("ok") != true:
-		var rollback := _world.return_player_avatar_outdoors(
-			_avatar_outdoor_place,
-			threshold_position,
-		) as Dictionary
-		_show_player_command_feedback(
-			presentation_result if rollback.get("ok") == true else rollback,
-		)
-		_avatar_place_change_active = false
-		_sync_avatar_visual_from_world(true)
-		return
 	await super._enter_interior(body, portal_id)
 	if not is_inside_tree():
 		return
@@ -3901,6 +3898,13 @@ func _enter_interior(body: Node2D, portal_id: String) -> void:
 		_observed_place_name = place_name
 		_environment_renderer.set_outdoor_visible(false)
 		_set_building_hotspots_available(false)
+		_sync_avatar_visual_from_world(true)
+	else:
+		var rollback := _world.return_player_avatar_outdoors(
+			_avatar_outdoor_place,
+			threshold_position,
+		) as Dictionary
+		_show_player_command_feedback(rollback)
 		_sync_avatar_visual_from_world(true)
 	_avatar_place_change_active = false
 	observed_place_changed.emit({
@@ -4012,17 +4016,7 @@ func _show_observed_interior(place_name: String, portal_id: String) -> bool:
 		var target_interior_id := String(
 			portal_spec.get("interior_id", ""),
 		)
-		var target_room := (
-			_interior_roots.get(target_interior_id) as Node2D
-		)
-		if target_room == null:
-			_view_sync_active = false
-			return false
-		var prepared := _resident_presentation.set_observed_interior(
-			place_name,
-			target_room.position,
-		) as Dictionary
-		if prepared.get("ok") != true:
+		if not INTERIOR_DEFINITIONS.has(target_interior_id):
 			_view_sync_active = false
 			return false
 		await _enter_interior(_player, portal_id)

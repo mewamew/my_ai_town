@@ -851,7 +851,15 @@ func _publish_old_formal_pair() -> Dictionary:
 		{
 			"resident-old": {
 				"resident_name": "旧居民",
-				"payload": "{}".to_utf8_buffer(),
+				"payload": var_to_bytes({
+					"format_version": 2,
+					"resident_id": "resident-old",
+					"resident_name": "旧居民",
+					"resident_state": {
+						"runtime_state_version": 6,
+						"memory_system": {"memory_state_version": 6},
+					},
+				}),
 			},
 		},
 	) as Dictionary

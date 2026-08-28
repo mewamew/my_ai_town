@@ -79,6 +79,20 @@ static func query(
 		for option_value: Variant in result.get("options", []) as Array:
 			var option := option_value as Dictionary
 			world.ACTIVITY_AVAILABILITY_RUNTIME.apply_sleep(resident, option)
+			world.ACTIVITY_AVAILABILITY_RUNTIME.apply_clinic_continuity(
+				world,
+				resident,
+				option,
+			)
+			world.ACTIVITY_AVAILABILITY_RUNTIME.apply_communal_simple_meal(
+				world,
+				resident,
+				option,
+			)
+			world.ACTIVITY_AVAILABILITY_RUNTIME.apply_dining_meal_state(
+				world,
+				option,
+			)
 			world.ACTIVITY_AVAILABILITY_RUNTIME.apply_bulletin(world, normalized_id, option)
 			world.ACTIVITY_AVAILABILITY_RUNTIME.apply_work_task(world,
 				normalized_id,
@@ -87,6 +101,10 @@ static func query(
 			)
 			world.ACTIVITY_AVAILABILITY_RUNTIME.apply_occupation_service(world,
 				normalized_id,
+				option,
+			)
+			world.ACTIVITY_AVAILABILITY_RUNTIME.apply_public_place_continuity(
+				world,
 				option,
 			)
 			world.CLINIC_SERVICE_COORDINATION_RUNTIME.apply_visitor_activity_availability(world,

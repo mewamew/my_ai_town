@@ -18,6 +18,7 @@ __pycache__/
 release/
 !/tools/release/
 !/tools/release/**
+/tools/release/__pycache__/
 attack-perf-fixes-*.md
 
 # 本地设计与整理文档默认不进入版本库；手机适配方案作为跨平台约定保留。

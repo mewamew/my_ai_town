@@ -1,0 +1,82 @@
+name: Setup Godot validation
+description: Install CI tools, restore Godot caches, and import the project.
+
+inputs:
+  godot-version:
+    description: Godot stable version.
+    required: false
+    default: "4.7"
+
+runs:
+  using: composite
+  steps:
+    - name: Install dependencies
+      shell: bash
+      run: |
+        set -euo pipefail
+        missing=()
+        for command_name in zsh rg unzip; do
+          if ! command -v "$command_name" >/dev/null 2>&1; then
+            missing+=("$command_name")
+          fi
+        done
+        if (( ${#missing[@]} == 0 )); then
+          exit 0
+        fi
+        for source_file in \
+          /etc/apt/apt-mirrors.txt \
+          /etc/apt/sources.list \
+          /etc/apt/sources.list.d/*.list \
+          /etc/apt/sources.list.d/*.sources; do
+          if [ -f "$source_file" ]; then
+            sudo -n sed -i \
+              -e 's#azure.archive.ubuntu.com#archive.ubuntu.com#g' \
+              "$source_file"
+          fi
+        done
+        timeout --foreground 5m sudo -n apt-get update
+        timeout --foreground 5m sudo -n env DEBIAN_FRONTEND=noninteractive \
+          apt-get install -y zsh ripgrep unzip
+
+    - name: Cache Godot binary
+      id: godot-cache
+      uses: actions/cache@v4
+      with:
+        path: ~/godot-bin
+        key: godot-${{ inputs.godot-version }}-linux-x86_64
+
+    - name: Download Godot
+      if: steps.godot-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        mkdir -p ~/godot-bin
+        curl --fail --show-error --location --retry 3 --retry-delay 5 \
+          --connect-timeout 15 --max-time 300 -o /tmp/godot.zip \
+          "https://github.com/godotengine/godot/releases/download/${{ inputs.godot-version }}-stable/Godot_v${{ inputs.godot-version }}-stable_linux.x86_64.zip"
+        unzip -q /tmp/godot.zip -d /tmp/godot-extract
+        mv "/tmp/godot-extract/Godot_v${{ inputs.godot-version }}-stable_linux.x86_64" \
+          ~/godot-bin/godot
+        chmod +x ~/godot-bin/godot
+
+    - name: Add Godot to PATH
+      shell: bash
+      run: echo "$HOME/godot-bin" >> "$GITHUB_PATH"
+
+    - name: Cache Godot import artifacts
+      uses: actions/cache@v4
+      with:
+        path: game/.godot
+        key: godot-import-${{ inputs.godot-version }}-${{ hashFiles('game/**/*.import', 'game/project.godot') }}
+        restore-keys: |
+          godot-import-${{ inputs.godot-version }}-
+
+    - name: Import project
+      shell: bash
+      run: |
+        set -o pipefail
+        godot --headless --path game --import 2>&1 | tee /tmp/godot-import.log
+        if grep -qE '^ERROR:|SCRIPT ERROR:|Parse Error:|Failed to load script' /tmp/godot-import.log; then
+          echo "::error::Godot import produced engine or script errors."
+          grep -nE '^ERROR:|SCRIPT ERROR:|Parse Error:|Failed to load script' /tmp/godot-import.log | head -20
+          exit 1
+        fi

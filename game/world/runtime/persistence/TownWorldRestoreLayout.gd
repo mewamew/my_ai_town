@@ -7,6 +7,9 @@ const INDOOR_LAYOUT_PROJECTION := preload(
 	"res://world/runtime/TownIndoorLayoutProjection.gd"
 )
 const SAVE_CODEC := preload("res://world/runtime/persistence/TownWorldSaveCodec.gd")
+const SAVE_SCHEMA_REGISTRY := preload(
+	"res://world/presentation/session/TownSaveSchemaRegistry.gd"
+)
 const PROJECTION_KEYS := [
 	"spaceId",
 	"placeName",
@@ -389,18 +392,12 @@ static func prepare_place_service_states(
 				)
 		if (
 			String(state.get("place_id", "")) != place_id
-			or String(state.get("pressure_id", ""))
-			!= String(expected.get("pressure_id", ""))
 			or String(state.get("owner_id", ""))
 			!= String(expected.get("owner_id", ""))
-			or String(state.get("service_occupation_id", ""))
-			!= String(expected.get("service_occupation_id", ""))
-			or int(state.get("service_capacity", -1))
-			!= int(expected.get("service_capacity", -2))
-			or String(state.get("helper_activity_id", ""))
-			!= String(expected.get("helper_activity_id", ""))
-			or state.get("request_activity_ids", [])
-			!= expected.get("request_activity_ids", [])
+			or not SAVE_SCHEMA_REGISTRY.place_service_config_matches(
+				state,
+				expected,
+			)
 		):
 			errors.append(
 				"placeServiceStates.%s 与当前地点服务配置不一致"

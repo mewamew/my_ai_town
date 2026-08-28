@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "decision": "migration",
+  "summary": "新增 beta1 至 beta5 通用升级链、安全坏档发布、事务协调和不可修复诊断导出。",
+  "affectedModules": [
+    "session_manifest",
+    "session_config",
+    "world_snapshot",
+    "world_log",
+    "agent_snapshot",
+    "resident_payload",
+    "resident_memory",
+    "conversation_photos",
+    "custom_resident_library"
+  ],
+  "migrationIds": [
+    "2026-08-12-public-dining-day-routine",
+    "2026-08-24-place-service-owner-backfill",
+    "2026-08-24-shop-owner-derived-from-occupation"
+  ],
+  "samples": [
+    "game/tests/fixtures/historical_saves/catalog.json"
+  ],
+  "tests": [
+    "game/tests/historical_save_migration_story_test.gd",
+    "game/tests/town_save_compatibility_registry_test.gd",
+    "game/tests/save_reconciliation_test.gd"
+  ],
+  "docs": [
+    "docs/持久化模块清单.md",
+    "docs/存档迁移手册.md",
+    "docs/历史存档样本.md"
+  ]
+}

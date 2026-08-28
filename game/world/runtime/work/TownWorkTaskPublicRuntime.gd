@@ -44,6 +44,7 @@ static func create(host, spec: Dictionary) -> Dictionary:
 
 static func query_for_resident(host, resident_ref: String) -> Array[Dictionary]:
 	var resident_id: String = host._resident_key(resident_ref)
+	var resident := host.resident_registry.records.get(resident_id, {}) as Dictionary
 	var occupation_ids: Array[String] = (
 		host.OCCUPATION_RESIDENT_CONTEXT_RUNTIME.ids_for_resident(host, resident_id)
 	)
@@ -59,6 +60,12 @@ static func query_for_resident(host, resident_ref: String) -> Array[Dictionary]:
 		host.resident_registry.name_by_id,
 		host.world_definition.world_data,
 		int(host._environment.get_absolute_minute()),
+		host._work.authorized_work_capabilities_for_resident(
+			resident_id,
+			resident,
+			host.world_definition.world_data,
+			int(host._environment.get_absolute_minute()),
+		),
 	)
 
 

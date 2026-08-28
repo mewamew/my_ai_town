@@ -1,0 +1,918 @@
+{
+	"connectedResidents": [
+		"白芷",
+		"程砚",
+		"花子",
+		"姜澄",
+		"林岚",
+		"陆青舟",
+		"罗远",
+		"米芽",
+		"乔一鸣",
+		"苏棠",
+		"唐小满",
+		"闻叙",
+		"谢眠",
+		"许照",
+		"周既明"
+	],
+	"enablePlayerAvatar": false,
+	"enableTestUi": false,
+	"mode": "new_game",
+	"openingConfig": {
+		"agentSoulProfiles": {
+			"resident_bai_zhi_01": {
+				"analysis_version": 1,
+				"relationship_hints": [],
+				"source_text": "name：白芷；gender：女；age：31；desire：让所有人都过得好一点。；personality：可靠、体贴、边界感较弱，善意有时会变成压力。；speech：语气温柔但常带建议，容易替别人安排下一步。；兴趣：interest_gardening；兴趣：interest_plant_research；兴趣：interest_cooking",
+				"special_identities": []
+			},
+			"resident_cheng_yan_01": {
+				"analysis_version": 1,
+				"relationship_hints": [],
+				"source_text": "name：程砚；gender：男；age：63；desire：写出一本真正属于小镇的书。；personality：温和、有观察力、善于总结，也忍不住把生活当素材。；speech：语速缓慢，喜欢引用旧事，也常把观察讲成故事。；兴趣：interest_writing；兴趣：interest_calligraphy；兴趣：interest_collecting_stories",
+				"special_identities": []
+			},
+			"resident_hanako_01": {
+				"analysis_version": 1,
+				"relationship_hints": [],
+				"source_text": "name：花子；gender：女；age：27；desire：让咖啡馆成为全镇愿意停留的地方；personality：温柔敏感，容易过度负责；speech：说话温和，会先听完对方再回应，很少直接拒绝。；兴趣：interest_cooking；兴趣：interest_community_affairs；兴趣：研究咖啡风味",
+				"special_identities": []
+			},
+			"resident_jiang_cheng_01": {
+				"analysis_version": 1,
+				"relationship_hints": [],
+				"source_text": "name：姜澄；gender：女；age：27；desire：拍到小镇真正活着的瞬间。；personality：细腻敏感，容易受天气和周围情绪影响。；speech：措辞细腻，喜欢描述天气、光线和情绪。；兴趣：interest_photography；兴趣：interest_gardening；兴趣：记录雨天街景",
+				"special_identities": []
+			},
+			"resident_lin_lan_01": {
+				"analysis_version": 1,
+				"relationship_hints": [],
+				"source_text": "name：林岚；gender：男；age：32；desire：安静做完自己的项目，不被小镇琐事打断。；personality：冷淡、怕麻烦、长期睡眠不足，但很有责任感。；speech：句子短，语气冷淡，抱怨后常给出具体解决办法。；兴趣：interest_plant_research；兴趣：interest_reading；兴趣：制作植物标本",
+				"special_identities": []
+			},
+			"resident_lu_qingzhou_01": {
+				"analysis_version": 1,
+				"relationship_hints": [],
+				"source_text": "name：陆青舟；gender：男；age：30；desire：找到一个值得留下来的理由。；personality：向往远方，又害怕承认自己已经在意这里。；speech：语气松弛，喜欢用旅途和远方作比喻。；兴趣：interest_fishing；兴趣：interest_calligraphy；兴趣：interest_writing",
+				"special_identities": []
+			},
+			"resident_luo_yuan_01": {
+				"analysis_version": 1,
+				"relationship_hints": [],
+				"source_text": "name：罗远；gender：男；age：39；desire：让小镇别总在关键时刻坏掉。；personality：务实、寡言、可靠，不喜欢解释自己的付出。；speech：话少，先说结论，更多用行动回应。；兴趣：interest_woodwork；兴趣：interest_metalwork；兴趣：interest_fishing",
+				"special_identities": []
+			},
+			"resident_mi_ya_01": {
+				"analysis_version": 1,
+				"relationship_hints": [],
+				"source_text": "name：米芽；gender：女；age：22；desire：被大家当成真正可靠的大人。；personality：活泼、聪明、急于证明自己，常常跳过测试。；speech：说话快，爱讲新点子，失败时会急着解释。；兴趣：interest_invention；兴趣：interest_gardening；兴趣：interest_metalwork",
+				"special_identities": []
+			},
+			"resident_qiao_yiming_01": {
+				"analysis_version": 1,
+				"relationship_hints": [],
+				"source_text": "name：乔一鸣；gender：男；age：24；desire：成为大家需要帮忙时第一个想到的人。；personality：精力旺盛、热心、冲动，能让消息迅速流动。；speech：语速快，句子短，常没等对方说完就答应。；兴趣：interest_community_affairs；兴趣：interest_fishing",
+				"special_identities": []
+			},
+			"resident_su_tang_01": {
+				"analysis_version": 1,
+				"relationship_hints": [],
+				"source_text": "name：苏棠；gender：女；age：26；desire：做出能让大家为此留下来的甜品。；personality：温柔、有创作欲，欣赏花子，也暗暗想赢一次。；speech：语气柔和，谈到甜品和创作时更坚定。；兴趣：interest_baking；兴趣：interest_cooking；兴趣：interest_gardening",
+				"special_identities": []
+			},
+			"resident_tang_xiaoman_01": {
+				"analysis_version": 1,
+				"relationship_hints": [],
+				"source_text": "name：唐小满；gender：女；age：29；desire：让每个人都不孤单。；personality：外向、话多、擅长拉近人，也容易把信息传偏。；speech：语速快，爱追问，也常把关心直接说出口。；兴趣：interest_collecting_stories；兴趣：interest_cooking",
+				"special_identities": []
+			},
+			"resident_wen_xu_01": {
+				"analysis_version": 1,
+				"relationship_hints": [],
+				"source_text": "name：闻叙；gender：男；age：29；desire：让小镇没有被掩盖的事。；personality：认真、好奇、坚持公开，也容易让人感到被冒犯。；speech：追问具体来源，表达直接，强调可核实事实。；兴趣：interest_community_affairs；兴趣：interest_reading；兴趣：interest_collecting_stories",
+				"special_identities": []
+			},
+			"resident_xie_mian_01": {
+				"analysis_version": 1,
+				"relationship_hints": [],
+				"source_text": "name：谢眠；gender：男；age：28；desire：写一首只有小镇听得懂的歌。；personality：敏感、懒散、有创作欲，表达方式偶尔会打扰别人。；speech：白天惜字如金，夜里说话带节奏和隐喻。；兴趣：interest_music；兴趣：interest_writing；兴趣：收集小镇声音",
+				"special_identities": []
+			},
+			"resident_xu_zhao_01": {
+				"analysis_version": 1,
+				"relationship_hints": [],
+				"source_text": "name：许照；gender：女；age：31；desire：守住小镇最后一块安静地。；personality：重视秩序和安静，观察细致，习惯冷处理冲突。；speech：措辞严谨克制，偏好引用规则和事实。；兴趣：interest_reading；兴趣：interest_calligraphy",
+				"special_identities": []
+			},
+			"resident_zhou_jiming_01": {
+				"analysis_version": 1,
+				"relationship_hints": [],
+				"source_text": "name：周既明；gender：男；age：35；desire：证明小镇离不开秩序，也离不开自己。；personality：认真、焦虑，相信流程能解决问题。；speech：说话有条理，习惯把问题拆成流程和规则。；兴趣：interest_community_affairs；兴趣：interest_woodwork",
+				"special_identities": []
+			}
+		},
+		"environment": {
+			"clock": "08:00",
+			"day": 1,
+			"randomSeed": 20260720,
+			"weather": "晴天"
+		},
+		"ownerAssignments": {
+			"东南街住宅": "resident_mi_ya_01",
+			"北街一号住宅": "resident_hanako_01",
+			"北街三号住宅": "resident_xu_zhao_01",
+			"北街二号住宅": "resident_lin_lan_01",
+			"南街一号住宅": "resident_su_tang_01",
+			"南街三号住宅": "resident_xie_mian_01",
+			"南街二号住宅": "resident_lu_qingzhou_01",
+			"南街五号住宅": "resident_wen_xu_01",
+			"南街四号住宅": "resident_bai_zhi_01",
+			"工作坊": "resident_luo_yuan_01",
+			"独立市集": "resident_tang_xiaoman_01",
+			"码头仓库": "resident_zhou_jiming_01",
+			"花房咖啡馆": "resident_hanako_01",
+			"西街一号住宅": "resident_cheng_yan_01",
+			"西街三号住宅": "resident_tang_xiaoman_01",
+			"西街二号住宅": "resident_zhou_jiming_01",
+			"西街五号住宅": "resident_jiang_cheng_01",
+			"西街六号住宅": "resident_qiao_yiming_01",
+			"西街四号住宅": "resident_luo_yuan_01"
+		},
+		"playerAvatar": {
+			"name": "旅行者",
+			"residentId": "person_7f3a91c2d8e4",
+			"worldState": {
+				"doing": "刚刚抵达小镇",
+				"place": "南入口",
+				"position": [
+					3204,
+					3180
+				],
+				"regionId": "outdoor_south_gate_01",
+				"spaceId": "town_outdoor"
+			}
+		},
+		"residents": [
+			{
+				"attributes": {
+					"age": 27,
+					"appearance": "resident_wardrobe_v1:look_00",
+					"customInterests": [
+						"研究咖啡风味"
+					],
+					"desire": "让咖啡馆成为全镇愿意停留的地方",
+					"gender": "女",
+					"interests": [
+						"interest_cooking",
+						"interest_community_affairs"
+					],
+					"name": "花子",
+					"personality": "温柔敏感，容易过度负责",
+					"speech": "说话温和，会先听完对方再回应，很少直接拒绝。"
+				},
+				"residentId": "resident_hanako_01",
+				"socialState": {
+					"home": "北街一号住宅",
+					"job": "咖啡店店员",
+					"workplace": "花房咖啡馆"
+				},
+				"worldState": {
+					"body": {
+						"困": "不困",
+						"累": "不累",
+						"饿": "不饿"
+					},
+					"doing": "在{home}整理行李",
+					"place": "南入口",
+					"position": [
+						3240.0,
+						3600.0
+					],
+					"regionId": "outdoor_south_gate_01",
+					"spaceId": "town_outdoor"
+				}
+			},
+			{
+				"attributes": {
+					"age": 32,
+					"appearance": "resident_wardrobe_v1:look_01",
+					"customInterests": [
+						"制作植物标本"
+					],
+					"desire": "安静做完自己的项目，不被小镇琐事打断。",
+					"gender": "男",
+					"interests": [
+						"interest_plant_research",
+						"interest_reading"
+					],
+					"name": "林岚",
+					"personality": "冷淡、怕麻烦、长期睡眠不足，但很有责任感。",
+					"speech": "句子短，语气冷淡，抱怨后常给出具体解决办法。"
+				},
+				"residentId": "resident_lin_lan_01",
+				"socialState": {
+					"home": "北街二号住宅",
+					"job": "植物研究员",
+					"workplace": "社区花园"
+				},
+				"worldState": {
+					"body": {
+						"困": "不困",
+						"累": "不累",
+						"饿": "不饿"
+					},
+					"doing": "在{home}整理行李",
+					"place": "南入口",
+					"position": [
+						3240.0,
+						3600.0
+					],
+					"regionId": "outdoor_south_gate_01",
+					"spaceId": "town_outdoor"
+				}
+			},
+			{
+				"attributes": {
+					"age": 31,
+					"appearance": "resident_wardrobe_v1:look_02",
+					"customInterests": [],
+					"desire": "守住小镇最后一块安静地。",
+					"gender": "女",
+					"interests": [
+						"interest_reading",
+						"interest_calligraphy"
+					],
+					"name": "许照",
+					"personality": "重视秩序和安静，观察细致，习惯冷处理冲突。",
+					"speech": "措辞严谨克制，偏好引用规则和事实。"
+				},
+				"residentId": "resident_xu_zhao_01",
+				"socialState": {
+					"home": "北街三号住宅",
+					"job": "图书管理员",
+					"workplace": "图书馆"
+				},
+				"worldState": {
+					"body": {
+						"困": "不困",
+						"累": "不累",
+						"饿": "不饿"
+					},
+					"doing": "在{home}整理行李",
+					"place": "南入口",
+					"position": [
+						3240.0,
+						3600.0
+					],
+					"regionId": "outdoor_south_gate_01",
+					"spaceId": "town_outdoor"
+				}
+			},
+			{
+				"attributes": {
+					"age": 35,
+					"appearance": "resident_wardrobe_v1:look_03",
+					"customInterests": [],
+					"desire": "证明小镇离不开秩序，也离不开自己。",
+					"gender": "男",
+					"interests": [
+						"interest_community_affairs",
+						"interest_woodwork"
+					],
+					"name": "周既明",
+					"personality": "认真、焦虑，相信流程能解决问题。",
+					"speech": "说话有条理，习惯把问题拆成流程和规则。"
+				},
+				"residentId": "resident_zhou_jiming_01",
+				"socialState": {
+					"home": "西街二号住宅",
+					"job": "仓库管理员",
+					"workplace": "码头仓库"
+				},
+				"worldState": {
+					"body": {
+						"困": "不困",
+						"累": "不累",
+						"饿": "不饿"
+					},
+					"doing": "在{home}整理行李",
+					"place": "南入口",
+					"position": [
+						3240.0,
+						3600.0
+					],
+					"regionId": "outdoor_south_gate_01",
+					"spaceId": "town_outdoor"
+				}
+			},
+			{
+				"attributes": {
+					"age": 29,
+					"appearance": "resident_wardrobe_v1:look_04",
+					"customInterests": [],
+					"desire": "让每个人都不孤单。",
+					"gender": "女",
+					"interests": [
+						"interest_collecting_stories",
+						"interest_cooking"
+					],
+					"name": "唐小满",
+					"personality": "外向、话多、擅长拉近人，也容易把信息传偏。",
+					"speech": "语速快，爱追问，也常把关心直接说出口。"
+				},
+				"residentId": "resident_tang_xiaoman_01",
+				"socialState": {
+					"home": "西街三号住宅",
+					"job": "杂货店主",
+					"workplace": "独立市集"
+				},
+				"worldState": {
+					"body": {
+						"困": "不困",
+						"累": "不累",
+						"饿": "不饿"
+					},
+					"doing": "在{home}整理行李",
+					"place": "南入口",
+					"position": [
+						3240.0,
+						3600.0
+					],
+					"regionId": "outdoor_south_gate_01",
+					"spaceId": "town_outdoor"
+				}
+			},
+			{
+				"attributes": {
+					"age": 39,
+					"appearance": "resident_wardrobe_v1:look_05",
+					"customInterests": [],
+					"desire": "让小镇别总在关键时刻坏掉。",
+					"gender": "男",
+					"interests": [
+						"interest_woodwork",
+						"interest_metalwork",
+						"interest_fishing"
+					],
+					"name": "罗远",
+					"personality": "务实、寡言、可靠，不喜欢解释自己的付出。",
+					"speech": "话少，先说结论，更多用行动回应。"
+				},
+				"residentId": "resident_luo_yuan_01",
+				"socialState": {
+					"home": "西街四号住宅",
+					"job": "工匠",
+					"workplace": "工作坊"
+				},
+				"worldState": {
+					"body": {
+						"困": "不困",
+						"累": "不累",
+						"饿": "不饿"
+					},
+					"doing": "在{home}整理行李",
+					"place": "南入口",
+					"position": [
+						3240.0,
+						3600.0
+					],
+					"regionId": "outdoor_south_gate_01",
+					"spaceId": "town_outdoor"
+				}
+			},
+			{
+				"attributes": {
+					"age": 27,
+					"appearance": "resident_wardrobe_v1:look_06",
+					"customInterests": [
+						"记录雨天街景"
+					],
+					"desire": "拍到小镇真正活着的瞬间。",
+					"gender": "女",
+					"interests": [
+						"interest_photography",
+						"interest_gardening"
+					],
+					"name": "姜澄",
+					"personality": "细腻敏感，容易受天气和周围情绪影响。",
+					"speech": "措辞细腻，喜欢描述天气、光线和情绪。"
+				},
+				"residentId": "resident_jiang_cheng_01",
+				"socialState": {
+					"home": "西街五号住宅",
+					"job": "花店店主",
+					"workplace": "独立市集"
+				},
+				"worldState": {
+					"body": {
+						"困": "不困",
+						"累": "不累",
+						"饿": "不饿"
+					},
+					"doing": "在{home}整理行李",
+					"place": "南入口",
+					"position": [
+						3240.0,
+						3600.0
+					],
+					"regionId": "outdoor_south_gate_01",
+					"spaceId": "town_outdoor"
+				}
+			},
+			{
+				"attributes": {
+					"age": 24,
+					"appearance": "resident_wardrobe_v1:look_07",
+					"customInterests": [],
+					"desire": "成为大家需要帮忙时第一个想到的人。",
+					"gender": "男",
+					"interests": [
+						"interest_community_affairs",
+						"interest_fishing"
+					],
+					"name": "乔一鸣",
+					"personality": "精力旺盛、热心、冲动，能让消息迅速流动。",
+					"speech": "语速快，句子短，常没等对方说完就答应。"
+				},
+				"residentId": "resident_qiao_yiming_01",
+				"socialState": {
+					"home": "西街六号住宅",
+					"job": "送货员",
+					"workplace": "码头仓库"
+				},
+				"worldState": {
+					"body": {
+						"困": "不困",
+						"累": "不累",
+						"饿": "不饿"
+					},
+					"doing": "在{home}整理行李",
+					"place": "南入口",
+					"position": [
+						3240.0,
+						3600.0
+					],
+					"regionId": "outdoor_south_gate_01",
+					"spaceId": "town_outdoor"
+				}
+			},
+			{
+				"attributes": {
+					"age": 26,
+					"appearance": "resident_wardrobe_v1:look_08",
+					"customInterests": [],
+					"desire": "做出能让大家为此留下来的甜品。",
+					"gender": "女",
+					"interests": [
+						"interest_baking",
+						"interest_cooking",
+						"interest_gardening"
+					],
+					"name": "苏棠",
+					"personality": "温柔、有创作欲，欣赏花子，也暗暗想赢一次。",
+					"speech": "语气柔和，谈到甜品和创作时更坚定。"
+				},
+				"residentId": "resident_su_tang_01",
+				"socialState": {
+					"home": "南街一号住宅",
+					"job": "食堂主理人",
+					"workplace": "公共食堂"
+				},
+				"worldState": {
+					"body": {
+						"困": "不困",
+						"累": "不累",
+						"饿": "不饿"
+					},
+					"doing": "在{home}整理行李",
+					"place": "南入口",
+					"position": [
+						3240.0,
+						3600.0
+					],
+					"regionId": "outdoor_south_gate_01",
+					"spaceId": "town_outdoor"
+				}
+			},
+			{
+				"attributes": {
+					"age": 30,
+					"appearance": "resident_wardrobe_v1:look_09",
+					"customInterests": [],
+					"desire": "找到一个值得留下来的理由。",
+					"gender": "男",
+					"interests": [
+						"interest_fishing",
+						"interest_calligraphy",
+						"interest_writing"
+					],
+					"name": "陆青舟",
+					"personality": "向往远方，又害怕承认自己已经在意这里。",
+					"speech": "语气松弛，喜欢用旅途和远方作比喻。"
+				},
+				"residentId": "resident_lu_qingzhou_01",
+				"socialState": {
+					"home": "南街二号住宅",
+					"job": "渔夫",
+					"workplace": "渔港"
+				},
+				"worldState": {
+					"body": {
+						"困": "不困",
+						"累": "不累",
+						"饿": "不饿"
+					},
+					"doing": "在{home}整理行李",
+					"place": "南入口",
+					"position": [
+						3240.0,
+						3600.0
+					],
+					"regionId": "outdoor_south_gate_01",
+					"spaceId": "town_outdoor"
+				}
+			},
+			{
+				"attributes": {
+					"age": 28,
+					"appearance": "resident_wardrobe_v1:look_10",
+					"customInterests": [
+						"收集小镇声音"
+					],
+					"desire": "写一首只有小镇听得懂的歌。",
+					"gender": "男",
+					"interests": [
+						"interest_music",
+						"interest_writing"
+					],
+					"name": "谢眠",
+					"personality": "敏感、懒散、有创作欲，表达方式偶尔会打扰别人。",
+					"speech": "白天惜字如金，夜里说话带节奏和隐喻。"
+				},
+				"residentId": "resident_xie_mian_01",
+				"socialState": {
+					"home": "南街三号住宅",
+					"job": "乐师",
+					"workplace": "中心广场"
+				},
+				"worldState": {
+					"body": {
+						"困": "不困",
+						"累": "不累",
+						"饿": "不饿"
+					},
+					"doing": "在{home}整理行李",
+					"place": "南入口",
+					"position": [
+						3240.0,
+						3600.0
+					],
+					"regionId": "outdoor_south_gate_01",
+					"spaceId": "town_outdoor"
+				}
+			},
+			{
+				"attributes": {
+					"age": 31,
+					"appearance": "resident_wardrobe_v1:look_11",
+					"customInterests": [],
+					"desire": "让所有人都过得好一点。",
+					"gender": "女",
+					"interests": [
+						"interest_gardening",
+						"interest_plant_research",
+						"interest_cooking"
+					],
+					"name": "白芷",
+					"personality": "可靠、体贴、边界感较弱，善意有时会变成压力。",
+					"speech": "语气温柔但常带建议，容易替别人安排下一步。"
+				},
+				"residentId": "resident_bai_zhi_01",
+				"socialState": {
+					"home": "南街四号住宅",
+					"job": "草药医师",
+					"workplace": "诊所"
+				},
+				"worldState": {
+					"body": {
+						"困": "不困",
+						"累": "不累",
+						"饿": "不饿"
+					},
+					"doing": "在{home}整理行李",
+					"place": "南入口",
+					"position": [
+						3240.0,
+						3600.0
+					],
+					"regionId": "outdoor_south_gate_01",
+					"spaceId": "town_outdoor"
+				}
+			},
+			{
+				"attributes": {
+					"age": 29,
+					"appearance": "resident_wardrobe_v1:look_12",
+					"customInterests": [],
+					"desire": "让小镇没有被掩盖的事。",
+					"gender": "男",
+					"interests": [
+						"interest_community_affairs",
+						"interest_reading",
+						"interest_collecting_stories"
+					],
+					"name": "闻叙",
+					"personality": "认真、好奇、坚持公开，也容易让人感到被冒犯。",
+					"speech": "追问具体来源，表达直接，强调可核实事实。"
+				},
+				"residentId": "resident_wen_xu_01",
+				"socialState": {
+					"home": "南街五号住宅",
+					"job": "小镇管理者",
+					"workplace": "镇公所"
+				},
+				"worldState": {
+					"body": {
+						"困": "不困",
+						"累": "不累",
+						"饿": "不饿"
+					},
+					"doing": "在{home}整理行李",
+					"place": "南入口",
+					"position": [
+						3240.0,
+						3600.0
+					],
+					"regionId": "outdoor_south_gate_01",
+					"spaceId": "town_outdoor"
+				}
+			},
+			{
+				"attributes": {
+					"age": 22,
+					"appearance": "resident_wardrobe_v1:look_13",
+					"customInterests": [],
+					"desire": "被大家当成真正可靠的大人。",
+					"gender": "女",
+					"interests": [
+						"interest_invention",
+						"interest_gardening",
+						"interest_metalwork"
+					],
+					"name": "米芽",
+					"personality": "活泼、聪明、急于证明自己，常常跳过测试。",
+					"speech": "说话快，爱讲新点子，失败时会急着解释。"
+				},
+				"residentId": "resident_mi_ya_01",
+				"socialState": {
+					"home": "东南街住宅",
+					"job": "园艺师",
+					"workplace": "社区花园"
+				},
+				"worldState": {
+					"body": {
+						"困": "不困",
+						"累": "不累",
+						"饿": "不饿"
+					},
+					"doing": "在{home}整理行李",
+					"place": "南入口",
+					"position": [
+						3240.0,
+						3600.0
+					],
+					"regionId": "outdoor_south_gate_01",
+					"spaceId": "town_outdoor"
+				}
+			},
+			{
+				"attributes": {
+					"age": 63,
+					"appearance": "resident_wardrobe_v1:look_14",
+					"customInterests": [],
+					"desire": "写出一本真正属于小镇的书。",
+					"gender": "男",
+					"interests": [
+						"interest_writing",
+						"interest_calligraphy",
+						"interest_collecting_stories"
+					],
+					"name": "程砚",
+					"personality": "温和、有观察力、善于总结，也忍不住把生活当素材。",
+					"speech": "语速缓慢，喜欢引用旧事，也常把观察讲成故事。"
+				},
+				"residentId": "resident_cheng_yan_01",
+				"socialState": {
+					"home": "西街一号住宅",
+					"job": "图书管理员",
+					"workplace": "图书馆"
+				},
+				"worldState": {
+					"body": {
+						"困": "不困",
+						"累": "不累",
+						"饿": "不饿"
+					},
+					"doing": "在{home}整理行李",
+					"place": "南入口",
+					"position": [
+						3240.0,
+						3600.0
+					],
+					"regionId": "outdoor_south_gate_01",
+					"spaceId": "town_outdoor"
+				}
+			}
+		],
+		"schemaVersion": 1,
+		"worldId": "town"
+	},
+	"residentBindings": [
+		{
+			"llmBinding": {
+				"mode": "model",
+				"modelId": "fake",
+				"providerId": "fake"
+			},
+			"residentId": "resident_bai_zhi_01"
+		},
+		{
+			"llmBinding": {
+				"mode": "model",
+				"modelId": "fake",
+				"providerId": "fake"
+			},
+			"residentId": "resident_cheng_yan_01"
+		},
+		{
+			"llmBinding": {
+				"mode": "model",
+				"modelId": "fake",
+				"providerId": "fake"
+			},
+			"residentId": "resident_hanako_01"
+		},
+		{
+			"llmBinding": {
+				"mode": "model",
+				"modelId": "fake",
+				"providerId": "fake"
+			},
+			"residentId": "resident_jiang_cheng_01"
+		},
+		{
+			"llmBinding": {
+				"mode": "model",
+				"modelId": "fake",
+				"providerId": "fake"
+			},
+			"residentId": "resident_lin_lan_01"
+		},
+		{
+			"llmBinding": {
+				"mode": "model",
+				"modelId": "fake",
+				"providerId": "fake"
+			},
+			"residentId": "resident_lu_qingzhou_01"
+		},
+		{
+			"llmBinding": {
+				"mode": "model",
+				"modelId": "fake",
+				"providerId": "fake"
+			},
+			"residentId": "resident_luo_yuan_01"
+		},
+		{
+			"llmBinding": {
+				"mode": "model",
+				"modelId": "fake",
+				"providerId": "fake"
+			},
+			"residentId": "resident_mi_ya_01"
+		},
+		{
+			"llmBinding": {
+				"mode": "model",
+				"modelId": "fake",
+				"providerId": "fake"
+			},
+			"residentId": "resident_qiao_yiming_01"
+		},
+		{
+			"llmBinding": {
+				"mode": "model",
+				"modelId": "fake",
+				"providerId": "fake"
+			},
+			"residentId": "resident_su_tang_01"
+		},
+		{
+			"llmBinding": {
+				"mode": "model",
+				"modelId": "fake",
+				"providerId": "fake"
+			},
+			"residentId": "resident_tang_xiaoman_01"
+		},
+		{
+			"llmBinding": {
+				"mode": "model",
+				"modelId": "fake",
+				"providerId": "fake"
+			},
+			"residentId": "resident_wen_xu_01"
+		},
+		{
+			"llmBinding": {
+				"mode": "model",
+				"modelId": "fake",
+				"providerId": "fake"
+			},
+			"residentId": "resident_xie_mian_01"
+		},
+		{
+			"llmBinding": {
+				"mode": "model",
+				"modelId": "fake",
+				"providerId": "fake"
+			},
+			"residentId": "resident_xu_zhao_01"
+		},
+		{
+			"llmBinding": {
+				"mode": "model",
+				"modelId": "fake",
+				"providerId": "fake"
+			},
+			"residentId": "resident_zhou_jiming_01"
+		}
+	],
+	"residentIdentities": [
+		{
+			"residentId": "resident_bai_zhi_01",
+			"residentName": "白芷"
+		},
+		{
+			"residentId": "resident_cheng_yan_01",
+			"residentName": "程砚"
+		},
+		{
+			"residentId": "resident_hanako_01",
+			"residentName": "花子"
+		},
+		{
+			"residentId": "resident_jiang_cheng_01",
+			"residentName": "姜澄"
+		},
+		{
+			"residentId": "resident_lin_lan_01",
+			"residentName": "林岚"
+		},
+		{
+			"residentId": "resident_lu_qingzhou_01",
+			"residentName": "陆青舟"
+		},
+		{
+			"residentId": "resident_luo_yuan_01",
+			"residentName": "罗远"
+		},
+		{
+			"residentId": "resident_mi_ya_01",
+			"residentName": "米芽"
+		},
+		{
+			"residentId": "resident_qiao_yiming_01",
+			"residentName": "乔一鸣"
+		},
+		{
+			"residentId": "resident_su_tang_01",
+			"residentName": "苏棠"
+		},
+		{
+			"residentId": "resident_tang_xiaoman_01",
+			"residentName": "唐小满"
+		},
+		{
+			"residentId": "resident_wen_xu_01",
+			"residentName": "闻叙"
+		},
+		{
+			"residentId": "resident_xie_mian_01",
+			"residentName": "谢眠"
+		},
+		{
+			"residentId": "resident_xu_zhao_01",
+			"residentName": "许照"
+		},
+		{
+			"residentId": "resident_zhou_jiming_01",
+			"residentName": "周既明"
+		}
+	],
+	"sessionId": "roundtrip-session-beta2",
+	"useLiveModel": true,
+	"worldStartMode": "formal"
+}

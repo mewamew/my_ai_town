@@ -5,6 +5,9 @@ extends RefCounted
 const MANIFEST := preload(
 	"res://world/presentation/session/TownSessionSaveManifest.gd"
 )
+const COMPATIBILITY := preload(
+	"res://world/presentation/session/TownSaveCompatibilityRegistry.gd"
+)
 const STORE_METHODS: Array[String] = [
 	"begin_slot_transaction",
 	"end_slot_transaction",
@@ -50,6 +53,7 @@ const RESTORE_FAILURE_STAGES: Array[String] = TownSaveJournalStates.RESTORE_TRAN
 const SESSION_CONFIG_FIELDS: Array[String] = [
 	"mode",
 	"sessionId",
+	"saveRelease",
 	"openingConfig",
 	"residentIdentities",
 	"residentBindings",
@@ -1041,6 +1045,18 @@ func _restore_selected(
 			gate_token,
 		)
 	var resident_ids := resident_ids_value as Array
+	var agent_migration_receipt := {}
+	var agent_migration_receipt_value: Variant = agent_prepare.get(
+		"migration_receipt",
+	)
+	if agent_migration_receipt_value is Dictionary:
+		var candidate_receipt := agent_migration_receipt_value as Dictionary
+		if (
+			String(candidate_receipt.get("module", "")) == "resident_payload"
+			and candidate_receipt.get("migrationVersion") is int
+			and candidate_receipt.get("applied") is Array
+		):
+			agent_migration_receipt = candidate_receipt.duplicate(true)
 	var normalized_agent_ids: Array[String] = []
 	for resident_id_value: Variant in resident_ids:
 		if not resident_id_value is String:
@@ -1257,6 +1273,28 @@ func _restore_selected(
 			gate_token,
 		)
 	var receipt := receipt_value as Dictionary
+	var world_migration_receipt := (
+		receipt.get("migrationReceipt", {}) as Dictionary
+	).duplicate(true)
+	var applied_migrations := (
+		world_migration_receipt.get("applied", []) as Array
+	).duplicate()
+	for migration_id_value: Variant in agent_migration_receipt.get(
+		"applied",
+		[],
+	) as Array:
+		var migration_id := String(migration_id_value)
+		if not migration_id.is_empty() and not applied_migrations.has(migration_id):
+			applied_migrations.append(migration_id)
+	var migration_receipt := world_migration_receipt.duplicate(true)
+	migration_receipt["module"] = "restore"
+	migration_receipt.erase("migrationVersion")
+	migration_receipt["applied"] = applied_migrations
+	migration_receipt["moduleReceipts"] = {
+		"world_snapshot": world_migration_receipt,
+		"resident_payload": agent_migration_receipt,
+	}
+	receipt["migrationReceipt"] = migration_receipt
 	var identity_snapshot_value: Variant = receipt.get("identitySnapshot")
 	var receipt_world_revision: Variant = receipt.get("worldRevision")
 	var receipt_runtime_generation: Variant = receipt.get(
@@ -1410,50 +1448,19 @@ func inspect_incomplete(slot_id: String) -> Dictionary:
 					"SESSION_SAVE_JOURNAL_STATE_INVALID",
 					false,
 				)
-		var classification := "pre_agent_cleanup"
-		var error_code := "SESSION_SAVE_INCOMPLETE_CANDIDATE"
-		if kind == "save":
-			if state in [
-				"agent_commit_started",
-				"agent_commit_uncertain",
-			]:
-				classification = "agent_commit_uncertain"
-				error_code = "SESSION_SAVE_AGENT_COMMIT_UNCERTAIN"
-			elif [
-				"agent_committed",
-				"world_committed",
-				"agent_orphan_isolated",
-			].has(state):
-				classification = "agent_orphan_isolated"
-				error_code = "SESSION_SAVE_AGENT_ORPHAN_ISOLATED"
-		elif kind == "restore":
-			if state in ["restore_agent_started", "restore_agent_commit_started"]:
-				classification = "restore_agent_uncertain"
-				error_code = "SESSION_CONTINUE_AGENT_COMMIT_UNCERTAIN"
-			elif state in ["restore_agent_committed", "restore_world_committed"]:
-				classification = "restore_partial_commit"
-				error_code = "SESSION_CONTINUE_PARTIAL_COMMIT"
-			elif state == "transaction_failed":
-				var restore_failure_stage := String(
-					(payload_value as Dictionary).get("stage", ""),
-				)
-				if restore_failure_stage == "agent_commit":
-					classification = "restore_agent_uncertain"
-					error_code = "SESSION_CONTINUE_AGENT_COMMIT_UNCERTAIN"
-				elif restore_failure_stage in [
-					"world_commit_after_agent",
-					"post_commit_validation",
-				]:
-					classification = "restore_partial_commit"
-					error_code = "SESSION_CONTINUE_PARTIAL_COMMIT"
+		var classified := TownSaveJournalStates.classify_incomplete(
+			kind,
+			state,
+			payload_value as Dictionary,
+		)
 		items.append({
 			"context": (
 				context_value as Dictionary
 			).duplicate(true),
 			"kind": kind,
 			"state": state,
-			"classification": classification,
-			"errorCode": error_code,
+			"classification": String(classified.get("classification", "")),
+			"errorCode": String(classified.get("errorCode", "")),
 			"retryable": false,
 		})
 	return {
@@ -1560,6 +1567,16 @@ func _validate_session_config(
 		or value.get("mode") not in ["new_game", "continue"]
 		or not value.get("sessionId") is String
 		or value.get("sessionId") != session_id
+	):
+		return _failure("SESSION_SAVE_SESSION_CONFIG_INVALID", false)
+	if (
+		value.has("saveRelease")
+		and (
+			not value.get("saveRelease") is String
+			or not COMPATIBILITY.is_valid_release_marker(
+				String(value.get("saveRelease", "")),
+			)
+		)
 	):
 		return _failure("SESSION_SAVE_SESSION_CONFIG_INVALID", false)
 	if (

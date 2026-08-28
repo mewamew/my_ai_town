@@ -1,0 +1,145 @@
+diff --git a/game/project.godot b/game/project.godot
+index 91f5f9b..d7ba595 100644
+--- a/game/project.godot
++++ b/game/project.godot
+@@ -11,6 +11,8 @@ config_version=5
+ [application]
+ 
+ config/name="我的ai小镇"
++config/use_custom_user_dir=true
++config/custom_user_dir_name="my_ai_town_issue146_custom_resident"
+ run/main_scene="res://ui/startup/StartupScreen.tscn"
+ config/features=PackedStringArray("4.7", "GL Compatibility")
+ config/icon="res://icon.png"
+diff --git a/game/tests/game_flow_host_formal_entry_test.gd b/game/tests/game_flow_host_formal_entry_test.gd
+index c812941..5196192 100644
+--- a/game/tests/game_flow_host_formal_entry_test.gd
++++ b/game/tests/game_flow_host_formal_entry_test.gd
+@@ -717,6 +717,73 @@ func _run() -> void:
+ 	host.call("_close_pause_menu")
+ 	formal_town_ui_host.call("close_page")
+ 	await _wait_frames(2)
++	var scenario_world := formal_runtime.call("get_world_runtime") as RefCounted
++	if OS.get_environment("MY_AI_TOWN_CAPTURE_ACTIVITY_LIFECYCLE") == "1":
++		for _minute in 300:
++			scenario_world.call("advance", 1.0)
++		scenario_world.call(
++			"_schedule_decision",
++			"resident_xu_zhao_01",
++			true,
++			false,
++			true,
++		)
++		var requests := scenario_world.call(
++			"take_pending_decision_requests_by_ids",
++			["resident_xu_zhao_01"],
++		) as Array
++		_expect_equal(requests.size(), 1, "activity scenario gets one movement decision")
++		var wake := (
++			(requests[0] as Dictionary).get("wakePacket", {}) as Dictionary
++		)
++		var decision_id := String(wake.get("decision_id", ""))
++		var accepted := scenario_world.call(
++			"submit_agent_decision_by_id",
++			"resident_xu_zhao_01",
++			{
++				"decision_id": decision_id,
++				"handling": "replace_current",
++				"action": {
++					"action_id": "%s-issue-146-move" % decision_id,
++					"type": "去",
++					"place": "图书馆",
++					"line": "前往图书馆完成存档场景。",
++				},
++			},
++		) as Dictionary
++		_expect_equal(accepted.get("status"), "accepted", "activity scenario movement is accepted")
++		for _minute in 900:
++			var resident_state := scenario_world.call(
++				"get_resident_state",
++				"resident_xu_zhao_01",
++			) as Dictionary
++			if resident_state.get("currentAction") == null:
++				break
++			scenario_world.call("advance", 1.0)
++		_expect_equal(
++			(scenario_world.call(
++				"get_resident_state",
++				"resident_xu_zhao_01",
++			) as Dictionary).get("currentPlace"),
++			"图书馆",
++			"activity scenario reaches the library",
++		)
++		var performed := scenario_world.call(
++			"perform_activity_step",
++			"resident_xu_zhao_01",
++			"issue-146-activity-plan",
++			1,
++			{
++				"stepId": "issue-146-activity-step",
++				"operation": "activity.perform",
++				"target": {
++					"activityId": "activity_library_read",
++					"placeId": "图书馆",
++				},
++				"params": {},
++			},
++		) as Dictionary
++		_expect_ok(performed, "activity scenario starts a reserving execution")
+ 	var manual_save := town_adapter.call("dispatch", "save.create", {
+ 		"reason": "release_manual_save_regression",
+ 	}) as Dictionary
+@@ -750,6 +817,36 @@ func _run() -> void:
+ 			[1, 2],
+ 			"manual save advances the published set to revision 2",
+ 		)
++	if OS.get_environment("MY_AI_TOWN_CAPTURE_ACTIVITY_LIFECYCLE") == "1":
++		for _minute in 180:
++			var resident_state := scenario_world.call(
++				"get_resident_state",
++				"resident_xu_zhao_01",
++			) as Dictionary
++			if resident_state.get("currentAction") == null:
++				break
++			scenario_world.call("advance", 1.0)
++		_expect_equal(
++			(scenario_world.call(
++				"get_resident_state",
++				"resident_xu_zhao_01",
++			) as Dictionary).get("currentAction"),
++			null,
++			"activity scenario settles the execution",
++		)
++		var settled_save := town_adapter.call("dispatch", "save.create", {
++			"reason": "issue_146_activity_settled",
++		}) as Dictionary
++		_expect_ok(settled_save, "activity scenario publishes settled revision 3")
++		var settled_listing := SAVE_STORE.new().call(
++			"list_published",
++			SLOT_ID,
++		) as Dictionary
++		_expect_equal(
++			(settled_listing.get("manifests", []) as Array).size(),
++			3,
++			"activity scenario retains active and settled revisions",
++		)
+ 	_expect(
+ 		not _backup_contains_old_pair(),
+ 		"successful baseline retires the old automatic recovery archive",
+@@ -772,6 +869,16 @@ func _run() -> void:
+ 	if is_instance_valid(host):
+ 		host.free()
+ 	await _wait_frames(1)
++	if OS.get_environment("MY_AI_TOWN_CAPTURE_CUSTOM_RESIDENT") == "1":
++		print(
++			"HISTORICAL_SCENARIO_CAPTURE|beta5-custom-resident|%s|%s"
++			% [
++				ProjectSettings.globalize_path("user://"),
++				custom_resident_id,
++			]
++		)
++		call_deferred("_finish")
++		return
+ 	_cleanup_formal_slot()
+ 	call_deferred("_finish")
+

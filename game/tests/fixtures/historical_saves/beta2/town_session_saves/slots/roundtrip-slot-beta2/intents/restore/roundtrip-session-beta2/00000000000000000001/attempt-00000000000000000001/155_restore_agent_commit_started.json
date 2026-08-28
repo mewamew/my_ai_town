@@ -1,0 +1,16 @@
+{
+	"context": {
+		"save_revision": 1,
+		"session_id": "roundtrip-session-beta2",
+		"slot_id": "roundtrip-slot-beta2"
+	},
+	"intent_id": "attempt-00000000000000000001",
+	"kind": "restore",
+	"order": 155,
+	"payload": {
+		"worldToken": "world-restore-g1-c1"
+	},
+	"schema": "town-session-save-intent",
+	"schema_version": 1,
+	"state": "restore_agent_commit_started"
+}

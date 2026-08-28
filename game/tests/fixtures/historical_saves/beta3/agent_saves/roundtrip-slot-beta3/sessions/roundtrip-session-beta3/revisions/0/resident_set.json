@@ -1,0 +1,20 @@
+{
+	"resident_ids": [
+		"resident_bai_zhi_01",
+		"resident_cheng_yan_01",
+		"resident_hanako_01",
+		"resident_jiang_cheng_01",
+		"resident_lin_lan_01",
+		"resident_lu_qingzhou_01",
+		"resident_luo_yuan_01",
+		"resident_mi_ya_01",
+		"resident_qiao_yiming_01",
+		"resident_su_tang_01",
+		"resident_tang_xiaoman_01",
+		"resident_wen_xu_01",
+		"resident_xie_mian_01",
+		"resident_xu_zhao_01",
+		"resident_zhou_jiming_01"
+	],
+	"resident_set_sha256": "6e164a5b71f68b3ec836e1a4b5cdd2ffcb3d587cc99546b5ec000ebb119e6a0e"
+}

@@ -1,0 +1,226 @@
+{
+  "canvas_size_px": [
+    1402.0,
+    1122.0
+  ],
+  "room_id": "cafe",
+  "schema_version": 2,
+  "segments": [
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        58,
+        792
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/cafe/wall_occlusion_runtime/south_main_west_face-878b01ab9a4d.png",
+      "foreground_texture_sha256": "878b01ab9a4d0f9c2305b7c8bfdf91be8eb6c1773f72f75fc053f02c239a7ee1",
+      "foreground_texture_size_px": [
+        279,
+        210
+      ],
+      "id": "south_main_west_face",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            96.0,
+            864.0
+          ],
+          [
+            336.0,
+            864.0
+          ],
+          [
+            336.0,
+            960.0
+          ],
+          [
+            96.0,
+            960.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 64.0,
+      "foreground_canvas_origin_px": [
+        337,
+        930
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/cafe/wall_occlusion_runtime/south_entry_left_jamb-f8111c47a209.png",
+      "foreground_texture_sha256": "f8111c47a209b38a9e2dfd1a492cbdbf87642eb0c69d1437f994665a7a0b7bc6",
+      "foreground_texture_size_px": [
+        36,
+        148
+      ],
+      "id": "south_entry_left_jamb",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            304.0,
+            864.0
+          ],
+          [
+            432.0,
+            864.0
+          ],
+          [
+            432.0,
+            960.0
+          ],
+          [
+            304.0,
+            960.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 64.0,
+      "foreground_canvas_origin_px": [
+        520,
+        930
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/cafe/wall_occlusion_runtime/south_entry_right_jamb-2c128e0defc4.png",
+      "foreground_texture_sha256": "2c128e0defc4e4e1694848b775de2bf58980b061ba5ee289efd1c80a75e68d36",
+      "foreground_texture_size_px": [
+        33,
+        148
+      ],
+      "id": "south_entry_right_jamb",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            448.0,
+            864.0
+          ],
+          [
+            584.0,
+            864.0
+          ],
+          [
+            584.0,
+            960.0
+          ],
+          [
+            448.0,
+            960.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        553,
+        960
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/cafe/wall_occlusion_runtime/south_main_center_face-2ceecf6b5fbe.png",
+      "foreground_texture_sha256": "2ceecf6b5fbef5e2fa5665baaecc53b6eaf4fdcc13ad4d0db0bdcc3e8ef0c259",
+      "foreground_texture_size_px": [
+        124,
+        74
+      ],
+      "id": "south_main_center_face",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            544.0,
+            864.0
+          ],
+          [
+            704.0,
+            864.0
+          ],
+          [
+            704.0,
+            960.0
+          ],
+          [
+            544.0,
+            960.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        677,
+        812
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/cafe/wall_occlusion_runtime/south_main_east_face-361f5b60e2bf.png",
+      "foreground_texture_sha256": "361f5b60e2bf547375e13c7ae48cff24ac8d7a521efb0ed80822c4f149112803",
+      "foreground_texture_size_px": [
+        268,
+        162
+      ],
+      "id": "south_main_east_face",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            672.0,
+            736.0
+          ],
+          [
+            944.0,
+            736.0
+          ],
+          [
+            944.0,
+            928.0
+          ],
+          [
+            672.0,
+            928.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        945,
+        804
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/cafe/wall_occlusion_runtime/south_glasshouse_face-4fc7c2354b86.png",
+      "foreground_texture_sha256": "4fc7c2354b86364d206aa47892024c5d8e0ab92677f852cd6ba065bd6cfcb7d2",
+      "foreground_texture_size_px": [
+        325,
+        170
+      ],
+      "id": "south_glasshouse_face",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            928.0,
+            736.0
+          ],
+          [
+            1248.0,
+            736.0
+          ],
+          [
+            1248.0,
+            928.0
+          ],
+          [
+            928.0,
+            928.0
+          ]
+        ]
+      ]
+    }
+  ],
+  "source_geometry_revision": "cafe_candidate_a_v3_geometry_v1",
+  "source_geometry_sha256": "7074522d8a890ec348a04c0bf8ac254e210ab5ad48ccdd7bd12e9a0bb03353ee",
+  "source_occlusion_revision": "cafe_candidate_a_v3_geometry_v1",
+  "source_occlusion_sha256": "7404d0dd3d36a2669a9c4bc7aa08c43c5fe4e54bae2e70cdde33011510a5f7b0",
+  "source_shell_path": "res://world/maps/town/interiors/redesign_v2/rooms/cafe/assets/background/room_shell.png",
+  "source_shell_sha256": "08bb6fabf51cd298583816d0b153cb341a28a82b59be886879ca2560a66f35da"
+}

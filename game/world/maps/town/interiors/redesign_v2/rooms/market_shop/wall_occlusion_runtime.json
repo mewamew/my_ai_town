@@ -1,0 +1,122 @@
+{
+  "canvas_size_px": [
+    1254.0,
+    1254.0
+  ],
+  "room_id": "market_shop",
+  "schema_version": 2,
+  "segments": [
+    {
+      "fade_distance_px": 160.0,
+      "foreground_canvas_origin_px": [
+        67,
+        1022
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/market_shop/wall_occlusion_runtime/south_wall_left-00e8f8fb2322.png",
+      "foreground_texture_sha256": "00e8f8fb2322e4ffa75be22f80e47ba09f8483a7cef22828ae55ee8ef646c486",
+      "foreground_texture_size_px": [
+        480,
+        64
+      ],
+      "id": "south_wall_left",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            67.0,
+            894.0
+          ],
+          [
+            547.0,
+            894.0
+          ],
+          [
+            547.0,
+            1198.0
+          ],
+          [
+            67.0,
+            1198.0
+          ]
+        ],
+        [
+          [
+            467.0,
+            878.0
+          ],
+          [
+            787.0,
+            878.0
+          ],
+          [
+            787.0,
+            1198.0
+          ],
+          [
+            467.0,
+            1198.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 160.0,
+      "foreground_canvas_origin_px": [
+        707,
+        1022
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/market_shop/wall_occlusion_runtime/south_wall_right-4886bc702b9a.png",
+      "foreground_texture_sha256": "4886bc702b9a4c4e62e51f69370e87dcb4418a9d32f081f065951df557844f3f",
+      "foreground_texture_size_px": [
+        480,
+        64
+      ],
+      "id": "south_wall_right",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            707.0,
+            894.0
+          ],
+          [
+            1187.0,
+            894.0
+          ],
+          [
+            1187.0,
+            1198.0
+          ],
+          [
+            707.0,
+            1198.0
+          ]
+        ],
+        [
+          [
+            467.0,
+            878.0
+          ],
+          [
+            787.0,
+            878.0
+          ],
+          [
+            787.0,
+            1198.0
+          ],
+          [
+            467.0,
+            1198.0
+          ]
+        ]
+      ]
+    }
+  ],
+  "source_geometry_revision": "market_scene_candidate_a3_formal_geometry_v1",
+  "source_geometry_sha256": "79e94d848087805b23ce6898bf5944d74334b81c26edf6069319e640186cf8dd",
+  "source_occlusion_revision": "market_scene_candidate_a3_formal_geometry_v1",
+  "source_occlusion_sha256": "cfed4b318990b105f3ade63d4b424bf50dd50093c41b214754e35145bfeb0c3a",
+  "source_shell_path": "res://world/maps/town/interiors/redesign_v2/rooms/market_shop/assets/background/room_shell.png",
+  "source_shell_sha256": "8e422372d686892e2c8c6e92c0cd423f2b3b2bc4635427340d484c23843157dd"
+}

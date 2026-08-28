@@ -925,7 +925,11 @@ func begin_treatment(
 			"placeId": place_id,
 			"spaceId": "",
 			"severity": "heavy",
-			"reason": "clinic_treatment",
+			"reason": (
+				"external_medical_aid"
+				if place_id == "镇外医疗援助"
+				else "clinic_treatment"
+			),
 			"worldRevision": int(injury.get("worldRevision", 0)),
 		},
 	)

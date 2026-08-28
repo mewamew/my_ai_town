@@ -16,6 +16,7 @@ func prepare(
 	prepared_state: Dictionary,
 	prepared_world_log: RefCounted,
 	snapshot_schema_version: int,
+	migration_receipt: Dictionary,
 ) -> Dictionary:
 	_sequence += 1
 	var token := "world-restore-g%d-c%d" % [base_generation, _sequence]
@@ -31,6 +32,7 @@ func prepare(
 		"preparedState": prepared_state,
 		"preparedWorldLog": prepared_world_log,
 		"snapshotSchemaVersion": snapshot_schema_version,
+		"migrationReceipt": migration_receipt.duplicate(true),
 		"savedWorldRevision": int(
 			(prepared_state.get("sequences", {}) as Dictionary).get(
 				"worldRevision",
@@ -189,6 +191,9 @@ static func projection(candidate: Dictionary) -> Dictionary:
 		"requireWorldReady": bool(candidate.get("requireWorldReady", true)),
 		"snapshotSchemaVersion": int(candidate.get("snapshotSchemaVersion", 0)),
 		"savedWorldRevision": int(candidate.get("savedWorldRevision", 0)),
+		"migrationReceipt": (
+			candidate.get("migrationReceipt", {}) as Dictionary
+		).duplicate(true),
 		"identitySnapshot": {
 			"status": String(prepared_identities.get("status", "")),
 			"residents": (

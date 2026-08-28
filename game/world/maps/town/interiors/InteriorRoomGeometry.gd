@@ -18,6 +18,7 @@ const MAX_DOORWAY_CELLS := 64
 const MAX_CANONICAL_TEXT_LENGTH := 256
 const MAX_INTEGRAL_COMPONENT := 1_000_000.0
 const MAX_POINT_COMPONENT := MAX_INTEGRAL_COMPONENT * GRID_SIZE
+const MAX_INCREMENTAL_WORK_ITEMS := 16
 const GEOMETRY_KEYS := {
 	"schema_version": true,
 	"source_revision": true,
@@ -365,6 +366,15 @@ static func shell_position(value: Variant) -> Vector2:
 	return _shell_position_unchecked(geometry)
 
 
+# 仅接收 load_geometry 已验证的结果，供分帧构建避免重复扫描整份 floor_cells。
+static func room_setup_from_loaded_geometry(geometry: Dictionary) -> Dictionary:
+	return {
+		"shell_position": _shell_position_unchecked(geometry),
+		"entry_point": _get_primary_entry_point_unchecked(geometry),
+		"exit_point": _get_primary_exit_point_unchecked(geometry),
+	}
+
+
 static func _shell_position_unchecked(geometry: Dictionary) -> Vector2:
 	var canvas := _point(geometry.get("canvas_size_px", [0, 0]))
 	var world_origin := _point(geometry.get("world_origin_px", [0, 0]))
@@ -501,6 +511,196 @@ static func get_boundary_collision_rects(value: Variant) -> Array[Rect2]:
 	return _get_boundary_collision_rects_unchecked(geometry)
 
 
+static func boundary_collision_rects_from_loaded_geometry(
+	geometry: Dictionary,
+) -> Array[Rect2]:
+	return _get_boundary_collision_rects_unchecked(geometry)
+
+
+# 分帧构建只接收 load_geometry 已校验的结果。每个 work item 最多处理一个
+# 地板格、门槛格、相邻方向或包围盒格，避免单次调用暗藏全量扫描。
+static func begin_boundary_collision_scan(geometry: Dictionary) -> Dictionary:
+	return {
+		"phase": "floor",
+		"floor_values": geometry.get("floor_cells", []) as Array,
+		"floor_cursor": 0,
+		"floor_lookup": {},
+		"floor_cells": [],
+		"min_cell": Vector2i.ZERO,
+		"max_cell": Vector2i.ZERO,
+		"doorways": geometry.get("doorway", []) as Array,
+		"doorway_cursor": 0,
+		"threshold_values": [],
+		"threshold_cells": [],
+		"threshold_cursor": 0,
+		"threshold_center": Vector2.ZERO,
+		"outward": Vector2i.ZERO,
+		"doorway_openings": {},
+		"boundary_cursor": 0,
+		"boundary_direction": 0,
+		"blockers": {},
+		"scan_cell": Vector2i.ZERO,
+		"scan_min": Vector2i.ZERO,
+		"scan_max": Vector2i.ZERO,
+		"run_start_x": 0,
+		"run_active": false,
+		"rects": [],
+		"complete": false,
+	}
+
+
+static func continue_boundary_collision_scan(
+	state: Dictionary,
+	max_work_items: int,
+) -> Dictionary:
+	var work_limit := clampi(max_work_items, 1, MAX_INCREMENTAL_WORK_ITEMS)
+	var processed := 0
+	while processed < work_limit and not bool(state.get("complete", false)):
+		match String(state.get("phase", "")):
+			"floor":
+				var floor_values := state.get("floor_values", []) as Array
+				var cursor := int(state.get("floor_cursor", 0))
+				if cursor >= floor_values.size():
+					state["phase"] = "doorway_start"
+					continue
+				var cell := _integral_cell(floor_values[cursor])
+				var floor_lookup := state.get("floor_lookup", {}) as Dictionary
+				var floor_cells := state.get("floor_cells", []) as Array
+				floor_lookup[cell] = true
+				floor_cells.append(cell)
+				if cursor == 0:
+					state["min_cell"] = cell
+					state["max_cell"] = cell
+				else:
+					var minimum := state.get("min_cell") as Vector2i
+					var maximum := state.get("max_cell") as Vector2i
+					minimum.x = mini(minimum.x, cell.x)
+					minimum.y = mini(minimum.y, cell.y)
+					maximum.x = maxi(maximum.x, cell.x)
+					maximum.y = maxi(maximum.y, cell.y)
+					state["min_cell"] = minimum
+					state["max_cell"] = maximum
+				state["floor_cursor"] = cursor + 1
+				processed += 1
+			"doorway_start":
+				var doorways := state.get("doorways", []) as Array
+				var doorway_cursor := int(state.get("doorway_cursor", 0))
+				if doorway_cursor >= doorways.size():
+					state["phase"] = "boundary"
+					continue
+				var doorway := doorways[doorway_cursor] as Dictionary
+				state["threshold_values"] = doorway.get("threshold_cells", []) as Array
+				state["threshold_cells"] = []
+				state["threshold_cursor"] = 0
+				state["threshold_center"] = Vector2.ZERO
+				state["phase"] = "doorway_center"
+			"doorway_center":
+				var threshold_values := state.get("threshold_values", []) as Array
+				var thresholds := state.get("threshold_cells", []) as Array
+				var threshold_cursor := int(state.get("threshold_cursor", 0))
+				if threshold_cursor >= threshold_values.size():
+					var floor_minimum := state.get("min_cell") as Vector2i
+					var floor_maximum := state.get("max_cell") as Vector2i
+					var floor_center := (
+						Vector2(floor_minimum + floor_maximum + Vector2i.ONE)
+						* GRID_SIZE * 0.5
+					)
+					var threshold_center := (
+						state.get("threshold_center") as Vector2
+					) / float(thresholds.size())
+					var toward_center := floor_center - threshold_center
+					var inward := (
+						(Vector2i.RIGHT if toward_center.x >= 0.0 else Vector2i.LEFT)
+						if absf(toward_center.x) > absf(toward_center.y)
+						else (Vector2i.DOWN if toward_center.y >= 0.0 else Vector2i.UP)
+					)
+					state["outward"] = -inward
+					state["threshold_cursor"] = 0
+					state["phase"] = "doorway_openings"
+					continue
+				var threshold_cell := _integral_cell(threshold_values[threshold_cursor])
+				thresholds.append(threshold_cell)
+				state["threshold_center"] = (
+					state.get("threshold_center") as Vector2
+				) + _cell_to_local_center_unchecked(threshold_cell)
+				state["threshold_cursor"] = threshold_cursor + 1
+				processed += 1
+			"doorway_openings":
+				var thresholds := state.get("threshold_cells", []) as Array
+				var threshold_cursor := int(state.get("threshold_cursor", 0))
+				if threshold_cursor >= thresholds.size():
+					state["doorway_cursor"] = int(state.get("doorway_cursor", 0)) + 1
+					state["phase"] = "doorway_start"
+					continue
+				var outside := (
+					thresholds[threshold_cursor] as Vector2i
+				) + (state.get("outward") as Vector2i)
+				var floor_lookup := state.get("floor_lookup", {}) as Dictionary
+				if not floor_lookup.has(outside):
+					(state.get("doorway_openings", {}) as Dictionary)[outside] = true
+				state["threshold_cursor"] = threshold_cursor + 1
+				processed += 1
+			"boundary":
+				var floor_cells := state.get("floor_cells", []) as Array
+				var floor_cursor := int(state.get("boundary_cursor", 0))
+				if floor_cursor >= floor_cells.size():
+					var scan_minimum := (state.get("min_cell") as Vector2i) - Vector2i.ONE
+					var scan_maximum := (state.get("max_cell") as Vector2i) + Vector2i.ONE
+					state["scan_min"] = scan_minimum
+					state["scan_max"] = scan_maximum
+					state["scan_cell"] = scan_minimum
+					state["phase"] = "rects"
+					continue
+				var direction_cursor := int(state.get("boundary_direction", 0))
+				var candidate := (
+					floor_cells[floor_cursor] as Vector2i
+				) + CARDINAL_OFFSETS[direction_cursor]
+				var floor_lookup := state.get("floor_lookup", {}) as Dictionary
+				var openings := state.get("doorway_openings", {}) as Dictionary
+				if not floor_lookup.has(candidate) and not openings.has(candidate):
+					(state.get("blockers", {}) as Dictionary)[candidate] = true
+				direction_cursor += 1
+				if direction_cursor >= CARDINAL_OFFSETS.size():
+					direction_cursor = 0
+					state["boundary_cursor"] = floor_cursor + 1
+				state["boundary_direction"] = direction_cursor
+				processed += 1
+			"rects":
+				var scan_cell := state.get("scan_cell") as Vector2i
+				var scan_maximum := state.get("scan_max") as Vector2i
+				var is_blocker := (state.get("blockers", {}) as Dictionary).has(scan_cell)
+				if is_blocker and not bool(state.get("run_active", false)):
+					state["run_active"] = true
+					state["run_start_x"] = scan_cell.x
+				var row_ended := scan_cell.x >= scan_maximum.x
+				if bool(state.get("run_active", false)) and (not is_blocker or row_ended):
+					var run_end_x := scan_cell.x + 1 if is_blocker else scan_cell.x
+					var run_start_x := int(state.get("run_start_x", scan_cell.x))
+					(state.get("rects", []) as Array).append(Rect2(
+						Vector2(run_start_x, scan_cell.y) * GRID_SIZE,
+						Vector2(run_end_x - run_start_x, 1) * GRID_SIZE,
+					))
+					state["run_active"] = false
+				if row_ended:
+					if scan_cell.y >= scan_maximum.y:
+						state["complete"] = true
+					else:
+						state["scan_cell"] = Vector2i(
+							(state.get("scan_min") as Vector2i).x,
+							scan_cell.y + 1,
+						)
+				else:
+					state["scan_cell"] = scan_cell + Vector2i.RIGHT
+				processed += 1
+			_:
+				state["complete"] = true
+	return {
+		"complete": bool(state.get("complete", false)),
+		"processed": processed,
+		"rects": state.get("rects", []) as Array,
+	}
+
+
 static func _get_boundary_collision_rects_unchecked(
 	geometry: Dictionary
 ) -> Array[Rect2]:
@@ -542,6 +742,151 @@ static func build_navigation_grid_data(
 		return {}
 	var entry_point := entry_value as Vector2
 	var exit_point := exit_value as Vector2
+	return _build_navigation_grid_data_unchecked(
+		geometry,
+		entry_point,
+		exit_point,
+	)
+
+
+static func navigation_grid_from_loaded_geometry(
+	geometry: Dictionary,
+	entry_point: Vector2,
+	exit_point: Vector2,
+) -> Dictionary:
+	return _build_navigation_grid_data_unchecked(
+		geometry,
+		entry_point,
+		exit_point,
+	)
+
+
+static func begin_navigation_grid_scan(
+	geometry: Dictionary,
+	entry_point: Vector2,
+	exit_point: Vector2,
+) -> Dictionary:
+	return {
+		"phase": "floor",
+		"floor_values": geometry.get("floor_cells", []) as Array,
+		"floor_cursor": 0,
+		"walkable_lookup": {},
+		"serialized_walkable": [],
+		"min_cell": Vector2i.ZERO,
+		"max_cell": Vector2i.ZERO,
+		"entry_point": entry_point,
+		"exit_point": exit_point,
+		"profile_id": String(geometry.get("room_id", "")),
+		"source_revision": String(geometry.get("source_revision", "")),
+		"scan_cell": Vector2i.ZERO,
+		"wall_cells": [],
+		"result": {},
+		"complete": false,
+		"failed": false,
+	}
+
+
+static func continue_navigation_grid_scan(
+	state: Dictionary,
+	max_work_items: int,
+) -> Dictionary:
+	var work_limit := clampi(max_work_items, 1, MAX_INCREMENTAL_WORK_ITEMS)
+	var processed := 0
+	while processed < work_limit and not bool(state.get("complete", false)):
+		match String(state.get("phase", "")):
+			"floor":
+				var floor_values := state.get("floor_values", []) as Array
+				var cursor := int(state.get("floor_cursor", 0))
+				if cursor >= floor_values.size():
+					var minimum := state.get("min_cell") as Vector2i
+					var maximum := state.get("max_cell") as Vector2i
+					var grid_size := maximum - minimum + Vector2i.ONE
+					var entry_cell := _local_position_to_cell_unchecked(
+						state.get("entry_point") as Vector2,
+					)
+					var exit_cell := _local_position_to_cell_unchecked(
+						state.get("exit_point") as Vector2,
+					)
+					var lookup := state.get("walkable_lookup", {}) as Dictionary
+					if (
+						floor_values.is_empty()
+						or grid_size.x * grid_size.y > MAX_NAVIGATION_GRID_CELLS
+						or not lookup.has(entry_cell)
+						or not lookup.has(exit_cell)
+					):
+						state["failed"] = true
+						state["complete"] = true
+						continue
+					state["entry_cell"] = entry_cell
+					state["exit_cell"] = exit_cell
+					state["scan_cell"] = minimum
+					state["phase"] = "walls"
+					continue
+				var cell := _integral_cell(floor_values[cursor])
+				(state.get("walkable_lookup", {}) as Dictionary)[cell] = true
+				(state.get("serialized_walkable", []) as Array).append([cell.x, cell.y])
+				if cursor == 0:
+					state["min_cell"] = cell
+					state["max_cell"] = cell
+				else:
+					var minimum := state.get("min_cell") as Vector2i
+					var maximum := state.get("max_cell") as Vector2i
+					minimum.x = mini(minimum.x, cell.x)
+					minimum.y = mini(minimum.y, cell.y)
+					maximum.x = maxi(maximum.x, cell.x)
+					maximum.y = maxi(maximum.y, cell.y)
+					state["min_cell"] = minimum
+					state["max_cell"] = maximum
+				state["floor_cursor"] = cursor + 1
+				processed += 1
+			"walls":
+				var cell := state.get("scan_cell") as Vector2i
+				var maximum := state.get("max_cell") as Vector2i
+				if not (state.get("walkable_lookup", {}) as Dictionary).has(cell):
+					(state.get("wall_cells", []) as Array).append([cell.x, cell.y])
+				if cell.x >= maximum.x:
+					if cell.y >= maximum.y:
+						var minimum := state.get("min_cell") as Vector2i
+						var entry_cell := state.get("entry_cell") as Vector2i
+						var exit_cell := state.get("exit_cell") as Vector2i
+						state["result"] = {
+							"revision": 2,
+							"profile_id": String(state.get("profile_id", "")),
+							"source_revision": String(state.get("source_revision", "")),
+							"cell_size": int(GRID_SIZE),
+							"origin_cell": [minimum.x, minimum.y],
+							"size": [maximum.x - minimum.x + 1, maximum.y - minimum.y + 1],
+							"entry_cell": [entry_cell.x, entry_cell.y],
+							"exit_cell": [exit_cell.x, exit_cell.y],
+							"walkable_cells": state.get("serialized_walkable", []) as Array,
+							"wall_cells": state.get("wall_cells", []) as Array,
+							"neighbor_mode": "cardinal_4",
+						}
+						state["complete"] = true
+					else:
+						state["scan_cell"] = Vector2i(
+							(state.get("min_cell") as Vector2i).x,
+							cell.y + 1,
+						)
+				else:
+					state["scan_cell"] = cell + Vector2i.RIGHT
+				processed += 1
+			_:
+				state["failed"] = true
+				state["complete"] = true
+	return {
+		"complete": bool(state.get("complete", false)),
+		"failed": bool(state.get("failed", false)),
+		"processed": processed,
+		"data": state.get("result", {}) as Dictionary,
+	}
+
+
+static func _build_navigation_grid_data_unchecked(
+	geometry: Dictionary,
+	entry_point: Vector2,
+	exit_point: Vector2,
+) -> Dictionary:
 	var walkable_cells := _get_walkable_cells_unchecked(geometry)
 	if walkable_cells.is_empty():
 		return {}

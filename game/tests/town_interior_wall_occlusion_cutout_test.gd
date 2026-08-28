@@ -17,10 +17,9 @@ const ROOMS := [
 	"workshop",
 ]
 const ROOM_BASE := "res://world/maps/town/interiors/redesign_v2/rooms"
-const VALID_PATH := "user://wall_occlusion_valid_test.json"
-const INVALID_PATH := "user://wall_occlusion_invalid_test.json"
 
 var _failures: Array[String] = []
+var _checks := 0
 
 
 func _initialize() -> void:
@@ -28,351 +27,100 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	_test_synthetic_cutout_and_state_transitions()
-	_test_formal_room_data()
-	_cleanup()
+	_test_formal_generated_assets()
+	for room_id in ROOMS:
+		_test_multi_subject_state_refresh(room_id)
+	await process_frame
+	await process_frame
 	_finish()
 
 
-func _test_synthetic_cutout_and_state_transitions() -> void:
-	var valid_data := _synthetic_data()
-	_write_json(VALID_PATH, valid_data)
-	var image := Image.create(16, 16, false, Image.FORMAT_RGBA8)
-	image.fill(Color(0.8, 0.4, 0.2, 1.0))
-	var shell := Sprite2D.new()
-	shell.name = "Shell"
-	shell.centered = false
-	shell.texture = ImageTexture.create_from_image(image)
-	root.add_child(shell)
-	var occlusion := WALL_OCCLUSION.new()
-	root.add_child(occlusion)
-	var geometry := {
-		"room_id": "cutout_test",
-		"source_revision": "cutout_test",
-		"world_origin_px": [0, 0],
-		"canvas_size_px": [16, 16],
-	}
-	_expect(
-		bool(occlusion.configure(shell, geometry, VALID_PATH)),
-		"wall occlusion configures with a floor cutout",
-	)
-	var base_image := shell.texture.get_image()
-	_expect(
-		base_image.get_pixel(2, 2).a == 0.0,
-		"wall pixels move out of the base shell",
-	)
-	_expect(
-		base_image.get_pixel(8, 8).a == 1.0,
-		"cut-out floor stays in the base shell",
-	)
-	var foreground := occlusion.get_node_or_null(
-		"wall_with_floor_cutout"
-	) as Sprite2D
-	_expect(foreground != null, "foreground segment is extracted")
-	if foreground != null:
-		var foreground_image := foreground.texture.get_image()
-		_expect(
-			foreground_image.get_pixel(2, 2).a == 1.0,
-			"wall pixel exists in the foreground segment",
-		)
-		_expect(
-			foreground_image.get_pixel(8, 8).a == 0.0,
-			"cut-out floor is absent from the foreground segment",
-		)
-	var stable_child_count := occlusion.get_child_count()
-	var stable_base_bytes := shell.texture.get_image().get_data()
-	_expect(
-		bool(occlusion.configure(shell, geometry, VALID_PATH)),
-		"repeated configuration succeeds",
-	)
-	_expect_equal(
-		occlusion.get_child_count(),
-		stable_child_count,
-		"repeated configuration replaces instead of duplicating render nodes",
-	)
-	_expect_equal(
-		shell.texture.get_image().get_data(),
-		stable_base_bytes,
-		"repeated configuration is pixel deterministic",
-	)
-	_test_failed_configuration_is_atomic(
-		occlusion,
-		shell,
-		geometry,
-		stable_child_count,
-		stable_base_bytes,
-		valid_data,
-	)
-	var first_subject := Node2D.new()
-	first_subject.z_index = 10
-	first_subject.position = Vector2(3, 3)
-	root.add_child(first_subject)
-	var second_subject := Node2D.new()
-	second_subject.z_index = 20
-	second_subject.position = Vector2(8, 8)
-	root.add_child(second_subject)
-	occlusion.update_for_subjects([first_subject, second_subject])
-	foreground = occlusion.get_node_or_null(
-		"wall_with_floor_cutout"
-	) as Sprite2D
-	_expect_equal(
-		foreground.z_index if foreground != null else -1,
-		6,
-		"wall base stays behind all active subjects",
-	)
-	_expect_equal(
-		_visible_subject_overlays(occlusion).size(),
-		2,
-		"multiple subjects receive independent wall foreground slices",
-	)
-	var before_invalid_update := (
-		foreground.z_index if foreground != null else -1
-	)
-	occlusion.update_for_subjects([first_subject, true])
-	_expect_equal(
-		foreground.z_index if foreground != null else -1,
-		before_invalid_update,
-		"mixed invalid subject collections are ignored atomically",
-	)
-	first_subject.z_index = RenderingServer.CANVAS_ITEM_Z_MAX
-	first_subject.position = Vector2(8, 8)
-	occlusion.update_for_subjects([first_subject])
-	_expect_equal(
-		foreground.z_index if foreground != null else -1,
-		RenderingServer.CANVAS_ITEM_Z_MAX - WALL_Z_STEP,
-		"wall base z-index stays clamped behind the maximum-depth subject",
-	)
-	var overlays := _visible_subject_overlays(occlusion)
-	_expect_equal(
-		overlays.size(),
-		1,
-		"maximum-depth active subject keeps one independent wall slice",
-	)
-	_expect_equal(
-		(occlusion.get("_subject_overlays") as Dictionary).size(),
-		1,
-		"inactive historical subjects release their cached wall slices",
-	)
-	if overlays.size() == 1:
-		_expect_equal(
-			overlays[0].z_index,
-			RenderingServer.CANVAS_ITEM_Z_MAX,
-			"active wall slice clamps to the CanvasItem maximum",
-		)
-	first_subject.z_index = RenderingServer.CANVAS_ITEM_Z_MIN
-	first_subject.position = Vector2(32, 32)
-	occlusion.update_for_subjects([first_subject])
-	_expect_equal(
-		foreground.z_index if foreground != null else -1,
-		RenderingServer.CANVAS_ITEM_Z_MIN,
-		"inactive foreground z-index clamps to the CanvasItem minimum",
-	)
-	first_subject.free()
-	second_subject.free()
-	occlusion.update_for_subjects([])
-	_expect_equal(
-		foreground.z_index if foreground != null else -1,
-		999,
-		"removing every subject restores the foreground default z-index",
-	)
-	_expect_equal(
-		foreground.modulate.a if foreground != null else -1.0,
-		1.0,
-		"removing every subject restores full foreground opacity",
-	)
-	_expect_equal(
-		_visible_subject_overlays(occlusion).size(),
-		0,
-		"removing every subject hides all wall foreground slices",
-	)
-	_expect_equal(
-		(occlusion.get("_subject_overlays") as Dictionary).size(),
-		0,
-		"removing every subject frees all cached wall slices",
-	)
-	occlusion.set_debug_visible("true")
-	_expect(
-		not occlusion.is_debug_visible(),
-		"non-boolean debug values cannot change state",
-	)
-	occlusion.set_debug_visible(true)
-	_expect(occlusion.is_debug_visible(), "boolean debug values remain supported")
-	root.remove_child(occlusion)
-	root.add_child(occlusion)
-	_expect_equal(
-		shell.texture.get_image().get_data(),
-		stable_base_bytes,
-		"temporary tree removal does not duplicate foreground pixels",
-	)
-	occlusion.free()
-	_expect_equal(
-		shell.texture.get_image().get_data(),
-		image.get_data(),
-		"removing the occlusion runtime restores the original room shell",
-	)
-	shell.free()
-
-
-func _test_failed_configuration_is_atomic(
-	occlusion: Node2D,
-	shell: Sprite2D,
-	geometry: Dictionary,
-	stable_child_count: int,
-	stable_base_bytes: PackedByteArray,
-	valid_data: Dictionary,
-) -> void:
-	var invalid_values: Array[Dictionary] = []
-	var unknown_top_level := valid_data.duplicate(true)
-	unknown_top_level["debug"] = true
-	invalid_values.append(unknown_top_level)
-	var duplicate_segments := valid_data.duplicate(true)
-	duplicate_segments["segments"] = (
-		duplicate_segments.get("segments") as Array
-	).duplicate(true)
-	(duplicate_segments.get("segments") as Array).append(
-		(duplicate_segments.get("segments") as Array)[0].duplicate(true)
-	)
-	invalid_values.append(duplicate_segments)
-	var malformed_segment := valid_data.duplicate(true)
-	malformed_segment["segments"] = [true]
-	invalid_values.append(malformed_segment)
-	var crossing_polygon := valid_data.duplicate(true)
-	(
-		(crossing_polygon.get("segments") as Array)[0] as Dictionary
-	)["foreground_polygon_canvas_px"] = [
-		[0, 0], [16, 16], [0, 16], [16, 0],
-	]
-	invalid_values.append(crossing_polygon)
-	var infinite_fade := valid_data.duplicate(true)
-	(
-		(infinite_fade.get("segments") as Array)[0] as Dictionary
-	)["fade_distance_px"] = 1.0e300
-	invalid_values.append(infinite_fade)
-	var wrong_room := valid_data.duplicate(true)
-	wrong_room["room_id"] = "other_room"
-	invalid_values.append(wrong_room)
-	var wrong_revision := valid_data.duplicate(true)
-	wrong_revision["source_revision"] = " other_revision"
-	invalid_values.append(wrong_revision)
-	var no_reveal := valid_data.duplicate(true)
-	((no_reveal.get("segments") as Array)[0] as Dictionary)[
-		"reveal_polygons_canvas_px"
-	] = []
-	invalid_values.append(no_reveal)
-	var repeated_vertex := valid_data.duplicate(true)
-	((repeated_vertex.get("segments") as Array)[0] as Dictionary)[
-		"foreground_polygon_canvas_px"
-	] = [[0, 0], [16, 0], [0, 0], [0, 16]]
-	invalid_values.append(repeated_vertex)
-	var too_many_reveals := valid_data.duplicate(true)
-	var reveal_template: Array = (
-		((too_many_reveals.get("segments") as Array)[0] as Dictionary)[
-			"reveal_polygons_canvas_px"
-		] as Array
-	)[0]
-	var reveal_overflow := []
-	for _index in range(65):
-		reveal_overflow.append(reveal_template.duplicate(true))
-	((too_many_reveals.get("segments") as Array)[0] as Dictionary)[
-		"reveal_polygons_canvas_px"
-	] = reveal_overflow
-	invalid_values.append(too_many_reveals)
-	for invalid_data in invalid_values:
-		_write_json(INVALID_PATH, invalid_data)
-		_expect(
-			not bool(occlusion.configure(shell, geometry, INVALID_PATH)),
-			"invalid occlusion data is rejected",
-		)
-		_expect_equal(
-			occlusion.get_child_count(),
-			stable_child_count,
-			"failed configuration preserves the previous render nodes",
-		)
-		_expect_equal(
-			shell.texture.get_image().get_data(),
-			stable_base_bytes,
-			"failed configuration preserves the previous shell pixels",
-		)
-	_write_text(INVALID_PATH, "{")
-	_expect(
-		not bool(occlusion.configure(shell, geometry, INVALID_PATH)),
-		"malformed JSON is rejected",
-	)
-	for invalid_call: Array in [
-		[null, geometry, VALID_PATH],
-		[shell, [], VALID_PATH],
-		[shell, geometry, []],
-		[shell, {
-			"room_id": "cutout_test",
-			"source_revision": "cutout_test",
-			"world_origin_px": [INF, 0],
-			"canvas_size_px": [16, 16],
-		}, VALID_PATH],
-		[shell, {
-			"room_id": "cutout_test",
-			"source_revision": "cutout_test",
-			"world_origin_px": [0, 0],
-			"canvas_size_px": [1.0e300, 16],
-		}, VALID_PATH],
-	]:
-		_expect(
-			not bool(occlusion.callv("configure", invalid_call)),
-			"wrong public input types and extreme geometry are rejected",
-		)
-	_expect_equal(
-		occlusion.get_child_count(),
-		stable_child_count,
-		"invalid public calls preserve the previous render nodes",
-	)
-	_expect_equal(
-		shell.texture.get_image().get_data(),
-		stable_base_bytes,
-		"invalid public calls preserve the previous shell pixels",
-	)
-
-
-func _test_formal_room_data() -> void:
+func _test_formal_generated_assets() -> void:
 	var configured_rooms := 0
 	for room_id in ROOMS:
 		var base := "%s/%s" % [ROOM_BASE, room_id]
-		var geometry := _read_json(base.path_join("room_geometry.json"))
-		var data := _read_json(base.path_join("wall_occlusion.json"))
+		var geometry_path := base.path_join("room_geometry.json")
+		var occlusion_path := base.path_join("wall_occlusion.json")
+		var manifest_path := base.path_join("wall_occlusion_runtime.json")
+		var geometry := _read_json(geometry_path)
+		var authored := _read_json(occlusion_path)
+		var manifest := _read_json(manifest_path)
 		_expect(not geometry.is_empty(), "%s has room geometry" % room_id)
-		_expect(not data.is_empty(), "%s has wall occlusion data" % room_id)
-		if geometry.is_empty() or data.is_empty():
+		_expect(not authored.is_empty(), "%s has authored occlusion" % room_id)
+		_expect(not manifest.is_empty(), "%s has generated occlusion" % room_id)
+		if geometry.is_empty() or authored.is_empty() or manifest.is_empty():
 			continue
-		var canvas := data.get("canvas_size_px") as Array
 		_expect_equal(
-			geometry.get("canvas_size_px"),
-			canvas,
-			"%s geometry and occlusion use one canvas" % room_id,
+			manifest.get("schema_version"),
+			2,
+			"%s uses the digest-bearing generated manifest schema" % room_id,
 		)
 		_expect_equal(
+			manifest.get("room_id"),
 			geometry.get("room_id"),
-			data.get("room_id"),
-			"%s geometry and occlusion use one room identity" % room_id,
+			"%s generated occlusion keeps the room identity" % room_id,
 		)
-		_expect(
-			not String(data.get("source_revision", "")).is_empty(),
-			"%s occlusion keeps its authored source revision" % room_id,
-		)
-		var canvas_size := Vector2i(int(canvas[0]), int(canvas[1]))
-		var image := Image.create(
-			canvas_size.x,
-			canvas_size.y,
-			false,
-			Image.FORMAT_RGBA8,
-		)
-		image.fill(Color(0.48, 0.32, 0.2, 1.0))
 		_expect_equal(
-			Vector2i(image.get_width(), image.get_height()),
-			canvas_size,
-			"%s synthetic shell matches authored occlusion canvas" % room_id,
+			manifest.get("canvas_size_px"),
+			geometry.get("canvas_size_px"),
+			"%s generated occlusion keeps the room canvas" % room_id,
 		)
-		var original_bytes := image.get_data()
+		_expect_equal(
+			manifest.get("source_geometry_revision"),
+			geometry.get("source_revision"),
+			"%s generated occlusion keeps the geometry revision" % room_id,
+		)
+		_expect_equal(
+			manifest.get("source_occlusion_revision"),
+			authored.get("source_revision"),
+			"%s generated occlusion keeps the authored revision" % room_id,
+		)
+		_expect_equal(
+			manifest.get("source_geometry_sha256"),
+			FileAccess.get_sha256(geometry_path),
+			"%s generated occlusion matches the geometry digest" % room_id,
+		)
+		_expect_equal(
+			manifest.get("source_occlusion_sha256"),
+			FileAccess.get_sha256(occlusion_path),
+			"%s generated occlusion matches the authored digest" % room_id,
+		)
+		var shell_path := String(manifest.get("source_shell_path", ""))
+		_expect_equal(
+			manifest.get("source_shell_sha256"),
+			FileAccess.get_sha256(shell_path),
+			"%s generated occlusion matches the shell digest" % room_id,
+		)
+		var generated_segments := manifest.get("segments", []) as Array
+		var authored_segments := authored.get("segments", []) as Array
+		_expect_equal(
+			generated_segments.size(),
+			authored_segments.size(),
+			"%s pre-generates every authored segment" % room_id,
+		)
+		for segment_value: Variant in generated_segments:
+			var segment := segment_value as Dictionary
+			var texture_path := String(
+				segment.get("foreground_texture_path", ""),
+			)
+			_expect(
+				FileAccess.file_exists(texture_path),
+				"%s generated segment %s has a texture"
+				% [room_id, segment.get("id")],
+			)
+			_expect_equal(
+				segment.get("foreground_texture_sha256"),
+				FileAccess.get_sha256(texture_path),
+				"%s generated segment %s keeps the texture digest"
+				% [room_id, segment.get("id")],
+			)
 		var shell := Sprite2D.new()
-		shell.centered = false
-		shell.texture = ImageTexture.create_from_image(image)
+		shell.texture = ResourceLoader.load(shell_path, "Texture2D") as Texture2D
+		_expect(shell.texture != null, "%s shell texture loads" % room_id)
+		if shell.texture == null:
+			shell.free()
+			continue
+		var source_texture := shell.texture
 		root.add_child(shell)
 		var occlusion := WALL_OCCLUSION.new()
 		root.add_child(occlusion)
@@ -380,60 +128,275 @@ func _test_formal_room_data() -> void:
 			bool(occlusion.configure(
 				shell,
 				geometry,
-				base.path_join("wall_occlusion.json"),
+				geometry_path,
+				occlusion_path,
+				shell_path,
 			)),
-			"%s formal wall occlusion configures" % room_id,
+			"%s loads pre-generated wall occlusion" % room_id,
 		)
-		var segments := data.get("segments") as Array
+		_expect(
+			shell.texture == source_texture,
+			"%s runtime does not duplicate or rewrite the full shell image" % room_id,
+		)
+		_expect(
+			not occlusion.is_processing(),
+			"%s wall occlusion does not run its own scene-tree scan" % room_id,
+		)
 		_expect_equal(
 			occlusion.get_child_count(),
-			segments.size() + 1,
-			"%s creates exactly one node per segment and one debug root"
+			generated_segments.size() + 1,
+			"%s creates one sprite per generated segment and one debug root"
 			% room_id,
 		)
-		for segment_value: Variant in segments:
+		for segment_value: Variant in generated_segments:
 			var segment := segment_value as Dictionary
 			_expect(
 				occlusion.get_node_or_null(String(segment.get("id"))) != null,
-				"%s exposes the stable segment %s"
-				% [room_id, segment.get("id")],
+				"%s exposes generated segment %s" % [room_id, segment.get("id")],
 			)
+		var subject := Node2D.new()
+		subject.z_index = 100
+		root.add_child(subject)
+		for segment_value: Variant in generated_segments:
+			var segment := segment_value as Dictionary
+			var segment_id := String(segment.get("id"))
+			var foreground := occlusion.get_node_or_null(segment_id) as Sprite2D
+			var polygon_index := 0
+			for reveal_value: Variant in (
+				segment.get("reveal_polygons_canvas_px") as Array
+			):
+				var reveal := reveal_value as Array
+				subject.position = _inside_polygon_point(reveal) - _pair(
+					geometry.get("world_origin_px"),
+				)
+				_expect(
+					bool(occlusion.update_for_subject(subject)),
+					"%s segment %s polygon %d refreshes behind the wall"
+					% [room_id, segment_id, polygon_index],
+				)
+				_expect_equal(
+					foreground.z_index if foreground != null else -1,
+					100 - WALL_Z_STEP,
+					"%s segment %s keeps its full image behind the subject"
+					% [room_id, segment_id],
+				)
+				var active_overlays := _visible_segment_subject_overlays(
+					occlusion,
+					segment_id,
+					subject.get_instance_id(),
+				)
+				_expect(
+					not active_overlays.is_empty()
+					and active_overlays[0].z_index == 100 + WALL_Z_STEP,
+					"%s segment %s polygon %d raises a local slice in front"
+					% [room_id, segment_id, polygon_index],
+				)
+				subject.position = Vector2(-100000.0, -100000.0)
+				_expect(
+					bool(occlusion.update_for_subject(subject)),
+					"%s segment %s polygon %d refreshes after exit"
+					% [room_id, segment_id, polygon_index],
+				)
+				_expect_equal(
+					_visible_segment_subject_overlays(
+						occlusion,
+						segment_id,
+						subject.get_instance_id(),
+					).size(),
+					0,
+					"%s segment %s polygon %d removes its front slice"
+					% [room_id, segment_id, polygon_index],
+				)
+				_expect_equal(
+					foreground.z_index if foreground != null else -1,
+					999,
+					"%s segment %s polygon %d restores its authored front depth"
+					% [room_id, segment_id, polygon_index],
+				)
+				polygon_index += 1
+		subject.free()
+		occlusion.update_for_subjects([])
 		occlusion.free()
-		_expect_equal(
-			shell.texture.get_image().get_data(),
-			original_bytes,
-			"%s restores the source shell after unload" % room_id,
-		)
 		shell.free()
 		configured_rooms += 1
 	_expect_equal(
 		configured_rooms,
 		ROOMS.size(),
-		"every formal room geometry and wall data pair is exercised",
+		"every formal room loads its generated wall assets",
 	)
 
 
-func _synthetic_data() -> Dictionary:
-	return {
-		"schema_version": 1,
-		"source_revision": "cutout_test",
-		"room_id": "cutout_test",
-		"canvas_size_px": [16, 16],
-		"segments": [{
-			"id": "wall_with_floor_cutout",
-			"foreground_polygon_canvas_px": [
-				[0, 0], [16, 0], [16, 16], [0, 16],
-			],
-			"foreground_cutout_polygons_canvas_px": [
-				[[4, 4], [12, 4], [12, 12], [4, 12]],
-			],
-			"reveal_polygons_canvas_px": [
-				[[0, 0], [16, 0], [16, 16], [0, 16]],
-			],
-			"fade_distance_px": 4,
-			"minimum_alpha": 0.15,
-		}],
-	}
+func _test_multi_subject_state_refresh(room_id: String) -> void:
+	var base := ROOM_BASE.path_join(room_id)
+	var geometry_path := base.path_join("room_geometry.json")
+	var occlusion_path := base.path_join("wall_occlusion.json")
+	var manifest := _read_json(base.path_join("wall_occlusion_runtime.json"))
+	var geometry := _read_json(geometry_path)
+	var shell_path := String(manifest.get("source_shell_path", ""))
+	var shell := Sprite2D.new()
+	shell.texture = ResourceLoader.load(shell_path, "Texture2D") as Texture2D
+	root.add_child(shell)
+	var occlusion := WALL_OCCLUSION.new()
+	root.add_child(occlusion)
+	_expect(
+		bool(occlusion.configure(
+			shell,
+			geometry,
+			geometry_path,
+			occlusion_path,
+			shell_path,
+		)),
+		"%s multi-subject regression loads the wall" % room_id,
+	)
+	var generated_segments := manifest.get("segments") as Array
+	var first_segment := generated_segments[0] as Dictionary
+	var first_reveal := (
+		first_segment.get("reveal_polygons_canvas_px") as Array
+	)[0] as Array
+	var foot := _inside_polygon_point(first_reveal) - _pair(
+		geometry.get("world_origin_px"),
+	)
+	var first_subject := Node2D.new()
+	first_subject.z_index = 10
+	first_subject.position = foot
+	root.add_child(first_subject)
+	var second_subject := Node2D.new()
+	second_subject.z_index = 20
+	second_subject.position = foot + Vector2.ONE
+	root.add_child(second_subject)
+	_expect(
+		occlusion.upsert_subject(first_subject)
+		and occlusion.upsert_subject(second_subject),
+		"%s first two-person state refreshes wall occlusion" % room_id,
+	)
+	var foreground := occlusion.get_node_or_null(
+		String(first_segment.get("id")),
+	) as Sprite2D
+	_expect_equal(
+		foreground.z_index if foreground != null else -1,
+		10 - WALL_Z_STEP,
+		"the shared wall stays behind both subjects",
+	)
+	_expect(
+		_visible_subject_overlays(occlusion).size() >= 2,
+		"%s two people receive independent foreground slices" % room_id,
+	)
+	var stable_overlay_count := _visible_subject_overlays(occlusion).size()
+	_expect(
+		not occlusion.upsert_subject(second_subject),
+		"%s unchanged subject state skips refresh" % room_id,
+	)
+	_expect_equal(
+		_visible_subject_overlays(occlusion).size(),
+		stable_overlay_count,
+		"an unchanged frame preserves the existing foreground slices",
+	)
+	var first_overlays := _visible_segment_subject_overlays(
+		occlusion,
+		String(first_segment.get("id")),
+		first_subject.get_instance_id(),
+	)
+	var first_overlay_revision := (
+		int(first_overlays[0].get_meta("refresh_revision", -1))
+		if not first_overlays.is_empty()
+		else -1
+	)
+	second_subject.position += Vector2.ONE
+	_expect(
+		occlusion.upsert_subject(second_subject),
+		"%s moving one subject refreshes that subject" % room_id,
+	)
+	first_overlays = _visible_segment_subject_overlays(
+		occlusion,
+		String(first_segment.get("id")),
+		first_subject.get_instance_id(),
+	)
+	_expect(
+		not first_overlays.is_empty()
+		and int(first_overlays[0].get_meta("refresh_revision", -1))
+		== first_overlay_revision,
+		"%s moving B does not refresh A's overlay" % room_id,
+	)
+	var refresh_stats := occlusion.get_last_refresh_stats()
+	_expect_equal(
+		int(refresh_stats.get("subject_id", -1)),
+		second_subject.get_instance_id(),
+		"%s incremental refresh reports only the dirty subject" % room_id,
+	)
+	_expect(
+		int(refresh_stats.get("touched_segment_count", generated_segments.size()))
+		< generated_segments.size() or generated_segments.size() == 1,
+		"%s moving B does not refresh unrelated wall segments" % room_id,
+	)
+	second_subject.z_index += 7
+	_expect(
+		occlusion.upsert_subject(second_subject),
+		"%s depth changes refresh the dirty subject" % room_id,
+	)
+	var second_overlays := _visible_segment_subject_overlays(
+		occlusion,
+		String(first_segment.get("id")),
+		second_subject.get_instance_id(),
+	)
+	_expect(
+		not second_overlays.is_empty()
+		and second_overlays[0].z_index == second_subject.z_index + WALL_Z_STEP,
+		"%s depth changes update that subject's front slice" % room_id,
+	)
+	first_subject.visible = false
+	_expect(
+		occlusion.upsert_subject(first_subject),
+		"%s hiding one subject removes only that subject" % room_id,
+	)
+	stable_overlay_count = _visible_subject_overlays(occlusion).size()
+	_expect(
+		not occlusion.upsert_subject(second_subject),
+		"%s stable visible subject also skips refresh" % room_id,
+	)
+	_expect_equal(
+		_visible_subject_overlays(occlusion).size(),
+		stable_overlay_count,
+		"stable visibility preserves the existing foreground slice",
+	)
+	_expect(
+		occlusion.remove_subject(second_subject.get_instance_id()),
+		"%s explicit removal refreshes the final subject" % room_id,
+	)
+	_expect_equal(
+		_visible_subject_overlays(occlusion).size(),
+		0,
+		"removing every subject hides cached foreground slices",
+	)
+	first_subject.free()
+	second_subject.free()
+	occlusion.free()
+	shell.free()
+
+
+func _polygon_average(value: Array) -> Vector2:
+	var total := Vector2.ZERO
+	for point_value: Variant in value:
+		total += _pair(point_value)
+	return total / float(value.size())
+
+
+func _inside_polygon_point(value: Array) -> Vector2:
+	var polygon := PackedVector2Array()
+	for point_value: Variant in value:
+		polygon.append(_pair(point_value))
+	var indices := Geometry2D.triangulate_polygon(polygon)
+	if indices.size() >= 3:
+		return (
+			polygon[indices[0]]
+			+ polygon[indices[1]]
+			+ polygon[indices[2]]
+		) / 3.0
+	return _polygon_average(value)
+
+
+func _pair(value: Variant) -> Vector2:
+	var pair := value as Array
+	return Vector2(float(pair[0]), float(pair[1]))
 
 
 func _visible_subject_overlays(occlusion: Node2D) -> Array[Sprite2D]:
@@ -444,6 +407,19 @@ func _visible_subject_overlays(occlusion: Node2D) -> Array[Sprite2D]:
 	return result
 
 
+func _visible_segment_subject_overlays(
+	occlusion: Node2D,
+	segment_id: String,
+	subject_id: int,
+) -> Array[Sprite2D]:
+	var result: Array[Sprite2D] = []
+	var expected_prefix := "%sSubjectOverlay_%d" % [segment_id, subject_id]
+	for overlay in _visible_subject_overlays(occlusion):
+		if overlay.name == expected_prefix:
+			result.append(overlay)
+	return result
+
+
 func _read_json(path: String) -> Dictionary:
 	if not FileAccess.file_exists(path):
 		return {}
@@ -451,45 +427,25 @@ func _read_json(path: String) -> Dictionary:
 	return parsed as Dictionary if parsed is Dictionary else {}
 
 
-func _write_json(path: String, value: Dictionary) -> void:
-	_write_text(path, JSON.stringify(value))
-
-
-func _write_text(path: String, value: String) -> void:
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	file.store_string(value)
-	file.close()
-
-
-func _cleanup() -> void:
-	for path in [VALID_PATH, INVALID_PATH]:
-		var absolute := ProjectSettings.globalize_path(path)
-		if FileAccess.file_exists(path):
-			DirAccess.remove_absolute(absolute)
-
-
 func _expect(condition: bool, message: String) -> void:
+	_checks += 1
 	if not condition:
 		_failures.append(message)
 
 
-func _expect_equal(
-	actual: Variant,
-	expected: Variant,
-	message: String,
-) -> void:
-	if actual != expected:
-		_failures.append(
-			"%s: expected %s, got %s" % [message, expected, actual]
-		)
+func _expect_equal(actual: Variant, expected: Variant, message: String) -> void:
+	_expect(
+		actual == expected,
+		"%s: expected %s, got %s" % [message, expected, actual],
+	)
 
 
 func _finish() -> void:
 	_prepare_audio_shutdown()
 	if _failures.is_empty():
 		print(
-			"TOWN_INTERIOR_WALL_OCCLUSION_PASS: %d formal rooms"
-			% ROOMS.size()
+			"TOWN_INTERIOR_WALL_OCCLUSION_PASS checks=%d rooms=%d"
+			% [_checks, ROOMS.size()]
 		)
 		call_deferred("_quit_after_cleanup", 0)
 		return
@@ -501,6 +457,7 @@ func _finish() -> void:
 func _quit_after_cleanup(exit_code: int) -> void:
 	await process_frame
 	await process_frame
+	await create_timer(0.2).timeout
 	quit(exit_code)
 
 

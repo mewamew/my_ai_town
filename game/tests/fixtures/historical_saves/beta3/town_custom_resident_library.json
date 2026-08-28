@@ -1,0 +1,12 @@
+{
+	"candidates": [
+		{
+			"residentId": "fixture-custom-resident",
+			"residentName": "历史样本居民",
+			"source": "custom"
+		}
+	],
+	"libraryRevision": 2,
+	"schema": "town-custom-resident-library",
+	"schemaVersion": 1
+}

@@ -279,6 +279,32 @@
       "targetType": "prop"
     },
     {
+      "activityId": "activity_clinic_self_care",
+      "facing": "up",
+      "fallback": "reject",
+      "memberAnchors": [
+        {
+          "anchorId": "primary",
+          "memberAnchorId": "member_clinic_self_care_01",
+          "position": [
+            200,
+            104
+          ]
+        }
+      ],
+      "placeName": "诊所",
+      "poseFamily": "service",
+      "role": "visitor",
+      "sceneId": "clinic",
+      "slotId": "slot_clinic_self_care_01",
+      "target": {
+        "actionVerb": "基础处理",
+        "anchorId": "primary",
+        "propName": "诊所药柜"
+      },
+      "targetType": "prop"
+    },
+    {
       "activityId": "activity_clinic_receive_patient",
       "facing": "down",
       "fallback": "reject",
@@ -507,6 +533,32 @@
       "slotId": "slot_dining_prepare_meal_01",
       "target": {
         "actionVerb": "做饭",
+        "anchorId": "use_front",
+        "propName": "公共食堂灶台"
+      },
+      "targetType": "prop"
+    },
+    {
+      "activityId": "activity_dining_prepare_simple_meal",
+      "facing": "up",
+      "fallback": "reject",
+      "memberAnchors": [
+        {
+          "anchorId": "use_front",
+          "memberAnchorId": "member_dining_prepare_simple_meal_01",
+          "position": [
+            360,
+            376
+          ]
+        }
+      ],
+      "placeName": "公共食堂",
+      "poseFamily": "work",
+      "role": "visitor",
+      "sceneId": "dining_hall",
+      "slotId": "slot_dining_prepare_simple_meal_01",
+      "target": {
+        "actionVerb": "做简餐",
         "anchorId": "use_front",
         "propName": "公共食堂灶台"
       },

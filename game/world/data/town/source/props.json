@@ -131813,6 +131813,13 @@
           "verb": "做饭"
         },
         {
+          "durationMinutes": 20,
+          "effects": {
+            "累": 1.0
+          },
+          "verb": "做简餐"
+        },
+        {
           "durationMinutes": 30,
           "effects": {
             "累": 1.0
@@ -134279,6 +134286,13 @@
           "durationMinutes": 10,
           "effects": {},
           "verb": "取药"
+        },
+        {
+          "durationMinutes": 20,
+          "effects": {
+            "累": -1.0
+          },
+          "verb": "基础处理"
         }
       ],
       "interaction": {

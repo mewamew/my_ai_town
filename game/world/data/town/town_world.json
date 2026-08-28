@@ -277,6 +277,22 @@
       ]
     },
     {
+      "activityId": "activity_clinic_self_care",
+      "durationMinutes": 20.0,
+      "effects": {
+        "energy": 2.0,
+        "stress": -4.0
+      },
+      "interruptible": true,
+      "kind": "need",
+      "label": "基础自我处理",
+      "poseFamily": "service",
+      "tags": [
+        "care.self",
+        "care.visit"
+      ]
+    },
+    {
       "activityId": "activity_clinic_wait",
       "durationMinutes": 30.0,
       "effects": {
@@ -336,6 +352,23 @@
       "tags": [
         "food.prepare",
         "food.serve"
+      ]
+    },
+    {
+      "activityId": "activity_dining_prepare_simple_meal",
+      "durationMinutes": 20.0,
+      "effects": {
+        "energy": -2.0,
+        "satiety": 24.0
+      },
+      "interruptible": true,
+      "kind": "need",
+      "label": "自行做简餐",
+      "poseFamily": "work",
+      "tags": [
+        "food.prepare",
+        "food.eat",
+        "self_service.meal"
       ]
     },
     {
@@ -1048,15 +1081,15 @@
     "receiptVersion": 1,
     "scheduleTemplatesResolved": true,
     "sourceDocumentFingerprints": {
-      "activity_definitions.json": "7e214115e4bd332e2be6f441bf026d09a9b5288fdf0a60ad458f4a426efa9d9c",
-      "activity_slots.json": "b1d646753a396c8be1cb505933e6d881100fcb6231ae2dd7f4a3200cdeb53e17",
-      "indoor_prop_authoring.json": "9c636eabef2a7ef1517fb1b024111137ba62f2e076c6c68299addaa315d2e286",
+      "activity_definitions.json": "11394713d90ceaa7a57868099d8b63307b68f7a89227c070da6b35f8e007fb48",
+      "activity_slots.json": "9ec2e66c45e7bf0d48da4ddaadc4598fa8d2d5d31fc7ef107f2615bc65c5324f",
+      "indoor_prop_authoring.json": "cddf2092f875e4f7012b449785fd1d901e69fc6f2ec129f11bb5b236c8897e73",
       "occupation_catalog.json": "6e0210da5a59c0cc4c4db8253a441c78f9ecf3f5114d7ae79fc113adfd3ac25d",
-      "places.json": "17dc9a4fdd84421544713171fd69f394d5f40efd10586bb2de9e3de3c241342e",
-      "props.json": "90ca9c6f5f0fdc14df9eacb33088144cb53273a36661f27d8746b86f3896b934",
+      "places.json": "206a6a2f998767a7297e34fb55abf00c375b8ee63763324f2dfe734871275a6b",
+      "props.json": "9834cda492c108bbd7d7e087a1cf2e31449365265ddb66fd435e5b8891c3506f",
       "schedule_templates.json": "c813a58fb45813c52230c398181b2bc2ebd5aa9a1f6b76cb2c5d7c0708c50d63"
     },
-    "sourceFingerprint": "bc3442e119eeccd05687f4f1bc73bb3f857c8747f651d5291b6f53cce09c3490",
+    "sourceFingerprint": "bf242f42dae623b44ec47902d4defea29314286de0be16a619683a5b61ad298f",
     "sourceWorldId": "town",
     "staticReferencesValidated": true,
     "status": "formal_executable",
@@ -1534,6 +1567,32 @@
       "targetType": "prop"
     },
     {
+      "activityId": "activity_clinic_self_care",
+      "facing": "up",
+      "fallback": "reject",
+      "memberAnchors": [
+        {
+          "anchorId": "primary",
+          "memberAnchorId": "member_clinic_self_care_01",
+          "position": [
+            200.0,
+            104.0
+          ]
+        }
+      ],
+      "placeName": "诊所",
+      "poseFamily": "service",
+      "role": "visitor",
+      "sceneId": "clinic",
+      "slotId": "slot_clinic_self_care_01",
+      "target": {
+        "actionVerb": "基础处理",
+        "anchorId": "primary",
+        "propName": "诊所药柜"
+      },
+      "targetType": "prop"
+    },
+    {
       "activityId": "activity_clinic_wait",
       "facing": "down",
       "fallback": "reject",
@@ -1710,6 +1769,32 @@
       "slotId": "slot_dining_prepare_meal_01",
       "target": {
         "actionVerb": "做饭",
+        "anchorId": "use_front",
+        "propName": "公共食堂灶台"
+      },
+      "targetType": "prop"
+    },
+    {
+      "activityId": "activity_dining_prepare_simple_meal",
+      "facing": "up",
+      "fallback": "reject",
+      "memberAnchors": [
+        {
+          "anchorId": "use_front",
+          "memberAnchorId": "member_dining_prepare_simple_meal_01",
+          "position": [
+            360.0,
+            376.0
+          ]
+        }
+      ],
+      "placeName": "公共食堂",
+      "poseFamily": "work",
+      "role": "visitor",
+      "sceneId": "dining_hall",
+      "slotId": "slot_dining_prepare_simple_meal_01",
+      "target": {
+        "actionVerb": "做简餐",
         "anchorId": "use_front",
         "propName": "公共食堂灶台"
       },
@@ -209526,7 +209611,8 @@
         "helperActivityId": "activity_dining_serve_meal",
         "requestActivityIds": [
           "activity_dining_collect_meal"
-        ]
+        ],
+        "unstaffedVisitorActivityIds": []
       },
       "spaceId": "indoor_dining_hall",
       "summary": "面向全镇供餐的公共食堂，居民可以在这里工作、吃饭和碰面。",
@@ -209659,6 +209745,10 @@
         "helperActivityId": "activity_library_staff_checkout",
         "requestActivityIds": [
           "activity_library_checkout"
+        ],
+        "unstaffedVisitorActivityIds": [
+          "activity_library_read",
+          "activity_library_write"
         ]
       },
       "spaceId": "indoor_library",
@@ -209696,7 +209786,8 @@
         "helperActivityId": "activity_workshop_craft_item",
         "requestActivityIds": [
           "activity_workshop_handoff_repair"
-        ]
+        ],
+        "unstaffedVisitorActivityIds": []
       },
       "spaceId": "indoor_workshop",
       "summary": "制作和修理器物的工坊，居民可以在这里经营铺面和从事手工工作。",
@@ -209821,6 +209912,9 @@
         "helperActivityId": "activity_cafe_receive_guests",
         "requestActivityIds": [
           "activity_cafe_order"
+        ],
+        "unstaffedVisitorActivityIds": [
+          "activity_cafe_rest"
         ]
       },
       "spaceId": "indoor_flower_cafe",
@@ -209914,7 +210008,8 @@
         "requestActivityIds": [
           "activity_clinic_consult",
           "activity_clinic_examination"
-        ]
+        ],
+        "unstaffedVisitorActivityIds": []
       },
       "spaceId": "indoor_clinic",
       "summary": "为镇民看病和取药的公共诊所，医护居民可以在这里工作。",
@@ -210353,6 +210448,13 @@
             "累": 1.0
           },
           "verb": "做饭"
+        },
+        {
+          "durationMinutes": 20.0,
+          "effects": {
+            "累": 1.0
+          },
+          "verb": "做简餐"
         },
         {
           "durationMinutes": 30.0,
@@ -212821,6 +212923,13 @@
           "durationMinutes": 10.0,
           "effects": {},
           "verb": "取药"
+        },
+        {
+          "durationMinutes": 20.0,
+          "effects": {
+            "累": -1.0
+          },
+          "verb": "基础处理"
         }
       ],
       "interaction": {

@@ -1,0 +1,122 @@
+{
+  "canvas_size_px": [
+    1331.0,
+    1182.0
+  ],
+  "room_id": "library",
+  "schema_version": 2,
+  "segments": [
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        76,
+        958
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/library/wall_occlusion_runtime/south_west_foreground-689cdf6d957e.png",
+      "foreground_texture_sha256": "689cdf6d957e86ff7c1153c63fc754fb7fad9cd735840d6ffea1e49a114470fb",
+      "foreground_texture_size_px": [
+        514,
+        169
+      ],
+      "id": "south_west_foreground",
+      "minimum_alpha": 0.16,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            104.0,
+            864.0
+          ],
+          [
+            584.0,
+            864.0
+          ],
+          [
+            584.0,
+            1024.0
+          ],
+          [
+            104.0,
+            1024.0
+          ]
+        ],
+        [
+          [
+            584.0,
+            928.0
+          ],
+          [
+            744.0,
+            928.0
+          ],
+          [
+            744.0,
+            1024.0
+          ],
+          [
+            584.0,
+            1024.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        741,
+        958
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/library/wall_occlusion_runtime/south_east_foreground-4e62ab700ff0.png",
+      "foreground_texture_sha256": "4e62ab700ff05abb38734249e8a17055f151cf4940a3a1c7ff6a59275d05f90c",
+      "foreground_texture_size_px": [
+        514,
+        169
+      ],
+      "id": "south_east_foreground",
+      "minimum_alpha": 0.16,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            744.0,
+            864.0
+          ],
+          [
+            1224.0,
+            864.0
+          ],
+          [
+            1224.0,
+            1024.0
+          ],
+          [
+            744.0,
+            1024.0
+          ]
+        ],
+        [
+          [
+            584.0,
+            928.0
+          ],
+          [
+            744.0,
+            928.0
+          ],
+          [
+            744.0,
+            1024.0
+          ],
+          [
+            584.0,
+            1024.0
+          ]
+        ]
+      ]
+    }
+  ],
+  "source_geometry_revision": "library_candidate_c_uniform_wall_height_space_v1",
+  "source_geometry_sha256": "1a35c03f0f1b9e688e83c3628982ed9758db6e67eea2e437e3ee551b666c35c7",
+  "source_occlusion_revision": "library_candidate_c_uniform_wall_height_space_v1",
+  "source_occlusion_sha256": "912eabbcb64383e60ef9d4a650dee1cfc5d9a78a34557dbd2d94b55a902c2f57",
+  "source_shell_path": "res://world/maps/town/interiors/redesign_v2/rooms/library/assets/background/room_shell.png",
+  "source_shell_sha256": "798309c76f29d84edbad138a5547cb9c018faf8b7bc979c635c2290fd90fdc5c"
+}

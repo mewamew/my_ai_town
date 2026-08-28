@@ -1291,23 +1291,18 @@ func _inner_observation_resident(
 	resident_id: String,
 	resident_name: String,
 ) -> Dictionary:
-	var catalog_record := _resident_catalog_record(resident_id)
-	if catalog_record.is_empty():
-		for value: Variant in _resident_catalog_by_id.values():
-			var candidate := value as Dictionary
-			var candidate_attributes := (
-				candidate.get("attributes", {}) as Dictionary
-			)
-			if String(candidate_attributes.get("name", "")) == resident_name:
-				catalog_record = candidate.duplicate(true)
-				break
-	var attributes := catalog_record.get("attributes", {}) as Dictionary
-	var presentation := catalog_record.get("presentation", {}) as Dictionary
-	var appearance_id := String(attributes.get("appearance", "")).strip_edges()
-	var portrait_path := _resident_overview_portrait_ref(
-		appearance_id,
-		presentation,
-	).strip_edges()
+	# 居民 ID 才是稳定身份；姓名只是旧世界/测试替身仍支持的兼容入口。
+	# 同名居民合法存在时，不能先按姓名查询，否则可能把另一人的实时外观
+	# 投影到当前居民的内观察页面。
+	var detail := _resident_detail(resident_id)
+	if detail.is_empty():
+		detail = _resident_detail(resident_name)
+	var live_attributes := detail.get("attributes", {}) as Dictionary
+	var portrait := _resident_portrait_projection(
+		resident_id,
+		live_attributes,
+	)
+	var portrait_path := String(portrait.get("portraitRef", "")).strip_edges()
 	var portrait_ready := (
 		not portrait_path.is_empty()
 		and ResourceLoader.exists(portrait_path, "Texture2D")
@@ -1324,9 +1319,7 @@ func _inner_observation_resident(
 		"displayName": resident_name,
 		"expressionId": "calm",
 		"portrait": {
-			# Prefer the resident's approved wardrobe preview. It gives the
-			# observation page a recognizable current appearance while keeping
-			# an explicit name placeholder for incomplete custom residents.
+			# 使用当前小镇居民的正式外观；自定义居民不依赖内置目录。
 			"assetPath": portrait_path if portrait_ready else "",
 			"sourceKind": source_kind,
 			"status": "ready" if portrait_ready else "missing",

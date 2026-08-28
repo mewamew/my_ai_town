@@ -1,0 +1,50 @@
+{
+	"candidates": [
+		{
+			"appearance": {
+				"appearanceId": "resident_wardrobe_v1:look_00",
+				"directionSetReady": true,
+				"displayName": "花子 · 完整套装",
+				"formalReady": true,
+				"legacySpritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/hanako_front.png",
+				"loadoutId": "look_00",
+				"portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/hanako_front.png",
+				"restPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/loadouts/look_00/down/rest.png",
+				"selection": {
+					"bottom": "teal_town_jacket",
+					"hair": "warm_ponytail",
+					"shoes": "teal_town_jacket",
+					"top": "teal_town_jacket"
+				},
+				"spriteSheetPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/sheets/hanako_walk4_3dir_v1_alpha.png"
+			},
+			"attributes": {
+				"age": 29,
+				"appearance": "resident_wardrobe_v1:look_00",
+				"customInterests": [],
+				"desire": "验证绑定后能够进入小镇",
+				"gender": "女",
+				"interests": [],
+				"name": "入镇实测居民",
+				"personality": "耐心、友善，做事前会确认细节",
+				"selectionSummary": "耐心、友善，做事前会确认细节",
+				"speech": "会清楚说明自己的想法"
+			},
+			"occupation": {
+				"name": "乐师",
+				"workplacePlace": "中心广场"
+			},
+			"presentation": {
+				"locationLabel": "中心广场",
+				"portraitPath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/hanako_front.png",
+				"spritePath": "res://assets/characters/resident_2d_rig_v1/wardrobe_v1/classic_sets/runtime_portraits/hanako_front.png"
+			},
+			"residentId": "custom_resident_c7895d81e5852ffd3d3a8464_0001",
+			"residentName": "入镇实测居民",
+			"source": "custom"
+		}
+	],
+	"libraryRevision": 2,
+	"schema": "town-custom-resident-library",
+	"schemaVersion": 1
+}

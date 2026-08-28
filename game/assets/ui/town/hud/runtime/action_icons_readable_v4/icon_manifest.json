@@ -150,10 +150,12 @@
       "iconKey": "clinic_medicine",
       "usage": "配取或领取药品",
       "activityIds": [
-        "activity_clinic_prepare_medicine"
+        "activity_clinic_prepare_medicine",
+        "activity_clinic_self_care"
       ],
       "verbs": [
-        "取药"
+        "取药",
+        "基础处理"
       ],
       "stripPath": "res://assets/ui/town/hud/runtime/action_icons_readable_v4/strips/clinic_medicine.png",
       "status": "native_32_runtime_size_checked"
@@ -210,10 +212,12 @@
       "iconKey": "prepare_meal",
       "usage": "烹饪和准备饭菜",
       "activityIds": [
-        "activity_dining_prepare_meal"
+        "activity_dining_prepare_meal",
+        "activity_dining_prepare_simple_meal"
       ],
       "verbs": [
-        "做饭"
+        "做饭",
+        "做简餐"
       ],
       "stripPath": "res://assets/ui/town/hud/runtime/action_icons_readable_v4/strips/prepare_meal.png",
       "status": "native_32_runtime_size_checked"

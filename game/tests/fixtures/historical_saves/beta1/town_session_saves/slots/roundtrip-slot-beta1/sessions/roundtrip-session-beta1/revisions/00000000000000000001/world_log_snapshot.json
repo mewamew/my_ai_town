@@ -1,0 +1,11 @@
+{
+	"maxSequence": 0,
+	"parentTimelineId": "",
+	"readState": {},
+	"schema": "town-world-log-snapshot",
+	"schemaVersion": 1,
+	"segments": [],
+	"storageSchemaVersion": 1,
+	"timelineId": "world-log-timeline-1",
+	"worldRevision": 35
+}

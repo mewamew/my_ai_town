@@ -1,0 +1,25 @@
+{
+	"context": {
+		"save_revision": 1,
+		"session_id": "roundtrip-session-long-path-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+		"slot_id": "roundtrip-slot-long-path-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+	},
+	"intent_id": "save",
+	"kind": "save",
+	"order": 20,
+	"payload": {
+		"gateToken": "session-save-g1-t1",
+		"sessionConfigRef": "slots/roundtrip-slot-long-path-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/sessions/roundtrip-session-long-path-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/revisions/00000000000000000001/session_config.json",
+		"sessionConfigSha256": "7085bc39089056b1844ca32f41ad0adb285f2d0acdfb3727d3df484a5e3299db",
+		"snapshotRef": "slots/roundtrip-slot-long-path-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/sessions/roundtrip-session-long-path-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/revisions/00000000000000000001/world_snapshot.json",
+		"snapshotSha256": "773c6b4921fed23a8fcec8870c84b5e8bdd1958ab4c217cf3b68e0b3f9dee7b6",
+		"sourceGeneration": 1,
+		"worldLogSnapshotRef": "slots/roundtrip-slot-long-path-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/sessions/roundtrip-session-long-path-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/revisions/00000000000000000001/world_log_snapshot.json",
+		"worldLogSnapshotSha256": "f90d39086beb95688621a62fb7c2482b0aefecef4fcbee2fddd6273dc721c8e9",
+		"worldRevision": 24,
+		"worldToken": "world-save-g1-c1"
+	},
+	"schema": "town-session-save-intent",
+	"schema_version": 1,
+	"state": "agent_commit_started"
+}

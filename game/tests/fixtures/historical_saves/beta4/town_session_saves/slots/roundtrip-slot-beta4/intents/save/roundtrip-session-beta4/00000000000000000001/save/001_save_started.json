@@ -1,0 +1,16 @@
+{
+	"context": {
+		"save_revision": 1,
+		"session_id": "roundtrip-session-beta4",
+		"slot_id": "roundtrip-slot-beta4"
+	},
+	"intent_id": "save",
+	"kind": "save",
+	"order": 1,
+	"payload": {
+		"sourceGeneration": 1
+	},
+	"schema": "town-session-save-intent",
+	"schema_version": 1,
+	"state": "save_started"
+}

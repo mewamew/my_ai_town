@@ -1,0 +1,9 @@
+{
+	"context": {
+		"save_revision": 1,
+		"session_id": "roundtrip-session-beta3",
+		"slot_id": "roundtrip-slot-beta3"
+	},
+	"schema": "town-session-save-allocation",
+	"schema_version": 1
+}

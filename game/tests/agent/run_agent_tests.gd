@@ -177,7 +177,12 @@ func _collect_suites(directory_path: String, result: Array[String]) -> void:
 
 func _filter_suites(suites: Array[String]) -> Array[String]:
 	var result: Array[String] = []
-	var group := String(_options.get("group", "")).strip_edges()
+	var group_text := String(_options.get("group", "")).strip_edges()
+	var groups: Array[String] = []
+	for group_value: String in group_text.split(",", false):
+		var group := group_value.strip_edges()
+		if not group.is_empty() and not groups.has(group):
+			groups.append(group)
 	var suite_filter := String(_options.get("suite", "")).strip_edges()
 	var provider_filter := String(_options.get("provider", "")).strip_edges()
 	for suite: String in suites:
@@ -192,7 +197,12 @@ func _filter_suites(suites: Array[String]) -> Array[String]:
 			suite.get_file()
 		):
 			continue
-		if not group.is_empty() and not relative_path.begins_with("%s/" % group):
+		var group_matches := groups.is_empty()
+		for group: String in groups:
+			if relative_path.begins_with("%s/" % group):
+				group_matches = true
+				break
+		if not group_matches:
 			continue
 		if not suite_filter.is_empty() and not relative_path.contains(suite_filter):
 			continue

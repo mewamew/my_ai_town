@@ -1,0 +1,25 @@
+{
+	"context": {
+		"save_revision": 1,
+		"session_id": "session-1787547424-5",
+		"slot_id": "town-main"
+	},
+	"intent_id": "save",
+	"kind": "save",
+	"order": 30,
+	"payload": {
+		"gateToken": "session-save-g1-t1",
+		"sessionConfigRef": "slots/town-main/sessions/session-1787547424-5/revisions/00000000000000000001/session_config.json",
+		"sessionConfigSha256": "33c563317826d88905cd1bded34ec904b837fbb3a51d5b917ee7b1cf9dc17fa9",
+		"snapshotRef": "slots/town-main/sessions/session-1787547424-5/revisions/00000000000000000001/world_snapshot.json",
+		"snapshotSha256": "52de16be17385b1c03e45f2cd4d5b88a2887ac192506a0b5d853c1461ca33fbf",
+		"sourceGeneration": 1,
+		"worldLogSnapshotRef": "slots/town-main/sessions/session-1787547424-5/revisions/00000000000000000001/world_log_snapshot.json",
+		"worldLogSnapshotSha256": "f90d39086beb95688621a62fb7c2482b0aefecef4fcbee2fddd6273dc721c8e9",
+		"worldRevision": 24,
+		"worldToken": "world-save-g1-c1"
+	},
+	"schema": "town-session-save-intent",
+	"schema_version": 1,
+	"state": "agent_committed"
+}

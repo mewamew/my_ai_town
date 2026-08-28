@@ -62,6 +62,7 @@ const REQUIRED_ACTION_KEYS: Array[String] = [
 	"confirmOverwrite",
 	"cancel",
 	"retryRestore",
+	"rediagnose",
 ]
 const REQUIRED_SUMMARY_KEYS: Array[String] = [
 	"promptId",
@@ -85,6 +86,7 @@ const REQUIRED_COPY_KEYS: Array[String] = [
 	"cancel",
 	"retryRestore",
 	"confirmOverwrite",
+	"rediagnose",
 ]
 const VALID_CONDITIONS: Array[String] = [
 	"healthy",
@@ -126,6 +128,7 @@ var _actions: GridContainer
 var _cancel_button: Button
 var _retry_button: Button
 var _overwrite_button: Button
+var _rediagnose_button: Button
 
 
 func _ready() -> void:
@@ -318,6 +321,7 @@ func _enter_empty_contract_failure(message: String) -> void:
 		_cancel_button.disabled = true
 		_retry_button.disabled = true
 		_overwrite_button.disabled = true
+		_rediagnose_button.disabled = true
 
 
 func current_revision() -> int:
@@ -346,6 +350,7 @@ func runtime_gate_snapshot() -> Dictionary:
 		"cancel",
 		"retryRestore",
 		"confirmOverwrite",
+		"rediagnose",
 	]:
 		var button := _button_for_action(action_key)
 		var button_bottom := (
@@ -401,6 +406,7 @@ func runtime_gate_snapshot() -> Dictionary:
 			"cancel": _cancel_button.get_combined_minimum_size().x,
 			"retry": _retry_button.get_combined_minimum_size().x,
 			"overwrite": _overwrite_button.get_combined_minimum_size().x,
+			"rediagnose": _rediagnose_button.get_combined_minimum_size().x,
 		},
 		"textRects": {
 			"kicker": _rect_array(
@@ -599,6 +605,11 @@ func runtime_ownership_snapshot() -> Array[Dictionary]:
 			"overwrite_action_border",
 			"overwrite",
 			_overwrite_button
+		),
+		_action_ownership(
+			"rediagnose_action_border",
+			"rediagnose",
+			_rediagnose_button
 		),
 	]
 	return entries
@@ -815,10 +826,14 @@ func _validate_mode_contract(
 			issues.append(
 				"NewGameOverwriteScreen continue_recovery 回退 revision 与摘要不一致"
 			)
-	var overwrite := actions.get("confirmOverwrite", {}) as Dictionary
-	if bool(overwrite.get("enabled", false)):
+	var rediagnose := actions.get("rediagnose", {}) as Dictionary
+	if (
+		not bool(rediagnose.get("enabled", false))
+		or String(rediagnose.get("intent", ""))
+		!= "session.rediagnose_recovery"
+	):
 		issues.append(
-			"NewGameOverwriteScreen continue_recovery 禁止启用覆盖操作"
+			"NewGameOverwriteScreen continue_recovery 必须提供重新诊断操作"
 		)
 
 
@@ -1008,9 +1023,15 @@ func _build_interface() -> void:
 		&"OverwriteDestructive",
 		"confirmOverwrite"
 	)
+	_rediagnose_button = _make_action_button(
+		"RediagnoseButton",
+		&"OverwriteRecovery",
+		"rediagnose"
+	)
 	_actions.add_child(_cancel_button)
 	_actions.add_child(_retry_button)
 	_actions.add_child(_overwrite_button)
+	_actions.add_child(_rediagnose_button)
 
 
 func _make_label(
@@ -1186,7 +1207,7 @@ func _apply_operation_feedback(condition: String) -> void:
 			_feedback.theme_type_variation = &"OverwriteDisabled"
 		_:
 			if _mode() == "continue_recovery":
-				_feedback.text = "将使用最近一次可正常读取的完整存档。"
+				_feedback.text = "可重新检查存档，也可确认执行当前修复计划。"
 			elif delete_save:
 				_feedback.text = "删除前会先安全归档；取消不会改变存档。"
 			else:
@@ -1235,11 +1256,17 @@ func _apply_actions(
 		"confirmOverwrite",
 		str(copy.get("confirmOverwrite", "覆盖并开始"))
 	)
+	_configure_action_button(
+		_rediagnose_button,
+		"rediagnose",
+		str(copy.get("rediagnose", "重新诊断"))
+	)
 	_retry_button.visible = _action_is_exposed("retryRestore", condition)
 	_overwrite_button.visible = _action_is_exposed(
 		"confirmOverwrite",
 		condition
 	)
+	_rediagnose_button.visible = _action_is_exposed("rediagnose", condition)
 	_update_action_grid()
 	_update_focus_chain()
 	_remeasure_text_slots()
@@ -1322,16 +1349,9 @@ func _configure_action_button(
 func _visible_action_copy(action_key: String, full_copy: String) -> String:
 	if (
 		_mode() == "continue_recovery"
-		and action_key == "retryRestore"
+		and action_key in ["retryRestore", "rediagnose"]
 	):
-		return (
-			"恢复并继续"
-			if _layout_mode in [
-				LayoutMode.COMPACT_LANDSCAPE,
-				LayoutMode.COMPACT_PORTRAIT,
-			]
-			else full_copy
-		)
+		return full_copy
 	var maximum_characters := 7
 	if full_copy.length() <= maximum_characters:
 		return full_copy
@@ -1350,6 +1370,7 @@ func _update_action_grid() -> void:
 		_cancel_button,
 		_retry_button,
 		_overwrite_button,
+		_rediagnose_button,
 	]:
 		if button.visible:
 			visible_actions += 1
@@ -1388,6 +1409,8 @@ func _action_is_exposed(action_key: String, condition := "") -> bool:
 			)
 		"confirmOverwrite":
 			return _mode() in ["new_game_overwrite", "delete_save"]
+		"rediagnose":
+			return _mode() == "continue_recovery"
 		_:
 			return false
 
@@ -1398,6 +1421,7 @@ func _update_focus_chain() -> void:
 		_cancel_button,
 		_retry_button,
 		_overwrite_button,
+		_rediagnose_button,
 	]:
 		if button.visible and not button.disabled:
 			focus_chain.append(button)
@@ -1480,6 +1504,8 @@ func _button_for_action(action_key: String) -> Button:
 			return _cancel_button
 		"retryRestore":
 			return _retry_button
+		"rediagnose":
+			return _rediagnose_button
 		_:
 			return _overwrite_button
 

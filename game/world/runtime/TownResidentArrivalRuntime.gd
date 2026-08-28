@@ -21,6 +21,12 @@ const ENTRY_CONTINUITY_LINES: Array[String] = [
 	"沿着入口往里走，先熟悉一下周围",
 	"先离开入口，到前面看看镇上的早晨",
 ]
+const EXTERNAL_MEDICAL_RETURN_LINES: Array[String] = [
+	"刚从镇外就医回来，先慢慢走回镇里休养",
+	"外部治疗已经完成，先回镇里继续恢复",
+	"从镇外医疗点回来，先放慢脚步回到镇里",
+]
+const EXTERNAL_MEDICAL_AID_PLACE_ID := "镇外医疗援助"
 
 static var _arrival_safe_position_cache: Dictionary = {}
 static var _arrival_home_route_cache: Dictionary = {}
@@ -45,6 +51,9 @@ static func advance(world, absolute_minute: int, clearance_px: float) -> void:
 		):
 			continue
 		var entry_state := entry_state_for(world, resident_id, clearance_px)
+		var returning_from_external_medical_aid := (
+			_returns_from_external_medical_aid(world, resident_id)
+		)
 		if not entry_state.is_empty():
 			resident["position"] = entry_state.get(
 				"position",
@@ -65,7 +74,18 @@ static func advance(world, absolute_minute: int, clearance_px: float) -> void:
 		arrival["status"] = "arrived"
 		arrival["arrivedAbsoluteMinute"] = absolute_minute
 		resident["arrivalState"] = arrival
-		activate_entry_continuity(world, resident_id, resident, absolute_minute)
+		if returning_from_external_medical_aid:
+			resident["attendanceState"] = {
+				"status": "available",
+				"untilMinute": -1,
+			}
+		activate_entry_continuity(
+			world,
+			resident_id,
+			resident,
+			absolute_minute,
+			returning_from_external_medical_aid,
+		)
 		resident["movementRevision"] = int(
 			resident.get("movementRevision", 1),
 		) + 1
@@ -77,7 +97,11 @@ static func advance(world, absolute_minute: int, clearance_px: float) -> void:
 			world.resident_display_name(resident_id),
 			String(resident.get("currentPlace", "")),
 			{
-				"type": "居民抵达",
+				"type": (
+					"外出就医归来"
+					if returning_from_external_medical_aid
+					else "居民抵达"
+				),
 				"lifecycleId": "resident-arrival:%s" % resident_id,
 				"status": "completed",
 				"participantIds": [resident_id],
@@ -97,10 +121,16 @@ static func activate_entry_continuity(
 	resident_id: String,
 	resident: Dictionary,
 	absolute_minute: int,
+	returning_from_external_medical_aid := false,
 ) -> void:
 	var action_id := "%s-arrival-%d" % [resident_id, absolute_minute]
-	var line := ENTRY_CONTINUITY_LINES[
-		posmod(hash(resident_id), ENTRY_CONTINUITY_LINES.size())
+	var candidate_lines := (
+		EXTERNAL_MEDICAL_RETURN_LINES
+		if returning_from_external_medical_aid
+		else ENTRY_CONTINUITY_LINES
+	)
+	var line := candidate_lines[
+		posmod(hash(resident_id), candidate_lines.size())
 	]
 	var action := {
 		"action_id": action_id,
@@ -148,8 +178,30 @@ static func activate_entry_continuity(
 			action["idleMoveDurationMinutes"] = 1
 	(resident.get("usedActionIds", {}) as Dictionary)[action_id] = true
 	resident["currentAction"] = action
+	(resident.get("usedActionIds", {}) as Dictionary)[action_id] = true
 	resident["actionSuspendedAbsoluteMinute"] = -1
 	resident["doing"] = line
+
+
+static func _returns_from_external_medical_aid(
+	world,
+	resident_id: String,
+) -> bool:
+	for injury_value: Variant in (
+		world.get_public_conflict_projection().get("injuries", []) as Array
+	):
+		if injury_value is not Dictionary:
+			continue
+		var injury := injury_value as Dictionary
+		if (
+			String(injury.get("actorId", "")) == resident_id
+			and String(injury.get("treatmentPlaceId", ""))
+			== EXTERNAL_MEDICAL_AID_PLACE_ID
+			and String(injury.get("treatmentStatus", ""))
+			in ["in_progress", "completed"]
+		):
+			return true
+	return false
 
 
 static func _first_route_step_path(route: Dictionary) -> Array[Vector2]:

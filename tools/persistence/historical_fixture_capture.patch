@@ -1,0 +1,159 @@
+diff --git a/game/project.godot b/game/project.godot
+index 2e64b50..2c0d984 100644
+--- a/game/project.godot
++++ b/game/project.godot
+@@ -11,6 +11,8 @@ config_version=5
+ [application]
+ 
+ config/name="我的ai小镇"
++config/use_custom_user_dir=true
++config/custom_user_dir_name="my_ai_town_issue146_fixture"
+ run/main_scene="res://ui/startup/StartupScreen.tscn"
+ config/features=PackedStringArray("4.7", "GL Compatibility")
+ config/icon="res://icon.png"
+diff --git a/game/tests/session_save_continue_roundtrip_test.gd b/game/tests/session_save_continue_roundtrip_test.gd
+index 59b5e03..f7af208 100644
+--- a/game/tests/session_save_continue_roundtrip_test.gd
++++ b/game/tests/session_save_continue_roundtrip_test.gd
+@@ -28,6 +28,15 @@ const RUNTIME_GATE := preload(
+ const COORDINATOR := preload(
+ 	"res://world/presentation/session/TownSessionSaveCoordinator.gd"
+ )
++const STARTUP_CATALOG := preload(
++	"res://world/presentation/session/TownStartupSaveCatalog.gd"
++)
++const CUSTOM_RESIDENT_LIBRARY := preload(
++	"res://world/presentation/session/TownCustomResidentLibrary.gd"
++)
++const PHOTO_STORE := preload(
++	"res://world/integration/TownConversationPhotoStore.gd"
++)
+ 
+ var _failures: Array[String] = []
+ var _checks := 0
+@@ -48,7 +57,13 @@ func _initialize() -> void:
+ func _run() -> void:
+ 	DisplayServer.window_set_size(Vector2i(1920, 1080))
+ 	root.size = Vector2i(1920, 1080)
+-	var identity := "%d_%d" % [OS.get_process_id(), Time.get_ticks_usec()]
++	var fixture_id := OS.get_environment("MY_AI_TOWN_FIXTURE_ID").strip_edges()
++	var capture_fixture := not fixture_id.is_empty()
++	var identity := (
++		fixture_id
++		if capture_fixture
++		else "%d_%d" % [OS.get_process_id(), Time.get_ticks_usec()]
++	)
+ 	var slot_id := "roundtrip-slot-%s" % identity
+ 	var session_id := "roundtrip-session-%s" % identity
+ 	var test_root := "user://tests/town_session_saves/roundtrip_%s" % identity
+@@ -116,10 +131,11 @@ func _run() -> void:
+ 	var source_world: RefCounted = source_runtime.call("get_world_runtime")
+ 	var source_agent: RefCounted = source_gateway.call("get_agent_save_participant")
+ 	var store: RefCounted = STORE.new()
+-	_expect_ok(
+-		store.call("configure_test_root", test_root) as Dictionary,
+-		"闭环测试存档目录可配置",
+-	)
++	if not capture_fixture:
++		_expect_ok(
++			store.call("configure_test_root", test_root) as Dictionary,
++			"闭环测试存档目录可配置",
++		)
+ 	var source_gate: RefCounted = RUNTIME_GATE.new()
+ 	_expect_ok(source_gate.call("configure", source_runtime) as Dictionary, "源小镇事务锁可配置")
+ 	var save_coordinator: RefCounted = COORDINATOR.new()
+@@ -269,6 +285,24 @@ func _run() -> void:
+ 		"town",
+ 		"恢复完成后正式小镇保持可见室外视图",
+ 	)
++	if capture_fixture:
++		var extras := _write_fixture_extras(
++			store,
++			slot_id,
++			session_id,
++		) as Dictionary
++		_expect_ok(extras, "完整历史样本的附加持久化模块可写入")
++		print(
++			"HISTORICAL_FIXTURE_CAPTURE|%s|%s|%s"
++			% [
++				fixture_id,
++				ProjectSettings.globalize_path("user://"),
++				extras.get("photoRef", ""),
++			]
++		)
++		request_host.queue_free()
++		_finish()
++		return
+ 
+ 	var cleanup_agent := restored_agent
+ 	restored_runtime.queue_free()
+@@ -282,6 +316,69 @@ func _run() -> void:
+ 	_finish()
+ 
+ 
++func _write_fixture_extras(
++	store: RefCounted,
++	slot_id: String,
++	session_id: String,
++) -> Dictionary:
++	var startup: RefCounted = STARTUP_CATALOG.new()
++	var configured_startup := startup.call("configure", store) as Dictionary
++	if not bool(configured_startup.get("ok", false)):
++		return configured_startup
++	var profile := startup.call(
++		"record_last_played",
++		slot_id,
++		[slot_id],
++	) as Dictionary
++	if not bool(profile.get("ok", false)):
++		return profile
++
++	var library: RefCounted = CUSTOM_RESIDENT_LIBRARY.new()
++	var configured_library := library.call("configure") as Dictionary
++	if not bool(configured_library.get("ok", false)):
++		return configured_library
++	var library_written := library.call(
++		"replace_candidates",
++		[
++			{
++				"residentId": "fixture-custom-resident",
++				"residentName": "历史样本居民",
++				"source": "custom",
++			},
++		],
++		1,
++		2,
++	) as Dictionary
++	if not bool(library_written.get("ok", false)):
++		return library_written
++
++	var photos: RefCounted = PHOTO_STORE.new()
++	var configured_photos := photos.call(
++		"configure_session",
++		slot_id,
++		session_id,
++	) as Dictionary
++	if not bool(configured_photos.get("ok", false)):
++		return configured_photos
++	var owner_id := "historical-fixture-photo"
++	var staged := photos.call(
++		"stage_file",
++		"res://assets/ui/town/hud/runtime/action_icons_readable_v4/markers/result_completed.png",
++		owner_id,
++	) as Dictionary
++	if not bool(staged.get("ok", false)):
++		return staged
++	var photo_ref := String(staged.get("ref", ""))
++	var mime_type := String(staged.get("mimeType", ""))
++	if not bool(photos.call("commit_photo", photo_ref, mime_type, owner_id)):
++		return {"ok": false, "errorCode": "FIXTURE_PHOTO_COMMIT_FAILED"}
++	return {
++		"ok": true,
++		"errorCode": "",
++		"photoRef": photo_ref,
++	}
++
++
+ func _identities(bindings: Array[Dictionary]) -> Array[Dictionary]:
+ 	var result: Array[Dictionary] = []
+ 	for binding: Dictionary in bindings:

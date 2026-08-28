@@ -3961,6 +3961,48 @@ func _scenario_staffing_arrangement_runtime() -> void:
 		false,
 		"帮工不会冒充诊疗负责人",
 	)
+	_expect_equal(
+		(
+			clinic_help.get("arrangement", {}) as Dictionary
+		).get("authorizesWork"),
+		false,
+		"资格要求岗位的普通帮工不能执行专业诊疗",
+	)
+	var dining_help := runtime.call(
+		"create_arrangement",
+		cafe_id,
+		"occupation_dining_operator",
+		"part_time",
+		600,
+	) as Dictionary
+	_expect_ok_staffing_arrangement_runtime(dining_help, "居民可以担任食堂兼职帮工")
+	_expect_equal(
+		(dining_help.get("arrangement", {}) as Dictionary).get("coversPost"),
+		false,
+		"食堂兼职帮工不会覆盖正式岗位",
+	)
+	_expect_equal(
+		(dining_help.get("arrangement", {}) as Dictionary).get("authorizesWork"),
+		true,
+		"食堂兼职帮工会获得真实工作权限",
+	)
+	_expect_equal(
+		(dining_help.get("arrangement", {}) as Dictionary).get(
+			"authorizedCapabilities",
+		),
+		["food.production", "food.cleanup"],
+		"食堂兼职帮工只获得目录明确授权的备餐与清理能力",
+	)
+	_expect(
+		(
+			runtime.call(
+				"active_assignment_occupation_ids",
+				cafe_id,
+				600,
+			) as Array
+		).has("occupation_dining_operator"),
+		"食堂兼职安排会进入居民的可执行职业列表",
+	)
 
 	var botanist_id := String(
 		resident_by_occupation.get("occupation_botanist", ""),
@@ -4097,6 +4139,68 @@ func _scenario_staffing_arrangement_runtime() -> void:
 			"occupation_musician",
 		)),
 		"恢复后保留由实际表现形成的资格",
+	)
+	var legacy_persistent := persistent.duplicate(true)
+	for arrangement_value: Variant in legacy_persistent.get("arrangements", []) as Array:
+		var legacy_arrangement := arrangement_value as Dictionary
+		if String(legacy_arrangement.get("occupationId", "")) != (
+			"occupation_dining_operator"
+		):
+			continue
+		legacy_arrangement.erase("authorizedCapabilities")
+		legacy_arrangement["authorizesWork"] = false
+	var legacy_restored: RefCounted = STAFFING.new()
+	_expect_ok_staffing_arrangement_runtime(
+		legacy_restored.call("configure", world_data) as Dictionary,
+		"旧帮工安排恢复运行时可以配置",
+	)
+	_expect_ok_staffing_arrangement_runtime(
+		legacy_restored.call(
+			"restore_persistent_snapshot",
+			legacy_persistent,
+			residents,
+			600,
+		) as Dictionary,
+		"旧存档中的食堂兼职安排会补齐辅助能力",
+	)
+	_expect_equal(
+		legacy_restored.call(
+			"active_assignment_capabilities",
+			cafe_id,
+			600,
+			"occupation_dining_operator",
+		),
+		["food.cleanup", "food.production"],
+		"旧食堂兼职安排恢复后获得当前允许的备餐与清理能力",
+	)
+	var corrupted_persistent := persistent.duplicate(true)
+	for arrangement_value: Variant in corrupted_persistent.get(
+		"arrangements",
+		[],
+	) as Array:
+		var corrupted_arrangement := arrangement_value as Dictionary
+		if String(corrupted_arrangement.get("occupationId", "")) == (
+			"occupation_dining_operator"
+		):
+			(corrupted_arrangement.get("authorizedCapabilities", []) as Array).append(
+				"food.service",
+			)
+	var corrupted_restored: RefCounted = STAFFING.new()
+	_expect_ok_staffing_arrangement_runtime(
+		corrupted_restored.call("configure", world_data) as Dictionary,
+		"损坏帮工安排恢复运行时可以配置",
+	)
+	_expect_equal(
+		(
+			corrupted_restored.call(
+				"restore_persistent_snapshot",
+				corrupted_persistent,
+				residents,
+				600,
+			) as Dictionary
+		).get("errorCode"),
+		"STAFFING_SAVE_INVALID",
+		"存档不能给兼职帮工注入目录外的职业权限",
 	)
 	return
 func _expect_ok_staffing_arrangement_runtime(result: Dictionary, message: String) -> void:

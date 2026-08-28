@@ -15,6 +15,7 @@ const UI_SIGNALS := preload(
 	"res://ui/common/AiTownUiSignals.gd"
 )
 const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
+const POPULATION_RULES := preload("res://world/runtime/TownPopulationRules.gd")
 const UiViewModel = preload("res://ui/common/AiTownUiViewModel.gd")
 const UiNodeRetirement = preload("res://ui/common/AiTownUiNodeRetirement.gd")
 const PageTheme = preload(
@@ -32,7 +33,9 @@ const MAP_TEXTURE_PATH := (
 	"res://assets/ui/opening_flow/shared/background/opening_flow_town_background_v1.png"
 )
 const TOUCH_TARGET_MIN := 48.0
-const SLOT_COUNT := 15
+const SLOT_COUNT := POPULATION_RULES.DEFAULT_RESIDENT_COUNT
+const COMPOSITE_SIZE := Vector2(1672.0, 941.0)
+const MOBILE_COMPOSITE_MINIMUM_VIEWPORT := Vector2(960.0, 540.0)
 const PROVIDER_AUTO_REFRESH_INTERVAL_SECONDS := 0.75
 const PROVIDER_AUTO_REFRESH_MAX_ATTEMPTS := 20
 const PROVIDER_AUTO_REFRESH_EXHAUSTED_MESSAGE := "模型连接检查超时，请手动刷新重试。"
@@ -98,6 +101,7 @@ var _layout_queued := false
 var _page_scroll: ScrollContainer
 var _native_root: Control
 var _composite_host: CenterContainer
+var _composite_frame: Control
 var _composite_desktop: Control
 var _page_panel: PanelContainer
 var _page_content: VBoxContainer
@@ -445,10 +449,14 @@ func _build_interface() -> void:
 	_composite_host.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_composite_host.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_composite_host)
+	_composite_frame = Control.new()
+	_composite_frame.name = "AcceptedV16CompositeFrame"
+	_composite_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_composite_host.add_child(_composite_frame)
 	_composite_desktop = CompositeDesktop.new()
 	_composite_desktop.set("in_session_mode", in_session_mode)
 	_composite_desktop.set("single_resident_mode", single_resident_mode)
-	_composite_host.add_child(_composite_desktop)
+	_composite_frame.add_child(_composite_desktop)
 	_composite_desktop.connect("action_requested", Callable(self, "_request_action"))
 	_composite_desktop.connect("back_pressed", Callable(self, "_request_back"))
 	_composite_desktop.connect("assign_pressed", Callable(self, "_assign_target"))
@@ -513,9 +521,9 @@ func _build_native_completion_modal() -> void:
 			if single_resident_mode
 			else "居民模型分配已更新，确认后返回模型设置。"
 			if return_to_provider_settings
-			else "15 位居民的模型均已配置完成，可以保存到当前小镇。"
+			else "全部居民的模型均已配置完成，可以保存到当前小镇。"
 			if in_session_mode
-			else "15 位居民的模型均已配置完成，现在可以开始游戏。"
+			else "全部居民的模型均已配置完成，现在可以开始游戏。"
 		),
 		20,
 		PageTheme.INK_MUTED,
@@ -789,7 +797,7 @@ func _build_resident_section() -> void:
 	stack.add_theme_constant_override("separation", 10)
 	_resident_section.add_child(stack)
 	stack.add_child(_section_title(
-		"入镇居民" if single_resident_mode else "居民队列 · 15人",
+		"入镇居民" if single_resident_mode else "居民队列",
 		"ResidentQueueTitle",
 	))
 
@@ -883,7 +891,7 @@ func _build_inspector_section() -> void:
 	_assign_button.pressed.connect(_assign_target)
 	stack.add_child(_assign_button)
 
-	_apply_button = _button("确认 15 人模型分配", 22, "primary", "ApplyDraftButton")
+	_apply_button = _button("确认居民模型分配", 22, "primary", "ApplyDraftButton")
 	_apply_button.custom_minimum_size = Vector2(0, 64)
 	_apply_button.pressed.connect(_open_completion_modal)
 	stack.add_child(_apply_button)
@@ -1222,7 +1230,11 @@ func _render_inspector() -> void:
 			"loading":
 				_operation_label.text = "正在更新正式分配状态…"
 			"success":
-				_operation_label.text = "操作完成，草稿与完成数已更新。"
+				_operation_label.text = (
+					"检测到模型连接变化，已自动切换到当前可用模型。"
+					if (operation.get("automaticBindingRepair", {}) as Dictionary).size() > 0
+					else "操作完成，草稿与完成数已更新。"
+				)
 			"rejected":
 				_operation_label.text = error_message if not error_message.is_empty() else "操作被拒绝，原数据已保留。"
 			"error":
@@ -1244,7 +1256,7 @@ func _render_inspector() -> void:
 		if return_to_provider_settings
 		else "保存模型分配"
 		if in_session_mode
-		else "确认 15 人模型分配"
+		else "确认 %d 人模型分配" % int(_render_data.get("residentCount", SLOT_COUNT))
 	)
 
 
@@ -1450,15 +1462,16 @@ func _open_completion_modal() -> void:
 		action_blocked.emit(String(action.get("intent", "")), reason)
 		return
 	_completion_modal_open = true
+	var resident_count := int(_render_data.get("residentCount", SLOT_COUNT))
 	_set_completion_modal_message(
 		(
 			"这位新居民的模型已经配置完成\n确认后会立即进入小镇。"
 			if single_resident_mode
 			else "居民模型分配已更新\n确认后返回模型设置。"
 			if return_to_provider_settings
-			else "15 位居民的模型均已配置完成\n保存后会立即用于当前小镇。"
+			else "%d 位居民的模型均已配置完成\n保存后会立即用于当前小镇。" % resident_count
 			if in_session_mode
-			else "15 位居民的模型均已配置完成\n现在可以开始游戏。"
+			else "%d 位居民的模型均已配置完成\n现在可以开始游戏。" % resident_count
 		)
 	)
 	_sync_completion_modal_visibility()
@@ -1580,12 +1593,38 @@ func _apply_responsive_layout_for_size(viewport_size: Vector2) -> void:
 	_layout_profile = layout_profile_for_size(viewport_size)
 	var mobile_runtime := MOBILE_UI_PROFILE.is_mobile_runtime()
 	var use_accepted_composite := (
-		not mobile_runtime
-		and viewport_size.x >= 1720.0
-		and viewport_size.y >= 981.0
+		(
+			not mobile_runtime
+			and viewport_size.x >= 1720.0
+			and viewport_size.y >= 981.0
+		)
+		or (
+			mobile_runtime
+			and viewport_size.x >= viewport_size.y
+			and viewport_size.x >= MOBILE_COMPOSITE_MINIMUM_VIEWPORT.x
+			and viewport_size.y >= MOBILE_COMPOSITE_MINIMUM_VIEWPORT.y
+		)
 	)
 	_native_root.visible = not use_accepted_composite
 	_composite_host.visible = use_accepted_composite
+	if use_accepted_composite and _composite_frame != null:
+		# The composite owns an exact 1672×941 design coordinate system. Scale
+		# the complete frame as one unit so its art, text, and hit targets stay
+		# aligned on Android and mobile Web builds.
+		var composite_scale := minf(
+			viewport_size.x / COMPOSITE_SIZE.x,
+			viewport_size.y / COMPOSITE_SIZE.y,
+		)
+		var display_size := COMPOSITE_SIZE * composite_scale
+		_composite_frame.custom_minimum_size = display_size
+		_composite_frame.size = display_size
+		_composite_desktop.position = Vector2.ZERO
+		_composite_desktop.size = COMPOSITE_SIZE
+		_composite_desktop.pivot_offset = Vector2.ZERO
+		_composite_desktop.scale = Vector2.ONE * composite_scale
+	elif _composite_frame != null:
+		_composite_frame.custom_minimum_size = Vector2.ZERO
+		_composite_desktop.scale = Vector2.ONE
 	if _native_modal_panel != null:
 		var modal_width := clampf(viewport_size.x - 48.0, 300.0, 720.0)
 		var modal_height := clampf(viewport_size.y - 48.0, 320.0, 420.0)
@@ -1697,7 +1736,14 @@ func _validate_contract(view_model: Dictionary, data: Dictionary) -> PackedStrin
 		issues.append("capabilityMode 必须为 formal")
 	if String(data.get("source", "")) != "runtime":
 		issues.append("source 必须为 runtime")
-	var expected_count := 1 if single_resident_mode else SLOT_COUNT
+	var expected_count := int(data.get("residentCount", 0))
+	if single_resident_mode:
+		expected_count = 1
+	elif not POPULATION_RULES.supports_resident_count(expected_count):
+		issues.append("residentCount 必须在 %d～%d 之间" % [
+			POPULATION_RULES.MIN_RESIDENT_COUNT,
+			POPULATION_RULES.MAX_RESIDENT_COUNT,
+		])
 	if int(data.get("residentCount", 0)) != expected_count:
 		issues.append("residentCount 必须为 %d" % expected_count)
 	var residents_value: Variant = data.get("residents", [])

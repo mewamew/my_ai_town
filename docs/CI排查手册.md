@@ -190,6 +190,17 @@ Godot 无头导入确认。
 
 不要只修后续的类型推断错误。缺少预加载文件时，类型推断和依赖脚本编译错误通常都是连带结果，应先修第一条缺文件错误。
 
+### Godot 导入：GDScript 控制流语法错误
+
+表现：`formal-suite` 在 `Import project` 步骤失败，日志第一条真实错误类似
+`SCRIPT ERROR: Parse Error: Cannot use "break" outside of a loop.`；后续 Agent 离线套件、正式故事套件和独立正式入口都会被跳过。
+
+直接原因：`break` 只能出现在实际的 `for` 或 `while` 循环体内。把它放在循环之后的条件分支中，或者误以为可以从外层循环跳出，都会让整个脚本无法导入。macOS 本地如果没有 Godot 可执行文件，单靠 guards 和 Python 测试无法发现这类错误。
+
+处理方法：从 `gh run view <运行编号> --job <job编号> --log-failed` 的第一条 `SCRIPT ERROR:` 或 `Parse Error:` 开始定位，不要从最后的进程退出错误倒推；检查对应函数的缩进和循环边界，必要时把数量上限判断放回实际循环入口，并删除循环外的非法跳出。修复后必须在干净临时工作区执行 Godot 无头导入；没有本机 Godot 时，推送后以远端 `Import project` 作为正式语法验证，不能把 guards 通过当成替代。
+
+最终验证：本次模型绑定自动恢复修复已将候选列表上限判断放入实际循环，并移除循环外的 `break`；本地 guards、README 同步和 11 项 Python 回归均通过。远端 `formal-validation` 运行 [32826572147](https://github.com/mewamew/my_ai_town/actions/runs/32826572147) 已确认 `Import project`、Agent 离线套件、正式故事套件、独立正式入口和测试后源码清洁检查全部通过。
+
 ### 删除脚本后预加载检查读取不存在文件
 
 表现：计划内删除了已跟踪的 `.gd`，尚未暂存时运行防复发检查，
@@ -455,6 +466,16 @@ gh run view <运行编号> --log-failed \
 
 最终验证：基准提交同一套正式验证为 `48/48`；修复后必须重新确认 Agent 离线套件 `48/48`，并继续完成正式故事和源码目录清洁检查。
 
+### 2026-08-24：正式入口第二次保存因入镇过渡动作未登记而失败
+
+表现：Agent 离线套件、正式故事检查和防复发守卫均通过；独立正式入口故事在首次启动失败后重试成功，但第二次手动保存返回 `SESSION_SAVE_WORLD_PREPARE_FAILED`，底层错误为“居民当前动作未登记在 `usedActionIds`”。
+
+直接原因：居民在第一天从南入口进入小镇时，`TownResidentArrivalRuntime` 会直接写入一条过渡动作，却没有同步写入该居民的已使用动作集合。保存快照带着当前动作进入恢复校验时，恢复层会按合同拒绝这份不完整状态。这个路径受无头 runner 的时间推进影响，macOS 本地不一定稳定复现。
+
+修复：创建入镇过渡动作时立即登记对应的 `action_id`；在错过首次保存窗口的回归场景中增加“当前动作必须已登记”的断言。不要放宽恢复校验，也不要删除玩家存档来绕过。
+
+最终验证：先运行入镇与存档相关测试，再运行 Agent 离线套件、15 项正式故事、独立正式入口和测试后源码清洁检查；独立正式入口必须完成首次失败补偿、重试进入小镇和第二次保存。
+
 ### 2026-08-08：发行修复 PR 首次运行失败
 
 表现：
@@ -509,6 +530,7 @@ gh run view <运行编号> --log-failed \
 - [ ] 世界核心改动没有增加总控规模或 `world._xxx` 私有访问；真实拆分后已收缩架构基线。
 - [ ] `tools/guards/run_guards.sh` 通过。
 - [ ] Godot 无头导入没有脚本或引擎错误。
+- [ ] 新增或修改 GDScript 后已检查首条 `SCRIPT ERROR:`/`Parse Error:`，并在干净工作区完成 Godot 无头导入；没有本机 Godot 时已明确交由远端 Import project 验证。
 - [ ] 相关测试通过；发行改动完成正式测试套件。
 - [ ] provider 测试退出时没有资源泄漏；同步 transport 已确认不会残留请求状态或 watchdog。
 - [ ] 正式 Godot 回归默认使用 `AI_TOWN_PROVIDER_TEST_NO_NETWORK=1`；联网 Provider 验证单独运行并显式授权。

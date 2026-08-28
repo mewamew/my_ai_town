@@ -480,6 +480,43 @@ static func validate(value: Variant) -> Dictionary:
 	}
 
 
+static func unsupported_version_evidence(value: Variant) -> Dictionary:
+	if not value is Dictionary:
+		return {}
+	var manifest := value as Dictionary
+	var versions := {}
+	var manifest_version: Variant = manifest.get("schema_version")
+	if (
+		_is_non_negative_integer_number(manifest_version)
+		and int(manifest_version) not in [
+			LEGACY_SCHEMA_VERSION,
+			PREVIOUS_SCHEMA_VERSION,
+			SCHEMA_VERSION,
+		]
+	):
+		versions["manifest"] = int(manifest_version)
+	var components_value: Variant = manifest.get("components")
+	if not components_value is Dictionary:
+		return versions
+	var world_value: Variant = (components_value as Dictionary).get("world")
+	if not world_value is Dictionary:
+		return versions
+	var world := world_value as Dictionary
+	var world_version: Variant = world.get("schema_version")
+	if (
+		_is_non_negative_integer_number(world_version)
+		and int(world_version) not in WORLD_SCHEMA_VERSIONS
+	):
+		versions["world"] = int(world_version)
+	var world_data_version: Variant = world.get("world_data_version")
+	if (
+		_is_non_negative_integer_number(world_data_version)
+		and int(world_data_version) != TownSaveSchemaRegistry.WORLD_DATA_VERSION
+	):
+		versions["worldData"] = int(world_data_version)
+	return versions
+
+
 static func validate_resident_messages(
 	value: Variant,
 	resident_id_values: Array,

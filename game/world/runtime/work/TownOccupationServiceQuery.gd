@@ -137,45 +137,6 @@ static func work_task_is_currently_available(
 	)
 
 
-static func kind_is_staffed(
-	kind: String,
-	definition: Dictionary,
-	staffing: TownStaffingRuntime,
-	residents: Dictionary,
-) -> bool:
-	if (
-		kind == "clinic"
-		or kind not in ACTION_SUPPORT.OCCUPATION_SERVICE_PRESENCE_REQUIRED_KINDS
-	):
-		return true
-	var occupation_id := String(definition.get("occupationId", ""))
-	if occupation_id.is_empty():
-		return true
-	var post := staffing.post_for_occupation(occupation_id) as Dictionary
-	if post.is_empty() or String(post.get("status", "vacant")) == "vacant":
-		return false
-	var now := int(
-		(staffing.snapshot() as Dictionary).get("absoluteMinute", 0),
-	)
-	for resident_id_value: Variant in post.get(
-		"responsibleResidentIds",
-		[],
-	) as Array:
-		var resident := residents.get(
-			String(resident_id_value),
-			{},
-		) as Dictionary
-		if resident.is_empty():
-			continue
-		var attendance := resident.get("attendanceState", {}) as Dictionary
-		if (
-			String(attendance.get("status", "available")) != "on_leave"
-			or int(attendance.get("untilMinute", -1)) <= now
-		):
-			return true
-	return false
-
-
 static func dining_order_for_resident_meal_period(
 	occupation_services: TownOccupationServiceRuntime,
 	resident_id: String,

@@ -28,6 +28,20 @@ static func living_resident_count(world) -> int:
 	return count
 
 
+static func target_resident_count(world) -> int:
+	if world == null or not world.has_method("get_resident_ids"):
+		return 0
+	return (world.get_resident_ids() as Array).size()
+
+
+static func replacement_needed(world) -> bool:
+	var target_count := target_resident_count(world)
+	return (
+		target_count > 0
+		and living_resident_count(world) < target_count
+	)
+
+
 static func validate(
 	world,
 	record_value: Variant,

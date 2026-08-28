@@ -1,0 +1,9 @@
+{
+	"context": {
+		"save_revision": 1,
+		"session_id": "roundtrip-session-long-path-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+		"slot_id": "roundtrip-slot-long-path-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+	},
+	"schema": "town-session-save-allocation",
+	"schema_version": 1
+}

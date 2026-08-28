@@ -6,6 +6,16 @@ const RESIDENT_CATALOG := preload(
 	"res://world/presentation/session/TownResidentCatalog.gd"
 )
 const COMPILER := preload("res://world/presentation/session/TownNewGameOpeningCompiler.gd")
+const NEW_GAME_DRAFT := preload(
+	"res://world/presentation/session/TownNewGameDraft.gd"
+)
+const POPULATION_RULES := preload("res://world/runtime/TownPopulationRules.gd")
+const MODEL_ASSIGNMENT_SERVICE := preload(
+	"res://ui/resident_model_assignment/runtime/ResidentModelAssignmentService.gd"
+)
+const RESIDENT_EDITOR_SERVICE := preload(
+	"res://world/presentation/session/TownResidentEditorService.gd"
+)
 const CUSTOM_POOL := preload(
 	"res://world/presentation/session/TownCustomResidentCandidatePool.gd"
 )
@@ -49,6 +59,34 @@ class AgentGatewayPumpSpy:
 	func pump(max_requests := -1) -> int:
 		pump_limits.append(max_requests)
 		return 0
+
+
+class VariablePopulationProvider:
+	extends RefCounted
+
+	func get_health_snapshot() -> Dictionary:
+		return {
+			"ok": true,
+			"formalReady": true,
+			"capabilityMode": "formal",
+			"source": "runtime",
+			"providers": [{
+				"providerId": "fake",
+				"label": "本地测试模型",
+				"status": "available",
+			}],
+		}
+
+	func list_available_models() -> Array:
+		return [{
+			"providerId": "fake",
+			"modelId": "fake",
+			"label": "本地测试模型",
+			"available": true,
+		}]
+
+	func validate_resident_bindings(_bindings: Variant) -> Dictionary:
+		return {"ok": true, "errorCode": "", "retryable": false}
 
 
 func _initialize() -> void:
@@ -99,42 +137,24 @@ func _run() -> void:
 		formal_compiled,
 		"formal Catalog to confirmation draft to Compiler chain succeeds",
 	)
-	_verify_custom_resident_pipeline(world_data, formal_catalog)
-	var fallback_owner_catalog := formal_catalog.duplicate(true)
-	(
-		fallback_owner_catalog.get("shopOwnerCandidates", {}) as Dictionary
-	)["工作坊"] = [
-		"resident_shen_qiao_01",
-		"resident_wen_xu_01",
-	]
-	var fallback_compiled := COMPILER.compile(
-		formal_draft,
-		world_data,
-		fallback_owner_catalog,
-	)
-	_expect_ok(
-		fallback_compiled,
-		"shop ownership falls back to the first selected formal candidate",
-	)
-	if bool(fallback_compiled.get("ok", false)):
+	if bool(formal_compiled.get("ok", false)):
+		var formal_owners := (
+			formal_compiled.get("openingConfig", {}) as Dictionary
+		).get("ownerAssignments", {}) as Dictionary
 		_expect_equal(
-			(
-				fallback_compiled.get("openingConfig", {}) as Dictionary
-			).get("ownerAssignments", {}).get("工作坊"),
-			"resident_shen_qiao_01",
-			"fallback owner follows the authoritative candidate order",
+			formal_owners.size(),
+			RESIDENT_CATALOG.SELECTION_LIMIT,
+			"new opening assigns ownership to resident homes only",
 		)
-	var missing_owner_catalog := formal_catalog.duplicate(true)
-	(
-		missing_owner_catalog.get("shopOwnerCandidates", {}) as Dictionary
-	)["工作坊"] = ["resident_cheng_yan_01"]
-	_expect(
-		_result_has_error_code(
-			COMPILER.compile(formal_draft, world_data, missing_owner_catalog),
-			"SESSION_CATALOG_PLACE_OWNER_MISSING",
-		),
-		"Compiler fails closed when no shop owner candidate was selected",
-	)
+		for place_value: Variant in world_data.get("places", []) as Array:
+			var place := place_value as Dictionary
+			if String(place.get("type", "")) == "铺面":
+				_expect(
+					not formal_owners.has(String(place.get("name", ""))),
+					"formal shops do not require one resident owner",
+				)
+	_verify_variable_population_openings(world_data, formal_catalog)
+	_verify_custom_resident_pipeline(world_data, formal_catalog)
 	var bad_sprite_catalog := formal_catalog.duplicate(true)
 	(
 		(
@@ -1136,6 +1156,179 @@ func _run() -> void:
 	_finish()
 
 
+func _verify_variable_population_openings(
+	world_data: Dictionary,
+	formal_catalog: Dictionary,
+) -> void:
+	_expect_equal(
+		POPULATION_RULES.rule_snapshot(),
+		{"minimum": 1, "default": 15, "maximum": 15},
+		"variable population uses one explicit 1-to-15 rule",
+	)
+	for resident_count in [1, 5, 15]:
+		var selection_vm := RESIDENT_CATALOG.build_view_model(
+			"fake",
+			"fake",
+			true,
+			30 + resident_count,
+		) as Dictionary
+		var selection_data := selection_vm.get("data", {}) as Dictionary
+		var recommended := (
+			selection_data.get("recommended_resident_ids", []) as Array
+		)
+		selection_data["selected_resident_ids"] = recommended.slice(
+			0,
+			resident_count,
+		)
+		RESIDENT_CATALOG.update_confirmation_payload(
+			selection_data,
+			"fake",
+			"fake",
+			40 + resident_count,
+		)
+		var draft := (
+			selection_data.get("confirmation_payload", {}) as Dictionary
+		)
+		_expect_equal(
+			(draft.get("slots", []) as Array).size(),
+			resident_count,
+			"%d-resident selection creates only occupied home slots" % resident_count,
+		)
+		_expect_ok(
+			NEW_GAME_DRAFT.validate(draft),
+			"%d-resident draft satisfies the shared population rule" % resident_count,
+		)
+		var compiled := COMPILER.compile(draft, world_data, formal_catalog)
+		_expect_ok(
+			compiled,
+			"%d-resident draft compiles into a formal opening" % resident_count,
+		)
+		if compiled.get("ok") != true:
+			continue
+		var opening := compiled.get("openingConfig", {}) as Dictionary
+		_expect_equal(
+			(opening.get("residents", []) as Array).size(),
+			resident_count,
+			"%d-resident opening contains only the selected residents" % resident_count,
+		)
+		var owners := opening.get("ownerAssignments", {}) as Dictionary
+		_expect_equal(
+			owners.size(),
+			resident_count,
+			"%d-resident opening leaves unused homes unowned" % resident_count,
+		)
+		if resident_count < POPULATION_RULES.MAX_RESIDENT_COUNT:
+			var first_unused_home_name := ""
+			for place_value: Variant in world_data.get("places", []) as Array:
+				var place := place_value as Dictionary
+				if String(place.get("spaceId", "")) == "home_%02d" % (resident_count + 1):
+					first_unused_home_name = String(place.get("name", ""))
+					break
+			_expect(
+				not first_unused_home_name.is_empty()
+				and not owners.has(first_unused_home_name),
+				"first unused home remains empty for %d-resident opening" % resident_count,
+			)
+		var selected_ids: Array[String] = []
+		for slot_value: Variant in draft.get("slots", []) as Array:
+			selected_ids.append(String((slot_value as Dictionary).get("residentId", "")))
+		var projected_catalog := formal_catalog.duplicate(true)
+		var projected_residents: Array[Dictionary] = []
+		for resident_value: Variant in formal_catalog.get("residents", []) as Array:
+			var resident := resident_value as Dictionary
+			if selected_ids.has(String(resident.get("residentId", ""))):
+				projected_residents.append(resident.duplicate(true))
+		projected_catalog["residents"] = projected_residents
+		var assignment_service := MODEL_ASSIGNMENT_SERVICE.new()
+		var configured := assignment_service.configure(
+			VariablePopulationProvider.new(),
+			projected_catalog,
+			draft,
+		) as Dictionary
+		_expect_ok(
+			configured,
+			"model assignment uses the actual %d-resident draft" % resident_count,
+		)
+		_expect_equal(
+			configured.get("residentCount"),
+			resident_count,
+			"model assignment reports the actual resident count",
+		)
+		var resident_editor := RESIDENT_EDITOR_SERVICE.new()
+		var editor_configured := resident_editor.configure(
+			formal_catalog,
+			world_data,
+			draft,
+		) as Dictionary
+		_expect_ok(
+			editor_configured,
+			"resident editor uses the actual %d-resident draft" % resident_count,
+		)
+		_expect_equal(
+			(
+				(resident_editor.get_view_model().get("data", {}) as Dictionary)
+				.get("slotCount")
+			),
+			resident_count,
+			"resident editor reports the actual resident count",
+		)
+		var identities: Array[Dictionary] = []
+		for binding_value: Variant in compiled.get("residentBindings", []) as Array:
+			var binding := binding_value as Dictionary
+			identities.append({
+				"residentId": String(binding.get("residentId", "")),
+				"residentName": String(binding.get("residentName", "")),
+			})
+		var world: RefCounted = WORLD.new()
+		var started := world.call("start", world_data, opening, identities) as Dictionary
+		_expect_ok(
+			started,
+			"formal World starts with %d residents" % resident_count,
+		)
+		if started.get("ok") == true:
+			_expect_equal(
+				(world.call("get_resident_ids") as Array).size(),
+				resident_count,
+				"running World keeps the selected %d-resident set" % resident_count,
+			)
+			world.call("stop")
+
+	var empty_draft := {
+		"schemaVersion": 1,
+		"sourceScope": "resident_selection",
+		"draftRevision": 1,
+		"slots": [],
+	}
+	_expect(
+		_result_has_error_code(
+			NEW_GAME_DRAFT.validate(empty_draft),
+			"SESSION_RESIDENT_COUNT_OUT_OF_RANGE",
+		),
+		"zero-resident opening is rejected by the shared population rule",
+	)
+	var overflow_slots: Array[Dictionary] = []
+	var catalog_residents := formal_catalog.get("residents", []) as Array
+	for index in 16:
+		overflow_slots.append({
+			"residentId": String((catalog_residents[index] as Dictionary).get("residentId", "")),
+			"spaceId": "home_%02d" % (index + 1),
+			"llmBinding": {
+				"mode": "model",
+				"providerId": "fake",
+				"modelId": "fake",
+			},
+		})
+	var overflow_draft := empty_draft.duplicate(true)
+	overflow_draft["slots"] = overflow_slots
+	_expect(
+		_result_has_error_code(
+			NEW_GAME_DRAFT.validate(overflow_draft),
+			"SESSION_RESIDENT_COUNT_OUT_OF_RANGE",
+		),
+		"sixteen-resident opening is rejected before capacity is expanded",
+	)
+
+
 func _capture_resident_directory_if_requested(
 	runtime: Node,
 	adapter: Node,
@@ -1412,6 +1605,153 @@ func _verify_custom_resident_pipeline(
 		compiled,
 		"Creator to CandidatePool to Catalog selection compiles formally",
 	)
+	_verify_all_custom_resident_opening(world_data, base_catalog, candidate)
+
+
+func _verify_all_custom_resident_opening(
+	world_data: Dictionary,
+	base_catalog: Dictionary,
+	candidate: Dictionary,
+) -> void:
+	var merged_catalog := base_catalog.duplicate(true)
+	var residents := merged_catalog.get("residents", []) as Array
+	var selected_ids: Array[String] = []
+	for index in RESIDENT_CATALOG.SELECTION_LIMIT:
+		var resident_id := "custom_resident_full_%02d" % (index + 1)
+		var attributes := (
+			candidate.get("attributes", {}) as Dictionary
+		).duplicate(true)
+		attributes["name"] = (
+			"全自定义居民%02d" % (index + 1)
+		)
+		var presentation := (
+			candidate.get("presentation", {}) as Dictionary
+		).duplicate(true)
+		presentation["locationLabel"] = "中心广场"
+		var custom := {
+			"residentId": resident_id,
+			"attributes": attributes,
+			"occupation": {
+			"name": "乐师",
+			"workplacePlace": "中心广场",
+			},
+			"presentation": presentation,
+			"source": "custom",
+		}
+		residents.append(custom)
+		selected_ids.append(resident_id)
+	merged_catalog["residents"] = residents
+	_expect(
+		RESIDENT_CATALOG._session_custom_catalog_entry_is_valid(
+			residents[residents.size() - 1] as Dictionary,
+			world_data,
+		),
+		"one-occupation custom warning fixture remains a valid custom resident",
+	)
+	var warning_vm := RESIDENT_CATALOG.build_view_model(
+		"fake",
+		"fake",
+		true,
+		22,
+	) as Dictionary
+	var warning_data := warning_vm.get("data", {}) as Dictionary
+	warning_data["resident_catalog"] = residents.duplicate(true)
+	var warning_residents := warning_data.get("residents", []) as Array
+	for resident_id: String in selected_ids:
+		warning_residents.append({"resident_id": resident_id})
+	warning_data["selected_resident_ids"] = selected_ids.duplicate()
+	RESIDENT_CATALOG.update_confirmation_payload(
+		warning_data,
+		"fake",
+		"fake",
+		23,
+	)
+	var staffing_warnings := warning_data.get("staffing_warnings", []) as Array
+	_expect_equal(
+		staffing_warnings.size(),
+		14,
+		"one-occupation custom roster reports every vacant occupation without blocking",
+	)
+	_expect_equal(
+		(
+			warning_data.get("confirmation_payload", {}) as Dictionary
+		).get("slots", []).size(),
+		RESIDENT_CATALOG.SELECTION_LIMIT,
+		"occupation vacancies do not block the 15-resident confirmation draft",
+	)
+	var dining_warning := {}
+	for warning_value: Variant in staffing_warnings:
+		var warning := warning_value as Dictionary
+		if String(warning.get("occupationId", "")) == "occupation_dining_operator":
+			dining_warning = warning
+			break
+	_expect(
+		not String(dining_warning.get("vacancyEffect", "")).is_empty(),
+		"vacancy warning keeps the authoritative service effect",
+	)
+	var slots: Array[Dictionary] = []
+	var home_space_ids := NEW_GAME_DRAFT.home_space_ids()
+	for index in RESIDENT_CATALOG.SELECTION_LIMIT:
+		slots.append({
+			"residentId": selected_ids[index],
+			"spaceId": home_space_ids[index],
+			"llmBinding": {
+				"mode": "model",
+				"providerId": "fake",
+				"modelId": "fake",
+			},
+		})
+	var draft := {
+		"schemaVersion": 1,
+		"sourceScope": "resident_selection",
+		"draftRevision": 1,
+		"slots": slots,
+	}
+	var compiled := COMPILER.compile(draft, world_data, merged_catalog)
+	_expect_ok(
+		compiled,
+		"15 fully custom residents with one occupation compile formally",
+	)
+	if compiled.get("ok") != true:
+		return
+	var opening := compiled.get("openingConfig", {}) as Dictionary
+	var owners := opening.get("ownerAssignments", {}) as Dictionary
+	_expect_equal(
+		owners.size(),
+		RESIDENT_CATALOG.SELECTION_LIMIT,
+		"fully custom opening assigns only the 15 homes",
+	)
+	for place_value: Variant in world_data.get("places", []) as Array:
+		var place := place_value as Dictionary
+		if String(place.get("type", "")) == "铺面":
+			_expect(
+				not owners.has(String(place.get("name", ""))),
+				"fully custom opening keeps shops independent from resident ownership",
+			)
+	var identities: Array[Dictionary] = []
+	for binding_value: Variant in compiled.get("residentBindings", []) as Array:
+		var binding := binding_value as Dictionary
+		identities.append({
+			"residentId": String(binding.get("residentId", "")),
+			"residentName": String(binding.get("residentName", "")),
+		})
+	var world: RefCounted = WORLD.new()
+	var started := world.call("start", world_data, opening, identities) as Dictionary
+	_expect_ok(
+		started,
+		"15 fully custom residents start the formal World",
+	)
+	if started.get("ok") == true:
+		for resident_id: String in selected_ids:
+			var initialization := world.call(
+				"get_agent_initialization_by_id",
+				resident_id,
+			) as Dictionary
+			_expect(
+				AGENT_CONTRACT.validate_initialization(initialization).is_empty(),
+				"fully custom resident satisfies AgentContract: %s" % resident_id,
+			)
+	world.call("stop")
 
 
 func _read_json(path: String) -> Dictionary:

@@ -1,0 +1,1089 @@
+{
+	"endSequence": 15,
+	"records": [
+		{
+			"attachmentRefs": [],
+			"attention": "important",
+			"kind": "居民抵达",
+			"kindTag": "world_change",
+			"logItemId": "public_event:resident_lifecycle:world-event-8",
+			"participantIds": [
+				"resident_su_tang_01"
+			],
+			"participantSnapshots": [
+				{
+					"displayName": "苏棠",
+					"residentId": "resident_su_tang_01"
+				}
+			],
+			"payload": {
+				"arrivedAbsoluteMinute": 481,
+				"lifecycleId": "resident-arrival:resident_su_tang_01",
+				"participantIds": [
+					"resident_su_tang_01"
+				],
+				"participantSnapshots": [
+					{
+						"displayName": "苏棠",
+						"residentId": "resident_su_tang_01"
+					}
+				],
+				"status": "completed",
+				"type": "居民抵达"
+			},
+			"placeId": "南入口",
+			"placeSnapshot": {
+				"displayName": "南入口",
+				"placeId": "南入口"
+			},
+			"recordId": "world-log-timeline-1:world-log-1",
+			"references": {
+				"announcementIds": [],
+				"cargoLotIds": [],
+				"conflictIds": [],
+				"conversationIds": [],
+				"eventIds": [
+					"world-event-8"
+				],
+				"matterIds": [],
+				"messageIds": [],
+				"requestIds": [],
+				"taskIds": []
+			},
+			"residentId": "resident_su_tang_01",
+			"residentName": "苏棠",
+			"schemaVersion": 1,
+			"sequence": 1,
+			"sourceRefs": [
+				{
+					"mutationId": "world-event-8",
+					"sourceId": "world-event-8",
+					"sourceKind": "resident_lifecycle"
+				}
+			],
+			"status": "completed",
+			"text": "",
+			"threadId": "lifecycle:resident-arrival:resident_su_tang_01",
+			"time": {
+				"clock": "08:01",
+				"day": 1,
+				"period": "上午"
+			},
+			"timelineId": "world-log-timeline-1",
+			"title": "苏棠：居民抵达",
+			"worldRevision": 26
+		},
+		{
+			"attachmentRefs": [],
+			"attention": "important",
+			"kind": "居民抵达",
+			"kindTag": "world_change",
+			"logItemId": "public_event:resident_lifecycle:world-event-10",
+			"participantIds": [
+				"resident_shen_qiao_01"
+			],
+			"participantSnapshots": [
+				{
+					"displayName": "沈桥",
+					"residentId": "resident_shen_qiao_01"
+				}
+			],
+			"payload": {
+				"arrivedAbsoluteMinute": 522,
+				"lifecycleId": "resident-arrival:resident_shen_qiao_01",
+				"participantIds": [
+					"resident_shen_qiao_01"
+				],
+				"participantSnapshots": [
+					{
+						"displayName": "沈桥",
+						"residentId": "resident_shen_qiao_01"
+					}
+				],
+				"status": "completed",
+				"type": "居民抵达"
+			},
+			"placeId": "南入口",
+			"placeSnapshot": {
+				"displayName": "南入口",
+				"placeId": "南入口"
+			},
+			"recordId": "world-log-timeline-1:world-log-2",
+			"references": {
+				"announcementIds": [],
+				"cargoLotIds": [],
+				"conflictIds": [],
+				"conversationIds": [],
+				"eventIds": [
+					"world-event-10"
+				],
+				"matterIds": [],
+				"messageIds": [],
+				"requestIds": [],
+				"taskIds": []
+			},
+			"residentId": "resident_shen_qiao_01",
+			"residentName": "沈桥",
+			"schemaVersion": 1,
+			"sequence": 2,
+			"sourceRefs": [
+				{
+					"mutationId": "world-event-10",
+					"sourceId": "world-event-10",
+					"sourceKind": "resident_lifecycle"
+				}
+			],
+			"status": "completed",
+			"text": "",
+			"threadId": "lifecycle:resident-arrival:resident_shen_qiao_01",
+			"time": {
+				"clock": "08:42",
+				"day": 1,
+				"period": "上午"
+			},
+			"timelineId": "world-log-timeline-1",
+			"title": "沈桥：居民抵达",
+			"worldRevision": 72
+		},
+		{
+			"attachmentRefs": [],
+			"attention": "important",
+			"kind": "居民抵达",
+			"kindTag": "world_change",
+			"logItemId": "public_event:resident_lifecycle:world-event-13",
+			"participantIds": [
+				"resident_zhou_jiming_01"
+			],
+			"participantSnapshots": [
+				{
+					"displayName": "周既明",
+					"residentId": "resident_zhou_jiming_01"
+				}
+			],
+			"payload": {
+				"arrivedAbsoluteMinute": 528,
+				"lifecycleId": "resident-arrival:resident_zhou_jiming_01",
+				"participantIds": [
+					"resident_zhou_jiming_01"
+				],
+				"participantSnapshots": [
+					{
+						"displayName": "周既明",
+						"residentId": "resident_zhou_jiming_01"
+					}
+				],
+				"status": "completed",
+				"type": "居民抵达"
+			},
+			"placeId": "南入口",
+			"placeSnapshot": {
+				"displayName": "南入口",
+				"placeId": "南入口"
+			},
+			"recordId": "world-log-timeline-1:world-log-3",
+			"references": {
+				"announcementIds": [],
+				"cargoLotIds": [],
+				"conflictIds": [],
+				"conversationIds": [],
+				"eventIds": [
+					"world-event-13"
+				],
+				"matterIds": [],
+				"messageIds": [],
+				"requestIds": [],
+				"taskIds": []
+			},
+			"residentId": "resident_zhou_jiming_01",
+			"residentName": "周既明",
+			"schemaVersion": 1,
+			"sequence": 3,
+			"sourceRefs": [
+				{
+					"mutationId": "world-event-13",
+					"sourceId": "world-event-13",
+					"sourceKind": "resident_lifecycle"
+				}
+			],
+			"status": "completed",
+			"text": "",
+			"threadId": "lifecycle:resident-arrival:resident_zhou_jiming_01",
+			"time": {
+				"clock": "08:48",
+				"day": 1,
+				"period": "上午"
+			},
+			"timelineId": "world-log-timeline-1",
+			"title": "周既明：居民抵达",
+			"worldRevision": 80
+		},
+		{
+			"attachmentRefs": [],
+			"attention": "important",
+			"kind": "居民抵达",
+			"kindTag": "world_change",
+			"logItemId": "public_event:resident_lifecycle:world-event-19",
+			"participantIds": [
+				"resident_qiao_yiming_01"
+			],
+			"participantSnapshots": [
+				{
+					"displayName": "乔一鸣",
+					"residentId": "resident_qiao_yiming_01"
+				}
+			],
+			"payload": {
+				"arrivedAbsoluteMinute": 578,
+				"lifecycleId": "resident-arrival:resident_qiao_yiming_01",
+				"participantIds": [
+					"resident_qiao_yiming_01"
+				],
+				"participantSnapshots": [
+					{
+						"displayName": "乔一鸣",
+						"residentId": "resident_qiao_yiming_01"
+					}
+				],
+				"status": "completed",
+				"type": "居民抵达"
+			},
+			"placeId": "南入口",
+			"placeSnapshot": {
+				"displayName": "南入口",
+				"placeId": "南入口"
+			},
+			"recordId": "world-log-timeline-1:world-log-4",
+			"references": {
+				"announcementIds": [],
+				"cargoLotIds": [],
+				"conflictIds": [],
+				"conversationIds": [],
+				"eventIds": [
+					"world-event-19"
+				],
+				"matterIds": [],
+				"messageIds": [],
+				"requestIds": [],
+				"taskIds": []
+			},
+			"residentId": "resident_qiao_yiming_01",
+			"residentName": "乔一鸣",
+			"schemaVersion": 1,
+			"sequence": 4,
+			"sourceRefs": [
+				{
+					"mutationId": "world-event-19",
+					"sourceId": "world-event-19",
+					"sourceKind": "resident_lifecycle"
+				}
+			],
+			"status": "completed",
+			"text": "",
+			"threadId": "lifecycle:resident-arrival:resident_qiao_yiming_01",
+			"time": {
+				"clock": "09:38",
+				"day": 1,
+				"period": "上午"
+			},
+			"timelineId": "world-log-timeline-1",
+			"title": "乔一鸣：居民抵达",
+			"worldRevision": 132
+		},
+		{
+			"attachmentRefs": [],
+			"attention": "important",
+			"kind": "居民抵达",
+			"kindTag": "world_change",
+			"logItemId": "public_event:resident_lifecycle:world-event-26",
+			"participantIds": [
+				"resident_tang_xiaoman_01"
+			],
+			"participantSnapshots": [
+				{
+					"displayName": "唐小满",
+					"residentId": "resident_tang_xiaoman_01"
+				}
+			],
+			"payload": {
+				"arrivedAbsoluteMinute": 581,
+				"lifecycleId": "resident-arrival:resident_tang_xiaoman_01",
+				"participantIds": [
+					"resident_tang_xiaoman_01"
+				],
+				"participantSnapshots": [
+					{
+						"displayName": "唐小满",
+						"residentId": "resident_tang_xiaoman_01"
+					}
+				],
+				"status": "completed",
+				"type": "居民抵达"
+			},
+			"placeId": "南入口",
+			"placeSnapshot": {
+				"displayName": "南入口",
+				"placeId": "南入口"
+			},
+			"recordId": "world-log-timeline-1:world-log-5",
+			"references": {
+				"announcementIds": [],
+				"cargoLotIds": [],
+				"conflictIds": [],
+				"conversationIds": [],
+				"eventIds": [
+					"world-event-26"
+				],
+				"matterIds": [],
+				"messageIds": [],
+				"requestIds": [],
+				"taskIds": []
+			},
+			"residentId": "resident_tang_xiaoman_01",
+			"residentName": "唐小满",
+			"schemaVersion": 1,
+			"sequence": 5,
+			"sourceRefs": [
+				{
+					"mutationId": "world-event-26",
+					"sourceId": "world-event-26",
+					"sourceKind": "resident_lifecycle"
+				}
+			],
+			"status": "completed",
+			"text": "",
+			"threadId": "lifecycle:resident-arrival:resident_tang_xiaoman_01",
+			"time": {
+				"clock": "09:41",
+				"day": 1,
+				"period": "上午"
+			},
+			"timelineId": "world-log-timeline-1",
+			"title": "唐小满：居民抵达",
+			"worldRevision": 137
+		},
+		{
+			"attachmentRefs": [],
+			"attention": "important",
+			"kind": "居民抵达",
+			"kindTag": "world_change",
+			"logItemId": "public_event:resident_lifecycle:world-event-35",
+			"participantIds": [
+				"resident_xie_mian_01"
+			],
+			"participantSnapshots": [
+				{
+					"displayName": "谢眠",
+					"residentId": "resident_xie_mian_01"
+				}
+			],
+			"payload": {
+				"arrivedAbsoluteMinute": 588,
+				"lifecycleId": "resident-arrival:resident_xie_mian_01",
+				"participantIds": [
+					"resident_xie_mian_01"
+				],
+				"participantSnapshots": [
+					{
+						"displayName": "谢眠",
+						"residentId": "resident_xie_mian_01"
+					}
+				],
+				"status": "completed",
+				"type": "居民抵达"
+			},
+			"placeId": "南入口",
+			"placeSnapshot": {
+				"displayName": "南入口",
+				"placeId": "南入口"
+			},
+			"recordId": "world-log-timeline-1:world-log-6",
+			"references": {
+				"announcementIds": [],
+				"cargoLotIds": [],
+				"conflictIds": [],
+				"conversationIds": [],
+				"eventIds": [
+					"world-event-35"
+				],
+				"matterIds": [],
+				"messageIds": [],
+				"requestIds": [],
+				"taskIds": []
+			},
+			"residentId": "resident_xie_mian_01",
+			"residentName": "谢眠",
+			"schemaVersion": 1,
+			"sequence": 6,
+			"sourceRefs": [
+				{
+					"mutationId": "world-event-35",
+					"sourceId": "world-event-35",
+					"sourceKind": "resident_lifecycle"
+				}
+			],
+			"status": "completed",
+			"text": "",
+			"threadId": "lifecycle:resident-arrival:resident_xie_mian_01",
+			"time": {
+				"clock": "09:48",
+				"day": 1,
+				"period": "上午"
+			},
+			"timelineId": "world-log-timeline-1",
+			"title": "谢眠：居民抵达",
+			"worldRevision": 146
+		},
+		{
+			"attachmentRefs": [],
+			"attention": "important",
+			"kind": "居民抵达",
+			"kindTag": "world_change",
+			"logItemId": "public_event:resident_lifecycle:world-event-46",
+			"participantIds": [
+				"resident_wen_xu_01"
+			],
+			"participantSnapshots": [
+				{
+					"displayName": "闻叙",
+					"residentId": "resident_wen_xu_01"
+				}
+			],
+			"payload": {
+				"arrivedAbsoluteMinute": 591,
+				"lifecycleId": "resident-arrival:resident_wen_xu_01",
+				"participantIds": [
+					"resident_wen_xu_01"
+				],
+				"participantSnapshots": [
+					{
+						"displayName": "闻叙",
+						"residentId": "resident_wen_xu_01"
+					}
+				],
+				"status": "completed",
+				"type": "居民抵达"
+			},
+			"placeId": "南入口",
+			"placeSnapshot": {
+				"displayName": "南入口",
+				"placeId": "南入口"
+			},
+			"recordId": "world-log-timeline-1:world-log-7",
+			"references": {
+				"announcementIds": [],
+				"cargoLotIds": [],
+				"conflictIds": [],
+				"conversationIds": [],
+				"eventIds": [
+					"world-event-46"
+				],
+				"matterIds": [],
+				"messageIds": [],
+				"requestIds": [],
+				"taskIds": []
+			},
+			"residentId": "resident_wen_xu_01",
+			"residentName": "闻叙",
+			"schemaVersion": 1,
+			"sequence": 7,
+			"sourceRefs": [
+				{
+					"mutationId": "world-event-46",
+					"sourceId": "world-event-46",
+					"sourceKind": "resident_lifecycle"
+				}
+			],
+			"status": "completed",
+			"text": "",
+			"threadId": "lifecycle:resident-arrival:resident_wen_xu_01",
+			"time": {
+				"clock": "09:51",
+				"day": 1,
+				"period": "上午"
+			},
+			"timelineId": "world-log-timeline-1",
+			"title": "闻叙：居民抵达",
+			"worldRevision": 152
+		},
+		{
+			"attachmentRefs": [],
+			"attention": "important",
+			"kind": "居民抵达",
+			"kindTag": "world_change",
+			"logItemId": "public_event:resident_lifecycle:world-event-59",
+			"participantIds": [
+				"resident_mi_ya_01"
+			],
+			"participantSnapshots": [
+				{
+					"displayName": "米芽",
+					"residentId": "resident_mi_ya_01"
+				}
+			],
+			"payload": {
+				"arrivedAbsoluteMinute": 611,
+				"lifecycleId": "resident-arrival:resident_mi_ya_01",
+				"participantIds": [
+					"resident_mi_ya_01"
+				],
+				"participantSnapshots": [
+					{
+						"displayName": "米芽",
+						"residentId": "resident_mi_ya_01"
+					}
+				],
+				"status": "completed",
+				"type": "居民抵达"
+			},
+			"placeId": "南入口",
+			"placeSnapshot": {
+				"displayName": "南入口",
+				"placeId": "南入口"
+			},
+			"recordId": "world-log-timeline-1:world-log-8",
+			"references": {
+				"announcementIds": [],
+				"cargoLotIds": [],
+				"conflictIds": [],
+				"conversationIds": [],
+				"eventIds": [
+					"world-event-59"
+				],
+				"matterIds": [],
+				"messageIds": [],
+				"requestIds": [],
+				"taskIds": []
+			},
+			"residentId": "resident_mi_ya_01",
+			"residentName": "米芽",
+			"schemaVersion": 1,
+			"sequence": 8,
+			"sourceRefs": [
+				{
+					"mutationId": "world-event-59",
+					"sourceId": "world-event-59",
+					"sourceKind": "resident_lifecycle"
+				}
+			],
+			"status": "completed",
+			"text": "",
+			"threadId": "lifecycle:resident-arrival:resident_mi_ya_01",
+			"time": {
+				"clock": "10:11",
+				"day": 1,
+				"period": "上午"
+			},
+			"timelineId": "world-log-timeline-1",
+			"title": "米芽：居民抵达",
+			"worldRevision": 174
+		},
+		{
+			"attachmentRefs": [],
+			"attention": "important",
+			"kind": "居民抵达",
+			"kindTag": "world_change",
+			"logItemId": "public_event:resident_lifecycle:world-event-74",
+			"participantIds": [
+				"resident_xu_zhao_01"
+			],
+			"participantSnapshots": [
+				{
+					"displayName": "许照",
+					"residentId": "resident_xu_zhao_01"
+				}
+			],
+			"payload": {
+				"arrivedAbsoluteMinute": 618,
+				"lifecycleId": "resident-arrival:resident_xu_zhao_01",
+				"participantIds": [
+					"resident_xu_zhao_01"
+				],
+				"participantSnapshots": [
+					{
+						"displayName": "许照",
+						"residentId": "resident_xu_zhao_01"
+					}
+				],
+				"status": "completed",
+				"type": "居民抵达"
+			},
+			"placeId": "南入口",
+			"placeSnapshot": {
+				"displayName": "南入口",
+				"placeId": "南入口"
+			},
+			"recordId": "world-log-timeline-1:world-log-9",
+			"references": {
+				"announcementIds": [],
+				"cargoLotIds": [],
+				"conflictIds": [],
+				"conversationIds": [],
+				"eventIds": [
+					"world-event-74"
+				],
+				"matterIds": [],
+				"messageIds": [],
+				"requestIds": [],
+				"taskIds": []
+			},
+			"residentId": "resident_xu_zhao_01",
+			"residentName": "许照",
+			"schemaVersion": 1,
+			"sequence": 9,
+			"sourceRefs": [
+				{
+					"mutationId": "world-event-74",
+					"sourceId": "world-event-74",
+					"sourceKind": "resident_lifecycle"
+				}
+			],
+			"status": "completed",
+			"text": "",
+			"threadId": "lifecycle:resident-arrival:resident_xu_zhao_01",
+			"time": {
+				"clock": "10:18",
+				"day": 1,
+				"period": "上午"
+			},
+			"timelineId": "world-log-timeline-1",
+			"title": "许照：居民抵达",
+			"worldRevision": 183
+		},
+		{
+			"attachmentRefs": [],
+			"attention": "important",
+			"kind": "居民抵达",
+			"kindTag": "world_change",
+			"logItemId": "public_event:resident_lifecycle:world-event-92",
+			"participantIds": [
+				"resident_lin_lan_01"
+			],
+			"participantSnapshots": [
+				{
+					"displayName": "林岚",
+					"residentId": "resident_lin_lan_01"
+				}
+			],
+			"payload": {
+				"arrivedAbsoluteMinute": 622,
+				"lifecycleId": "resident-arrival:resident_lin_lan_01",
+				"participantIds": [
+					"resident_lin_lan_01"
+				],
+				"participantSnapshots": [
+					{
+						"displayName": "林岚",
+						"residentId": "resident_lin_lan_01"
+					}
+				],
+				"status": "completed",
+				"type": "居民抵达"
+			},
+			"placeId": "南入口",
+			"placeSnapshot": {
+				"displayName": "南入口",
+				"placeId": "南入口"
+			},
+			"recordId": "world-log-timeline-1:world-log-10",
+			"references": {
+				"announcementIds": [],
+				"cargoLotIds": [],
+				"conflictIds": [],
+				"conversationIds": [],
+				"eventIds": [
+					"world-event-92"
+				],
+				"matterIds": [],
+				"messageIds": [],
+				"requestIds": [],
+				"taskIds": []
+			},
+			"residentId": "resident_lin_lan_01",
+			"residentName": "林岚",
+			"schemaVersion": 1,
+			"sequence": 10,
+			"sourceRefs": [
+				{
+					"mutationId": "world-event-92",
+					"sourceId": "world-event-92",
+					"sourceKind": "resident_lifecycle"
+				}
+			],
+			"status": "completed",
+			"text": "",
+			"threadId": "lifecycle:resident-arrival:resident_lin_lan_01",
+			"time": {
+				"clock": "10:22",
+				"day": 1,
+				"period": "上午"
+			},
+			"timelineId": "world-log-timeline-1",
+			"title": "林岚：居民抵达",
+			"worldRevision": 190
+		},
+		{
+			"attachmentRefs": [],
+			"attention": "important",
+			"kind": "居民抵达",
+			"kindTag": "world_change",
+			"logItemId": "public_event:resident_lifecycle:world-event-111",
+			"participantIds": [
+				"resident_lu_qingzhou_01"
+			],
+			"participantSnapshots": [
+				{
+					"displayName": "陆青舟",
+					"residentId": "resident_lu_qingzhou_01"
+				}
+			],
+			"payload": {
+				"arrivedAbsoluteMinute": 633,
+				"lifecycleId": "resident-arrival:resident_lu_qingzhou_01",
+				"participantIds": [
+					"resident_lu_qingzhou_01"
+				],
+				"participantSnapshots": [
+					{
+						"displayName": "陆青舟",
+						"residentId": "resident_lu_qingzhou_01"
+					}
+				],
+				"status": "completed",
+				"type": "居民抵达"
+			},
+			"placeId": "南入口",
+			"placeSnapshot": {
+				"displayName": "南入口",
+				"placeId": "南入口"
+			},
+			"recordId": "world-log-timeline-1:world-log-11",
+			"references": {
+				"announcementIds": [],
+				"cargoLotIds": [],
+				"conflictIds": [],
+				"conversationIds": [],
+				"eventIds": [
+					"world-event-111"
+				],
+				"matterIds": [],
+				"messageIds": [],
+				"requestIds": [],
+				"taskIds": []
+			},
+			"residentId": "resident_lu_qingzhou_01",
+			"residentName": "陆青舟",
+			"schemaVersion": 1,
+			"sequence": 11,
+			"sourceRefs": [
+				{
+					"mutationId": "world-event-111",
+					"sourceId": "world-event-111",
+					"sourceKind": "resident_lifecycle"
+				}
+			],
+			"status": "completed",
+			"text": "",
+			"threadId": "lifecycle:resident-arrival:resident_lu_qingzhou_01",
+			"time": {
+				"clock": "10:33",
+				"day": 1,
+				"period": "上午"
+			},
+			"timelineId": "world-log-timeline-1",
+			"title": "陆青舟：居民抵达",
+			"worldRevision": 203
+		},
+		{
+			"attachmentRefs": [],
+			"attention": "important",
+			"kind": "居民抵达",
+			"kindTag": "world_change",
+			"logItemId": "public_event:resident_lifecycle:world-event-132",
+			"participantIds": [
+				"resident_bai_zhi_01"
+			],
+			"participantSnapshots": [
+				{
+					"displayName": "白芷",
+					"residentId": "resident_bai_zhi_01"
+				}
+			],
+			"payload": {
+				"arrivedAbsoluteMinute": 634,
+				"lifecycleId": "resident-arrival:resident_bai_zhi_01",
+				"participantIds": [
+					"resident_bai_zhi_01"
+				],
+				"participantSnapshots": [
+					{
+						"displayName": "白芷",
+						"residentId": "resident_bai_zhi_01"
+					}
+				],
+				"status": "completed",
+				"type": "居民抵达"
+			},
+			"placeId": "南入口",
+			"placeSnapshot": {
+				"displayName": "南入口",
+				"placeId": "南入口"
+			},
+			"recordId": "world-log-timeline-1:world-log-12",
+			"references": {
+				"announcementIds": [],
+				"cargoLotIds": [],
+				"conflictIds": [],
+				"conversationIds": [],
+				"eventIds": [
+					"world-event-132"
+				],
+				"matterIds": [],
+				"messageIds": [],
+				"requestIds": [],
+				"taskIds": []
+			},
+			"residentId": "resident_bai_zhi_01",
+			"residentName": "白芷",
+			"schemaVersion": 1,
+			"sequence": 12,
+			"sourceRefs": [
+				{
+					"mutationId": "world-event-132",
+					"sourceId": "world-event-132",
+					"sourceKind": "resident_lifecycle"
+				}
+			],
+			"status": "completed",
+			"text": "",
+			"threadId": "lifecycle:resident-arrival:resident_bai_zhi_01",
+			"time": {
+				"clock": "10:34",
+				"day": 1,
+				"period": "上午"
+			},
+			"timelineId": "world-log-timeline-1",
+			"title": "白芷：居民抵达",
+			"worldRevision": 204
+		},
+		{
+			"attachmentRefs": [],
+			"attention": "important",
+			"kind": "居民抵达",
+			"kindTag": "world_change",
+			"logItemId": "public_event:resident_lifecycle:world-event-156",
+			"participantIds": [
+				"resident_jiang_cheng_01"
+			],
+			"participantSnapshots": [
+				{
+					"displayName": "姜澄",
+					"residentId": "resident_jiang_cheng_01"
+				}
+			],
+			"payload": {
+				"arrivedAbsoluteMinute": 644,
+				"lifecycleId": "resident-arrival:resident_jiang_cheng_01",
+				"participantIds": [
+					"resident_jiang_cheng_01"
+				],
+				"participantSnapshots": [
+					{
+						"displayName": "姜澄",
+						"residentId": "resident_jiang_cheng_01"
+					}
+				],
+				"status": "completed",
+				"type": "居民抵达"
+			},
+			"placeId": "南入口",
+			"placeSnapshot": {
+				"displayName": "南入口",
+				"placeId": "南入口"
+			},
+			"recordId": "world-log-timeline-1:world-log-13",
+			"references": {
+				"announcementIds": [],
+				"cargoLotIds": [],
+				"conflictIds": [],
+				"conversationIds": [],
+				"eventIds": [
+					"world-event-156"
+				],
+				"matterIds": [],
+				"messageIds": [],
+				"requestIds": [],
+				"taskIds": []
+			},
+			"residentId": "resident_jiang_cheng_01",
+			"residentName": "姜澄",
+			"schemaVersion": 1,
+			"sequence": 13,
+			"sourceRefs": [
+				{
+					"mutationId": "world-event-156",
+					"sourceId": "world-event-156",
+					"sourceKind": "resident_lifecycle"
+				}
+			],
+			"status": "completed",
+			"text": "",
+			"threadId": "lifecycle:resident-arrival:resident_jiang_cheng_01",
+			"time": {
+				"clock": "10:44",
+				"day": 1,
+				"period": "上午"
+			},
+			"timelineId": "world-log-timeline-1",
+			"title": "姜澄：居民抵达",
+			"worldRevision": 218
+		},
+		{
+			"attachmentRefs": [],
+			"attention": "important",
+			"kind": "居民抵达",
+			"kindTag": "world_change",
+			"logItemId": "public_event:resident_lifecycle:world-event-181",
+			"participantIds": [
+				"resident_luo_yuan_01"
+			],
+			"participantSnapshots": [
+				{
+					"displayName": "罗远",
+					"residentId": "resident_luo_yuan_01"
+				}
+			],
+			"payload": {
+				"arrivedAbsoluteMinute": 677,
+				"lifecycleId": "resident-arrival:resident_luo_yuan_01",
+				"participantIds": [
+					"resident_luo_yuan_01"
+				],
+				"participantSnapshots": [
+					{
+						"displayName": "罗远",
+						"residentId": "resident_luo_yuan_01"
+					}
+				],
+				"status": "completed",
+				"type": "居民抵达"
+			},
+			"placeId": "南入口",
+			"placeSnapshot": {
+				"displayName": "南入口",
+				"placeId": "南入口"
+			},
+			"recordId": "world-log-timeline-1:world-log-14",
+			"references": {
+				"announcementIds": [],
+				"cargoLotIds": [],
+				"conflictIds": [],
+				"conversationIds": [],
+				"eventIds": [
+					"world-event-181"
+				],
+				"matterIds": [],
+				"messageIds": [],
+				"requestIds": [],
+				"taskIds": []
+			},
+			"residentId": "resident_luo_yuan_01",
+			"residentName": "罗远",
+			"schemaVersion": 1,
+			"sequence": 14,
+			"sourceRefs": [
+				{
+					"mutationId": "world-event-181",
+					"sourceId": "world-event-181",
+					"sourceKind": "resident_lifecycle"
+				}
+			],
+			"status": "completed",
+			"text": "",
+			"threadId": "lifecycle:resident-arrival:resident_luo_yuan_01",
+			"time": {
+				"clock": "11:17",
+				"day": 1,
+				"period": "上午"
+			},
+			"timelineId": "world-log-timeline-1",
+			"title": "罗远：居民抵达",
+			"worldRevision": 253
+		},
+		{
+			"attachmentRefs": [],
+			"attention": "important",
+			"kind": "居民抵达",
+			"kindTag": "world_change",
+			"logItemId": "public_event:resident_lifecycle:world-event-209",
+			"participantIds": [
+				"custom_resident_c7895d81e5852ffd3d3a8464_0001"
+			],
+			"participantSnapshots": [
+				{
+					"displayName": "入镇实测居民",
+					"residentId": "custom_resident_c7895d81e5852ffd3d3a8464_0001"
+				}
+			],
+			"payload": {
+				"arrivedAbsoluteMinute": 706,
+				"lifecycleId": "resident-arrival:custom_resident_c7895d81e5852ffd3d3a8464_0001",
+				"participantIds": [
+					"custom_resident_c7895d81e5852ffd3d3a8464_0001"
+				],
+				"participantSnapshots": [
+					{
+						"displayName": "入镇实测居民",
+						"residentId": "custom_resident_c7895d81e5852ffd3d3a8464_0001"
+					}
+				],
+				"status": "completed",
+				"type": "居民抵达"
+			},
+			"placeId": "南入口",
+			"placeSnapshot": {
+				"displayName": "南入口",
+				"placeId": "南入口"
+			},
+			"recordId": "world-log-timeline-1:world-log-15",
+			"references": {
+				"announcementIds": [],
+				"cargoLotIds": [],
+				"conflictIds": [],
+				"conversationIds": [],
+				"eventIds": [
+					"world-event-209"
+				],
+				"matterIds": [],
+				"messageIds": [],
+				"requestIds": [],
+				"taskIds": []
+			},
+			"residentId": "custom_resident_c7895d81e5852ffd3d3a8464_0001",
+			"residentName": "入镇实测居民",
+			"schemaVersion": 1,
+			"sequence": 15,
+			"sourceRefs": [
+				{
+					"mutationId": "world-event-209",
+					"sourceId": "world-event-209",
+					"sourceKind": "resident_lifecycle"
+				}
+			],
+			"status": "completed",
+			"text": "",
+			"threadId": "lifecycle:resident-arrival:custom_resident_c7895d81e5852ffd3d3a8464_0001",
+			"time": {
+				"clock": "11:46",
+				"day": 1,
+				"period": "上午"
+			},
+			"timelineId": "world-log-timeline-1",
+			"title": "入镇实测居民：居民抵达",
+			"worldRevision": 285
+		}
+	],
+	"schema": "town-world-log-segment",
+	"schemaVersion": 1,
+	"startSequence": 1,
+	"timelineId": "world-log-timeline-1"
+}

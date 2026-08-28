@@ -112,6 +112,7 @@ static func life_destination_options(
 		int(host._environment.get_absolute_minute()),
 		host.get_weather(),
 		host._activity_runtime,
+		host,
 	)
 
 

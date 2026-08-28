@@ -5,6 +5,12 @@ extends RefCounted
 const PRODUCTION_TASK_COORDINATION_RUNTIME := preload(
 	"res://world/runtime/work/TownProductionTaskCoordinationRuntime.gd"
 )
+const OCCUPATION_SERVICE_STAFFING_RUNTIME := preload(
+	"res://world/runtime/work/TownOccupationServiceStaffingRuntime.gd"
+)
+
+const BOTANIST_OCCUPATION_ID := "occupation_botanist"
+const OBSERVE_CAPABILITY := "research.observe"
 
 
 static func create(
@@ -20,6 +26,20 @@ static func create(
 		return host._command_failure(
 			"PLANT_RESEARCH_REQUESTER_INVALID",
 			["植物研究必须来自真实居民或正式请求方"],
+		)
+	if OCCUPATION_SERVICE_STAFFING_RUNTIME.executable_worker_ids(
+		host,
+		BOTANIST_OCCUPATION_ID,
+		OBSERVE_CAPABILITY,
+	).is_empty():
+		return host._decorate_command_result(
+			OCCUPATION_SERVICE_STAFFING_RUNTIME.unstaffed_failure(
+				"plant_research",
+				"植物研究",
+				"社区花园",
+				BOTANIST_OCCUPATION_ID,
+				OBSERVE_CAPABILITY,
+			),
 		)
 	var begun: Dictionary = host._work.production.begin_plant_research(
 		question,

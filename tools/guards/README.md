@@ -8,7 +8,7 @@
 tools/guards/run_guards.sh
 ```
 
-## 十项固定检查
+## 十一项固定检查
 
 | 脚本 | 判定 | 基线/清单 |
 |---|---|---|
@@ -20,6 +20,7 @@ tools/guards/run_guards.sh
 | `preload_resource_check.py` | GDScript 中字面量或编译期字符串拼接的 `res://` 预加载文件缺失即失败 | 已跟踪的 `game/**/*.gd` |
 | `cross_platform_text_check.py` | 文本统一以 LF 检出，字节摘要约束不受 Windows 换行转换影响 | `.gitattributes` + 白模冻结清单 |
 | `foreground_shader_check.py` | 前景局部遮挡保留裁切，并禁止重复乘算地图纹理造成画面变暗 | `MapRuntimeOcclusionLayer.gd` |
+| `persistence_change_check.py` | 持久化相关改动必须提交迁移或无需迁移声明，并同步样本、测试和文档 | `docs/persistence-changes/*.json` |
 | `sync_readme_updates.py --check` | 仓库首页的最近更新摘要与玩家更新日志一致 | `更新日志.md` |
 | `release/test_release_tool.py` + `release_tool.py source-check` | 版本号格式、双平台打包结构、构建信息和校验和符合发行约定 | `VERSION` + `更新日志.md` |
 

@@ -4,7 +4,8 @@ extends RefCounted
 
 const SCHEMA_VERSION := TownSaveSchemaRegistry.NEW_GAME_DRAFT_SCHEMA_VERSION
 const SOURCE_SCOPE := "resident_selection"
-const HOME_SLOT_COUNT := 15
+const POPULATION_RULES := preload("res://world/runtime/TownPopulationRules.gd")
+const HOME_SLOT_COUNT := POPULATION_RULES.MAX_RESIDENT_COUNT
 
 
 static func validate(draft: Dictionary) -> Dictionary:
@@ -64,26 +65,26 @@ static func validate(draft: Dictionary) -> Dictionary:
 					"slots[%d].llmBinding.modelId" % index,
 					"SESSION_LLM_MODEL_REQUIRED",
 				))
-	if slots.size() != expected_spaces.size():
+	if not POPULATION_RULES.supports_resident_count(slots.size()):
 		errors.append(_error(
 			"slots",
-			"SESSION_HOME_SPACE_COUNT_MISMATCH",
-			{"expected": expected_spaces.size(), "actual": slots.size()},
+			"SESSION_RESIDENT_COUNT_OUT_OF_RANGE",
+			{
+				"minimum": POPULATION_RULES.MIN_RESIDENT_COUNT,
+				"maximum": POPULATION_RULES.MAX_RESIDENT_COUNT,
+				"actual": slots.size(),
+			},
 		))
-	for expected_space in expected_spaces:
-		if not seen_space_ids.has(expected_space):
-			errors.append(_error(
-				"slots",
-				"SESSION_HOME_SPACE_MISSING",
-				{"spaceId": expected_space},
-			))
 	return {
 		"ok": errors.is_empty(),
 		"errorCode": "" if errors.is_empty() else "SESSION_DRAFT_INVALID",
 		"retryable": false,
 		"draftRevision": int(draft.get("draftRevision", 0)),
 		"errors": errors,
-		"expectedSlotCount": expected_spaces.size(),
+		"residentCount": slots.size(),
+		"minimumResidentCount": POPULATION_RULES.MIN_RESIDENT_COUNT,
+		"defaultResidentCount": POPULATION_RULES.DEFAULT_RESIDENT_COUNT,
+		"maximumResidentCount": POPULATION_RULES.MAX_RESIDENT_COUNT,
 		"expectedSpaceIds": expected_spaces,
 	}
 

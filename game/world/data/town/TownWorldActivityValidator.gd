@@ -1161,9 +1161,10 @@ static func _validate_place_service_profiles(
 			"capacity",
 			"helperActivityId",
 			"requestActivityIds",
+			"unstaffedVisitorActivityIds",
 		]:
 			errors.append(
-				"%s.serviceProfile 字段必须精确为 capacity/helperActivityId/requestActivityIds"
+				"%s.serviceProfile 字段必须精确为 capacity/helperActivityId/requestActivityIds/unstaffedVisitorActivityIds"
 				% place_name
 			)
 		var capacity_value: Variant = profile.get("capacity")
@@ -1240,6 +1241,49 @@ static func _validate_place_service_profiles(
 				errors.append(
 					"%s.serviceProfile 的请求活动没有同地点 visitor slot：%s"
 					% [place_name, request_activity_id]
+				)
+		var unstaffed_ids_value: Variant = profile.get(
+			"unstaffedVisitorActivityIds",
+		)
+		if unstaffed_ids_value is not Array:
+			errors.append(
+				"%s.serviceProfile.unstaffedVisitorActivityIds 必须为数组"
+				% place_name
+			)
+			continue
+		var seen_unstaffed_ids := {}
+		for activity_value: Variant in unstaffed_ids_value as Array:
+			if (
+				typeof(activity_value) != TYPE_STRING
+				or String(activity_value).strip_edges().is_empty()
+			):
+				errors.append(
+					"%s.serviceProfile.unstaffedVisitorActivityIds 只能包含非空字符串"
+					% place_name
+				)
+				continue
+			var activity_id := String(activity_value).strip_edges()
+			if seen_unstaffed_ids.has(activity_id):
+				errors.append(
+					"%s.serviceProfile 无人值守访客活动重复：%s"
+					% [place_name, activity_id]
+				)
+				continue
+			seen_unstaffed_ids[activity_id] = true
+			if not activities_by_id.has(activity_id):
+				errors.append(
+					"%s.serviceProfile 引用未知无人值守访客 activityId：%s"
+					% [place_name, activity_id]
+				)
+			elif not _has_activity_slot_at_place(
+				slots_by_id,
+				activity_id,
+				place_name,
+				"visitor",
+			):
+				errors.append(
+					"%s.serviceProfile 的无人值守活动没有同地点 visitor slot：%s"
+					% [place_name, activity_id]
 				)
 
 

@@ -5,6 +5,15 @@ extends RefCounted
 const SESSION_SAVE_MANIFEST := preload(
 	"res://world/presentation/session/TownSessionSaveManifest.gd"
 )
+const RECOVERY_PLANNER := preload(
+	"res://world/presentation/session/TownSaveRecoveryPlanner.gd"
+)
+const RECONCILIATION_SERVICE := preload(
+	"res://world/presentation/session/TownSaveReconciliationService.gd"
+)
+const COMPATIBILITY := preload(
+	"res://world/presentation/session/TownSaveCompatibilityRegistry.gd"
+)
 const DEFAULT_PROFILE_PATH := "user://town_startup_profile.json"
 const TEST_PROFILE_ROOT := "user://tests/town_startup_profile"
 const PROFILE_SCHEMA := "town-startup-profile"
@@ -106,6 +115,9 @@ func configure(
 			not agent_store_value is Object
 			or not is_instance_valid(agent_store_value)
 			or not (agent_store_value as Object).has_method("load_snapshot")
+			or not (agent_store_value as Object).has_method(
+				"inspect_snapshot_versions",
+			)
 		):
 			return _failure("STARTUP_SAVE_AGENT_STORE_CONTRACT_INVALID", false)
 		_agent_store = agent_store_value as Object
@@ -132,20 +144,23 @@ func get_catalog(slot_definitions_value: Variant) -> Dictionary:
 	var definitions := _normalize_slot_definitions(slot_definitions_value)
 	if definitions.get("ok") != true:
 		return definitions
+	var profile := _load_profile()
+	if profile.get("ok") != true:
+		return profile
+	var profile_version := int(
+		profile.get("schemaVersion", PROFILE_SCHEMA_VERSION),
+	)
 	var slots: Array[Dictionary] = []
 	var slots_by_id := {}
 	for definition_value: Variant in definitions.get("slots", []) as Array:
 		var definition := definition_value as Dictionary
-		var inspected := _inspect_slot(definition)
+		var inspected := _inspect_slot(definition, profile_version)
 		if inspected.get("ok") != true:
 			return inspected
 		var slot := inspected.get("slot", {}) as Dictionary
 		slots.append(slot)
 		slots_by_id[String(slot.get("slotId", ""))] = slot
 
-	var profile := _load_profile()
-	if profile.get("ok") != true:
-		return profile
 	var shown_messages := (
 		profile.get("shownResidentMessages", {}) as Dictionary
 	)
@@ -406,7 +421,7 @@ func _write_profile(profile: Dictionary) -> Dictionary:
 	return _success()
 
 
-func _inspect_slot(definition: Dictionary) -> Dictionary:
+func _inspect_slot(definition: Dictionary, profile_version: int) -> Dictionary:
 	var slot_id := String(definition.get("slotId", ""))
 	var listed_value: Variant = _store.call("list_published", slot_id)
 	if not listed_value is Dictionary:
@@ -421,10 +436,12 @@ func _inspect_slot(definition: Dictionary) -> Dictionary:
 	if incomplete.get("ok") != true:
 		return _store_failure(incomplete)
 	var manifest_values: Variant = listed.get("manifests")
+	var read_only_values: Variant = listed.get("readOnly", [])
 	var invalid_values: Variant = listed.get("invalid")
 	var record_values: Variant = incomplete.get("records")
 	if (
 		not manifest_values is Array
+		or not read_only_values is Array
 		or not invalid_values is Array
 		or not record_values is Array
 	):
@@ -438,7 +455,7 @@ func _inspect_slot(definition: Dictionary) -> Dictionary:
 		if not manifest_value is Dictionary:
 			return _failure("STARTUP_SAVE_STORE_RESPONSE_INVALID", false)
 		var manifest := manifest_value as Dictionary
-		var inspected := _inspect_manifest(manifest, slot_id)
+		var inspected := _inspect_manifest(manifest, slot_id, profile_version)
 		var revision := _integer_or(
 			manifest.get("save_revision"),
 			-1,
@@ -469,6 +486,21 @@ func _inspect_slot(definition: Dictionary) -> Dictionary:
 			corrupt_revisions.append(
 				_corrupt_revision_details(manifest, inspected),
 			)
+	for read_only_value: Variant in read_only_values as Array:
+		if not read_only_value is Dictionary:
+			return _failure("STARTUP_SAVE_STORE_RESPONSE_INVALID", false)
+		var inspected := _inspect_read_only_manifest(
+			read_only_value as Dictionary,
+			slot_id,
+		)
+		if inspected.get("ok") != true:
+			return inspected
+		var revision := int(inspected.get("saveRevision", -1))
+		if revision < 1 or seen_manifest_revisions.has(revision):
+			return _failure("STARTUP_SAVE_STORE_RESPONSE_INVALID", false)
+		seen_manifest_revisions[revision] = true
+		latest_evidence_revision = maxi(latest_evidence_revision, revision)
+		complete_revisions.append(inspected)
 	for invalid_value: Variant in invalid_values as Array:
 		if not invalid_value is String:
 			return _failure("STARTUP_SAVE_STORE_RESPONSE_INVALID", false)
@@ -598,6 +630,19 @@ func _inspect_slot(definition: Dictionary) -> Dictionary:
 		return String(left.get("state", "")) < String(right.get("state", ""))
 	save_blockers.sort_custom(blocker_sort)
 	restore_blockers.sort_custom(blocker_sort)
+	var reconciliation_plan: Dictionary = {}
+	if _agent_store != null and not (record_values as Array).is_empty():
+		var reconciliation := RECONCILIATION_SERVICE.new()
+		var reconciliation_configured := reconciliation.configure(
+			_store,
+			_agent_store,
+		) as Dictionary
+		if reconciliation_configured.get("ok") != true:
+			return reconciliation_configured
+		var reconciliation_inspection := reconciliation.inspect(slot_id) as Dictionary
+		if reconciliation_inspection.get("ok") != true:
+			return reconciliation_inspection
+		reconciliation_plan = reconciliation_inspection.duplicate(true)
 
 	var latest_complete := (
 		complete_revisions[0].duplicate(true)
@@ -640,6 +685,23 @@ func _inspect_slot(definition: Dictionary) -> Dictionary:
 				else "SESSION_SAVE_MANIFEST_INVALID"
 			)
 	elif (
+		latest_complete.get("compatibility", {}) is Dictionary
+		and (latest_complete.get("compatibility", {}) as Dictionary).get("ok")
+		!= true
+	):
+		var blocked_compatibility := (
+			latest_complete.get("compatibility", {}) as Dictionary
+		)
+		state = "read_only"
+		recovery_state = "version_not_supported"
+		continue_available = false
+		error_code = String(
+			(blocked_compatibility.get("error", {}) as Dictionary).get(
+				"code",
+				"SAVE_VERSION_COMBINATION_UNKNOWN",
+			),
+		)
+	elif (
 		latest_corrupt_revision > latest_complete_revision
 		and latest_corrupt_revision >= latest_incomplete_revision
 	):
@@ -665,10 +727,23 @@ func _inspect_slot(definition: Dictionary) -> Dictionary:
 		state = "healthy"
 		recovery_state = "current"
 		continue_available = true
+	if not reconciliation_plan.is_empty():
+		if bool(reconciliation_plan.get("repairable", false)) and not latest_complete.is_empty():
+			state = "recoverable"
+			continue_available = true
+			requires_confirmation = true
+		else:
+			state = "corrupt"
+			continue_available = false
+			requires_confirmation = false
+		if String(recovery_state) == "none":
+			recovery_state = "transaction_reconciliation_required"
 
 	var summary := {}
 	var manifest := {}
 	var session_config := {}
+	var compatibility_evidence := {}
+	var compatibility := {}
 	if not latest_complete.is_empty():
 		summary = (latest_complete.get("summary", {}) as Dictionary).duplicate(true)
 		summary["slotName"] = String(definition.get("displayName", ""))
@@ -676,63 +751,137 @@ func _inspect_slot(definition: Dictionary) -> Dictionary:
 		session_config = (
 			latest_complete.get("sessionConfig", {}) as Dictionary
 		).duplicate(true)
+		compatibility_evidence = (
+			latest_complete.get("compatibilityEvidence", {}) as Dictionary
+		).duplicate(true)
+		compatibility = (
+			latest_complete.get("compatibility", {}) as Dictionary
+		).duplicate(true)
 	var resident_messages := (
 		SESSION_SAVE_MANIFEST.resident_messages(manifest)
 		if not manifest.is_empty()
 		else []
 	)
+	var slot := {
+		"slotId": slot_id,
+		"displayName": String(definition.get("displayName", "")),
+		"state": state,
+		"recoveryState": recovery_state,
+		"continueAvailable": continue_available,
+		"requiresRecoveryConfirmation": requires_confirmation,
+		"recoveryProgressRollback": recovery_progress_rollback,
+		"errorCode": error_code,
+		"latestEvidenceRevision": latest_evidence_revision,
+		"latestCompleteRevision": latest_complete_revision,
+		"latestIncompleteRevision": latest_incomplete_revision,
+		"summary": summary,
+		"manifest": manifest,
+		"sessionConfig": session_config,
+		"compatibilityEvidence": compatibility_evidence,
+		"compatibility": compatibility,
+		"residentMessages": resident_messages,
+		"corruptRevisions": corrupt_revisions,
+		"damageDetails": (
+			_build_damage_details(
+				corrupt_revisions[0],
+				latest_complete,
+				recovery_progress_rollback,
+			)
+			if state == "recoverable" and not corrupt_revisions.is_empty()
+			else {}
+		),
+		"continueNotice": (
+			{
+				"noticeId": "latest_save_incomplete_fallback",
+				"message": "上次保存未完成，已使用最近完整存档",
+				"surface": "toast",
+				"blocking": false,
+			}
+			if (
+				state == "incomplete"
+				and not latest_complete.is_empty()
+				and latest_incomplete_revision > latest_complete_revision
+			)
+			else {}
+		),
+		"saveBlockers": save_blockers,
+		"restoreBlockers": restore_blockers,
+		"reconciliationPlan": reconciliation_plan,
+		"diagnosticAvailable": (
+			String(reconciliation_plan.get("action", ""))
+			== RECONCILIATION_SERVICE.EXPORT_ACTION
+		),
+		"agentIntegrity": (
+			"version_only_read_only"
+			if (
+				not latest_complete.is_empty()
+				and (latest_complete.get("compatibility", {}) as Dictionary).get(
+					"ok",
+				) != true
+			)
+			else "agent_snapshot_verified"
+			if _agent_store != null and not latest_complete.is_empty()
+			else "manifest_committed_unverified"
+			if not latest_complete.is_empty()
+			else "not_applicable"
+		),
+	}
+	var inspection_report := RECOVERY_PLANNER.inspection_report(slot)
+	slot["inspectionReport"] = inspection_report
+	var recovery_plan := RECOVERY_PLANNER.recovery_plan(
+		slot,
+		inspection_report,
+	)
+	slot["recoveryPlan"] = recovery_plan
+	slot["diagnosticAvailable"] = (
+		String(recovery_plan.get("action", ""))
+		== RECONCILIATION_SERVICE.EXPORT_ACTION
+		or (
+			not bool(slot.get("continueAvailable", false))
+			and not recovery_plan.is_empty()
+		)
+	)
 	return {
 		"ok": true,
-		"slot": {
+		"slot": slot,
+	}
+
+
+func _inspect_read_only_manifest(record: Dictionary, slot_id: String) -> Dictionary:
+	var manifest_value: Variant = record.get("manifest")
+	var versions_value: Variant = record.get("versions")
+	if not manifest_value is Dictionary or not versions_value is Dictionary:
+		return _failure("STARTUP_SAVE_STORE_RESPONSE_INVALID", false)
+	var manifest := manifest_value as Dictionary
+	var revision := _integer_or(manifest.get("save_revision"), -1)
+	if (
+		revision < 1
+		or _required_string(manifest.get("slot_id")) != slot_id
+		or _required_string(manifest.get("session_id")).is_empty()
+	):
+		return _failure("STARTUP_SAVE_STORE_RESPONSE_INVALID", false)
+	var evidence := {"versions": (versions_value as Dictionary).duplicate(true)}
+	var compatibility := COMPATIBILITY.detect_release(evidence)
+	if compatibility.get("ok") == true:
+		return _failure("STARTUP_SAVE_STORE_RESPONSE_INVALID", false)
+	return {
+		"ok": true,
+		"errorCode": "",
+		"retryable": false,
+		"saveRevision": revision,
+		"manifest": manifest.duplicate(true),
+		"sessionConfig": {},
+		"summary": {
 			"slotId": slot_id,
-			"displayName": String(definition.get("displayName", "")),
-			"state": state,
-			"recoveryState": recovery_state,
-			"continueAvailable": continue_available,
-			"requiresRecoveryConfirmation": requires_confirmation,
-			"recoveryProgressRollback": recovery_progress_rollback,
-			"errorCode": error_code,
-			"latestEvidenceRevision": latest_evidence_revision,
-			"latestCompleteRevision": latest_complete_revision,
-			"latestIncompleteRevision": latest_incomplete_revision,
-			"summary": summary,
-			"manifest": manifest,
-			"sessionConfig": session_config,
-			"residentMessages": resident_messages,
-			"corruptRevisions": corrupt_revisions,
-			"damageDetails": (
-				_build_damage_details(
-					corrupt_revisions[0],
-					latest_complete,
-					recovery_progress_rollback,
-				)
-				if state == "recoverable" and not corrupt_revisions.is_empty()
-				else {}
-			),
-			"continueNotice": (
-				{
-					"noticeId": "latest_save_incomplete_fallback",
-					"message": "上次保存未完成，已使用最近完整存档",
-					"surface": "toast",
-					"blocking": false,
-				}
-				if (
-					state == "incomplete"
-					and not latest_complete.is_empty()
-					and latest_incomplete_revision > latest_complete_revision
-				)
-				else {}
-			),
-			"saveBlockers": save_blockers,
-			"restoreBlockers": restore_blockers,
-			"agentIntegrity": (
-				"agent_snapshot_verified"
-				if _agent_store != null and not latest_complete.is_empty()
-				else "manifest_committed_unverified"
-				if not latest_complete.is_empty()
-				else "not_applicable"
-			),
+			"sessionId": String(manifest.get("session_id", "")),
+			"saveRevision": revision,
+			"savedAt": String(manifest.get("saved_at", "")),
+			"residentCount": 0,
+			"worldRevision": -1,
+			"day": 0,
 		},
+		"compatibilityEvidence": evidence,
+		"compatibility": compatibility,
 	}
 
 
@@ -795,6 +944,7 @@ func _build_damage_details(
 func _inspect_manifest(
 	manifest: Dictionary,
 	expected_slot_id: String,
+	profile_version: int,
 ) -> Dictionary:
 	var revision := _integer_or(manifest.get("save_revision"), -1)
 	var slot_id := _required_string(manifest.get("slot_id"))
@@ -850,6 +1000,23 @@ func _inspect_manifest(
 	var snapshot_loaded := snapshot_loaded_value as Dictionary
 	if snapshot_loaded.get("ok") != true:
 		return _store_failure(snapshot_loaded)
+	var world_log_value: Variant = components.get("world_log")
+	if world_log_value is Dictionary:
+		var world_log := world_log_value as Dictionary
+		var world_log_loaded_value: Variant = _store.call(
+			"read_reference",
+			_required_string(world_log.get("snapshot_ref")),
+			_required_string(world_log.get("snapshot_sha256")),
+		)
+		if not world_log_loaded_value is Dictionary:
+			return _failure("STARTUP_SAVE_STORE_RESPONSE_INVALID", false)
+		var world_log_loaded := world_log_loaded_value as Dictionary
+		if world_log_loaded.get("ok") != true:
+			return _store_failure(world_log_loaded)
+		if not world_log_loaded.get("value") is Dictionary:
+			return _failure("SESSION_SAVE_WORLD_LOG_INVALID", false)
+	elif int(manifest.get("schema_version", 0)) >= 3:
+		return _failure("SESSION_SAVE_MANIFEST_INVALID", false)
 	var config_loaded_value: Variant = _store.call(
 		"read_reference",
 		config_ref,
@@ -883,14 +1050,35 @@ func _inspect_manifest(
 	)
 	if binding_check.get("ok") != true:
 		return binding_check
-	var agent_check := _inspect_agent_snapshot(
-		slot_id,
-		session_id,
-		revision,
-		normalized_resident_ids.get("values", []) as Array[String],
+	var context := {
+		"slot_id": slot_id,
+		"session_id": session_id,
+		"save_revision": revision,
+	}
+	var agent_versions := _inspect_agent_versions(context)
+	if agent_versions.get("ok") != true:
+		return agent_versions
+	var module_versions := (
+		agent_versions.get("versions", {}) as Dictionary
+	).duplicate(true)
+	module_versions["profile"] = profile_version
+	var compatibility_evidence := COMPATIBILITY.evidence_from_save(
+		manifest,
+		snapshot,
+		session_config,
+		"",
+		module_versions,
 	)
-	if agent_check.get("ok") != true:
-		return agent_check
+	var compatibility := COMPATIBILITY.detect_release(compatibility_evidence)
+	if compatibility.get("ok") == true:
+		var agent_check := _inspect_agent_snapshot(
+			slot_id,
+			session_id,
+			revision,
+			normalized_resident_ids.get("values", []) as Array[String],
+		)
+		if agent_check.get("ok") != true:
+			return agent_check
 	var summary := {
 		"slotId": slot_id,
 		"sessionId": session_id,
@@ -908,7 +1096,32 @@ func _inspect_manifest(
 		"manifest": manifest.duplicate(true),
 		"sessionConfig": session_config.duplicate(true),
 		"summary": summary,
+		"compatibilityEvidence": compatibility_evidence,
+		"compatibility": compatibility,
 	}
+
+
+func _inspect_agent_versions(context: Dictionary) -> Dictionary:
+	if _agent_store == null:
+		return {"ok": true, "versions": {
+			"agent": 3,
+			"residentPayload": 2,
+			"residentRuntime": 6,
+			"residentMemory": 6,
+		}}
+	var inspected_value: Variant = _agent_store.inspect_snapshot_versions(
+		context.duplicate(true),
+	)
+	if not inspected_value is Dictionary:
+		return _failure("SESSION_SAVE_AGENT_SNAPSHOT_INVALID", false)
+	var inspected := inspected_value as Dictionary
+	if inspected.get("ok") != true:
+		return _failure(
+			"SESSION_SAVE_AGENT_SNAPSHOT_INVALID",
+			false,
+			{"meta": {"agentStoreErrors": inspected.get("errors", [])}},
+		)
+	return inspected
 
 
 func _inspect_agent_snapshot(
@@ -1010,6 +1223,7 @@ func _load_profile() -> Dictionary:
 			"ok": true,
 			"errorCode": "",
 			"retryable": false,
+			"schemaVersion": PROFILE_SCHEMA_VERSION,
 			"lastPlayedSlotId": "",
 			"shownResidentMessages": {},
 		}
@@ -1024,6 +1238,17 @@ func _load_profile() -> Dictionary:
 		return _failure("STARTUP_SAVE_PROFILE_INVALID", false)
 	var profile := parsed as Dictionary
 	var schema_version := _integer_or(profile.get("schemaVersion"), 0)
+	if (
+		profile.has("schemaVersion")
+		and _is_integer_number(profile.get("schemaVersion"))
+		and schema_version not in [
+			LEGACY_PROFILE_SCHEMA_VERSION,
+			PROFILE_SCHEMA_VERSION,
+		]
+	):
+		return COMPATIBILITY.restore_gate(COMPATIBILITY.detect_release({
+			"versions": {"profile": schema_version},
+		}))
 	var allowed_fields := (
 		["schema", "schemaVersion", "lastPlayedSlotId"]
 		if schema_version == LEGACY_PROFILE_SCHEMA_VERSION
@@ -1062,6 +1287,7 @@ func _load_profile() -> Dictionary:
 		"ok": true,
 		"errorCode": "",
 		"retryable": false,
+		"schemaVersion": schema_version,
 		"lastPlayedSlotId": last_played_slot_id,
 		"shownResidentMessages": (
 			shown_result.get("shownResidentMessages", {}) as Dictionary
@@ -1239,6 +1465,14 @@ func _integer_or(value: Variant, fallback: int) -> int:
 	):
 		return fallback
 	return int(number)
+
+
+func _is_integer_number(value: Variant) -> bool:
+	return (
+		typeof(value) in [TYPE_INT, TYPE_FLOAT]
+		and is_finite(float(value))
+		and float(value) == floor(float(value))
+	)
 
 
 func _required_string(value: Variant) -> String:

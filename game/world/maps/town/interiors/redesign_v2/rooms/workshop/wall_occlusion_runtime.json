@@ -1,0 +1,263 @@
+{
+  "canvas_size_px": [
+    1254.0,
+    1254.0
+  ],
+  "room_id": "workshop",
+  "schema_version": 2,
+  "segments": [
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        115,
+        920
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/workshop/wall_occlusion_runtime/south_main_left-cdd77e73ed8f.png",
+      "foreground_texture_sha256": "cdd77e73ed8f40516a74a34a37eb53e6ebcee6aa8af7623fedf9d454c88cfb5d",
+      "foreground_texture_size_px": [
+        375,
+        172
+      ],
+      "id": "south_main_left",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            144.0,
+            888.0
+          ],
+          [
+            368.0,
+            888.0
+          ],
+          [
+            368.0,
+            984.0
+          ],
+          [
+            144.0,
+            984.0
+          ]
+        ],
+        [
+          [
+            400.0,
+            888.0
+          ],
+          [
+            464.0,
+            888.0
+          ],
+          [
+            464.0,
+            984.0
+          ],
+          [
+            400.0,
+            984.0
+          ]
+        ],
+        [
+          [
+            480.0,
+            960.0
+          ],
+          [
+            608.0,
+            960.0
+          ],
+          [
+            608.0,
+            1064.0
+          ],
+          [
+            480.0,
+            1064.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        606,
+        920
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/workshop/wall_occlusion_runtime/south_main_right-6cb1b37fc85b.png",
+      "foreground_texture_sha256": "6cb1b37fc85b109bf48c5e3ffb5f6c4ab15a4ff903cf9365bed0fb3a718a288c",
+      "foreground_texture_size_px": [
+        301,
+        172
+      ],
+      "id": "south_main_right",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            624.0,
+            888.0
+          ],
+          [
+            688.0,
+            888.0
+          ],
+          [
+            688.0,
+            984.0
+          ],
+          [
+            624.0,
+            984.0
+          ]
+        ],
+        [
+          [
+            720.0,
+            888.0
+          ],
+          [
+            880.0,
+            888.0
+          ],
+          [
+            880.0,
+            984.0
+          ],
+          [
+            720.0,
+            984.0
+          ]
+        ],
+        [
+          [
+            480.0,
+            960.0
+          ],
+          [
+            608.0,
+            960.0
+          ],
+          [
+            608.0,
+            1064.0
+          ],
+          [
+            480.0,
+            1064.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        907,
+        920
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/workshop/wall_occlusion_runtime/south_annex-a7bea17ad814.png",
+      "foreground_texture_sha256": "a7bea17ad81491a20aaa8a1a0b9a20e9c5a77f173f1a9e1939c5df5545ec18a4",
+      "foreground_texture_size_px": [
+        254,
+        168
+      ],
+      "id": "south_annex",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            912.0,
+            888.0
+          ],
+          [
+            1104.0,
+            888.0
+          ],
+          [
+            1104.0,
+            984.0
+          ],
+          [
+            912.0,
+            984.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        868,
+        495
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/workshop/wall_occlusion_runtime/annex_divider_north-fe9a71562cc5.png",
+      "foreground_texture_sha256": "fe9a71562cc58fb2c709c052b16d85265e982908b6d916f2cde560a82f436a21",
+      "foreground_texture_size_px": [
+        41,
+        246
+      ],
+      "id": "annex_divider_north",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            832.0,
+            520.0
+          ],
+          [
+            944.0,
+            520.0
+          ],
+          [
+            944.0,
+            712.0
+          ],
+          [
+            832.0,
+            712.0
+          ]
+        ]
+      ]
+    },
+    {
+      "fade_distance_px": 96.0,
+      "foreground_canvas_origin_px": [
+        868,
+        848
+      ],
+      "foreground_texture_path": "res://world/maps/town/interiors/redesign_v2/rooms/workshop/wall_occlusion_runtime/annex_divider_south-d445c9325fdf.png",
+      "foreground_texture_sha256": "d445c9325fdfa1fb56df7d726f2f936dae8b0069b86e9b5242f443bda77c0912",
+      "foreground_texture_size_px": [
+        41,
+        108
+      ],
+      "id": "annex_divider_south",
+      "minimum_alpha": 0.15,
+      "reveal_polygons_canvas_px": [
+        [
+          [
+            832.0,
+            808.0
+          ],
+          [
+            944.0,
+            808.0
+          ],
+          [
+            944.0,
+            936.0
+          ],
+          [
+            832.0,
+            936.0
+          ]
+        ]
+      ]
+    }
+  ],
+  "source_geometry_revision": "workshop_candidate_c_space_v3_layout_anchor_sync",
+  "source_geometry_sha256": "0f37cfd6ec07cc1d87830401093f66c58286efd8332cc3d2dfa2e51bb2482b07",
+  "source_occlusion_revision": "workshop_candidate_c_space_v2",
+  "source_occlusion_sha256": "937f71e1eedf6ebc88833b3f5338453a740ae0e68bc700ebb91469b7364ca86f",
+  "source_shell_path": "res://world/maps/town/interiors/redesign_v2/rooms/workshop/assets/background/room_shell.png",
+  "source_shell_sha256": "a44874414bcbb2dc4bc809fe7a6b89d95cab0fe335ac362978c2f30bb5b391f6"
+}

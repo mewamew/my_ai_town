@@ -1,0 +1,16 @@
+{
+	"context": {
+		"save_revision": 1,
+		"session_id": "roundtrip-session-beta3",
+		"slot_id": "roundtrip-slot-beta3"
+	},
+	"intent_id": "save",
+	"kind": "save",
+	"order": 50,
+	"payload": {
+		"worldToken": "world-save-g1-c1"
+	},
+	"schema": "town-session-save-intent",
+	"schema_version": 1,
+	"state": "manifest_published"
+}

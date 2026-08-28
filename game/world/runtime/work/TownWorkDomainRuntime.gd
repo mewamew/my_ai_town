@@ -313,8 +313,21 @@ func resident_can_accept_work_task(
 	)
 	if (task.get("eligibleResidentIds", []) as Array).has(resident_id):
 		return true
+	var primary_id := primary_occupation_id(resident, world_data)
+	var capability := String(task.get("capability", ""))
 	for occupation_id: String in occupation_ids:
-		if (task.get("eligibleOccupationIds", []) as Array).has(occupation_id):
+		if (
+			(task.get("eligibleOccupationIds", []) as Array).has(occupation_id)
+			and (
+				occupation_id == primary_id
+				or staffing.active_assignment_allows_capability(
+					resident_id,
+					occupation_id,
+					capability,
+					absolute_minute,
+				)
+			)
+		):
 			return true
 	return false
 
@@ -326,15 +339,28 @@ func task_acceptance_occupation_id(
 	world_data: Dictionary,
 	absolute_minute: int,
 ) -> String:
+	var primary_id := primary_occupation_id(resident, world_data)
+	var capability := String(task.get("capability", ""))
 	for occupation_id: String in occupation_ids_for_resident(
 		resident_id,
 		resident,
 		world_data,
 		absolute_minute,
 	):
-		if (task.get("eligibleOccupationIds", []) as Array).has(occupation_id):
+		if (
+			(task.get("eligibleOccupationIds", []) as Array).has(occupation_id)
+			and (
+				occupation_id == primary_id
+				or staffing.active_assignment_allows_capability(
+					resident_id,
+					occupation_id,
+					capability,
+					absolute_minute,
+				)
+			)
+		):
 			return occupation_id
-	return primary_occupation_id(resident, world_data)
+	return primary_id
 
 
 func reserve_work_task(
@@ -457,23 +483,11 @@ func onsite_service_wait_minutes(kind: String) -> int:
 	return ACTIVITY_SCALARS.onsite_service_wait_minutes(kind)
 
 
-func occupation_service_kind_is_staffed(
-	kind: String,
-	residents: Dictionary,
-) -> bool:
-	return SERVICE_QUERY.kind_is_staffed(
-		kind,
-		SERVICE_DEFINITION.definition(kind),
-		staffing,
-		residents,
-	)
-
-
 func evaluate_presence_plan(
 	request: Dictionary,
 	requester: Dictionary,
 	absolute_minute: int,
-	residents: Dictionary,
+	service_staffed: bool,
 	clinic_executable: bool,
 	queue_advancing: bool,
 	deadline_applies: bool,
@@ -488,7 +502,7 @@ func evaluate_presence_plan(
 		absolute_minute,
 		mode_resolution,
 		(
-			occupation_service_kind_is_staffed(kind, residents)
+			service_staffed
 			if mode == "onsite_wait"
 			else true
 		),
@@ -723,17 +737,49 @@ func occupation_id_for_activity(
 	activity_id: String,
 	resident_id: String,
 	fallback_occupation_id: String,
+	absolute_minute: int,
 ) -> String:
 	for occupation_id: String in occupation_ids:
-		if not (
-			tasks.tasks_for_activity(
-				occupation_id,
-				activity_id,
-				resident_id,
-			) as Array
-		).is_empty():
-			return occupation_id
+		for task_value: Variant in tasks.tasks_for_activity(
+			occupation_id,
+			activity_id,
+			resident_id,
+		) as Array:
+			var capability := String((task_value as Dictionary).get("capability", ""))
+			if (
+				occupation_id == fallback_occupation_id
+				or staffing.active_assignment_allows_capability(
+					resident_id,
+					occupation_id,
+					capability,
+					absolute_minute,
+				)
+			):
+				return occupation_id
 	return fallback_occupation_id
+
+
+func authorized_work_capabilities_for_resident(
+	resident_id: String,
+	resident: Dictionary,
+	world_data: Dictionary,
+	absolute_minute: int,
+) -> Dictionary:
+	var result: Dictionary = {}
+	var primary_id := primary_occupation_id(resident, world_data)
+	for occupation_value: Variant in world_data.get("occupations", []) as Array:
+		var occupation := occupation_value as Dictionary
+		if String(occupation.get("occupationId", "")) != primary_id:
+			continue
+		for capability_value: Variant in occupation.get("taskCapabilities", []) as Array:
+			result[String(capability_value)] = true
+		break
+	for capability: String in staffing.active_assignment_capabilities(
+		resident_id,
+		absolute_minute,
+	):
+		result[capability] = true
+	return result
 
 
 func retire_stale_period_work_tasks(

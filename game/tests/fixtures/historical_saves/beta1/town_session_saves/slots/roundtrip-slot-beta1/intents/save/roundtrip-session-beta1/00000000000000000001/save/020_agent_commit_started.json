@@ -1,0 +1,25 @@
+{
+	"context": {
+		"save_revision": 1,
+		"session_id": "roundtrip-session-beta1",
+		"slot_id": "roundtrip-slot-beta1"
+	},
+	"intent_id": "save",
+	"kind": "save",
+	"order": 20,
+	"payload": {
+		"gateToken": "session-save-g1-t1",
+		"sessionConfigRef": "slots/roundtrip-slot-beta1/sessions/roundtrip-session-beta1/revisions/00000000000000000001/session_config.json",
+		"sessionConfigSha256": "085fb298573455794624163e049d17ab28c029da650630c489f2128fb0504cec",
+		"snapshotRef": "slots/roundtrip-slot-beta1/sessions/roundtrip-session-beta1/revisions/00000000000000000001/world_snapshot.json",
+		"snapshotSha256": "67c2fe00f89b89a42500b569da39cfa5f34ea5f30348991cd632d52655af6c1c",
+		"sourceGeneration": 1,
+		"worldLogSnapshotRef": "slots/roundtrip-slot-beta1/sessions/roundtrip-session-beta1/revisions/00000000000000000001/world_log_snapshot.json",
+		"worldLogSnapshotSha256": "551cb4c5a71d5184bcb38a1ea5614bd1f8add1818799daf3d4792f960b5b275f",
+		"worldRevision": 35,
+		"worldToken": "world-save-g1-c1"
+	},
+	"schema": "town-session-save-intent",
+	"schema_version": 1,
+	"state": "agent_commit_started"
+}

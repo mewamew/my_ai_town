@@ -33,26 +33,120 @@ var _ground_shadow_count := 0
 var _debug_visible := false
 var _layout_state: Dictionary = {}
 var _pixel_light_texture: Texture2D
+var _prepared_textures: Dictionary = {}
+var _configuration_instances: Array = []
+var _configuration_index := 0
+var _configuration_layout: Dictionary = {}
+var _configuration_active := false
+var _configuration_failed := false
+var _occupied_scan_state: Dictionary = {}
 
 
 func configure(manifest_path: String, layout_path: String) -> bool:
-	_clear_runtime()
+	if not begin_configuration(manifest_path, layout_path):
+		return false
+	while _configuration_active:
+		continue_configuration()
+	return not _configuration_failed
+
+
+func begin_configuration(manifest_path: String, layout_path: String) -> bool:
+	_reset_configuration()
 	_manifest_path = manifest_path
 	var manifest := _load_json(manifest_path)
 	var layout := _load_json(layout_path)
 	if manifest.is_empty() or layout.is_empty():
+		_configuration_failed = true
 		return false
 	# 住宅模板会由多个正式 home_xx 空间共享同一份资产目录，因此布局 room_id
 	# 可以是具体住宅 ID，不要求与模板目录 ID 完全相同。
 	_load_definitions(manifest)
 	if not _errors.is_empty():
+		_configuration_failed = true
 		return false
-	var result := apply_layout(layout, false)
-	if result.get("ok") != true:
-		_errors = result.get("errors", PackedStringArray()) as PackedStringArray
+	return _begin_loaded_configuration(layout, layout_path, false)
+
+
+func begin_configuration_prepared(
+	manifest_path: String,
+	layout_path: String,
+	definitions: Dictionary,
+	layout: Dictionary,
+	light_image: Image,
+	textures: Dictionary,
+) -> bool:
+	_reset_configuration()
+	_manifest_path = manifest_path
+	_definitions = definitions
+	_prepared_textures = textures
+	if light_image != null and not light_image.is_empty():
+		_pixel_light_texture = ImageTexture.create_from_image(light_image)
+	return _begin_loaded_configuration(layout, layout_path, true)
+
+
+func _reset_configuration() -> void:
+	_clear_runtime()
+	_configuration_instances.clear()
+	_configuration_index = 0
+	_configuration_layout.clear()
+	_configuration_active = false
+	_configuration_failed = false
+
+
+func _begin_loaded_configuration(
+	layout: Dictionary,
+	layout_path: String,
+	take_ownership: bool,
+) -> bool:
+	var errors := _validate_layout(layout, false)
+	if not errors.is_empty():
+		_errors = errors
+		_configuration_failed = true
 		return false
+	_configuration_layout = layout if take_ownership else layout.duplicate(true)
+	_configuration_instances = _configuration_layout.get("instances", []) as Array
+	if not take_ownership:
+		_configuration_instances = _configuration_instances.duplicate(true)
+		_configuration_instances.sort_custom(
+			func(left: Variant, right: Variant) -> bool:
+				return str((left as Dictionary).get("instance_id", "")) < str(
+					(right as Dictionary).get("instance_id", ""),
+				)
+		)
+		_configuration_layout["instances"] = _configuration_instances.duplicate(true)
+	_clear_scene_nodes()
+	_errors.clear()
+	_occlusion_layer = RUNTIME_OCCLUSION.new() as Node2D
+	_occlusion_layer.name = "FurnitureFootpointOcclusion"
+	_occlusion_layer.set("z_step", 1)
 	_layout_path = layout_path
+	_configuration_active = true
 	return true
+
+
+func continue_configuration() -> Dictionary:
+	if not _configuration_active:
+		return {
+			"ok": not _configuration_failed,
+			"complete": not _configuration_failed,
+			"failed": _configuration_failed,
+		}
+	if _configuration_index < _configuration_instances.size():
+		_build_instance(
+			_configuration_instances[_configuration_index] as Dictionary,
+		)
+		_configuration_index += 1
+		if not _errors.is_empty():
+			_configuration_active = false
+			_configuration_failed = true
+			return {"ok": false, "complete": false, "failed": true}
+		return {"ok": true, "complete": false, "failed": false}
+	add_child(_occlusion_layer)
+	_layout_state = _configuration_layout
+	set_debug_visible(_debug_visible)
+	_prepared_textures.clear()
+	_configuration_active = false
+	return {"ok": true, "complete": true, "failed": false}
 
 
 func set_layout_path(layout_path: String) -> bool:
@@ -185,19 +279,10 @@ func get_errors() -> PackedStringArray:
 
 
 func get_occupied_room_cells() -> Array[Vector2i]:
-	var occupied := {}
-	for item in _items:
-		var asset_id := str(item.get_meta("asset_id", ""))
-		var direction := str(item.get_meta("direction", "down"))
-		if not _definitions.has(asset_id):
-			continue
-		var definition := _definitions[asset_id] as Dictionary
-		for polygon in GEOMETRY.rotated_ground_contact_polygons(definition, direction):
-			var translated := PackedVector2Array()
-			for point in polygon:
-				translated.append(point + item.position)
-			for cell in _cells_overlapping_polygon(translated):
-				occupied[cell] = true
+	begin_occupied_room_cell_scan()
+	while not bool(continue_occupied_room_cell_scan(16).get("complete", false)):
+		pass
+	var occupied := get_scanned_occupied_room_cell_lookup()
 	var result: Array[Vector2i] = []
 	for cell_value in occupied.keys():
 		result.append(cell_value as Vector2i)
@@ -205,6 +290,147 @@ func get_occupied_room_cells() -> Array[Vector2i]:
 		return a.y < b.y or (a.y == b.y and a.x < b.x)
 	)
 	return result
+
+
+func begin_occupied_room_cell_scan() -> void:
+	_occupied_scan_state = {
+		"phase": "item",
+		"item_cursor": 0,
+		"polygons": [],
+		"polygon_cursor": 0,
+		"scan_cell": Vector2i.ZERO,
+		"scan_first_x": 0,
+		"scan_last": Vector2i.ZERO,
+		"polygon": PackedVector2Array(),
+		"occupied": {},
+		"occupied_cells": [],
+		"complete": false,
+	}
+
+
+# 单个 work item 最多解析一个家具（资产多边形上限为 64 点）、准备一个
+# 多边形，或测试一个 32px 格；调用方可据本帧余量决定本批工作数。
+func continue_occupied_room_cell_scan(max_work_items: int) -> Dictionary:
+	if _occupied_scan_state.is_empty():
+		begin_occupied_room_cell_scan()
+	var work_limit := clampi(max_work_items, 1, 16)
+	var processed := 0
+	while (
+		processed < work_limit
+		and not bool(_occupied_scan_state.get("complete", false))
+	):
+		match String(_occupied_scan_state.get("phase", "")):
+			"item":
+				var item_cursor := int(_occupied_scan_state.get("item_cursor", 0))
+				if item_cursor >= _items.size():
+					_occupied_scan_state["complete"] = true
+					continue
+				var item := _items[item_cursor]
+				var asset_id := str(item.get_meta("asset_id", ""))
+				if not _definitions.has(asset_id):
+					_occupied_scan_state["item_cursor"] = item_cursor + 1
+					processed += 1
+					continue
+				var definition := _definitions[asset_id] as Dictionary
+				_occupied_scan_state["polygons"] = (
+					GEOMETRY.rotated_ground_contact_polygons(
+						definition,
+						str(item.get_meta("direction", "down")),
+					)
+				)
+				_occupied_scan_state["polygon_cursor"] = 0
+				_occupied_scan_state["phase"] = "polygon"
+				processed += 1
+			"polygon":
+				var polygons := _occupied_scan_state.get("polygons", []) as Array
+				var polygon_cursor := int(
+					_occupied_scan_state.get("polygon_cursor", 0),
+				)
+				if polygon_cursor >= polygons.size():
+					_occupied_scan_state["item_cursor"] = int(
+						_occupied_scan_state.get("item_cursor", 0),
+					) + 1
+					_occupied_scan_state["phase"] = "item"
+					continue
+				var item := _items[int(_occupied_scan_state.get("item_cursor", 0))]
+				var translated := PackedVector2Array()
+				for point in polygons[polygon_cursor] as PackedVector2Array:
+					translated.append(point + item.position)
+				if translated.size() < 3:
+					_occupied_scan_state["polygon_cursor"] = polygon_cursor + 1
+					processed += 1
+					continue
+				var bounds := Rect2(translated[0], Vector2.ZERO)
+				for point in translated:
+					bounds = bounds.expand(point)
+				var first := Vector2i(
+					floori(bounds.position.x / GRID_SIZE),
+					floori(bounds.position.y / GRID_SIZE),
+				)
+				var last := Vector2i(
+					ceili(bounds.end.x / GRID_SIZE) - 1,
+					ceili(bounds.end.y / GRID_SIZE) - 1,
+				)
+				_occupied_scan_state["polygon"] = translated
+				_occupied_scan_state["scan_cell"] = first
+				_occupied_scan_state["scan_first_x"] = first.x
+				_occupied_scan_state["scan_last"] = last
+				_occupied_scan_state["phase"] = "cell"
+				processed += 1
+			"cell":
+				var cell := _occupied_scan_state.get("scan_cell") as Vector2i
+				var last := _occupied_scan_state.get("scan_last") as Vector2i
+				var top_left := Vector2(cell) * GRID_SIZE
+				var cell_polygon := PackedVector2Array([
+					top_left,
+					top_left + Vector2(GRID_SIZE, 0.0),
+					top_left + Vector2(GRID_SIZE, GRID_SIZE),
+					top_left + Vector2(0.0, GRID_SIZE),
+				])
+				for intersection in Geometry2D.intersect_polygons(
+					_occupied_scan_state.get("polygon") as PackedVector2Array,
+					cell_polygon,
+				):
+					if _polygon_area(intersection) > 0.01:
+						var occupied := _occupied_scan_state.get(
+							"occupied",
+							{},
+						) as Dictionary
+						if not occupied.has(cell):
+							occupied[cell] = true
+							(_occupied_scan_state.get(
+								"occupied_cells",
+								[],
+							) as Array).append(cell)
+						break
+				if cell.x >= last.x:
+					if cell.y >= last.y:
+						_occupied_scan_state["polygon_cursor"] = int(
+							_occupied_scan_state.get("polygon_cursor", 0),
+						) + 1
+						_occupied_scan_state["phase"] = "polygon"
+					else:
+						_occupied_scan_state["scan_cell"] = Vector2i(
+							int(_occupied_scan_state.get("scan_first_x", cell.x)),
+							cell.y + 1,
+						)
+				else:
+					_occupied_scan_state["scan_cell"] = cell + Vector2i.RIGHT
+				processed += 1
+			_:
+				_occupied_scan_state["complete"] = true
+	return {
+		"complete": bool(_occupied_scan_state.get("complete", false)),
+		"processed": processed,
+	}
+
+
+func get_scanned_occupied_room_cell_lookup() -> Dictionary:
+	return _occupied_scan_state.get("occupied", {}) as Dictionary
+
+
+func get_scanned_occupied_room_cells() -> Array:
+	return _occupied_scan_state.get("occupied_cells", []) as Array
 
 
 func create_agent_prop_projection(
@@ -287,12 +513,25 @@ func create_agent_prop_projection(
 
 func set_debug_visible(value: bool) -> void:
 	_debug_visible = value
+	if value and _debug_roots.is_empty():
+		for item in _items:
+			var asset_id := str(item.get_meta("asset_id", ""))
+			if not _definitions.has(asset_id):
+				continue
+			_build_debug(
+				item,
+				_definitions.get(asset_id) as Dictionary,
+				str(item.get_meta("direction", "down")),
+			)
 	for debug_root in _debug_roots:
 		if is_instance_valid(debug_root):
 			debug_root.visible = value
 
 
-func _validate_layout(layout: Dictionary) -> PackedStringArray:
+func _validate_layout(
+	layout: Dictionary,
+	validate_textures: bool = true,
+) -> PackedStringArray:
 	var errors := PackedStringArray()
 	var instances_value: Variant = layout.get("instances")
 	if not instances_value is Array:
@@ -329,7 +568,7 @@ func _validate_layout(layout: Dictionary) -> PackedStringArray:
 		var sprite_path := str(
 			(definition.get("visual_sprite", {}) as Dictionary).get(direction, "")
 		)
-		if _load_texture(sprite_path) == null:
+		if validate_textures and _load_texture(sprite_path) == null:
 			errors.append("%s 贴图无法加载：%s" % [instance_id, sprite_path])
 		if GEOMETRY.ground_contact_collision_shapes(definition, direction).is_empty():
 			errors.append("%s 没有连续碰撞形状" % instance_id)
@@ -511,7 +750,6 @@ func _build_instance(instance: Dictionary) -> void:
 		_errors.append("%s 没有连续碰撞形状" % instance_id)
 
 	_build_ground_shadows(item, definition, direction)
-	_build_debug(item, definition, direction)
 	_build_occluder(item, definition, direction, texture, anchor)
 	_build_visual_effects(item, definition, direction)
 
@@ -706,6 +944,7 @@ func _clear_scene_nodes() -> void:
 	_visual_effect_count = 0
 	_ground_shadow_count = 0
 	_occlusion_layer = null
+	_occupied_scan_state.clear()
 
 
 func _clear_runtime() -> void:
@@ -714,6 +953,7 @@ func _clear_runtime() -> void:
 	_errors.clear()
 	_layout_state.clear()
 	_layout_path = ""
+	_prepared_textures.clear()
 
 
 func _base_depth_for(local_y: float) -> int:
@@ -739,6 +979,9 @@ func _read_json(path: String) -> Dictionary:
 
 
 func _load_texture(path: String) -> Texture2D:
+	var prepared := _prepared_textures.get(path) as Texture2D
+	if prepared != null:
+		return prepared
 	if ResourceLoader.exists(path, "Texture2D"):
 		var imported := ResourceLoader.load(path, "Texture2D") as Texture2D
 		if imported != null:

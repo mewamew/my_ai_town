@@ -3,6 +3,12 @@
   "note": "确属必要的动态调用，逐项记 reason（如：Callable 实例调用，非字符串派发 / 方法名来自配置）。标识与基线一致：path + func + call。",
   "entries": [
     {
+      "path": "game/agent/model/UnavailableModelProvider.gd",
+      "func": "request_decision",
+      "call": "variable:.call({ \"ok\": false, \"errorCode\": ERROR_CODE, \"retryable\": false, \"errors\": [\"当前模型不可用，请先在模型设置中重新配置。\"], })",
+      "reason": "恢复期间使用不可用模型占位服务，必须通过 ModelProvider 的 Callable 回调报告不可用状态。"
+    },
+    {
       "path": "game/ui/resident_model_assignment/runtime/ResidentModelAssignmentService.gd",
       "func": "_apply_draft",
       "call": "variable:.call( _draft.duplicate(true), bindings.duplicate(true), )",
@@ -567,6 +573,96 @@
       "func": "send",
       "call": "string:Callable(world, \"resident_display_name\")",
       "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
+      },
+      {
+      "path": "game/ui/resident_model_assignment/runtime/ResidentModelAssignmentService.gd",
+      "func": "_apply_draft",
+      "call": "string:.call( \"validate_resident_bindings\", bindings, )",
+      "reason": "提交前自动迁移失效模型绑定时，复用注入的 Provider 公共校验契约；服务类型可由正式运行与测试替身提供。"
+    },
+    {
+      "path": "game/world/presentation/game_flow/GameFlowHost.gd",
+      "func": "_start_formal_continue",
+      "call": "string:.call( \"request_health_check\", bindings.duplicate(true), Callable(self, \"_on_formal_continue_provider_health_completed\").bind( generation, discovery.duplicate(true), world_data.duplicate(true), identities.duplicate(true), bindings.duplicate(true), resident_names.duplicate(), provider_runtime.duplicate(true), {}, ), )",
+      "reason": "正式存档恢复将当前 Provider 配置注入健康检查回调，用于在旧绑定失效时自动迁移；宿主必须兼容正式服务与隔离测试服务。"
+    },
+    {
+      "path": "game/world/presentation/game_flow/GameFlowHost.gd",
+      "func": "_continue_binding_repair_candidates",
+      "call": "string:.call(\"list_available_models\")",
+      "reason": "存档模型绑定自动迁移需要读取当前注入 Provider 的可用候选；不读取存档中的凭据或密钥。"
+    },
+    {
+      "path": "game/world/presentation/game_flow/GameFlowHost.gd",
+      "func": "_probe_formal_continue_binding_repair_candidate",
+      "call": "string:.call( \"request_health_check\", [candidate.duplicate(true)], Callable(self, \"_on_formal_continue_binding_repair_health_completed\").bind( original_result.duplicate(true), generation, discovery.duplicate(true), world_data.duplicate(true), identities.duplicate(true), bindings.duplicate(true), resident_names.duplicate(), provider_runtime.duplicate(true), candidates.duplicate(true), candidate_index, ), )",
+      "reason": "存档恢复会逐个真实检查候选模型，成功后自动替换失效绑定并继续入镇；回调绑定恢复代次以丢弃迟到结果。"
+    },
+    {
+      "path": "game/world/presentation/game_flow/GameFlowHost.gd",
+      "func": "_probe_formal_continue_binding_repair_candidate",
+      "call": "string:Callable(self, \"_on_formal_continue_binding_repair_health_completed\")",
+      "reason": "自动迁移候选模型的异步健康检查需要回到恢复宿主；方法名固定且不来自存档或外部输入。"
+    },
+    {
+      "path": "game/world/presentation/session/TownStartupSaveCatalog.gd",
+      "func": "_inspect_manifest",
+      "call": "string:.call( \"read_reference\", _required_string(world_log.get(\"snapshot_ref\")), _required_string(world_log.get(\"snapshot_sha256\")), )",
+      "reason": "启动目录通过已校验的存档 Store 契约读取 world log 引用；方法名固定，不来自存档或外部输入。"
+    },
+    {
+      "path": "game/world/presentation/session/TownSaveReconciliationService.gd",
+      "func": "inspect",
+      "call": "string:.call(\"list_incomplete\", slot_id)",
+      "reason": "事务协调服务调用配置时逐项验证过的 Store 契约；方法名固定，不来自存档或外部输入。"
+    },
+    {
+      "path": "game/world/presentation/session/TownSaveReconciliationService.gd",
+      "func": "inspect",
+      "call": "string:.call(\"list_published\", slot_id)",
+      "reason": "事务协调服务调用配置时逐项验证过的 Store 契约；方法名固定，不来自存档或外部输入。"
+    },
+    {
+      "path": "game/world/presentation/session/TownSaveReconciliationService.gd",
+      "func": "inspect",
+      "call": "string:.call( \"load_snapshot\", context, )",
+      "reason": "事务协调服务调用配置时验证过的 Agent Store 契约；方法名固定，不来自存档或外部输入。"
+    },
+    {
+      "path": "game/world/presentation/session/TownSaveReconciliationService.gd",
+      "func": "execute",
+      "call": "string:.call(\"begin_slot_transaction\", slot_id)",
+      "reason": "事务协调执行器通过固定 Store 契约取得槽位锁，避免诊断与执行之间发生并发变化。"
+    },
+    {
+      "path": "game/world/presentation/session/TownSaveReconciliationService.gd",
+      "func": "_release_and_return",
+      "call": "string:.call(\"end_slot_transaction\", lease_token)",
+      "reason": "事务协调执行器在所有出口通过固定 Store 契约释放已取得的槽位锁。"
+    },
+    {
+      "path": "game/world/presentation/session/TownSaveReconciliationService.gd",
+      "func": "execute",
+      "call": "string:.call( \"write_intent_stage\", item.get(\"context\", {}) as Dictionary, kind, String(item.get(\"intentId\", \"\")), \"save_reconciled\" if kind == \"save\" else \"restore_reconciled\", { \"diagnosticId\": String(plan.get(\"diagnosticId\", \"\")), \"previousState\": String(item.get(\"state\", \"\")), \"resolution\": String(item.get(\"resolution\", \"\")), }, )",
+      "reason": "事务协调执行器只向固定 Store 契约追加已登记的协调终态；状态由受控 save/restore 类型二选一。"
+    },
+    {
+      "path": "game/world/presentation/session/TownSaveReconciliationService.gd",
+      "func": "execute",
+      "call": "string:.call( \"read_latest_intent\", item.get(\"context\", {}) as Dictionary, kind, String(item.get(\"intentId\", \"\")), )",
+      "reason": "事务协调执行器通过固定 Store 契约确认计划项是否已经封口，从而安全续跑同一计划。"
+    },
+    {
+      "path": "game/world/presentation/session/TownSaveReconciliationService.gd",
+      "func": "_read_reference_value",
+      "call": "string:.call(\"read_reference\", reference, sha256)",
+      "reason": "事务协调服务通过固定 Store 契约校验 World、world log 与 session config 的引用和哈希。"
+    },
+    {
+      "path": "game/world/presentation/session/TownSaveReconciliationService.gd",
+      "func": "_published_pair_is_complete",
+      "call": "string:.call( \"read_world_log_snapshot\", String(world_log.get(\"snapshot_ref\", \"\")), String(world_log.get(\"snapshot_sha256\", \"\")), )",
+      "reason": "事务协调服务通过固定 Store 契约恢复分段 world log，并交给正式日志 Store 校验完整结构。"
     }
   ]
 }

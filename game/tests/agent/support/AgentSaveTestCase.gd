@@ -169,11 +169,11 @@ func _paired_initialization(
 			"summary": "碰头的地方",
 		},
 		{
-			"name": "共同工坊",
-			"type": "铺面",
+			"name": "共同住处",
+			"type": "住家",
 			"owner": owner_name,
 			"owner_resident_id": owner_id,
-			"summary": "一起做工的地方",
+			"summary": "共同生活的地方",
 		},
 	]
 	return initialization

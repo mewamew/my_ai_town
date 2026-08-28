@@ -5,6 +5,7 @@ extends RefCounted
 const FORMAL_CATALOG := preload(
 	"res://world/presentation/session/TownResidentCatalog.gd"
 )
+const POPULATION_RULES := preload("res://world/runtime/TownPopulationRules.gd")
 
 
 static func build_view_model(provider_id: String, model_id: String) -> Dictionary:
@@ -20,13 +21,15 @@ static func build_view_model(provider_id: String, model_id: String) -> Dictionar
 	var data := view_model.get("data", {}) as Dictionary
 	var residents := data.get("residents", []) as Array
 	var selected_ids: Array[String] = []
-	for index in mini(15, residents.size()):
+	for index in mini(POPULATION_RULES.DEFAULT_RESIDENT_COUNT, residents.size()):
 		selected_ids.append(String((residents[index] as Dictionary).get("resident_id", "")))
 	data["capabilityMode"] = "development"
 	data["source"] = "placeholder"
 	data["formalReady"] = false
 	data["internalPlaytest"] = true
-	data["selection_limit"] = 15
+	data["selection_minimum"] = POPULATION_RULES.MIN_RESIDENT_COUNT
+	data["selection_default"] = POPULATION_RULES.DEFAULT_RESIDENT_COUNT
+	data["selection_limit"] = POPULATION_RULES.MAX_RESIDENT_COUNT
 	data["connection_label"] = "开发内测 · 显式 placeholder · Save/Continue 禁用"
 	data["resident_catalog_status"] = "development-placeholder"
 	data["selected_resident_ids"] = selected_ids.duplicate()
@@ -57,13 +60,19 @@ static func update_confirmation_payload(
 	draft_revision: int,
 ) -> void:
 	var selected := data.get("selected_resident_ids", []) as Array
+	if not POPULATION_RULES.supports_resident_count(selected.size()):
+		data["confirmation_payload"] = {}
+		return
 	var ordered_ids: Array[String] = []
 	for resident_value: Variant in data.get("residents", []) as Array:
 		var resident_id := String((resident_value as Dictionary).get("resident_id", ""))
 		if selected.has(resident_id):
 			ordered_ids.append(resident_id)
+	if ordered_ids.size() != selected.size():
+		data["confirmation_payload"] = {}
+		return
 	var slots: Array[Dictionary] = []
-	for index in mini(15, ordered_ids.size()):
+	for index in ordered_ids.size():
 		slots.append({
 			"residentId": ordered_ids[index],
 			"spaceId": "home_%02d" % (index + 1),
@@ -97,7 +106,6 @@ static func build_catalog(world_data: Dictionary, view_model: Dictionary) -> Dic
 		if String(occupation.get("workplacePlace", "")) == "市集铺面":
 			occupation["workplacePlace"] = "独立市集"
 		residents.append(entry)
-	var formal_catalog := FORMAL_CATALOG.load_catalog()
 	return {
 		"schemaVersion": 1,
 		"worldId": String(world_data.get("worldId", "")),
@@ -120,12 +128,9 @@ static func build_catalog(world_data: Dictionary, view_model: Dictionary) -> Dic
 					"doing": "刚刚抵达小镇",
 				},
 			},
-		},
-		"residents": residents,
-		"shopOwnerCandidates": (
-			formal_catalog.get("shopOwnerCandidates", {}) as Dictionary
-		).duplicate(true),
-	}
+			},
+			"residents": residents,
+		}
 
 
 static func default_model_id(provider_id: String) -> String:

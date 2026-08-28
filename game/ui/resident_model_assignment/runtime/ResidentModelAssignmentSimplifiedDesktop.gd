@@ -644,7 +644,7 @@ func _build_completion_modal() -> void:
 		(
 			"这位新居民的模型已经配置完成"
 			if single_resident_mode
-			else "15 位居民的模型均已配置完成"
+			else "全部居民的模型均已配置完成"
 		),
 		18,
 		HORIZONTAL_ALIGNMENT_CENTER,

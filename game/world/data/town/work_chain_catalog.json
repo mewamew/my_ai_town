@@ -229,6 +229,7 @@
       "downstreamOccupationIds": ["occupation_botanist"],
       "noTaskFallback": "normal_life",
       "staffingEntryRule": "helper_only",
+      "helperTaskCapabilities": ["library.return", "library.accession"],
       "vacancyEffect": "onsite_reading_remains_and_loans_returns_and_assistance_pause"
     },
     {
@@ -253,7 +254,8 @@
       "downstreamOccupationIds": ["occupation_cafe_worker", "occupation_delivery_worker"],
       "noTaskFallback": "normal_life",
       "staffingEntryRule": "helper_only",
-      "vacancyEffect": "public_meal_service_pauses_and_residents_use_personal_or_retail_food"
+      "helperTaskCapabilities": ["food.production", "food.cleanup"],
+      "vacancyEffect": "formal_public_meal_service_pauses_and_hungry_residents_use_communal_simple_meals"
     },
     {
       "occupationId": "occupation_craftsperson",
@@ -301,6 +303,7 @@
       "downstreamOccupationIds": ["occupation_delivery_worker", "occupation_warehouse_keeper", "occupation_flower_vendor", "occupation_botanist", "occupation_clinic_practitioner"],
       "noTaskFallback": "normal_life",
       "staffingEntryRule": "helper_only",
+      "helperTaskCapabilities": ["garden.care", "garden.harvest", "cargo.direct_handoff"],
       "vacancyEffect": "garden_state_continues_changing_without_care_and_harvest_windows_may_be_missed"
     },
     {

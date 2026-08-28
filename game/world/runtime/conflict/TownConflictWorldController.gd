@@ -13,6 +13,7 @@ const CONFLICT_RUNTIME := preload(
 	"res://world/runtime/conflict/TownConflictRuntime.gd"
 )
 const DEFAULT_MAX_ATTACK_DISTANCE_PX := 144.0
+const EXTERNAL_MEDICAL_AID_PLACE_ID := "镇外医疗援助"
 const AVATAR_AREA_RANGE_BY_KIND := {
 	"unarmed": 160.0,
 	"avatar_susanoo_strike": 260.0,
@@ -423,6 +424,20 @@ func begin_treatment(actor_id: String, place_id: String) -> Dictionary:
 	var result := _runtime.begin_treatment(actor_id,
 		place_id,
 		_absolute_minute(),) as Dictionary
+	return _publish_result(result)
+
+
+func begin_external_treatment(actor_id: String) -> Dictionary:
+	if not _configured:
+		return _failure("CONFLICT_CONTROLLER_NOT_CONFIGURED")
+	var actor := _actor_snapshot(actor_id)
+	if actor.is_empty() or not bool(actor.get("present", false)):
+		return _failure("CONFLICT_TREATMENT_ACTOR_NOT_PRESENT")
+	var result := _runtime.begin_treatment(
+		actor_id,
+		EXTERNAL_MEDICAL_AID_PLACE_ID,
+		_absolute_minute(),
+	) as Dictionary
 	return _publish_result(result)
 
 

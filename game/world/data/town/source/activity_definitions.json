@@ -156,6 +156,16 @@
       "poseFamily": "work"
     },
     {
+      "activityId": "activity_clinic_self_care",
+      "label": "基础自我处理",
+      "kind": "need",
+      "tags": ["care.self", "care.visit"],
+      "durationMinutes": 20,
+      "effects": {"energy": 2, "stress": -4},
+      "interruptible": true,
+      "poseFamily": "service"
+    },
+    {
       "activityId": "activity_clinic_receive_patient",
       "label": "在问诊位接诊",
       "kind": "work",
@@ -212,6 +222,16 @@
       "tags": ["food.prepare", "food.serve"],
       "durationMinutes": 30,
       "effects": {"energy": -4},
+      "interruptible": true,
+      "poseFamily": "work"
+    },
+    {
+      "activityId": "activity_dining_prepare_simple_meal",
+      "label": "自行做简餐",
+      "kind": "need",
+      "tags": ["food.prepare", "food.eat", "self_service.meal"],
+      "durationMinutes": 20,
+      "effects": {"energy": -2, "satiety": 24},
       "interruptible": true,
       "poseFamily": "work"
     },

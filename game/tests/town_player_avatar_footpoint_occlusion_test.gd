@@ -81,6 +81,7 @@ func _run() -> void:
 
 	town.queue_free()
 	await process_frame
+	await process_frame
 	_finish()
 
 
@@ -155,7 +156,7 @@ func _test_player_collision_contact_filter(town: Node) -> void:
 
 func _test_home_a_bedroom_corner_release(town: Node) -> void:
 	var player := town.get_node("Player") as CharacterBody2D
-	var room := (town.get("_interior_roots") as Dictionary).get("home_a") as Node2D
+	var room: Node2D = await town.call("_prepare_interior_room", "home_a")
 	_expect(room != null, "home template A exists for bedroom corner clearance")
 	if room == null:
 		return
@@ -255,6 +256,7 @@ func _finish() -> void:
 func _quit_after_cleanup(exit_code: int) -> void:
 	await process_frame
 	await process_frame
+	await create_timer(0.2).timeout
 	quit(exit_code)
 
 

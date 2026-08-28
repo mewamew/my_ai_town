@@ -1,0 +1,19 @@
+{
+	"maxSequence": 16,
+	"parentTimelineId": "",
+	"readState": {},
+	"schema": "town-world-log-snapshot",
+	"schemaVersion": 1,
+	"segments": [
+		{
+			"endSequence": 16,
+			"recordCount": 16,
+			"segmentRef": "world_log_segments/018d53f1668bff2a5c3a8d0e70ced42e77b841dd9e6179a31c14b5d9bc2138fd.json",
+			"segmentSha256": "018d53f1668bff2a5c3a8d0e70ced42e77b841dd9e6179a31c14b5d9bc2138fd",
+			"startSequence": 1
+		}
+	],
+	"storageSchemaVersion": 1,
+	"timelineId": "world-log-timeline-1",
+	"worldRevision": 454
+}

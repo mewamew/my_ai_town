@@ -1,0 +1,3141 @@
+{
+	"savedAt": {
+		"clock": "08:00",
+		"day": 1,
+		"period": "上午"
+	},
+	"schema": "town-world-save",
+	"schemaVersion": 2,
+	"state": {
+		"activityRoutines": {
+			"routines": [],
+			"schemaVersion": 1
+		},
+		"activityRuntime": {
+			"executions": [],
+			"generation": 0,
+			"reservations": [],
+			"revision": 0,
+			"schemaVersion": 1,
+			"sourceFingerprint": "584ba4b89019f92378131a56bc380e0c2dec5e460d977d7050484996a9c57a9f"
+		},
+		"activityWorkTaskBindings": {},
+		"animalFacts": {
+			"bird_heihei": {
+				"animal_id": "bird_heihei",
+				"display_name": "啾啾",
+				"exists": true,
+				"expires_at": -1,
+				"generation": 1,
+				"place_id": "小镇道路",
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 5190.0,
+					"y": 850.0
+				},
+				"public_attention": false,
+				"source_event_ids": [],
+				"source_revision": 0,
+				"species": "bird",
+				"updated_at": 480
+			},
+			"bird_lanling": {
+				"animal_id": "bird_lanling",
+				"display_name": "蓝铃",
+				"exists": true,
+				"expires_at": -1,
+				"generation": 1,
+				"place_id": "中心广场",
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3260.0,
+					"y": 1860.0
+				},
+				"public_attention": false,
+				"source_event_ids": [],
+				"source_revision": 0,
+				"species": "bird",
+				"updated_at": 480
+			},
+			"bird_xiaoyu": {
+				"animal_id": "bird_xiaoyu",
+				"display_name": "小羽",
+				"exists": true,
+				"expires_at": -1,
+				"generation": 1,
+				"place_id": "社区花园",
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3260.0,
+					"y": 2550.0
+				},
+				"public_attention": false,
+				"source_event_ids": [],
+				"source_revision": 0,
+				"species": "bird",
+				"updated_at": 480
+			},
+			"cat_huajuan": {
+				"animal_id": "cat_huajuan",
+				"display_name": "花卷",
+				"exists": true,
+				"expires_at": -1,
+				"generation": 1,
+				"place_id": "小镇道路",
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 4740.0,
+					"y": 1492.53344726562
+				},
+				"public_attention": false,
+				"source_event_ids": [],
+				"source_revision": 0,
+				"species": "cat",
+				"updated_at": 480
+			},
+			"cat_mikan": {
+				"animal_id": "cat_mikan",
+				"display_name": "蜜柑",
+				"exists": true,
+				"expires_at": -1,
+				"generation": 1,
+				"place_id": "中心广场",
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3012.0,
+					"y": 2020.30017089844
+				},
+				"public_attention": false,
+				"source_event_ids": [],
+				"source_revision": 0,
+				"species": "cat",
+				"updated_at": 480
+			},
+			"cat_sumi": {
+				"animal_id": "cat_sumi",
+				"display_name": "小墨",
+				"exists": true,
+				"expires_at": -1,
+				"generation": 1,
+				"place_id": "小镇道路",
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 1771.23327636719,
+					"y": 2316.0
+				},
+				"public_attention": false,
+				"source_event_ids": [],
+				"source_revision": 0,
+				"species": "cat",
+				"updated_at": 480
+			}
+		},
+		"announcements": [],
+		"cargoInventory": {
+			"archiveSummary": {
+				"cancelledLotCount": 0,
+				"deliveredLotCount": 0,
+				"quantityByItem": {},
+				"terminalLotCount": 0
+			},
+			"cargoLots": [],
+			"inventories": {},
+			"lotSequence": 0,
+			"schemaVersion": 1
+		},
+		"communityBulletin": {
+			"announcement_sequence": 0,
+			"announcements": [],
+			"history_start_sequence": 1,
+			"knowledge_by_resident": {},
+			"schema": "town-community-bulletin",
+			"schema_version": 3
+		},
+		"conflictState": {
+			"activeConflictByActor": {},
+			"conflictSequence": 0,
+			"conflicts": {},
+			"eventSequence": 0,
+			"events": [],
+			"injuries": {},
+			"pairCooldownUntil": {},
+			"requestResults": {},
+			"revision": 0,
+			"schemaVersion": 1,
+			"settings": {
+				"heavyTreatmentMinutes": 120,
+				"lightRecoveryMinutes": 180,
+				"maxBrawlRounds": 4,
+				"pairCooldownMinutes": 360,
+				"tensionExpiryMinutes": 180
+			},
+			"tensionByPair": {},
+			"tensionSequence": 0,
+			"tensions": {}
+		},
+		"conversations": [],
+		"environment": {
+			"day": 1,
+			"eventSequence": 0,
+			"forcedWeatherRolls": [],
+			"minuteOfDay": 480,
+			"nextNaturalWeatherCheckAbsoluteMinute": 570,
+			"realSecondAccumulator": 0.283333333333335,
+			"rngState": "7799623905410401337",
+			"weather": "晴天"
+		},
+		"eventLog": [],
+		"indoorLayoutOverrides": [],
+		"occupationServices": {
+			"accessionRecords": [],
+			"accessionSequence": 0,
+			"archiveSummary": {
+				"accessions": {
+					"count": 0
+				},
+				"requests": {
+					"cancelledCount": 0,
+					"completedCount": 0,
+					"countByKind": {},
+					"terminalCount": 0
+				},
+				"resolvedFollowUps": {
+					"count": 0
+				},
+				"returnedLoans": {
+					"count": 0,
+					"countByBook": {}
+				}
+			},
+			"bookAvailableCopies": {
+				"book_plant_reference": 1,
+				"book_practical_crafts": 1,
+				"book_town_history": 1
+			},
+			"diningOrderCompletionByResident": {},
+			"dirtyDishCount": 0,
+			"equipmentConditions": {},
+			"followUpSequence": 0,
+			"loanSequence": 0,
+			"loans": [],
+			"requestSequence": 0,
+			"requestTerminalSequence": 0,
+			"requests": [],
+			"scheduledFollowUps": [],
+			"schemaVersion": 1,
+			"usedCafeTableCount": 0
+		},
+		"owners": {
+			"东南街住宅": "resident_mi_ya_01",
+			"北街一号住宅": "resident_hanako_01",
+			"北街三号住宅": "resident_xu_zhao_01",
+			"北街二号住宅": "resident_lin_lan_01",
+			"南街一号住宅": "resident_su_tang_01",
+			"南街三号住宅": "resident_xie_mian_01",
+			"南街二号住宅": "resident_lu_qingzhou_01",
+			"南街五号住宅": "resident_wen_xu_01",
+			"南街四号住宅": "resident_bai_zhi_01",
+			"工作坊": "resident_luo_yuan_01",
+			"独立市集": "resident_tang_xiaoman_01",
+			"码头仓库": "resident_zhou_jiming_01",
+			"花房咖啡馆": "resident_hanako_01",
+			"西街一号住宅": "resident_cheng_yan_01",
+			"西街三号住宅": "resident_tang_xiaoman_01",
+			"西街二号住宅": "resident_zhou_jiming_01",
+			"西街五号住宅": "resident_jiang_cheng_01",
+			"西街六号住宅": "resident_qiao_yiming_01",
+			"西街四号住宅": "resident_luo_yuan_01"
+		},
+		"placeServiceStates": {
+			"公共食堂": {
+				"expires_at": -1,
+				"helper_activity_id": "activity_dining_serve_meal",
+				"open": true,
+				"owner_id": "resident_su_tang_01",
+				"pending_request_ids": [],
+				"place_id": "公共食堂",
+				"pressure_id": "service-pressure:公共食堂",
+				"request_activity_ids": [
+					"activity_dining_collect_meal"
+				],
+				"service_capacity": 4,
+				"service_occupation_id": "occupation_dining_operator",
+				"source_revision": 0,
+				"updated_at": -1
+			},
+			"图书馆": {
+				"expires_at": -1,
+				"helper_activity_id": "activity_library_staff_checkout",
+				"open": false,
+				"owner_id": "",
+				"pending_request_ids": [],
+				"place_id": "图书馆",
+				"pressure_id": "service-pressure:图书馆",
+				"request_activity_ids": [
+					"activity_library_checkout"
+				],
+				"service_capacity": 1,
+				"service_occupation_id": "occupation_librarian",
+				"source_revision": 0,
+				"updated_at": -1
+			},
+			"工作坊": {
+				"expires_at": -1,
+				"helper_activity_id": "activity_workshop_craft_item",
+				"open": true,
+				"owner_id": "resident_luo_yuan_01",
+				"pending_request_ids": [],
+				"place_id": "工作坊",
+				"pressure_id": "service-pressure:工作坊",
+				"request_activity_ids": [
+					"activity_workshop_handoff_repair"
+				],
+				"service_capacity": 1,
+				"service_occupation_id": "occupation_craftsperson",
+				"source_revision": 0,
+				"updated_at": -1
+			},
+			"花房咖啡馆": {
+				"expires_at": -1,
+				"helper_activity_id": "activity_cafe_receive_guests",
+				"open": true,
+				"owner_id": "resident_hanako_01",
+				"pending_request_ids": [],
+				"place_id": "花房咖啡馆",
+				"pressure_id": "service-pressure:花房咖啡馆",
+				"request_activity_ids": [
+					"activity_cafe_order"
+				],
+				"service_capacity": 1,
+				"service_occupation_id": "occupation_cafe_worker",
+				"source_revision": 0,
+				"updated_at": -1
+			},
+			"诊所": {
+				"expires_at": -1,
+				"helper_activity_id": "activity_clinic_receive_patient",
+				"open": true,
+				"owner_id": "resident_bai_zhi_01",
+				"pending_request_ids": [],
+				"place_id": "诊所",
+				"pressure_id": "service-pressure:诊所",
+				"request_activity_ids": [
+					"activity_clinic_consult",
+					"activity_clinic_examination"
+				],
+				"service_capacity": 1,
+				"service_occupation_id": "occupation_clinic_practitioner",
+				"source_revision": 0,
+				"updated_at": -1
+			}
+		},
+		"playerAvatar": {
+			"conversation": null,
+			"conversationId": "",
+			"currentPlace": "南入口",
+			"doing": "刚刚抵达小镇",
+			"name": "旅行者",
+			"nearby": [],
+			"position": {
+				"__townWorldType": "Vector2",
+				"x": 3204.0,
+				"y": 3180.0
+			},
+			"regionId": "outdoor_south_gate_01",
+			"residentId": "person_7f3a91c2d8e4",
+			"spaceId": "town_outdoor"
+		},
+		"privateMessages": {
+			"archiveSummary": {
+				"countByKind": {},
+				"deliveredCount": 0
+			},
+			"messages": [],
+			"schemaVersion": 4,
+			"sequence": 0
+		},
+		"productionState": {
+			"archivedResearchCount": 0,
+			"fishing": {
+				"cooldownUntilMinute": 480,
+				"gearAvailable": true,
+				"lastAttemptMinute": -1,
+				"lastResult": "none",
+				"regionId": "outdoor_harbor_01"
+			},
+			"gardenPlots": [
+				{
+					"growth": 55,
+					"harvestUnits": 0,
+					"moisture": 46,
+					"plotId": "garden_plot_center",
+					"regionId": "outdoor_garden_01",
+					"weedLevel": 1
+				},
+				{
+					"growth": 55,
+					"harvestUnits": 0,
+					"moisture": 28,
+					"plotId": "garden_plot_east",
+					"regionId": "outdoor_garden_01",
+					"weedLevel": 2
+				},
+				{
+					"growth": 100,
+					"harvestUnits": 2,
+					"moisture": 72,
+					"plotId": "garden_plot_west",
+					"regionId": "outdoor_garden_01",
+					"weedLevel": 0
+				}
+			],
+			"lastAdvancedMinute": 480,
+			"researchArchive": [],
+			"researchProjects": [
+				{
+					"accession": {},
+					"createdAtMinute": 480,
+					"observation": {},
+					"projectId": "plant-research-1",
+					"question": "garden_plot_east 的湿度和杂草变化是否需要调整照料方式",
+					"record": {},
+					"requesterResidentId": "resident_lin_lan_01",
+					"sourceKind": "abnormal_plant",
+					"stage": "question",
+					"updatedAtMinute": 480,
+					"verification": {}
+				}
+			],
+			"researchSequence": 1,
+			"schemaVersion": 1
+		},
+		"residentConditions": {
+			"conditionSequence": 0,
+			"eventSequence": 0,
+			"residents": {
+				"resident_bai_zhi_01": {
+					"activeExposure": {},
+					"conditionRollState": {
+						"kindCooldowns": {},
+						"lastCompletedSleepActionId": "",
+						"nextAmbientCheckAtMinute": null,
+						"processedTriggerIds": [],
+						"randomState": 876349978
+					},
+					"conditions": [],
+					"residentId": "resident_bai_zhi_01",
+					"revision": 1
+				},
+				"resident_cheng_yan_01": {
+					"activeExposure": {},
+					"conditionRollState": {
+						"kindCooldowns": {},
+						"lastCompletedSleepActionId": "",
+						"nextAmbientCheckAtMinute": null,
+						"processedTriggerIds": [],
+						"randomState": 781887728
+					},
+					"conditions": [],
+					"residentId": "resident_cheng_yan_01",
+					"revision": 1
+				},
+				"resident_hanako_01": {
+					"activeExposure": {},
+					"conditionRollState": {
+						"kindCooldowns": {},
+						"lastCompletedSleepActionId": "",
+						"nextAmbientCheckAtMinute": null,
+						"processedTriggerIds": [],
+						"randomState": 1935889558
+					},
+					"conditions": [],
+					"residentId": "resident_hanako_01",
+					"revision": 1
+				},
+				"resident_jiang_cheng_01": {
+					"activeExposure": {},
+					"conditionRollState": {
+						"kindCooldowns": {},
+						"lastCompletedSleepActionId": "",
+						"nextAmbientCheckAtMinute": null,
+						"processedTriggerIds": [],
+						"randomState": 1180758289
+					},
+					"conditions": [],
+					"residentId": "resident_jiang_cheng_01",
+					"revision": 1
+				},
+				"resident_lin_lan_01": {
+					"activeExposure": {},
+					"conditionRollState": {
+						"kindCooldowns": {},
+						"lastCompletedSleepActionId": "",
+						"nextAmbientCheckAtMinute": null,
+						"processedTriggerIds": [],
+						"randomState": 874789089
+					},
+					"conditions": [],
+					"residentId": "resident_lin_lan_01",
+					"revision": 1
+				},
+				"resident_lu_qingzhou_01": {
+					"activeExposure": {},
+					"conditionRollState": {
+						"kindCooldowns": {},
+						"lastCompletedSleepActionId": "",
+						"nextAmbientCheckAtMinute": null,
+						"processedTriggerIds": [],
+						"randomState": 1392351607
+					},
+					"conditions": [],
+					"residentId": "resident_lu_qingzhou_01",
+					"revision": 1
+				},
+				"resident_luo_yuan_01": {
+					"activeExposure": {},
+					"conditionRollState": {
+						"kindCooldowns": {},
+						"lastCompletedSleepActionId": "",
+						"nextAmbientCheckAtMinute": null,
+						"processedTriggerIds": [],
+						"randomState": 1322061392
+					},
+					"conditions": [],
+					"residentId": "resident_luo_yuan_01",
+					"revision": 1
+				},
+				"resident_mi_ya_01": {
+					"activeExposure": {},
+					"conditionRollState": {
+						"kindCooldowns": {},
+						"lastCompletedSleepActionId": "",
+						"nextAmbientCheckAtMinute": null,
+						"processedTriggerIds": [],
+						"randomState": 1606492081
+					},
+					"conditions": [],
+					"residentId": "resident_mi_ya_01",
+					"revision": 1
+				},
+				"resident_qiao_yiming_01": {
+					"activeExposure": {},
+					"conditionRollState": {
+						"kindCooldowns": {},
+						"lastCompletedSleepActionId": "",
+						"nextAmbientCheckAtMinute": null,
+						"processedTriggerIds": [],
+						"randomState": 1007872216
+					},
+					"conditions": [],
+					"residentId": "resident_qiao_yiming_01",
+					"revision": 1
+				},
+				"resident_su_tang_01": {
+					"activeExposure": {},
+					"conditionRollState": {
+						"kindCooldowns": {},
+						"lastCompletedSleepActionId": "",
+						"nextAmbientCheckAtMinute": null,
+						"processedTriggerIds": [],
+						"randomState": 1892416117
+					},
+					"conditions": [],
+					"residentId": "resident_su_tang_01",
+					"revision": 1
+				},
+				"resident_tang_xiaoman_01": {
+					"activeExposure": {},
+					"conditionRollState": {
+						"kindCooldowns": {},
+						"lastCompletedSleepActionId": "",
+						"nextAmbientCheckAtMinute": null,
+						"processedTriggerIds": [],
+						"randomState": 249892730
+					},
+					"conditions": [],
+					"residentId": "resident_tang_xiaoman_01",
+					"revision": 1
+				},
+				"resident_wen_xu_01": {
+					"activeExposure": {},
+					"conditionRollState": {
+						"kindCooldowns": {},
+						"lastCompletedSleepActionId": "",
+						"nextAmbientCheckAtMinute": null,
+						"processedTriggerIds": [],
+						"randomState": 1105574074
+					},
+					"conditions": [],
+					"residentId": "resident_wen_xu_01",
+					"revision": 1
+				},
+				"resident_xie_mian_01": {
+					"activeExposure": {},
+					"conditionRollState": {
+						"kindCooldowns": {},
+						"lastCompletedSleepActionId": "",
+						"nextAmbientCheckAtMinute": null,
+						"processedTriggerIds": [],
+						"randomState": 946982958
+					},
+					"conditions": [],
+					"residentId": "resident_xie_mian_01",
+					"revision": 1
+				},
+				"resident_xu_zhao_01": {
+					"activeExposure": {},
+					"conditionRollState": {
+						"kindCooldowns": {},
+						"lastCompletedSleepActionId": "",
+						"nextAmbientCheckAtMinute": null,
+						"processedTriggerIds": [],
+						"randomState": 1772336640
+					},
+					"conditions": [],
+					"residentId": "resident_xu_zhao_01",
+					"revision": 1
+				},
+				"resident_zhou_jiming_01": {
+					"activeExposure": {},
+					"conditionRollState": {
+						"kindCooldowns": {},
+						"lastCompletedSleepActionId": "",
+						"nextAmbientCheckAtMinute": null,
+						"processedTriggerIds": [],
+						"randomState": 1891011143
+					},
+					"conditions": [],
+					"residentId": "resident_zhou_jiming_01",
+					"revision": 1
+				}
+			},
+			"schemaVersion": 1
+		},
+		"residentLifecycle": {
+			"residents": [
+				{
+					"deathEvent": {},
+					"deliveredResidentIds": [],
+					"homeAnchor": {
+						"placeName": "南街四号住宅",
+						"position": {
+							"__townWorldType": "Vector2",
+							"x": -56.0,
+							"y": -152.0
+						},
+						"regionId": "region_portal_home_12_entry",
+						"spaceId": "home_12"
+					},
+					"recipientResidentIds": [],
+					"residentId": "resident_bai_zhi_01",
+					"residentName": "白芷",
+					"revision": 1,
+					"status": "alive"
+				},
+				{
+					"deathEvent": {},
+					"deliveredResidentIds": [],
+					"homeAnchor": {
+						"placeName": "西街一号住宅",
+						"position": {
+							"__townWorldType": "Vector2",
+							"x": -40.0,
+							"y": -136.0
+						},
+						"regionId": "region_portal_home_15_entry",
+						"spaceId": "home_15"
+					},
+					"recipientResidentIds": [],
+					"residentId": "resident_cheng_yan_01",
+					"residentName": "程砚",
+					"revision": 1,
+					"status": "alive"
+				},
+				{
+					"deathEvent": {},
+					"deliveredResidentIds": [],
+					"homeAnchor": {
+						"placeName": "北街一号住宅",
+						"position": {
+							"__townWorldType": "Vector2",
+							"x": -168.0,
+							"y": -136.0
+						},
+						"regionId": "region_portal_home_01_entry",
+						"spaceId": "home_01"
+					},
+					"recipientResidentIds": [],
+					"residentId": "resident_hanako_01",
+					"residentName": "花子",
+					"revision": 1,
+					"status": "alive"
+				},
+				{
+					"deathEvent": {},
+					"deliveredResidentIds": [],
+					"homeAnchor": {
+						"placeName": "西街五号住宅",
+						"position": {
+							"__townWorldType": "Vector2",
+							"x": 232.0,
+							"y": 392.0
+						},
+						"regionId": "region_portal_home_07_entry",
+						"spaceId": "home_07"
+					},
+					"recipientResidentIds": [],
+					"residentId": "resident_jiang_cheng_01",
+					"residentName": "姜澄",
+					"revision": 1,
+					"status": "alive"
+				},
+				{
+					"deathEvent": {},
+					"deliveredResidentIds": [],
+					"homeAnchor": {
+						"placeName": "北街二号住宅",
+						"position": {
+							"__townWorldType": "Vector2",
+							"x": 232.0,
+							"y": 408.0
+						},
+						"regionId": "region_portal_home_02_entry",
+						"spaceId": "home_02"
+					},
+					"recipientResidentIds": [],
+					"residentId": "resident_lin_lan_01",
+					"residentName": "林岚",
+					"revision": 1,
+					"status": "alive"
+				},
+				{
+					"deathEvent": {},
+					"deliveredResidentIds": [],
+					"homeAnchor": {
+						"placeName": "南街二号住宅",
+						"position": {
+							"__townWorldType": "Vector2",
+							"x": 232.0,
+							"y": 392.0
+						},
+						"regionId": "region_portal_home_10_entry",
+						"spaceId": "home_10"
+					},
+					"recipientResidentIds": [],
+					"residentId": "resident_lu_qingzhou_01",
+					"residentName": "陆青舟",
+					"revision": 1,
+					"status": "alive"
+				},
+				{
+					"deathEvent": {},
+					"deliveredResidentIds": [],
+					"homeAnchor": {
+						"placeName": "西街四号住宅",
+						"position": {
+							"__townWorldType": "Vector2",
+							"x": 232.0,
+							"y": 392.0
+						},
+						"regionId": "region_portal_home_06_entry",
+						"spaceId": "home_06"
+					},
+					"recipientResidentIds": [],
+					"residentId": "resident_luo_yuan_01",
+					"residentName": "罗远",
+					"revision": 1,
+					"status": "alive"
+				},
+				{
+					"deathEvent": {},
+					"deliveredResidentIds": [],
+					"homeAnchor": {
+						"placeName": "东南街住宅",
+						"position": {
+							"__townWorldType": "Vector2",
+							"x": -168.0,
+							"y": -136.0
+						},
+						"regionId": "region_portal_home_14_entry",
+						"spaceId": "home_14"
+					},
+					"recipientResidentIds": [],
+					"residentId": "resident_mi_ya_01",
+					"residentName": "米芽",
+					"revision": 1,
+					"status": "alive"
+				},
+				{
+					"deathEvent": {},
+					"deliveredResidentIds": [],
+					"homeAnchor": {
+						"placeName": "西街六号住宅",
+						"position": {
+							"__townWorldType": "Vector2",
+							"x": 232.0,
+							"y": 376.0
+						},
+						"regionId": "region_portal_home_08_entry",
+						"spaceId": "home_08"
+					},
+					"recipientResidentIds": [],
+					"residentId": "resident_qiao_yiming_01",
+					"residentName": "乔一鸣",
+					"revision": 1,
+					"status": "alive"
+				},
+				{
+					"deathEvent": {},
+					"deliveredResidentIds": [],
+					"homeAnchor": {
+						"placeName": "南街一号住宅",
+						"position": {
+							"__townWorldType": "Vector2",
+							"x": -168.0,
+							"y": -152.0
+						},
+						"regionId": "region_portal_home_09_entry",
+						"spaceId": "home_09"
+					},
+					"recipientResidentIds": [],
+					"residentId": "resident_su_tang_01",
+					"residentName": "苏棠",
+					"revision": 1,
+					"status": "alive"
+				},
+				{
+					"deathEvent": {},
+					"deliveredResidentIds": [],
+					"homeAnchor": {
+						"placeName": "西街三号住宅",
+						"position": {
+							"__townWorldType": "Vector2",
+							"x": -552.0,
+							"y": 72.0
+						},
+						"regionId": "region_portal_home_05_entry",
+						"spaceId": "home_05"
+					},
+					"recipientResidentIds": [],
+					"residentId": "resident_tang_xiaoman_01",
+					"residentName": "唐小满",
+					"revision": 1,
+					"status": "alive"
+				},
+				{
+					"deathEvent": {},
+					"deliveredResidentIds": [],
+					"homeAnchor": {
+						"placeName": "南街五号住宅",
+						"position": {
+							"__townWorldType": "Vector2",
+							"x": 88.0,
+							"y": -152.0
+						},
+						"regionId": "region_portal_home_13_entry",
+						"spaceId": "home_13"
+					},
+					"recipientResidentIds": [],
+					"residentId": "resident_wen_xu_01",
+					"residentName": "闻叙",
+					"revision": 1,
+					"status": "alive"
+				},
+				{
+					"deathEvent": {},
+					"deliveredResidentIds": [],
+					"homeAnchor": {
+						"placeName": "南街三号住宅",
+						"position": {
+							"__townWorldType": "Vector2",
+							"x": -168.0,
+							"y": -168.0
+						},
+						"regionId": "region_portal_home_11_entry",
+						"spaceId": "home_11"
+					},
+					"recipientResidentIds": [],
+					"residentId": "resident_xie_mian_01",
+					"residentName": "谢眠",
+					"revision": 1,
+					"status": "alive"
+				},
+				{
+					"deathEvent": {},
+					"deliveredResidentIds": [],
+					"homeAnchor": {
+						"placeName": "北街三号住宅",
+						"position": {
+							"__townWorldType": "Vector2",
+							"x": 248.0,
+							"y": 392.0
+						},
+						"regionId": "region_portal_home_03_entry",
+						"spaceId": "home_03"
+					},
+					"recipientResidentIds": [],
+					"residentId": "resident_xu_zhao_01",
+					"residentName": "许照",
+					"revision": 1,
+					"status": "alive"
+				},
+				{
+					"deathEvent": {},
+					"deliveredResidentIds": [],
+					"homeAnchor": {
+						"placeName": "西街二号住宅",
+						"position": {
+							"__townWorldType": "Vector2",
+							"x": 232.0,
+							"y": 392.0
+						},
+						"regionId": "region_portal_home_04_entry",
+						"spaceId": "home_04"
+					},
+					"recipientResidentIds": [],
+					"residentId": "resident_zhou_jiming_01",
+					"residentName": "周既明",
+					"revision": 1,
+					"status": "alive"
+				}
+			],
+			"schemaVersion": 1
+		},
+		"residentSleep": {
+			"residents": {
+				"resident_bai_zhi_01": {
+					"activeSleep": {},
+					"completedOrder": [],
+					"completedSleepResults": {},
+					"residentId": "resident_bai_zhi_01",
+					"revision": 1
+				},
+				"resident_cheng_yan_01": {
+					"activeSleep": {},
+					"completedOrder": [],
+					"completedSleepResults": {},
+					"residentId": "resident_cheng_yan_01",
+					"revision": 1
+				},
+				"resident_hanako_01": {
+					"activeSleep": {},
+					"completedOrder": [],
+					"completedSleepResults": {},
+					"residentId": "resident_hanako_01",
+					"revision": 1
+				},
+				"resident_jiang_cheng_01": {
+					"activeSleep": {},
+					"completedOrder": [],
+					"completedSleepResults": {},
+					"residentId": "resident_jiang_cheng_01",
+					"revision": 1
+				},
+				"resident_lin_lan_01": {
+					"activeSleep": {},
+					"completedOrder": [],
+					"completedSleepResults": {},
+					"residentId": "resident_lin_lan_01",
+					"revision": 1
+				},
+				"resident_lu_qingzhou_01": {
+					"activeSleep": {},
+					"completedOrder": [],
+					"completedSleepResults": {},
+					"residentId": "resident_lu_qingzhou_01",
+					"revision": 1
+				},
+				"resident_luo_yuan_01": {
+					"activeSleep": {},
+					"completedOrder": [],
+					"completedSleepResults": {},
+					"residentId": "resident_luo_yuan_01",
+					"revision": 1
+				},
+				"resident_mi_ya_01": {
+					"activeSleep": {},
+					"completedOrder": [],
+					"completedSleepResults": {},
+					"residentId": "resident_mi_ya_01",
+					"revision": 1
+				},
+				"resident_qiao_yiming_01": {
+					"activeSleep": {},
+					"completedOrder": [],
+					"completedSleepResults": {},
+					"residentId": "resident_qiao_yiming_01",
+					"revision": 1
+				},
+				"resident_su_tang_01": {
+					"activeSleep": {},
+					"completedOrder": [],
+					"completedSleepResults": {},
+					"residentId": "resident_su_tang_01",
+					"revision": 1
+				},
+				"resident_tang_xiaoman_01": {
+					"activeSleep": {},
+					"completedOrder": [],
+					"completedSleepResults": {},
+					"residentId": "resident_tang_xiaoman_01",
+					"revision": 1
+				},
+				"resident_wen_xu_01": {
+					"activeSleep": {},
+					"completedOrder": [],
+					"completedSleepResults": {},
+					"residentId": "resident_wen_xu_01",
+					"revision": 1
+				},
+				"resident_xie_mian_01": {
+					"activeSleep": {},
+					"completedOrder": [],
+					"completedSleepResults": {},
+					"residentId": "resident_xie_mian_01",
+					"revision": 1
+				},
+				"resident_xu_zhao_01": {
+					"activeSleep": {},
+					"completedOrder": [],
+					"completedSleepResults": {},
+					"residentId": "resident_xu_zhao_01",
+					"revision": 1
+				},
+				"resident_zhou_jiming_01": {
+					"activeSleep": {},
+					"completedOrder": [],
+					"completedSleepResults": {},
+					"residentId": "resident_zhou_jiming_01",
+					"revision": 1
+				}
+			},
+			"schemaVersion": 1
+		},
+		"residents": [
+			{
+				"actionSuspendedAbsoluteMinute": -1,
+				"activityState": {
+					"energy": 50,
+					"satiety": 50,
+					"socialNeed": 50,
+					"solitudeNeed": 50,
+					"stress": 50
+				},
+				"arrivalState": {
+					"arrivedAbsoluteMinute": -1,
+					"scheduledAbsoluteMinute": -1,
+					"status": "arrived"
+				},
+				"attendanceState": {
+					"status": "available",
+					"untilMinute": -1
+				},
+				"body": {
+					"困": "不困",
+					"累": "不累",
+					"饿": "不饿"
+				},
+				"confirmedActionPreview": {},
+				"conversation": null,
+				"conversationId": "",
+				"currentAction": {
+					"action_id": "fake-resident_bai_zhi_01-g1-2",
+					"completeAbsoluteMinute": 540,
+					"idleMoveDurationMinutes": 2,
+					"idlePathPoints": [
+						{
+							"__townWorldType": "Vector2",
+							"x": 3240.0,
+							"y": 3600.0
+						},
+						{
+							"__townWorldType": "Vector2",
+							"x": 3246.0,
+							"y": 3606.0
+						},
+						{
+							"__townWorldType": "Vector2",
+							"x": 3246.0,
+							"y": 3454.4853515625
+						}
+					],
+					"idleTargetPosition": {
+						"__townWorldType": "Vector2",
+						"x": 3246.0,
+						"y": 3454.4853515625
+					},
+					"line": "先看看周围的情况",
+					"startedAbsoluteMinute": 480,
+					"type": "待着"
+				},
+				"currentPlace": "南入口",
+				"doing": "正在找个不挡路的地方休息",
+				"movementRevision": 1,
+				"name": "白芷",
+				"pendingActionResults": [],
+				"pendingEvents": [],
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3240.0,
+					"y": 3600.0
+				},
+				"profileAttributes": {
+					"age": 31,
+					"appearance": "resident_wardrobe_v1:look_11",
+					"customInterests": [],
+					"desire": "让所有人都过得好一点。",
+					"gender": "女",
+					"interests": [
+						"interest_gardening",
+						"interest_plant_research",
+						"interest_cooking"
+					],
+					"personality": "可靠、体贴、边界感较弱，善意有时会变成压力。",
+					"speech": "语气温柔但常带建议，容易替别人安排下一步。"
+				},
+				"regionId": "outdoor_south_gate_01",
+				"residentId": "resident_bai_zhi_01",
+				"routeConnector": [],
+				"socialState": {
+					"home": "南街四号住宅",
+					"job": "草药医师",
+					"workplace": "诊所"
+				},
+				"spaceId": "town_outdoor",
+				"usedActionIds": [
+					"fake-resident_bai_zhi_01-g1-2"
+				]
+			},
+			{
+				"actionSuspendedAbsoluteMinute": -1,
+				"activityState": {
+					"energy": 50,
+					"satiety": 50,
+					"socialNeed": 50,
+					"solitudeNeed": 50,
+					"stress": 50
+				},
+				"arrivalState": {
+					"arrivedAbsoluteMinute": -1,
+					"scheduledAbsoluteMinute": -1,
+					"status": "arrived"
+				},
+				"attendanceState": {
+					"status": "available",
+					"untilMinute": -1
+				},
+				"body": {
+					"困": "不困",
+					"累": "不累",
+					"饿": "不饿"
+				},
+				"confirmedActionPreview": {},
+				"conversation": null,
+				"conversationId": "",
+				"currentAction": {},
+				"currentPlace": "南入口",
+				"doing": "在{home}整理行李",
+				"movementRevision": 1,
+				"name": "程砚",
+				"pendingActionResults": [],
+				"pendingEvents": [],
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3240.0,
+					"y": 3600.0
+				},
+				"profileAttributes": {
+					"age": 63,
+					"appearance": "resident_wardrobe_v1:look_14",
+					"customInterests": [],
+					"desire": "写出一本真正属于小镇的书。",
+					"gender": "男",
+					"interests": [
+						"interest_writing",
+						"interest_calligraphy",
+						"interest_collecting_stories"
+					],
+					"personality": "温和、有观察力、善于总结，也忍不住把生活当素材。",
+					"speech": "语速缓慢，喜欢引用旧事，也常把观察讲成故事。"
+				},
+				"regionId": "outdoor_south_gate_01",
+				"residentId": "resident_cheng_yan_01",
+				"routeConnector": [],
+				"socialState": {
+					"home": "西街一号住宅",
+					"job": "图书管理员",
+					"workplace": "图书馆"
+				},
+				"spaceId": "town_outdoor",
+				"usedActionIds": []
+			},
+			{
+				"actionSuspendedAbsoluteMinute": -1,
+				"activityState": {
+					"energy": 50,
+					"satiety": 50,
+					"socialNeed": 50,
+					"solitudeNeed": 50,
+					"stress": 50
+				},
+				"arrivalState": {
+					"arrivedAbsoluteMinute": -1,
+					"scheduledAbsoluteMinute": -1,
+					"status": "arrived"
+				},
+				"attendanceState": {
+					"status": "available",
+					"untilMinute": -1
+				},
+				"body": {
+					"困": "不困",
+					"累": "不累",
+					"饿": "不饿"
+				},
+				"confirmedActionPreview": {},
+				"conversation": null,
+				"conversationId": "",
+				"currentAction": {},
+				"currentPlace": "南入口",
+				"doing": "在{home}整理行李",
+				"movementRevision": 1,
+				"name": "花子",
+				"pendingActionResults": [],
+				"pendingEvents": [],
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3240.0,
+					"y": 3600.0
+				},
+				"profileAttributes": {
+					"age": 27,
+					"appearance": "resident_wardrobe_v1:look_00",
+					"customInterests": [
+						"研究咖啡风味"
+					],
+					"desire": "让咖啡馆成为全镇愿意停留的地方",
+					"gender": "女",
+					"interests": [
+						"interest_cooking",
+						"interest_community_affairs"
+					],
+					"personality": "温柔敏感，容易过度负责",
+					"speech": "说话温和，会先听完对方再回应，很少直接拒绝。"
+				},
+				"regionId": "outdoor_south_gate_01",
+				"residentId": "resident_hanako_01",
+				"routeConnector": [],
+				"socialState": {
+					"home": "北街一号住宅",
+					"job": "咖啡店店员",
+					"workplace": "花房咖啡馆"
+				},
+				"spaceId": "town_outdoor",
+				"usedActionIds": []
+			},
+			{
+				"actionSuspendedAbsoluteMinute": -1,
+				"activityState": {
+					"energy": 50,
+					"satiety": 50,
+					"socialNeed": 50,
+					"solitudeNeed": 50,
+					"stress": 50
+				},
+				"arrivalState": {
+					"arrivedAbsoluteMinute": -1,
+					"scheduledAbsoluteMinute": -1,
+					"status": "arrived"
+				},
+				"attendanceState": {
+					"status": "available",
+					"untilMinute": -1
+				},
+				"body": {
+					"困": "不困",
+					"累": "不累",
+					"饿": "不饿"
+				},
+				"confirmedActionPreview": {},
+				"conversation": null,
+				"conversationId": "",
+				"currentAction": {},
+				"currentPlace": "南入口",
+				"doing": "在{home}整理行李",
+				"movementRevision": 1,
+				"name": "姜澄",
+				"pendingActionResults": [],
+				"pendingEvents": [],
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3240.0,
+					"y": 3600.0
+				},
+				"profileAttributes": {
+					"age": 27,
+					"appearance": "resident_wardrobe_v1:look_06",
+					"customInterests": [
+						"记录雨天街景"
+					],
+					"desire": "拍到小镇真正活着的瞬间。",
+					"gender": "女",
+					"interests": [
+						"interest_photography",
+						"interest_gardening"
+					],
+					"personality": "细腻敏感，容易受天气和周围情绪影响。",
+					"speech": "措辞细腻，喜欢描述天气、光线和情绪。"
+				},
+				"regionId": "outdoor_south_gate_01",
+				"residentId": "resident_jiang_cheng_01",
+				"routeConnector": [],
+				"socialState": {
+					"home": "西街五号住宅",
+					"job": "花店店主",
+					"workplace": "独立市集"
+				},
+				"spaceId": "town_outdoor",
+				"usedActionIds": []
+			},
+			{
+				"actionSuspendedAbsoluteMinute": -1,
+				"activityState": {
+					"energy": 50,
+					"satiety": 50,
+					"socialNeed": 50,
+					"solitudeNeed": 50,
+					"stress": 50
+				},
+				"arrivalState": {
+					"arrivedAbsoluteMinute": -1,
+					"scheduledAbsoluteMinute": -1,
+					"status": "arrived"
+				},
+				"attendanceState": {
+					"status": "available",
+					"untilMinute": -1
+				},
+				"body": {
+					"困": "不困",
+					"累": "不累",
+					"饿": "不饿"
+				},
+				"confirmedActionPreview": {},
+				"conversation": null,
+				"conversationId": "",
+				"currentAction": {},
+				"currentPlace": "南入口",
+				"doing": "在{home}整理行李",
+				"movementRevision": 1,
+				"name": "林岚",
+				"pendingActionResults": [],
+				"pendingEvents": [],
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3240.0,
+					"y": 3600.0
+				},
+				"profileAttributes": {
+					"age": 32,
+					"appearance": "resident_wardrobe_v1:look_01",
+					"customInterests": [
+						"制作植物标本"
+					],
+					"desire": "安静做完自己的项目，不被小镇琐事打断。",
+					"gender": "男",
+					"interests": [
+						"interest_plant_research",
+						"interest_reading"
+					],
+					"personality": "冷淡、怕麻烦、长期睡眠不足，但很有责任感。",
+					"speech": "句子短，语气冷淡，抱怨后常给出具体解决办法。"
+				},
+				"regionId": "outdoor_south_gate_01",
+				"residentId": "resident_lin_lan_01",
+				"routeConnector": [],
+				"socialState": {
+					"home": "北街二号住宅",
+					"job": "植物研究员",
+					"workplace": "社区花园"
+				},
+				"spaceId": "town_outdoor",
+				"usedActionIds": []
+			},
+			{
+				"actionSuspendedAbsoluteMinute": -1,
+				"activityState": {
+					"energy": 50,
+					"satiety": 50,
+					"socialNeed": 50,
+					"solitudeNeed": 50,
+					"stress": 50
+				},
+				"arrivalState": {
+					"arrivedAbsoluteMinute": -1,
+					"scheduledAbsoluteMinute": -1,
+					"status": "arrived"
+				},
+				"attendanceState": {
+					"status": "available",
+					"untilMinute": -1
+				},
+				"body": {
+					"困": "不困",
+					"累": "不累",
+					"饿": "不饿"
+				},
+				"confirmedActionPreview": {},
+				"conversation": null,
+				"conversationId": "",
+				"currentAction": {},
+				"currentPlace": "南入口",
+				"doing": "在{home}整理行李",
+				"movementRevision": 1,
+				"name": "陆青舟",
+				"pendingActionResults": [],
+				"pendingEvents": [],
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3240.0,
+					"y": 3600.0
+				},
+				"profileAttributes": {
+					"age": 30,
+					"appearance": "resident_wardrobe_v1:look_09",
+					"customInterests": [],
+					"desire": "找到一个值得留下来的理由。",
+					"gender": "男",
+					"interests": [
+						"interest_fishing",
+						"interest_calligraphy",
+						"interest_writing"
+					],
+					"personality": "向往远方，又害怕承认自己已经在意这里。",
+					"speech": "语气松弛，喜欢用旅途和远方作比喻。"
+				},
+				"regionId": "outdoor_south_gate_01",
+				"residentId": "resident_lu_qingzhou_01",
+				"routeConnector": [],
+				"socialState": {
+					"home": "南街二号住宅",
+					"job": "渔夫",
+					"workplace": "渔港"
+				},
+				"spaceId": "town_outdoor",
+				"usedActionIds": []
+			},
+			{
+				"actionSuspendedAbsoluteMinute": -1,
+				"activityState": {
+					"energy": 50,
+					"satiety": 50,
+					"socialNeed": 50,
+					"solitudeNeed": 50,
+					"stress": 50
+				},
+				"arrivalState": {
+					"arrivedAbsoluteMinute": -1,
+					"scheduledAbsoluteMinute": -1,
+					"status": "arrived"
+				},
+				"attendanceState": {
+					"status": "available",
+					"untilMinute": -1
+				},
+				"body": {
+					"困": "不困",
+					"累": "不累",
+					"饿": "不饿"
+				},
+				"confirmedActionPreview": {},
+				"conversation": null,
+				"conversationId": "",
+				"currentAction": {},
+				"currentPlace": "南入口",
+				"doing": "在{home}整理行李",
+				"movementRevision": 1,
+				"name": "罗远",
+				"pendingActionResults": [],
+				"pendingEvents": [],
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3240.0,
+					"y": 3600.0
+				},
+				"profileAttributes": {
+					"age": 39,
+					"appearance": "resident_wardrobe_v1:look_05",
+					"customInterests": [],
+					"desire": "让小镇别总在关键时刻坏掉。",
+					"gender": "男",
+					"interests": [
+						"interest_woodwork",
+						"interest_metalwork",
+						"interest_fishing"
+					],
+					"personality": "务实、寡言、可靠，不喜欢解释自己的付出。",
+					"speech": "话少，先说结论，更多用行动回应。"
+				},
+				"regionId": "outdoor_south_gate_01",
+				"residentId": "resident_luo_yuan_01",
+				"routeConnector": [],
+				"socialState": {
+					"home": "西街四号住宅",
+					"job": "工匠",
+					"workplace": "工作坊"
+				},
+				"spaceId": "town_outdoor",
+				"usedActionIds": []
+			},
+			{
+				"actionSuspendedAbsoluteMinute": -1,
+				"activityState": {
+					"energy": 50,
+					"satiety": 50,
+					"socialNeed": 50,
+					"solitudeNeed": 50,
+					"stress": 50
+				},
+				"arrivalState": {
+					"arrivedAbsoluteMinute": -1,
+					"scheduledAbsoluteMinute": -1,
+					"status": "arrived"
+				},
+				"attendanceState": {
+					"status": "available",
+					"untilMinute": -1
+				},
+				"body": {
+					"困": "不困",
+					"累": "不累",
+					"饿": "不饿"
+				},
+				"confirmedActionPreview": {},
+				"conversation": null,
+				"conversationId": "",
+				"currentAction": {},
+				"currentPlace": "南入口",
+				"doing": "在{home}整理行李",
+				"movementRevision": 1,
+				"name": "米芽",
+				"pendingActionResults": [],
+				"pendingEvents": [],
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3240.0,
+					"y": 3600.0
+				},
+				"profileAttributes": {
+					"age": 22,
+					"appearance": "resident_wardrobe_v1:look_13",
+					"customInterests": [],
+					"desire": "被大家当成真正可靠的大人。",
+					"gender": "女",
+					"interests": [
+						"interest_invention",
+						"interest_gardening",
+						"interest_metalwork"
+					],
+					"personality": "活泼、聪明、急于证明自己，常常跳过测试。",
+					"speech": "说话快，爱讲新点子，失败时会急着解释。"
+				},
+				"regionId": "outdoor_south_gate_01",
+				"residentId": "resident_mi_ya_01",
+				"routeConnector": [],
+				"socialState": {
+					"home": "东南街住宅",
+					"job": "园艺师",
+					"workplace": "社区花园"
+				},
+				"spaceId": "town_outdoor",
+				"usedActionIds": []
+			},
+			{
+				"actionSuspendedAbsoluteMinute": -1,
+				"activityState": {
+					"energy": 50,
+					"satiety": 50,
+					"socialNeed": 50,
+					"solitudeNeed": 50,
+					"stress": 50
+				},
+				"arrivalState": {
+					"arrivedAbsoluteMinute": -1,
+					"scheduledAbsoluteMinute": -1,
+					"status": "arrived"
+				},
+				"attendanceState": {
+					"status": "available",
+					"untilMinute": -1
+				},
+				"body": {
+					"困": "不困",
+					"累": "不累",
+					"饿": "不饿"
+				},
+				"confirmedActionPreview": {},
+				"conversation": null,
+				"conversationId": "",
+				"currentAction": {},
+				"currentPlace": "南入口",
+				"doing": "在{home}整理行李",
+				"movementRevision": 1,
+				"name": "乔一鸣",
+				"pendingActionResults": [],
+				"pendingEvents": [],
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3240.0,
+					"y": 3600.0
+				},
+				"profileAttributes": {
+					"age": 24,
+					"appearance": "resident_wardrobe_v1:look_07",
+					"customInterests": [],
+					"desire": "成为大家需要帮忙时第一个想到的人。",
+					"gender": "男",
+					"interests": [
+						"interest_community_affairs",
+						"interest_fishing"
+					],
+					"personality": "精力旺盛、热心、冲动，能让消息迅速流动。",
+					"speech": "语速快，句子短，常没等对方说完就答应。"
+				},
+				"regionId": "outdoor_south_gate_01",
+				"residentId": "resident_qiao_yiming_01",
+				"routeConnector": [],
+				"socialState": {
+					"home": "西街六号住宅",
+					"job": "送货员",
+					"workplace": "码头仓库"
+				},
+				"spaceId": "town_outdoor",
+				"usedActionIds": []
+			},
+			{
+				"actionSuspendedAbsoluteMinute": -1,
+				"activityState": {
+					"energy": 50,
+					"satiety": 50,
+					"socialNeed": 50,
+					"solitudeNeed": 50,
+					"stress": 50
+				},
+				"arrivalState": {
+					"arrivedAbsoluteMinute": -1,
+					"scheduledAbsoluteMinute": -1,
+					"status": "arrived"
+				},
+				"attendanceState": {
+					"status": "available",
+					"untilMinute": -1
+				},
+				"body": {
+					"困": "不困",
+					"累": "不累",
+					"饿": "不饿"
+				},
+				"confirmedActionPreview": {},
+				"conversation": null,
+				"conversationId": "",
+				"currentAction": {},
+				"currentPlace": "南入口",
+				"doing": "在{home}整理行李",
+				"movementRevision": 1,
+				"name": "苏棠",
+				"pendingActionResults": [],
+				"pendingEvents": [],
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3240.0,
+					"y": 3600.0
+				},
+				"profileAttributes": {
+					"age": 26,
+					"appearance": "resident_wardrobe_v1:look_08",
+					"customInterests": [],
+					"desire": "做出能让大家为此留下来的甜品。",
+					"gender": "女",
+					"interests": [
+						"interest_baking",
+						"interest_cooking",
+						"interest_gardening"
+					],
+					"personality": "温柔、有创作欲，欣赏花子，也暗暗想赢一次。",
+					"speech": "语气柔和，谈到甜品和创作时更坚定。"
+				},
+				"regionId": "outdoor_south_gate_01",
+				"residentId": "resident_su_tang_01",
+				"routeConnector": [],
+				"socialState": {
+					"home": "南街一号住宅",
+					"job": "食堂主理人",
+					"workplace": "公共食堂"
+				},
+				"spaceId": "town_outdoor",
+				"usedActionIds": []
+			},
+			{
+				"actionSuspendedAbsoluteMinute": -1,
+				"activityState": {
+					"energy": 50,
+					"satiety": 50,
+					"socialNeed": 50,
+					"solitudeNeed": 50,
+					"stress": 50
+				},
+				"arrivalState": {
+					"arrivedAbsoluteMinute": -1,
+					"scheduledAbsoluteMinute": -1,
+					"status": "arrived"
+				},
+				"attendanceState": {
+					"status": "available",
+					"untilMinute": -1
+				},
+				"body": {
+					"困": "不困",
+					"累": "不累",
+					"饿": "不饿"
+				},
+				"confirmedActionPreview": {},
+				"conversation": null,
+				"conversationId": "",
+				"currentAction": {},
+				"currentPlace": "南入口",
+				"doing": "在{home}整理行李",
+				"movementRevision": 1,
+				"name": "唐小满",
+				"pendingActionResults": [],
+				"pendingEvents": [],
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3240.0,
+					"y": 3600.0
+				},
+				"profileAttributes": {
+					"age": 29,
+					"appearance": "resident_wardrobe_v1:look_04",
+					"customInterests": [],
+					"desire": "让每个人都不孤单。",
+					"gender": "女",
+					"interests": [
+						"interest_collecting_stories",
+						"interest_cooking"
+					],
+					"personality": "外向、话多、擅长拉近人，也容易把信息传偏。",
+					"speech": "语速快，爱追问，也常把关心直接说出口。"
+				},
+				"regionId": "outdoor_south_gate_01",
+				"residentId": "resident_tang_xiaoman_01",
+				"routeConnector": [],
+				"socialState": {
+					"home": "西街三号住宅",
+					"job": "杂货店主",
+					"workplace": "独立市集"
+				},
+				"spaceId": "town_outdoor",
+				"usedActionIds": []
+			},
+			{
+				"actionSuspendedAbsoluteMinute": -1,
+				"activityState": {
+					"energy": 50,
+					"satiety": 50,
+					"socialNeed": 50,
+					"solitudeNeed": 50,
+					"stress": 50
+				},
+				"arrivalState": {
+					"arrivedAbsoluteMinute": -1,
+					"scheduledAbsoluteMinute": -1,
+					"status": "arrived"
+				},
+				"attendanceState": {
+					"status": "available",
+					"untilMinute": -1
+				},
+				"body": {
+					"困": "不困",
+					"累": "不累",
+					"饿": "不饿"
+				},
+				"confirmedActionPreview": {},
+				"conversation": null,
+				"conversationId": "",
+				"currentAction": {},
+				"currentPlace": "南入口",
+				"doing": "在{home}整理行李",
+				"movementRevision": 1,
+				"name": "闻叙",
+				"pendingActionResults": [],
+				"pendingEvents": [],
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3240.0,
+					"y": 3600.0
+				},
+				"profileAttributes": {
+					"age": 29,
+					"appearance": "resident_wardrobe_v1:look_12",
+					"customInterests": [],
+					"desire": "让小镇没有被掩盖的事。",
+					"gender": "男",
+					"interests": [
+						"interest_community_affairs",
+						"interest_reading",
+						"interest_collecting_stories"
+					],
+					"personality": "认真、好奇、坚持公开，也容易让人感到被冒犯。",
+					"speech": "追问具体来源，表达直接，强调可核实事实。"
+				},
+				"regionId": "outdoor_south_gate_01",
+				"residentId": "resident_wen_xu_01",
+				"routeConnector": [],
+				"socialState": {
+					"home": "南街五号住宅",
+					"job": "小镇管理者",
+					"workplace": "镇公所"
+				},
+				"spaceId": "town_outdoor",
+				"usedActionIds": []
+			},
+			{
+				"actionSuspendedAbsoluteMinute": -1,
+				"activityState": {
+					"energy": 50,
+					"satiety": 50,
+					"socialNeed": 50,
+					"solitudeNeed": 50,
+					"stress": 50
+				},
+				"arrivalState": {
+					"arrivedAbsoluteMinute": -1,
+					"scheduledAbsoluteMinute": -1,
+					"status": "arrived"
+				},
+				"attendanceState": {
+					"status": "available",
+					"untilMinute": -1
+				},
+				"body": {
+					"困": "不困",
+					"累": "不累",
+					"饿": "不饿"
+				},
+				"confirmedActionPreview": {},
+				"conversation": null,
+				"conversationId": "",
+				"currentAction": {},
+				"currentPlace": "南入口",
+				"doing": "在{home}整理行李",
+				"movementRevision": 1,
+				"name": "谢眠",
+				"pendingActionResults": [],
+				"pendingEvents": [],
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3240.0,
+					"y": 3600.0
+				},
+				"profileAttributes": {
+					"age": 28,
+					"appearance": "resident_wardrobe_v1:look_10",
+					"customInterests": [
+						"收集小镇声音"
+					],
+					"desire": "写一首只有小镇听得懂的歌。",
+					"gender": "男",
+					"interests": [
+						"interest_music",
+						"interest_writing"
+					],
+					"personality": "敏感、懒散、有创作欲，表达方式偶尔会打扰别人。",
+					"speech": "白天惜字如金，夜里说话带节奏和隐喻。"
+				},
+				"regionId": "outdoor_south_gate_01",
+				"residentId": "resident_xie_mian_01",
+				"routeConnector": [],
+				"socialState": {
+					"home": "南街三号住宅",
+					"job": "乐师",
+					"workplace": "中心广场"
+				},
+				"spaceId": "town_outdoor",
+				"usedActionIds": []
+			},
+			{
+				"actionSuspendedAbsoluteMinute": -1,
+				"activityState": {
+					"energy": 50,
+					"satiety": 50,
+					"socialNeed": 50,
+					"solitudeNeed": 50,
+					"stress": 50
+				},
+				"arrivalState": {
+					"arrivedAbsoluteMinute": -1,
+					"scheduledAbsoluteMinute": -1,
+					"status": "arrived"
+				},
+				"attendanceState": {
+					"status": "available",
+					"untilMinute": -1
+				},
+				"body": {
+					"困": "不困",
+					"累": "不累",
+					"饿": "不饿"
+				},
+				"confirmedActionPreview": {},
+				"conversation": null,
+				"conversationId": "",
+				"currentAction": {},
+				"currentPlace": "南入口",
+				"doing": "在{home}整理行李",
+				"movementRevision": 1,
+				"name": "许照",
+				"pendingActionResults": [],
+				"pendingEvents": [],
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3240.0,
+					"y": 3600.0
+				},
+				"profileAttributes": {
+					"age": 31,
+					"appearance": "resident_wardrobe_v1:look_02",
+					"customInterests": [],
+					"desire": "守住小镇最后一块安静地。",
+					"gender": "女",
+					"interests": [
+						"interest_reading",
+						"interest_calligraphy"
+					],
+					"personality": "重视秩序和安静，观察细致，习惯冷处理冲突。",
+					"speech": "措辞严谨克制，偏好引用规则和事实。"
+				},
+				"regionId": "outdoor_south_gate_01",
+				"residentId": "resident_xu_zhao_01",
+				"routeConnector": [],
+				"socialState": {
+					"home": "北街三号住宅",
+					"job": "图书管理员",
+					"workplace": "图书馆"
+				},
+				"spaceId": "town_outdoor",
+				"usedActionIds": []
+			},
+			{
+				"actionSuspendedAbsoluteMinute": -1,
+				"activityState": {
+					"energy": 50,
+					"satiety": 50,
+					"socialNeed": 50,
+					"solitudeNeed": 50,
+					"stress": 50
+				},
+				"arrivalState": {
+					"arrivedAbsoluteMinute": -1,
+					"scheduledAbsoluteMinute": -1,
+					"status": "arrived"
+				},
+				"attendanceState": {
+					"status": "available",
+					"untilMinute": -1
+				},
+				"body": {
+					"困": "不困",
+					"累": "不累",
+					"饿": "不饿"
+				},
+				"confirmedActionPreview": {},
+				"conversation": null,
+				"conversationId": "",
+				"currentAction": {},
+				"currentPlace": "南入口",
+				"doing": "在{home}整理行李",
+				"movementRevision": 1,
+				"name": "周既明",
+				"pendingActionResults": [],
+				"pendingEvents": [],
+				"position": {
+					"__townWorldType": "Vector2",
+					"x": 3240.0,
+					"y": 3600.0
+				},
+				"profileAttributes": {
+					"age": 35,
+					"appearance": "resident_wardrobe_v1:look_03",
+					"customInterests": [],
+					"desire": "证明小镇离不开秩序，也离不开自己。",
+					"gender": "男",
+					"interests": [
+						"interest_community_affairs",
+						"interest_woodwork"
+					],
+					"personality": "认真、焦虑，相信流程能解决问题。",
+					"speech": "说话有条理，习惯把问题拆成流程和规则。"
+				},
+				"regionId": "outdoor_south_gate_01",
+				"residentId": "resident_zhou_jiming_01",
+				"routeConnector": [],
+				"socialState": {
+					"home": "西街二号住宅",
+					"job": "仓库管理员",
+					"workplace": "码头仓库"
+				},
+				"spaceId": "town_outdoor",
+				"usedActionIds": []
+			}
+		],
+		"sequences": {
+			"announcement": 0,
+			"conversation": 0,
+			"event": 6,
+			"worldRevision": 27
+		},
+		"socialMatters": {
+			"matters": [
+				{
+					"attention_level": "daily",
+					"awareness": {
+						"resident_bai_zhi_01": {
+							"acquired_via": "direct_request",
+							"awareness": "known",
+							"source_id": "job-vacancy:occupation_postal_worker",
+							"updated_at": 480
+						},
+						"resident_cheng_yan_01": {
+							"acquired_via": "direct_request",
+							"awareness": "known",
+							"source_id": "job-vacancy:occupation_postal_worker",
+							"updated_at": 480
+						},
+						"resident_hanako_01": {
+							"acquired_via": "direct_request",
+							"awareness": "known",
+							"source_id": "job-vacancy:occupation_postal_worker",
+							"updated_at": 480
+						},
+						"resident_xu_zhao_01": {
+							"acquired_via": "direct_request",
+							"awareness": "known",
+							"source_id": "job-vacancy:occupation_postal_worker",
+							"updated_at": 480
+						}
+					},
+					"candidate_results": {
+						"resident_bai_zhi_01": {
+							"terminal_reason": "request_cancelled"
+						}
+					},
+					"capacity": 2,
+					"channel_revision": 0,
+					"channels": [],
+					"close_reason": "",
+					"closed_at": -1,
+					"created_at": 480,
+					"creator_id": "",
+					"expires_at": 10560,
+					"exposures": {},
+					"fixed_candidates": [
+						{
+							"ability_score": 10,
+							"available_at": 480,
+							"load": 0,
+							"options": [
+								{
+									"action_goal": {},
+									"allows_public_text": true,
+									"meaning": "这次先不决定，岗位继续保持空缺",
+									"option_id": "consider_later",
+									"response_kind": "defer",
+									"role": ""
+								},
+								{
+									"action_goal": {},
+									"allows_public_text": true,
+									"meaning": "保留现在的职业，不申请本次转岗",
+									"option_id": "keep_current_job",
+									"response_kind": "reject",
+									"role": ""
+								},
+								{
+									"action_goal": {
+										"capability_id": "staffing.apply_assignment",
+										"goal_id": "",
+										"role": "job_candidate",
+										"success_result_id": "staffing-assignment-applied",
+										"target_refs": {
+											"assignment_kind": "part_time",
+											"from_occupation_id": "occupation_clinic_practitioner",
+											"occupation_id": "occupation_postal_worker"
+										}
+									},
+									"allows_public_text": true,
+									"meaning": "先兼职协助这个岗位，保留当前正式职业",
+									"option_id": "volunteer_part_time",
+									"response_kind": "accept",
+									"role": "job_candidate"
+								},
+								{
+									"action_goal": {
+										"capability_id": "staffing.apply_assignment",
+										"goal_id": "",
+										"role": "job_candidate",
+										"success_result_id": "staffing-assignment-applied",
+										"target_refs": {
+											"assignment_kind": "shift",
+											"from_occupation_id": "occupation_clinic_practitioner",
+											"occupation_id": "occupation_postal_worker",
+											"shift_end_minute": "1320",
+											"shift_start_minute": "960"
+										}
+									},
+									"allows_public_text": true,
+									"meaning": "承担下午和傍晚轮班，保留当前正式职业",
+									"option_id": "volunteer_shift_evening",
+									"response_kind": "accept",
+									"role": "job_candidate"
+								},
+								{
+									"action_goal": {
+										"capability_id": "staffing.apply_assignment",
+										"goal_id": "",
+										"role": "job_candidate",
+										"success_result_id": "staffing-assignment-applied",
+										"target_refs": {
+											"assignment_kind": "shift",
+											"from_occupation_id": "occupation_clinic_practitioner",
+											"occupation_id": "occupation_postal_worker",
+											"shift_end_minute": "960",
+											"shift_start_minute": "480"
+										}
+									},
+									"allows_public_text": true,
+									"meaning": "承担上午轮班，保留当前正式职业",
+									"option_id": "volunteer_shift_morning",
+									"response_kind": "accept",
+									"role": "job_candidate"
+								},
+								{
+									"action_goal": {
+										"capability_id": "staffing.apply_assignment",
+										"goal_id": "",
+										"role": "job_candidate",
+										"success_result_id": "staffing-assignment-applied",
+										"target_refs": {
+											"assignment_kind": "transfer",
+											"from_occupation_id": "occupation_clinic_practitioner",
+											"occupation_id": "occupation_postal_worker"
+										}
+									},
+									"allows_public_text": true,
+									"meaning": "自愿申请转到这个空缺岗位，由 World 核对后再生效",
+									"option_id": "volunteer_transfer",
+									"response_kind": "accept",
+									"role": "job_candidate"
+								}
+							],
+							"resident_id": "resident_bai_zhi_01",
+							"response": {},
+							"terminal": true,
+							"terminal_reason": "request_cancelled"
+						},
+						{
+							"ability_score": 100,
+							"available_at": 480,
+							"load": 0,
+							"options": [
+								{
+									"action_goal": {},
+									"allows_public_text": true,
+									"meaning": "这次先不决定，岗位继续保持空缺",
+									"option_id": "consider_later",
+									"response_kind": "defer",
+									"role": ""
+								},
+								{
+									"action_goal": {},
+									"allows_public_text": true,
+									"meaning": "保留现在的职业，不申请本次转岗",
+									"option_id": "keep_current_job",
+									"response_kind": "reject",
+									"role": ""
+								},
+								{
+									"action_goal": {
+										"capability_id": "staffing.apply_assignment",
+										"goal_id": "",
+										"role": "job_candidate",
+										"success_result_id": "staffing-assignment-applied",
+										"target_refs": {
+											"assignment_kind": "part_time",
+											"from_occupation_id": "occupation_librarian",
+											"occupation_id": "occupation_postal_worker"
+										}
+									},
+									"allows_public_text": true,
+									"meaning": "先兼职协助这个岗位，保留当前正式职业",
+									"option_id": "volunteer_part_time",
+									"response_kind": "accept",
+									"role": "job_candidate"
+								},
+								{
+									"action_goal": {
+										"capability_id": "staffing.apply_assignment",
+										"goal_id": "",
+										"role": "job_candidate",
+										"success_result_id": "staffing-assignment-applied",
+										"target_refs": {
+											"assignment_kind": "shift",
+											"from_occupation_id": "occupation_librarian",
+											"occupation_id": "occupation_postal_worker",
+											"shift_end_minute": "1320",
+											"shift_start_minute": "960"
+										}
+									},
+									"allows_public_text": true,
+									"meaning": "承担下午和傍晚轮班，保留当前正式职业",
+									"option_id": "volunteer_shift_evening",
+									"response_kind": "accept",
+									"role": "job_candidate"
+								},
+								{
+									"action_goal": {
+										"capability_id": "staffing.apply_assignment",
+										"goal_id": "",
+										"role": "job_candidate",
+										"success_result_id": "staffing-assignment-applied",
+										"target_refs": {
+											"assignment_kind": "shift",
+											"from_occupation_id": "occupation_librarian",
+											"occupation_id": "occupation_postal_worker",
+											"shift_end_minute": "960",
+											"shift_start_minute": "480"
+										}
+									},
+									"allows_public_text": true,
+									"meaning": "承担上午轮班，保留当前正式职业",
+									"option_id": "volunteer_shift_morning",
+									"response_kind": "accept",
+									"role": "job_candidate"
+								},
+								{
+									"action_goal": {
+										"capability_id": "staffing.apply_assignment",
+										"goal_id": "",
+										"role": "job_candidate",
+										"success_result_id": "staffing-assignment-applied",
+										"target_refs": {
+											"assignment_kind": "transfer",
+											"from_occupation_id": "occupation_librarian",
+											"occupation_id": "occupation_postal_worker"
+										}
+									},
+									"allows_public_text": true,
+									"meaning": "自愿申请转到这个空缺岗位，由 World 核对后再生效",
+									"option_id": "volunteer_transfer",
+									"response_kind": "accept",
+									"role": "job_candidate"
+								}
+							],
+							"resident_id": "resident_cheng_yan_01",
+							"response": {},
+							"terminal": false,
+							"terminal_reason": ""
+						},
+						{
+							"ability_score": 10,
+							"available_at": 480,
+							"load": 0,
+							"options": [
+								{
+									"action_goal": {},
+									"allows_public_text": true,
+									"meaning": "这次先不决定，岗位继续保持空缺",
+									"option_id": "consider_later",
+									"response_kind": "defer",
+									"role": ""
+								},
+								{
+									"action_goal": {},
+									"allows_public_text": true,
+									"meaning": "保留现在的职业，不申请本次转岗",
+									"option_id": "keep_current_job",
+									"response_kind": "reject",
+									"role": ""
+								},
+								{
+									"action_goal": {
+										"capability_id": "staffing.apply_assignment",
+										"goal_id": "",
+										"role": "job_candidate",
+										"success_result_id": "staffing-assignment-applied",
+										"target_refs": {
+											"assignment_kind": "part_time",
+											"from_occupation_id": "occupation_cafe_worker",
+											"occupation_id": "occupation_postal_worker"
+										}
+									},
+									"allows_public_text": true,
+									"meaning": "先兼职协助这个岗位，保留当前正式职业",
+									"option_id": "volunteer_part_time",
+									"response_kind": "accept",
+									"role": "job_candidate"
+								},
+								{
+									"action_goal": {
+										"capability_id": "staffing.apply_assignment",
+										"goal_id": "",
+										"role": "job_candidate",
+										"success_result_id": "staffing-assignment-applied",
+										"target_refs": {
+											"assignment_kind": "shift",
+											"from_occupation_id": "occupation_cafe_worker",
+											"occupation_id": "occupation_postal_worker",
+											"shift_end_minute": "1320",
+											"shift_start_minute": "960"
+										}
+									},
+									"allows_public_text": true,
+									"meaning": "承担下午和傍晚轮班，保留当前正式职业",
+									"option_id": "volunteer_shift_evening",
+									"response_kind": "accept",
+									"role": "job_candidate"
+								},
+								{
+									"action_goal": {
+										"capability_id": "staffing.apply_assignment",
+										"goal_id": "",
+										"role": "job_candidate",
+										"success_result_id": "staffing-assignment-applied",
+										"target_refs": {
+											"assignment_kind": "shift",
+											"from_occupation_id": "occupation_cafe_worker",
+											"occupation_id": "occupation_postal_worker",
+											"shift_end_minute": "960",
+											"shift_start_minute": "480"
+										}
+									},
+									"allows_public_text": true,
+									"meaning": "承担上午轮班，保留当前正式职业",
+									"option_id": "volunteer_shift_morning",
+									"response_kind": "accept",
+									"role": "job_candidate"
+								},
+								{
+									"action_goal": {
+										"capability_id": "staffing.apply_assignment",
+										"goal_id": "",
+										"role": "job_candidate",
+										"success_result_id": "staffing-assignment-applied",
+										"target_refs": {
+											"assignment_kind": "transfer",
+											"from_occupation_id": "occupation_cafe_worker",
+											"occupation_id": "occupation_postal_worker"
+										}
+									},
+									"allows_public_text": true,
+									"meaning": "自愿申请转到这个空缺岗位，由 World 核对后再生效",
+									"option_id": "volunteer_transfer",
+									"response_kind": "accept",
+									"role": "job_candidate"
+								}
+							],
+							"resident_id": "resident_hanako_01",
+							"response": {},
+							"terminal": false,
+							"terminal_reason": ""
+						},
+						{
+							"ability_score": 100,
+							"available_at": 480,
+							"load": 0,
+							"options": [
+								{
+									"action_goal": {},
+									"allows_public_text": true,
+									"meaning": "这次先不决定，岗位继续保持空缺",
+									"option_id": "consider_later",
+									"response_kind": "defer",
+									"role": ""
+								},
+								{
+									"action_goal": {},
+									"allows_public_text": true,
+									"meaning": "保留现在的职业，不申请本次转岗",
+									"option_id": "keep_current_job",
+									"response_kind": "reject",
+									"role": ""
+								},
+								{
+									"action_goal": {
+										"capability_id": "staffing.apply_assignment",
+										"goal_id": "",
+										"role": "job_candidate",
+										"success_result_id": "staffing-assignment-applied",
+										"target_refs": {
+											"assignment_kind": "part_time",
+											"from_occupation_id": "occupation_librarian",
+											"occupation_id": "occupation_postal_worker"
+										}
+									},
+									"allows_public_text": true,
+									"meaning": "先兼职协助这个岗位，保留当前正式职业",
+									"option_id": "volunteer_part_time",
+									"response_kind": "accept",
+									"role": "job_candidate"
+								},
+								{
+									"action_goal": {
+										"capability_id": "staffing.apply_assignment",
+										"goal_id": "",
+										"role": "job_candidate",
+										"success_result_id": "staffing-assignment-applied",
+										"target_refs": {
+											"assignment_kind": "shift",
+											"from_occupation_id": "occupation_librarian",
+											"occupation_id": "occupation_postal_worker",
+											"shift_end_minute": "1320",
+											"shift_start_minute": "960"
+										}
+									},
+									"allows_public_text": true,
+									"meaning": "承担下午和傍晚轮班，保留当前正式职业",
+									"option_id": "volunteer_shift_evening",
+									"response_kind": "accept",
+									"role": "job_candidate"
+								},
+								{
+									"action_goal": {
+										"capability_id": "staffing.apply_assignment",
+										"goal_id": "",
+										"role": "job_candidate",
+										"success_result_id": "staffing-assignment-applied",
+										"target_refs": {
+											"assignment_kind": "shift",
+											"from_occupation_id": "occupation_librarian",
+											"occupation_id": "occupation_postal_worker",
+											"shift_end_minute": "960",
+											"shift_start_minute": "480"
+										}
+									},
+									"allows_public_text": true,
+									"meaning": "承担上午轮班，保留当前正式职业",
+									"option_id": "volunteer_shift_morning",
+									"response_kind": "accept",
+									"role": "job_candidate"
+								},
+								{
+									"action_goal": {
+										"capability_id": "staffing.apply_assignment",
+										"goal_id": "",
+										"role": "job_candidate",
+										"success_result_id": "staffing-assignment-applied",
+										"target_refs": {
+											"assignment_kind": "transfer",
+											"from_occupation_id": "occupation_librarian",
+											"occupation_id": "occupation_postal_worker"
+										}
+									},
+									"allows_public_text": true,
+									"meaning": "自愿申请转到这个空缺岗位，由 World 核对后再生效",
+									"option_id": "volunteer_transfer",
+									"response_kind": "accept",
+									"role": "job_candidate"
+								}
+							],
+							"resident_id": "resident_xu_zhao_01",
+							"response": {},
+							"terminal": false,
+							"terminal_reason": ""
+						}
+					],
+					"involvement": {
+						"resident_bai_zhi_01": {
+							"role": "affected",
+							"updated_at": 480
+						},
+						"resident_cheng_yan_01": {
+							"role": "affected",
+							"updated_at": 480
+						},
+						"resident_hanako_01": {
+							"role": "affected",
+							"updated_at": 480
+						},
+						"resident_xu_zhao_01": {
+							"role": "affected",
+							"updated_at": 480
+						}
+					},
+					"kind": "job_vacancy",
+					"matter_id": "matter-000001",
+					"parent_matter_id": "",
+					"participants": {},
+					"place_id": "小镇道路",
+					"reason_summary": "邮差岗位目前空缺，相关服务已暂停或降级，居民可以协商是否自愿接手。",
+					"resolution_rules": [
+						{
+							"params": {},
+							"resolver_id": "social.resolve.cancelled"
+						},
+						{
+							"params": {},
+							"resolver_id": "social.resolve.expired"
+						},
+						{
+							"params": {},
+							"resolver_id": "social.resolve.goal_completed"
+						},
+						{
+							"params": {},
+							"resolver_id": "social.resolve.no_response"
+						},
+						{
+							"params": {},
+							"resolver_id": "social.resolve.source_cleared"
+						}
+					],
+					"response_history": [],
+					"response_round_id": "matter-000001-r1",
+					"response_window_until": 510,
+					"result_refs": [],
+					"revision": 11,
+					"source_action_goal": {
+						"capability_id": "staffing.apply_assignment",
+						"goal_id": "",
+						"role": "job_candidate",
+						"success_result_id": "staffing-assignment-applied",
+						"target_refs": {
+							"assignment_kind": "transfer",
+							"occupation_id": "occupation_postal_worker"
+						}
+					},
+					"source_event_ids": [],
+					"source_state_ref": {
+						"source_id": "job-vacancy:occupation_postal_worker",
+						"source_kind": "job_vacancy",
+						"source_revision": 1
+					},
+					"state": "collecting",
+					"subject_ids": [
+						"occupation_postal_worker"
+					]
+				}
+			],
+			"receipts_by_resident": {
+				"resident_bai_zhi_01": []
+			},
+			"schema": "town-social-matters",
+			"schema_version": 1,
+			"sequences": {
+				"goal": 0,
+				"matter": 1,
+				"round": 1
+			}
+		},
+		"staffingState": {
+			"arrangementSequence": 0,
+			"arrangements": [],
+			"qualificationsByResident": {
+				"resident_bai_zhi_01": [
+					"occupation_clinic_practitioner"
+				],
+				"resident_cheng_yan_01": [
+					"occupation_librarian"
+				],
+				"resident_hanako_01": [
+					"occupation_cafe_worker"
+				],
+				"resident_jiang_cheng_01": [
+					"occupation_flower_vendor"
+				],
+				"resident_lin_lan_01": [
+					"occupation_botanist"
+				],
+				"resident_lu_qingzhou_01": [
+					"occupation_fisher"
+				],
+				"resident_luo_yuan_01": [
+					"occupation_craftsperson"
+				],
+				"resident_mi_ya_01": [
+					"occupation_gardener"
+				],
+				"resident_qiao_yiming_01": [
+					"occupation_delivery_worker"
+				],
+				"resident_su_tang_01": [
+					"occupation_dining_operator"
+				],
+				"resident_tang_xiaoman_01": [
+					"occupation_grocer"
+				],
+				"resident_wen_xu_01": [
+					"occupation_town_manager"
+				],
+				"resident_xie_mian_01": [
+					"occupation_musician"
+				],
+				"resident_xu_zhao_01": [
+					"occupation_librarian"
+				],
+				"resident_zhou_jiming_01": [
+					"occupation_warehouse_keeper"
+				]
+			},
+			"schemaVersion": 1
+		},
+		"workTasks": {
+			"schemaVersion": 1,
+			"tasks": [
+				{
+					"assignedOccupationId": "",
+					"assignedResidentId": "",
+					"capability": "civic.service",
+					"createdAtMinute": 480,
+					"eligibleOccupationIds": [
+						"occupation_town_manager"
+					],
+					"eligibleResidentIds": [],
+					"priority": 64,
+					"processFacts": {
+						"dayIndex": 0,
+						"nextActivityId": "activity_town_hall_manage_records",
+						"openServiceCount": 4,
+						"vacancyCount": 1,
+						"weather": "晴天"
+					},
+					"processStage": "reviewing",
+					"requestedResultKind": "civic_case_update",
+					"result": {},
+					"revision": 2,
+					"sourceKind": "public_matter",
+					"sourceRef": "daily-town-state:0",
+					"state": "open",
+					"targets": [
+						{
+							"kind": "prop",
+							"ref": "镇公所档案柜"
+						}
+					],
+					"taskId": "civic-daily-review:0",
+					"terminalSequence": 0,
+					"waitReason": ""
+				},
+				{
+					"assignedOccupationId": "",
+					"assignedResidentId": "",
+					"capability": "civic.service",
+					"createdAtMinute": 480,
+					"eligibleOccupationIds": [
+						"occupation_town_manager"
+					],
+					"eligibleResidentIds": [],
+					"priority": 84,
+					"processFacts": {
+						"nextActivityId": "activity_town_hall_manage_records",
+						"open": false,
+						"placeId": "图书馆",
+						"waitingRequestCount": 0,
+						"weather": "晴天"
+					},
+					"processStage": "reviewing_service_change",
+					"requestedResultKind": "civic_case_update",
+					"result": {},
+					"revision": 2,
+					"sourceKind": "place_service_change",
+					"sourceRef": "place-service:图书馆",
+					"state": "open",
+					"targets": [
+						{
+							"kind": "prop",
+							"ref": "镇公所档案柜"
+						}
+					],
+					"taskId": "civic-service-change:图书馆:0",
+					"terminalSequence": 0,
+					"waitReason": ""
+				},
+				{
+					"assignedOccupationId": "",
+					"assignedResidentId": "",
+					"capability": "staffing.coordinate",
+					"createdAtMinute": 480,
+					"eligibleOccupationIds": [
+						"occupation_town_manager"
+					],
+					"eligibleResidentIds": [],
+					"priority": 82,
+					"processFacts": {
+						"nextActivityId": "activity_town_hall_manage_records",
+						"vacancyCount": 1
+					},
+					"processStage": "reviewing_staffing",
+					"requestedResultKind": "staffing_matter_update",
+					"result": {},
+					"revision": 2,
+					"sourceKind": "staffing_matter",
+					"sourceRef": "staffing-vacancies",
+					"state": "open",
+					"targets": [
+						{
+							"kind": "prop",
+							"ref": "镇公所档案柜"
+						}
+					],
+					"taskId": "civic-staffing-review:0",
+					"terminalSequence": 0,
+					"waitReason": ""
+				},
+				{
+					"assignedOccupationId": "",
+					"assignedResidentId": "",
+					"capability": "craft.production",
+					"createdAtMinute": 480,
+					"eligibleOccupationIds": [
+						"occupation_craftsperson"
+					],
+					"eligibleResidentIds": [],
+					"priority": 62,
+					"processFacts": {
+						"baseSupplyItems": [
+							"lumber",
+							"metal"
+						],
+						"destinationPlaceId": "码头仓库",
+						"nextActivityId": "activity_workshop_take_lumber",
+						"productItemId": "crafted_item"
+					},
+					"processStage": "materials_planned",
+					"requestedResultKind": "crafted_lot",
+					"result": {},
+					"revision": 2,
+					"sourceKind": "production_request",
+					"sourceRef": "civic-craft-plan-day:0",
+					"state": "open",
+					"targets": [
+						{
+							"kind": "prop",
+							"ref": "工作坊木料架"
+						},
+						{
+							"kind": "prop",
+							"ref": "工作坊打磨机"
+						},
+						{
+							"kind": "prop",
+							"ref": "工作坊装配锯架台"
+						}
+					],
+					"taskId": "craft-production:0",
+					"terminalSequence": 0,
+					"waitReason": ""
+				},
+				{
+					"assignedOccupationId": "",
+					"assignedResidentId": "",
+					"capability": "cafe.handoff",
+					"createdAtMinute": 480,
+					"eligibleOccupationIds": [
+						"occupation_cafe_worker"
+					],
+					"eligibleResidentIds": [],
+					"priority": 44,
+					"processFacts": {
+						"dayIndex": 0,
+						"nextActivityId": "activity_cafe_tidy_tables"
+					},
+					"processStage": "planned",
+					"requestedResultKind": "daily_operation_record",
+					"result": {},
+					"revision": 2,
+					"sourceKind": "daily_operation_plan",
+					"sourceRef": "cafe-opening-day:0",
+					"state": "open",
+					"targets": [
+						{
+							"kind": "prop",
+							"ref": "花房咖啡馆西北座椅"
+						}
+					],
+					"taskId": "daily-operation:cafe-opening-day:0",
+					"terminalSequence": 0,
+					"waitReason": ""
+				},
+				{
+					"assignedOccupationId": "",
+					"assignedResidentId": "",
+					"capability": "care.treatment",
+					"createdAtMinute": 480,
+					"eligibleOccupationIds": [
+						"occupation_clinic_practitioner"
+					],
+					"eligibleResidentIds": [],
+					"priority": 44,
+					"processFacts": {
+						"dayIndex": 0,
+						"nextActivityId": "activity_clinic_prepare_medicine"
+					},
+					"processStage": "planned",
+					"requestedResultKind": "daily_operation_record",
+					"result": {},
+					"revision": 2,
+					"sourceKind": "daily_operation_plan",
+					"sourceRef": "clinic-opening-day:0",
+					"state": "open",
+					"targets": [
+						{
+							"kind": "prop",
+							"ref": "诊所药柜"
+						}
+					],
+					"taskId": "daily-operation:clinic-opening-day:0",
+					"terminalSequence": 0,
+					"waitReason": ""
+				},
+				{
+					"assignedOccupationId": "",
+					"assignedResidentId": "",
+					"capability": "retail.sale",
+					"createdAtMinute": 480,
+					"eligibleOccupationIds": [
+						"occupation_grocer",
+						"occupation_flower_vendor"
+					],
+					"eligibleResidentIds": [],
+					"priority": 44,
+					"processFacts": {
+						"dayIndex": 0,
+						"nextActivityId": "activity_flower_watch_stall"
+					},
+					"processStage": "planned",
+					"requestedResultKind": "daily_operation_record",
+					"result": {},
+					"revision": 2,
+					"sourceKind": "daily_operation_plan",
+					"sourceRef": "flower-opening-day:0",
+					"state": "open",
+					"targets": [
+						{
+							"kind": "prop",
+							"ref": "独立市集南侧花摊"
+						}
+					],
+					"taskId": "daily-operation:flower-opening-day:0",
+					"terminalSequence": 0,
+					"waitReason": ""
+				},
+				{
+					"assignedOccupationId": "",
+					"assignedResidentId": "",
+					"capability": "retail.stock",
+					"createdAtMinute": 480,
+					"eligibleOccupationIds": [
+						"occupation_grocer"
+					],
+					"eligibleResidentIds": [],
+					"priority": 44,
+					"processFacts": {
+						"dayIndex": 0,
+						"nextActivityId": "activity_grocer_count_goods"
+					},
+					"processStage": "planned",
+					"requestedResultKind": "daily_operation_record",
+					"result": {},
+					"revision": 2,
+					"sourceKind": "daily_operation_plan",
+					"sourceRef": "grocer-opening-day:0",
+					"state": "open",
+					"targets": [
+						{
+							"kind": "prop",
+							"ref": "独立市集西侧杂货摊"
+						}
+					],
+					"taskId": "daily-operation:grocer-opening-day:0",
+					"terminalSequence": 0,
+					"waitReason": ""
+				},
+				{
+					"assignedOccupationId": "",
+					"assignedResidentId": "",
+					"capability": "message.accept",
+					"createdAtMinute": 480,
+					"eligibleOccupationIds": [
+						"occupation_postal_worker"
+					],
+					"eligibleResidentIds": [],
+					"priority": 76,
+					"processFacts": {
+						"dayIndex": 0,
+						"nextActivityId": "activity_postal_collect_outgoing_mail"
+					},
+					"processStage": "planned",
+					"requestedResultKind": "postal_collection_record",
+					"result": {},
+					"revision": 2,
+					"sourceKind": "daily_postal_collection_plan",
+					"sourceRef": "postal-collection-day:0",
+					"state": "open",
+					"targets": [
+						{
+							"kind": "route",
+							"ref": "小镇道路"
+						}
+					],
+					"taskId": "daily-operation:postal-collection-day:0",
+					"terminalSequence": 0,
+					"waitReason": ""
+				},
+				{
+					"assignedOccupationId": "",
+					"assignedResidentId": "",
+					"capability": "food.production",
+					"createdAtMinute": 480,
+					"eligibleOccupationIds": [
+						"occupation_dining_operator"
+					],
+					"eligibleResidentIds": [],
+					"priority": 58,
+					"processFacts": {
+						"destinationPlaceId": "花房咖啡馆",
+						"nextActivityId": "activity_baker_prepare_dough",
+						"productItemId": "pastry"
+					},
+					"processStage": "planned",
+					"requestedResultKind": "food_batch",
+					"result": {},
+					"revision": 2,
+					"sourceKind": "daily_baking_plan",
+					"sourceRef": "dining-pastry-plan-day:0",
+					"state": "open",
+					"targets": [
+						{
+							"kind": "prop",
+							"ref": "公共食堂备餐柜"
+						},
+						{
+							"kind": "prop",
+							"ref": "公共食堂灶台"
+						}
+					],
+					"taskId": "dining-pastry-plan:0",
+					"terminalSequence": 0,
+					"waitReason": ""
+				},
+				{
+					"assignedOccupationId": "",
+					"assignedResidentId": "",
+					"capability": "fishing.harvest",
+					"createdAtMinute": 480,
+					"eligibleOccupationIds": [
+						"occupation_fisher"
+					],
+					"eligibleResidentIds": [],
+					"priority": 72,
+					"processFacts": {},
+					"processStage": "ready",
+					"requestedResultKind": "fishing_outcome",
+					"result": {},
+					"revision": 1,
+					"sourceKind": "fishing_conditions",
+					"sourceRef": "outdoor_harbor_01",
+					"state": "open",
+					"targets": [
+						{
+							"kind": "region",
+							"ref": "outdoor_harbor_01"
+						}
+					],
+					"taskId": "fishing-task:480",
+					"terminalSequence": 0,
+					"waitReason": ""
+				},
+				{
+					"assignedOccupationId": "",
+					"assignedResidentId": "",
+					"capability": "garden.care",
+					"createdAtMinute": 480,
+					"eligibleOccupationIds": [
+						"occupation_gardener"
+					],
+					"eligibleResidentIds": [],
+					"priority": 68,
+					"processFacts": {},
+					"processStage": "ready",
+					"requestedResultKind": "garden_state_change",
+					"result": {},
+					"revision": 1,
+					"sourceKind": "plant_state",
+					"sourceRef": "garden_plot_east",
+					"state": "open",
+					"targets": [
+						{
+							"kind": "region",
+							"ref": "outdoor_garden_01"
+						}
+					],
+					"taskId": "garden-care-task:garden_plot_east:480",
+					"terminalSequence": 0,
+					"waitReason": ""
+				},
+				{
+					"assignedOccupationId": "",
+					"assignedResidentId": "",
+					"capability": "garden.harvest",
+					"createdAtMinute": 480,
+					"eligibleOccupationIds": [
+						"occupation_gardener"
+					],
+					"eligibleResidentIds": [],
+					"priority": 70,
+					"processFacts": {},
+					"processStage": "ready",
+					"requestedResultKind": "flower_lot",
+					"result": {},
+					"revision": 1,
+					"sourceKind": "flowering_state",
+					"sourceRef": "garden_plot_west",
+					"state": "open",
+					"targets": [
+						{
+							"kind": "region",
+							"ref": "outdoor_garden_01"
+						}
+					],
+					"taskId": "garden-harvest-task:garden_plot_west:480",
+					"terminalSequence": 0,
+					"waitReason": ""
+				},
+				{
+					"assignedOccupationId": "",
+					"assignedResidentId": "",
+					"capability": "garden.harvest",
+					"createdAtMinute": 480,
+					"eligibleOccupationIds": [
+						"occupation_gardener"
+					],
+					"eligibleResidentIds": [],
+					"priority": 71,
+					"processFacts": {},
+					"processStage": "ready",
+					"requestedResultKind": "plant_sample_lot",
+					"result": {},
+					"revision": 1,
+					"sourceKind": "sample_request",
+					"sourceRef": "plant-research-1",
+					"state": "open",
+					"targets": [
+						{
+							"kind": "region",
+							"ref": "outdoor_garden_01"
+						}
+					],
+					"taskId": "garden-sample:plant-research-1",
+					"terminalSequence": 0,
+					"waitReason": ""
+				},
+				{
+					"assignedOccupationId": "",
+					"assignedResidentId": "",
+					"capability": "food.production",
+					"createdAtMinute": 480,
+					"eligibleOccupationIds": [
+						"occupation_dining_operator"
+					],
+					"eligibleResidentIds": [],
+					"priority": 76,
+					"processFacts": {
+						"baseSupply": true,
+						"nextActivityId": "activity_dining_prepare_meal",
+						"periodId": "breakfast",
+						"periodLabel": "早餐"
+					},
+					"processStage": "meal_period_planned",
+					"requestedResultKind": "food_batch",
+					"result": {},
+					"revision": 2,
+					"sourceKind": "meal_demand",
+					"sourceRef": "meal-period:0:breakfast",
+					"state": "open",
+					"targets": [
+						{
+							"kind": "prop",
+							"ref": "公共食堂备餐柜"
+						},
+						{
+							"kind": "prop",
+							"ref": "公共食堂灶台"
+						}
+					],
+					"taskId": "meal-preparation:meal-period:0:breakfast",
+					"terminalSequence": 0,
+					"waitReason": ""
+				},
+				{
+					"assignedOccupationId": "",
+					"assignedResidentId": "",
+					"capability": "research.observe",
+					"createdAtMinute": 480,
+					"eligibleOccupationIds": [
+						"occupation_botanist"
+					],
+					"eligibleResidentIds": [],
+					"priority": 62,
+					"processFacts": {},
+					"processStage": "ready",
+					"requestedResultKind": "research_record",
+					"result": {},
+					"revision": 1,
+					"sourceKind": "abnormal_plant",
+					"sourceRef": "plant-research-1",
+					"state": "open",
+					"targets": [
+						{
+							"kind": "region",
+							"ref": "outdoor_garden_01"
+						}
+					],
+					"taskId": "research-task:plant-research-1:observe",
+					"terminalSequence": 0,
+					"waitReason": ""
+				},
+				{
+					"assignedOccupationId": "",
+					"assignedResidentId": "",
+					"capability": "inventory.receive",
+					"createdAtMinute": 480,
+					"eligibleOccupationIds": [
+						"occupation_warehouse_keeper"
+					],
+					"eligibleResidentIds": [],
+					"priority": 52,
+					"processFacts": {},
+					"processStage": "ready",
+					"requestedResultKind": "inventory_record",
+					"result": {},
+					"revision": 1,
+					"sourceKind": "daily_inventory_plan",
+					"sourceRef": "warehouse-audit:0",
+					"state": "open",
+					"targets": [
+						{
+							"kind": "prop",
+							"ref": "码头仓库货单桌"
+						}
+					],
+					"taskId": "warehouse-daily-audit:0",
+					"terminalSequence": 0,
+					"waitReason": ""
+				}
+			]
+		}
+	},
+	"worldDataSchemaVersion": 1,
+	"worldDataVersion": 4,
+	"worldId": "town"
+}

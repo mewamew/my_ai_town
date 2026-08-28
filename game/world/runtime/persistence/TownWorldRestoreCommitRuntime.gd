@@ -65,6 +65,9 @@ static func commit_candidate(
 		"runtimeGeneration": host._runtime_generation,
 		"worldRevision": host._world_revision,
 		"identitySnapshot": host.get_resident_identity_snapshot(),
+		"migrationReceipt": (
+			candidate.get("migrationReceipt", {}) as Dictionary
+		).duplicate(true),
 	}
 	return host._decorate_command_result(
 		host._restore_candidate_runtime.complete_commit(

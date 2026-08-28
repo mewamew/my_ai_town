@@ -3,6 +3,26 @@
  "note": "必须存在的测试 ID 清单（铁律第 2 条）。清单项缺失即红；测试合并/删除须在 PR 证明覆盖未减少并同步更新。min_checks = 分测试最低断言数，须与 runner 条目第三字段一致。",
  "tests": [
   {
+   "id": "res://tests/town_interior_lazy_loading_test.gd",
+   "min_checks": 217
+  },
+  {
+   "id": "res://tests/town_interior_build_stability_test.gd",
+   "min_checks": 12
+  },
+  {
+   "id": "res://tests/town_interior_wall_occlusion_cutout_test.gd",
+   "min_checks": 941
+  },
+  {
+   "id": "res://tests/town_interior_occlusion_validation_test.gd",
+   "min_checks": 30
+  },
+  {
+   "id": "res://tests/interior_occlusion_asset_generator_test.gd",
+   "min_checks": 57
+  },
+  {
    "id": "res://tests/town_world_save_test.gd",
    "min_checks": 177
   },
@@ -41,7 +61,26 @@
   },
   {
     "id": "res://tests/session_save_continue_roundtrip_test.gd",
-    "min_checks": 28
+    "min_checks": 112
+  },
+  {
+    "id": "res://tests/save_reconciliation_test.gd",
+    "min_checks": 119
+  },
+  {
+    "id": "res://tests/save_recovery_confirmation_test.gd",
+    "min_checks": 14
+  },
+  {
+    "id": "res://tests/town_save_compatibility_registry_test.gd",
+    "min_checks": 60
+  },
+  {
+    "id": "res://tests/game_flow_daily_auto_save_test.gd"
+  },
+  {
+    "id": "res://tests/town_session_async_save_job_test.gd",
+    "min_checks": 14
   },
   {
     "id": "res://tests/windows_directory_cleanup_test.gd",

@@ -8,6 +8,9 @@ const ResidentRuntimeScript := preload("res://agent/ResidentRuntime.gd")
 const AgentSaveStoreScript := preload("res://agent/lifecycle/AgentSaveStore.gd")
 const AgentSessionEpochScript := preload("res://agent/lifecycle/AgentSessionEpoch.gd")
 const ResidentStateCodecScript := preload("res://agent/lifecycle/ResidentStateCodec.gd")
+const ResidentStateMigrationScript := preload(
+	"res://agent/lifecycle/AgentResidentStateMigration.gd"
+)
 const RUNTIME_MEMORY_ROOT := "user://agent_runtime_memory"
 const DEFAULT_AVATAR_PERSON_ID := "person_7f3a91c2d8e4"
 const DEFAULT_AVATAR_NAME := "旅行者"
@@ -167,6 +170,15 @@ func restore_game(context: Variant) -> Dictionary:
 		"status": "pending_hydration",
 		"context": (result["context"] as Dictionary).duplicate(true),
 		"resident_ids": resident_ids,
+		"migration_receipt": {
+			"module": "resident_payload",
+			"migrationVersion": int(
+				decode_result.get("migration_version", 0),
+			),
+			"applied": (
+				decode_result.get("migration_ids", []) as Array
+			).duplicate(),
+		},
 	}
 
 
@@ -193,6 +205,169 @@ func save_game(next_context: Variant) -> Dictionary:
 	if bool(result.get("ok", false)):
 		_save_context = (result["context"] as Dictionary).duplicate(true)
 	return result
+
+
+func prepare_save_candidate() -> Dictionary:
+	var started := begin_save_capture()
+	if not bool(started.get("ok", false)):
+		return started
+	var capture := started.get("capture", {}) as Dictionary
+	var capture_result := continue_save_capture(
+		capture,
+		maxi(1, (capture.get("residentIds", []) as Array).size()),
+	) as Dictionary
+	if not bool(capture_result.get("ok", false)):
+		return capture_result
+	if bool(capture_result.get("pending", false)):
+		return {
+			"ok": false,
+			"errorCode": "SESSION_SAVE_AGENT_CAPTURE_INCOMPLETE",
+			"errors": ["居民存档捕获没有在同步调用中完成"],
+			"retryable": true,
+		}
+	capture = capture_result.get("capture", {}) as Dictionary
+	return {
+		"ok": true,
+		"context": (capture.get("context", {}) as Dictionary).duplicate(true),
+		"residentIds": (capture.get("residentIds", []) as Array).duplicate(),
+		# _capture_resident_payloads 已经为每位居民生成了脱离运行时的
+		# 编码载荷。这里保留这一份，让异步保存线程直接消费，避免在
+		# 主线程和线程启动时各做一次完整深拷贝。
+		"residentPayloads": capture.get("residentPayloads", {}) as Dictionary,
+	}
+
+
+func begin_save_capture() -> Dictionary:
+	if not _session_open or _save_context.is_empty():
+		return {"ok": false, "errors": ["没有可保存的活动存档会话"]}
+	var resident_ids: Array[String] = []
+	for resident_id_value: Variant in _residents:
+		if not resident_id_value is String:
+			return {
+				"ok": false,
+				"errorCode": "SESSION_SAVE_AGENT_IDENTITY_MISMATCH",
+				"errors": ["活动居民 ID 集合无效"],
+				"retryable": false,
+			}
+		resident_ids.append(resident_id_value as String)
+	resident_ids.sort()
+	return {
+		"ok": true,
+		"capture": {
+			"context": _save_context.duplicate(true),
+			"residentIds": resident_ids,
+			"residentPayloads": {},
+			"nextIndex": 0,
+		},
+	}
+
+
+func continue_save_capture(
+	capture_value: Variant,
+	max_residents: int = 1,
+) -> Dictionary:
+	if not capture_value is Dictionary or max_residents < 1:
+		return {
+			"ok": false,
+			"errorCode": "SESSION_SAVE_AGENT_CAPTURE_INVALID",
+			"errors": ["居民存档捕获上下文无效"],
+			"retryable": false,
+		}
+	var capture := capture_value as Dictionary
+	var context_value: Variant = capture.get("context")
+	var resident_ids_value: Variant = capture.get("residentIds")
+	var payloads_value: Variant = capture.get("residentPayloads")
+	if (
+		not context_value is Dictionary
+		or not resident_ids_value is Array
+		or not payloads_value is Dictionary
+	):
+		return {
+			"ok": false,
+			"errorCode": "SESSION_SAVE_AGENT_CAPTURE_INVALID",
+			"errors": ["居民存档捕获字段不完整"],
+			"retryable": false,
+		}
+	if _save_context != (context_value as Dictionary):
+		return {
+			"ok": false,
+			"errorCode": "SESSION_SAVE_AGENT_CONTEXT_CHANGED",
+			"errors": ["居民存档捕获期间 Agent 上下文发生变化"],
+			"retryable": true,
+		}
+	var resident_ids := resident_ids_value as Array
+	var payloads := payloads_value as Dictionary
+	var next_index := int(capture.get("nextIndex", 0))
+	if next_index < 0 or next_index > resident_ids.size():
+		return {
+			"ok": false,
+			"errorCode": "SESSION_SAVE_AGENT_CAPTURE_INVALID",
+			"errors": ["居民存档捕获进度无效"],
+			"retryable": false,
+		}
+	var captured := 0
+	while next_index < resident_ids.size() and captured < max_residents:
+		var resident_id_value: Variant = resident_ids[next_index]
+		if not resident_id_value is String or not _residents.has(resident_id_value):
+			return {
+				"ok": false,
+				"errorCode": "SESSION_SAVE_AGENT_IDENTITY_MISMATCH",
+				"errors": ["活动居民字典与捕获身份集合不一致"],
+				"retryable": true,
+			}
+		var resident_id := resident_id_value as String
+		var capture_result: Dictionary = _capture_resident_payloads({
+			resident_id: _residents[resident_id] as RefCounted,
+		})
+		if not bool(capture_result.get("ok", false)):
+			return capture_result
+		var captured_payloads := capture_result.get(
+			"resident_payloads",
+			{},
+		) as Dictionary
+		if not captured_payloads.has(resident_id):
+			return {
+				"ok": false,
+				"errorCode": "SESSION_SAVE_AGENT_CAPTURE_INVALID",
+				"errors": ["居民存档捕获结果缺少居民载荷"],
+				"retryable": true,
+			}
+		payloads[resident_id] = captured_payloads[resident_id]
+		next_index += 1
+		captured += 1
+	capture["nextIndex"] = next_index
+	return {
+		"ok": true,
+		"pending": next_index < resident_ids.size(),
+		"capture": capture,
+	}
+
+
+func create_save_store_peer() -> RefCounted:
+	if _save_store == null or not _save_store.has_method("create_isolated_peer"):
+		return null
+	return _save_store.create_isolated_peer() as RefCounted
+
+
+func accept_published_save_context(
+	next_context_value: Variant,
+	expected_context_value: Variant,
+) -> Dictionary:
+	if not next_context_value is Dictionary or not expected_context_value is Dictionary:
+		return {"ok": false, "errors": ["后台存档上下文无效"]}
+	var next_context := next_context_value as Dictionary
+	var expected_context := expected_context_value as Dictionary
+	if _save_context != expected_context:
+		return {"ok": false, "errors": ["后台存档完成前 Agent 上下文已经变化"]}
+	if (
+		next_context.get("slot_id") != expected_context.get("slot_id")
+		or next_context.get("session_id") != expected_context.get("session_id")
+		or int(next_context.get("save_revision", 0))
+		<= int(expected_context.get("save_revision", 0))
+	):
+		return {"ok": false, "errors": ["后台存档修订上下文不连续"]}
+	_save_context = next_context.duplicate(true)
+	return {"ok": true, "context": _save_context.duplicate(true)}
 
 
 func close_game() -> Dictionary:
@@ -1059,6 +1234,13 @@ func _capture_resident_payloads(residents: Dictionary) -> Dictionary:
 	resident_ids.sort()
 	for resident_id: Variant in resident_ids:
 		var resident := residents[resident_id] as RefCounted
+		if resident == null:
+			return {
+				"ok": false,
+				"errorCode": "SESSION_SAVE_AGENT_IDENTITY_MISMATCH",
+				"errors": ["活动居民运行时不存在：%s" % resident_id],
+				"retryable": true,
+			}
 		var capture_result: Dictionary = resident.call("capture_persistent_state")
 		if not bool(capture_result.get("ok", false)):
 			return capture_result
@@ -1082,6 +1264,8 @@ func _capture_resident_payloads(residents: Dictionary) -> Dictionary:
 
 func _decode_resident_payloads(payloads: Dictionary) -> Dictionary:
 	var resident_states := {}
+	var migration_ids: Array[String] = []
+	var migration_version := 0
 	for resident_id: Variant in payloads:
 		var payload_record := payloads[resident_id] as Dictionary
 		var decode_result: Dictionary = _resident_state_codec.call(
@@ -1092,8 +1276,24 @@ func _decode_resident_payloads(payloads: Dictionary) -> Dictionary:
 		)
 		if not bool(decode_result.get("ok", false)):
 			return decode_result
-		resident_states[resident_id] = decode_result["resident_state"]
-	return {"ok": true, "resident_states": resident_states}
+		var migration := ResidentStateMigrationScript.migrate(
+			decode_result["resident_state"] as Dictionary,
+		) as Dictionary
+		resident_states[resident_id] = migration.get("state", {})
+		migration_version = maxi(
+			migration_version,
+			int(migration.get("migrationVersion", 0)),
+		)
+		for migration_id_value: Variant in migration.get("applied", []) as Array:
+			var migration_id := String(migration_id_value)
+			if not migration_ids.has(migration_id):
+				migration_ids.append(migration_id)
+	return {
+		"ok": true,
+		"resident_states": resident_states,
+		"migration_ids": migration_ids,
+		"migration_version": migration_version,
+	}
 
 
 func _commit_restore_transaction(transaction: Dictionary) -> Dictionary:

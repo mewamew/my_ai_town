@@ -91,7 +91,21 @@ fi
 # push_error 的输出同样是行首 ERROR:——正式套件的测试在通过路径上
 # 不应触发 push_error；确需验证预期错误的测试，为该测试加精确允许
 # 条目（参见 run_isolated_formal_entry_story.sh 的做法），不放宽全局规则。
-if rg -q -e '^ERROR:' "$log_file"; then
+if [[ "$test_script" == "res://tests/town_interior_occlusion_validation_test.gd" ]]; then
+	unexpected_engine_errors="$(
+		rg -e '^ERROR:' "$log_file" \
+			| rg -v \
+				-e '^ERROR: Pre-generated interior occlusion is stale or invalid \(MANIFEST_VERSION_STALE\): generated manifest schema is stale$' \
+				-e '^ERROR: Pre-generated interior occlusion is stale or invalid \(MANIFEST_MISSING\): generated manifest is missing$' \
+				-e "^ERROR: Parse JSON failed\. Error at line 0: Expected '}'$" \
+			|| true
+	)"
+	if [[ -n "$unexpected_engine_errors" ]]; then
+		print -r -- "$unexpected_engine_errors" >&2
+		print -u2 "TEST_ENGINE_ERROR: $test_script"
+		exit 1
+	fi
+elif rg -q -e '^ERROR:' "$log_file"; then
 	print -u2 "TEST_ENGINE_ERROR: $test_script"
 	exit 1
 fi
