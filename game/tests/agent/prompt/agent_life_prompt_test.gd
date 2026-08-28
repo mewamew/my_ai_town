@@ -13,7 +13,45 @@ func _initialize() -> void:
 		_test_body_conditions_and_needs_are_rendered(compiler_script)
 		_test_social_assignment_context(compiler_script)
 		_test_interrogation_talk_targets(compiler_script)
+		_test_idle_talk_targets_restored(compiler_script)
 	_finish_prompt_test("AGENT_LIFE_PROMPT_PASS")
+
+
+func _test_idle_talk_targets_restored(compiler_script: Script) -> void:
+	# 冻结-解冻不变量: 审讯期"搭话目标合并可审候选"是瞬时叠加, 解冻后
+	# (assembly 快照为空)搭话目标必须回到纯 nearby 感知范围——否则远程
+	# 提审的宽松规则泄漏到正常时间, 警察平时也能隔空搭话全镇。
+	var compiler: RefCounted = compiler_script.new(_initialization())
+	var wake := _wake_packet("idle-talk-1", "晴天")
+	var snapshot := wake.get("snapshot", {}) as Dictionary
+	snapshot["assembly"] = {}  # 解冻后 assembly 快照为空
+	var request := compiler.call("compile", wake, "") as Dictionary
+	var constraints := request.get("derived_constraints", {}) as Dictionary
+	var actions := constraints.get("actions", {}) as Dictionary
+	var talk := actions.get("搭话", {}) as Dictionary
+	var talk_targets := talk.get("targets", []) as Array
+	_expect_equal(
+		talk_targets,
+		["resident-tang-xiao-man"],
+		"解冻后搭话目标恢复为纯 nearby(无审讯候选泄漏): %s" % str(talk_targets),
+	)
+	# 对应地: 汇报期居民也看不到搭话选项之外的东西(动作裁剪不泄漏)。
+	var report_wake := _wake_packet("report-restore-1", "晴天")
+	(report_wake.get("snapshot", {}) as Dictionary)["assembly"] = {
+		"phase": "report",
+		"frozen": true,
+		"reported": false,
+		"kinds": ["目击", "听到", "怀疑", "不汇报"],
+		"reportPrompt": "请向警察汇报。",
+	}
+	var report_request := compiler.call("compile", report_wake, "") as Dictionary
+	var report_constraints := report_request.get("derived_constraints", {}) as Dictionary
+	var report_actions := (report_constraints.get("actions", {}) as Dictionary).keys()
+	_expect_equal(
+		report_actions,
+		["向警察汇报"],
+		"汇报期动作裁剪只留汇报: %s" % str(report_actions),
+	)
 
 
 func _test_interrogation_talk_targets(compiler_script: Script) -> void:

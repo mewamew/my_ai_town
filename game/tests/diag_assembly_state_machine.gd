@@ -251,6 +251,23 @@ func _verify_fake_phase_timeouts() -> void:
 	)
 	_expect_equal(WEREWOLF.assembly_phase(fake), "idle", "流会后散会")
 	_expect_equal(WEREWOLF.assembly_frozen(fake), false, "流会后解冻")
+	# 冻结-解冻不变量(流会/平票出口): 散会后 wake 无大会残留、裁剪恢复。
+	_expect_equal(
+		(WEREWOLF.assembly_wake_snapshot(fake, "c1") as Dictionary).is_empty(),
+		true,
+		"流会后 wake 无大会残留",
+	)
+	var flow_restored_probe := {
+		"life_destination_options": [{"place": "广场"}],
+		"conversation": {"conversationId": "c1"},
+		"conversation_follow_up_options": [{"kind": "say"}],
+	}
+	WEREWOLF.constrain_wake(fake, "c1", flow_restored_probe)
+	_expect_equal(
+		(flow_restored_probe.get("life_destination_options", []) as Array).size(),
+		1,
+		"流会后 constrain_wake 不裁剪",
+	)
 
 
 # —— 场景3: 真实世界集成(手动驱动: 触发/冻结/桥接/立即开票/解冻) ——
@@ -387,6 +404,31 @@ func _verify_real_world_assembly() -> void:
 	_expect_equal(resumed.get("frozen") != true, true, "解冻后不再冻结")
 	_expect_equal(int(resumed.get("minutesAdvanced", 0)) > 0, true, "解冻后分钟恢复推进")
 	_expect_equal(int(env.call("get_absolute_minute")) > minute_after_settle, true, "解冻后环境分钟前进")
+	# 解冻后恢复: wake 快照无大会残留(assembly 空), constrain_wake 不再裁剪。
+	var restored_snap: Dictionary = WEREWOLF.assembly_wake_snapshot(world, civilians[0])
+	_expect_equal(restored_snap.is_empty(), true, "解冻后 wake 无大会残留")
+	var restored_probe := {
+		"life_destination_options": [{"place": "广场"}],
+		"conversation": {"conversationId": "c1"},
+		"conversation_follow_up_options": [{"kind": "say"}],
+	}
+	WEREWOLF.constrain_wake(world, civilians[0], restored_probe)
+	_expect_equal(
+		(restored_probe.get("life_destination_options", []) as Array).size(),
+		1,
+		"解冻后 constrain_wake 不裁剪(生活选项回来)",
+	)
+	_expect_equal(
+		(restored_probe.get("conversation_follow_up_options", []) as Array).size(),
+		1,
+		"解冻后对话选项不被清空",
+	)
+	# 解冻后投票快照为空(投票回合已清空)。
+	_expect_equal(
+		(WEREWOLF.vote_snapshot(world, civilians[0]) as Dictionary).is_empty(),
+		true,
+		"解冻后 exile_vote 快照为空",
+	)
 	world.call("stop")
 
 
