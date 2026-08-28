@@ -166,6 +166,39 @@ func _verify_assembly_action_whitelist(fake: FakeWorld) -> void:
 	WEREWOLF.submit_report(fake, "c2", {"kind": "目击", "line": "a"})
 	WEREWOLF.submit_report(fake, "c3", {"kind": "不汇报", "line": ""})
 	_expect_equal(WEREWOLF.assembly_phase(fake), "interrogation", "第2天汇报收齐进审讯")
+	# 审讯期 wake 裁剪: 被审者(有活跃对话)保留答话选项, 未审者/无对话清空,
+	# 警察保留提问选项——否则审讯对话无法进行(被审者无答话选项)。
+	var interrogated_snapshot := {
+		"conversation": {"conversationId": "c1", "with": "p", "turns": [1]},
+		"conversation_follow_up_options": [{"kind": "say"}],
+		"life_destination_options": [{"place": "广场"}],
+	}
+	WEREWOLF.constrain_wake(fake, "c2", interrogated_snapshot)
+	_expect_equal(
+		(interrogated_snapshot.get("conversation_follow_up_options", []) as Array).size(),
+		1,
+		"审讯期被审者保留答话选项",
+	)
+	var idle_civilian_snapshot := {
+		"conversation": {},
+		"conversation_follow_up_options": [{"kind": "say"}],
+	}
+	WEREWOLF.constrain_wake(fake, "c3", idle_civilian_snapshot)
+	_expect_equal(
+		(idle_civilian_snapshot.get("conversation_follow_up_options", []) as Array).size(),
+		0,
+		"审讯期未审平民无对话选项",
+	)
+	var police_snapshot := {
+		"conversation": {"conversationId": "c1", "with": "c2", "turns": [1]},
+		"conversation_follow_up_options": [{"kind": "say"}],
+	}
+	WEREWOLF.constrain_wake(fake, "p", police_snapshot)
+	_expect_equal(
+		(police_snapshot.get("conversation_follow_up_options", []) as Array).size(),
+		1,
+		"审讯期警察保留对话选项",
+	)
 	_expect_equal(WEREWOLF.assembly_action_allowed(fake, "p", "搭话"), "", "审讯期警察搭话")
 	_expect_equal(WEREWOLF.assembly_action_allowed(fake, "p", "结束审讯"), "", "审讯期警察结束")
 	_expect_equal(WEREWOLF.assembly_action_allowed(fake, "p", "去"), "审讯期警察只能询问居民或结束审讯", "审讯期警察不可去")

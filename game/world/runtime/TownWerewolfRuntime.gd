@@ -919,12 +919,20 @@ static func constrain_wake(world, resident_id: String, snapshot: Dictionary) -> 
 	snapshot["medical_follow_up"] = {}
 	snapshot["post_injury_reaction"] = {}
 	snapshot["work_tasks"] = []
-	# 对话跟随选项: 审讯期保留(警察与当前被审者对话需要), 其余阶段清空。
+	# 对话跟随选项: 审讯期警察(提问)与被审平民(答话)保留, 其余清空。
 	if phase != "interrogation":
 		snapshot["conversation_follow_up_options"] = []
-	# 投票期: 任何人不得发起对话; 汇报/审讯期: 非警察不对话。
 	if phase == "vote" or not is_police:
-		snapshot["conversation_follow_up_options"] = []
+		# 审讯期非警察: 只有正在被审(有活跃对话)的人才保留答话选项——
+		# 否则被审者无法应答警察问话, 审讯对话卡死(冻结期间对话超时不
+		# 推进, 卡住的审讯只能靠 600s 兜底强制进投票)。
+		var conversation_body: Variant = snapshot.get("conversation")
+		var has_active_conversation := (
+			conversation_body is Dictionary
+			and not (conversation_body as Dictionary).is_empty()
+		)
+		if phase != "interrogation" or not has_active_conversation:
+			snapshot["conversation_follow_up_options"] = []
 	if phase == "vote":
 		snapshot["nearby"] = []
 		snapshot["social_matters"] = []
