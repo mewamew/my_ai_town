@@ -211,9 +211,31 @@ static func _resolve_doctor(world, skills: Dictionary, round_day: int) -> void:
 			continue
 		kept.append(pending)
 	if blocked_event.is_empty():
-		# 守护落空：不额外投递事件，医生下次自然唤醒即可继续生活。
+		# 守护落空: 被守者当夜平安。给医生投递"守诊结果"事件并打日志,
+		# 否则医生/玩家完全看不到守诊生效(实锤: 首夜无人暗杀, 白芷守护
+		# 无任何反馈)。
 		doctor["lastProtectedId"] = protected_id
 		doctor["lastProtectedDay"] = round_day
+		var quiet_event := {
+			"event_id": "role-skill-doctor-quiet:%d:%s" % [round_day, protected_id],
+			"type": "守诊结果",
+			"time": world.get_time(),
+			"target_resident_id": protected_id,
+			"summary": "昨夜你守在%s身边，一夜平安，没有人对他下手。" % protected_name,
+		}
+		world._append_pending_world_event(
+			world._residents.get(DOCTOR_ID, {}) as Dictionary,
+			quiet_event,
+		)
+		TOWN_LOG.line(
+			"ROLE_SKILL",
+			"%s | 医生守诊落空：%s 一夜平安（无暗杀发生）" % [
+				world._time_label(),
+				protected_name,
+			],
+		)
+		if world._resident_is_alive(DOCTOR_ID):
+			world._schedule_decision(DOCTOR_ID, true)
 		return
 	world._werewolf_state["pendingDeathAnnouncements"] = kept
 	doctor["lastProtectedId"] = protected_id

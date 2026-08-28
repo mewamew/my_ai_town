@@ -451,7 +451,7 @@ static func start_assembly(world, absolute_minute: int) -> void:
 		"WEREWOLF",
 		"%s | 第%d天审讯会开始，汇报期(存活 %d 人)" % [
 			_label_for_minute(absolute_minute),
-			day_index,
+			day_index + 1,  # day_index 从 0 起, 显示用 +1(比较键仍用 day_index)
 			alive_ids.size(),
 		],
 	)
@@ -906,6 +906,12 @@ static func constrain_wake(world, resident_id: String, snapshot: Dictionary) -> 
 		return
 	var is_police: bool = world._resident_is_police(resident_id)
 	# 大会期间一律屏蔽: 出行目的地 / 冲突选项 / 工作 / 社交传话 / 活动。
+	# 注意: rhythm 与 conversation 是契约必填键(AgentContractSnapshot 校验
+	# rhythm.id/label/flexible/work_expected/workplace... 与 conversation 的
+	# conversation_id/with/turns), 置空会触发 AGENT_DECISION_REQUEST_REJECTED
+	# (实锤: 8 点开会后全员报 "snapshot.rhythm.id 缺失" / "conversation_id
+	# 缺失")。动作白名单(TownActionPreparationRuntime.prepare 入口)已按阶段
+	# 拦截非允许动作, 无需清空这两个键。
 	snapshot["life_destination_options"] = []
 	snapshot["conflict_tension_options"] = []
 	snapshot["conflicts"] = []
@@ -914,13 +920,10 @@ static func constrain_wake(world, resident_id: String, snapshot: Dictionary) -> 
 	snapshot["post_injury_reaction"] = {}
 	snapshot["work_tasks"] = []
 	# 对话跟随选项: 审讯期保留(警察与当前被审者对话需要), 其余阶段清空。
-	# finalize 已把当前对话填入 snapshot["conversation"], 这里只做清空/保留。
 	if phase != "interrogation":
-		snapshot["conversation"] = {}
 		snapshot["conversation_follow_up_options"] = []
 	# 投票期: 任何人不得发起对话; 汇报/审讯期: 非警察不对话。
 	if phase == "vote" or not is_police:
-		snapshot["conversation"] = {}
 		snapshot["conversation_follow_up_options"] = []
 	if phase == "vote":
 		snapshot["nearby"] = []
@@ -931,7 +934,6 @@ static func constrain_wake(world, resident_id: String, snapshot: Dictionary) -> 
 		snapshot["nearby"] = []
 		snapshot["social_matters"] = []
 		snapshot["social_exposures"] = []
-		snapshot["rhythm"] = {}
 
 
 ## 投票快照:投票回合进行中才非空(进 wake_packet.snapshot.exile_vote)。

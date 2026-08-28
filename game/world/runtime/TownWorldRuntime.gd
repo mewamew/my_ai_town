@@ -610,7 +610,10 @@ const URGENT_EVENT_TYPES := [
 ]
 const MAX_AUTONOMOUS_CONVERSATION_TURNS := 8
 const CONVERSATION_SNAPSHOT_TURN_LIMIT := 16
-const AUTONOMOUS_CONVERSATION_IDLE_TIMEOUT_SECONDS := 45.0
+# 居民对话挂起回收超时(真实秒)。模型限流/超时下答话请求可能 45s 内回不来,
+# 官方 45s 会把刚开头的对话直接掐断(实锤: 搭话后 target 无响应 45s 即
+# "无法继续/interrupted")。放宽到 120s 显著减少对话断裂, 同时仍能防死锁。
+const AUTONOMOUS_CONVERSATION_IDLE_TIMEOUT_SECONDS := 120.0
 const RESIDENT_CONVERSATION_PAIR_COOLDOWN_MINUTES := 30
 const MAX_ENDED_CONVERSATION_HISTORY := 64
 const MAX_ANNOUNCEMENT_HISTORY := 64
@@ -3384,6 +3387,16 @@ func _activate_police_investigate_action(
 	if line.is_empty():
 		return {"ok": false, "errors": ["查案动作必须包含非空 line"]}
 	if not ROLE_SKILL_RUNTIME.consume_police_investigate(self):
+		# 额度耗尽要有系统日志(此前只有模型台词"查案次数没了", 玩家在
+		# 行为流看不到系统侧记录)。
+		TOWN_LOG.line(
+			"CATMOUSE",
+			"%s | %s 查案被拒：今日查案次数已用完（每天 %d 次）" % [
+				_time_label(),
+				_resident_display_name(resident_id),
+				ROLE_SKILL_RUNTIME.INVESTIGATE_DAILY_LIMIT,
+			],
+		)
 		return {
 			"ok": false,
 			"errors": [
