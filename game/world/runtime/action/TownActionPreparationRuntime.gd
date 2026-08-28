@@ -216,8 +216,13 @@ static func prepare_talk_action(host, resident_name: String, resident: Dictionar
 		return {"ok": false, "errors": ["搭话对象必须是附近的其他人物"]}
 	# 警察审讯会: 审讯期警察向居民搭话(追问)豁免同空间与对话冷却,
 	# 否则被审者不在感知范围/刚聊过会导致审讯无法开始。
+	# 注意: police_interrogation_allowed 对"非审讯期/非警察"返回 ""(表示
+	# 不触发放宽), 这里必须叠加 assembly_phase 检查——否则平时对话冷却
+	# 被永久跳过(实锤: 官方 cooldown 测试 "cannot restart during cooldown"
+	# 失败, 30 分钟对话冷却全局失效)。
 	var interrogation_allowed: bool = (
-		host.WEREWOLF_RUNTIME.police_interrogation_allowed(host, resident_name, target_ref).is_empty()
+		host.WEREWOLF_RUNTIME.assembly_phase(host) == "interrogation"
+		and host.WEREWOLF_RUNTIME.police_interrogation_allowed(host, resident_name, target_ref).is_empty()
 		if not target_ref.is_empty()
 		else false
 	)

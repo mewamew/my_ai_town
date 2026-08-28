@@ -1825,7 +1825,7 @@ func _test_resident_conversation_idle_timeout_releases_both_residents() -> void:
 	CONVERSATION_RUNTIME._advance_autonomous_conversation_timeouts(
 		world,
 		world.get("_traveler_relationship_state") as TownTravelerRelationshipState,
-		40.0,
+		world.AUTONOMOUS_CONVERSATION_IDLE_TIMEOUT_SECONDS - 20.0,
 	)
 	_expect_equal(
 		(world.call("get_active_conversations") as Array).size(),
@@ -1835,7 +1835,7 @@ func _test_resident_conversation_idle_timeout_releases_both_residents() -> void:
 	CONVERSATION_RUNTIME._advance_autonomous_conversation_timeouts(
 		world,
 		world.get("_traveler_relationship_state") as TownTravelerRelationshipState,
-		5.0,
+		25.0,
 	)
 	_expect_equal(
 		(world.call("get_active_conversations") as Array).size(),
@@ -2832,7 +2832,7 @@ func _test_board_and_bell(world: RefCounted) -> void:
 		not String(bell.get("broadcastEventId", "")).is_empty(),
 		"敲钟形成稳定的全镇事件",
 	)
-	_expect_equal(_announcement_event_count, 30, "两条公告各向十五名居民交付一次")
+	_expect_equal(_announcement_event_count, 15, "board 公告向十五名居民交付一次(钟声公告走钟声事件, 不再重复投递公告发布事件)")
 	for resident_id: String in world.call("get_resident_ids") as Array[String]:
 		var knowledge := world.call(
 			"announcement_knowledge_for",
