@@ -275,6 +275,7 @@ F:\my_ai_town_upstream\tools\guards\run_guards.sh
 | 想了解 | 看这个 |
 |---|---|
 | 架构拆分全过程/量化验收 | `docs/architecture/TownWorldRuntime拆分基线.md` |
+| 玩法插件化/剧本包架构（施工总纲） | `docs/architecture/玩法插件化方案.md` |
 | 决策循环（新架构代码地图） | `docs/学习笔记/第1层_决策循环.md` |
 | 世界数据模型 | `docs/学习笔记/第2层_世界数据模型.md` |
 | 动作/活动系统、加新动作 | `docs/学习笔记/第3层_动作与活动系统.md` |
