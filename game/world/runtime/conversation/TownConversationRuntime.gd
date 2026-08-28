@@ -105,6 +105,17 @@ static func _start_conversation(
 					eavesdrop_say,
 					conversation_place,
 				)
+	# 警察审讯会: 警察发起搭话即登记一次审讯(计数+被审者标记, 幂等;
+	# 桥接层过滤非审讯期/非警察发起的普通对话)。
+	if world.has_method("_record_assembly_interrogation_started"):
+		world._record_assembly_interrogation_started(initiator_name, target_name)
+	# 警察审讯会: 审讯开场白进入逐字稿。
+	if world.has_method("_record_assembly_interrogation_turn"):
+		world._record_assembly_interrogation_turn(
+			String(turn.get("speaker", "")),
+			target_name,
+			String(turn.get("say", "")),
+		)
 	world.conversation_changed.emit(conversation_id, conversation.duplicate(true))
 	var action_story: Variant = world.event_journal.action_story_context(
 		String(action.get("action_id", ""))
@@ -188,6 +199,13 @@ static func _apply_conversation_reply(
 					eavesdrop_say,
 					String(conversation.get("placeName", "")),
 				)
+	# 警察审讯会: 审讯会话的回复逐字稿(桥接层过滤非审讯会话)。
+	if world.has_method("_record_assembly_interrogation_turn"):
+		world._record_assembly_interrogation_turn(
+			String(turn.get("speaker", "")),
+			other_name,
+			String(turn.get("say", "")),
+		)
 	if bool(action.get("end", false)):
 		# Publish the final turn and ended state atomically. Exposing an active
 		# snapshot first briefly tells the UI that it is the other person's turn,

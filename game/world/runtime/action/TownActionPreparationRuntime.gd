@@ -43,6 +43,16 @@ static func prepare(
 	)
 	if not entry_failure.is_empty():
 		return entry_failure
+	# 警察审讯会: 大会进行期间按阶段白名单放行动作(汇报期非警察只能汇报,
+	# 审讯期警察搭话/答话/结束审讯、平民答话/待着, 投票期全员只能投票放逐)。
+	# 大会 idle 时返回空串直接放行, 常规游戏零开销。
+	var assembly_rejection: String = host.WEREWOLF_RUNTIME.assembly_action_allowed(
+		host,
+		String(resident.get("residentId", "")),
+		String(action.get("type", "")).strip_edges(),
+	)
+	if not assembly_rejection.is_empty():
+		return {"ok": false, "errors": [assembly_rejection]}
 	var action_type := String(action.get("type", "")).strip_edges()
 	match action_type:
 		"去":
@@ -204,6 +214,13 @@ static func prepare_talk_action(host, resident_name: String, resident: Dictionar
 	var target: Dictionary = host._person_state(target_ref)
 	if target_ref.is_empty() or target_ref == resident_name or target.is_empty():
 		return {"ok": false, "errors": ["搭话对象必须是附近的其他人物"]}
+	# 警察审讯会: 审讯期警察向居民搭话(追问)豁免同空间与对话冷却,
+	# 否则被审者不在感知范围/刚聊过会导致审讯无法开始。
+	var interrogation_allowed: bool = (
+		host.WEREWOLF_RUNTIME.police_interrogation_allowed(host, resident_name, target_ref).is_empty()
+		if not target_ref.is_empty()
+		else false
+	)
 	var postal_delivery: Dictionary = host._private_message_delivery_task_for_talk(
 		resident_name,
 		target_ref,
@@ -222,13 +239,18 @@ static func prepare_talk_action(host, resident_name: String, resident: Dictionar
 		not PERCEPTION_RUNTIME._are_nearby(host, resident, target)
 		and postal_delivery.is_empty()
 		and medical_binding.is_empty()
+		and not interrogation_allowed
 	):
 		return {"ok": false, "errors": ["搭话对象已经不在感知范围内"]}
 	if not CONVERSATION_RUNTIME._active_conversation_for_person(host, target_ref).is_empty():
 		return {"ok": false, "errors": ["搭话对象正在参与其他对话"]}
-	if medical_binding.is_empty() and CONVERSATION_RUNTIME._resident_pair_conversation_on_cooldown(host,
-		resident_name,
-		target_ref,
+	if (
+		medical_binding.is_empty()
+		and not interrogation_allowed
+		and CONVERSATION_RUNTIME._resident_pair_conversation_on_cooldown(host,
+			resident_name,
+			target_ref,
+		)
 	):
 		return {"ok": false, "errors": ["双方刚结束交谈，稍后再聊"]}
 	var turn_error: String = CONVERSATION_RUNTIME._validate_conversation_turn_action(host, resident_name, action, false)

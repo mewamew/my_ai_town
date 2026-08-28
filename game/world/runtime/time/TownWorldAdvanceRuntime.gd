@@ -59,6 +59,21 @@ static func advance(host, real_seconds: float, community_bulletin) -> Dictionary
 	var advance_profile: Dictionary = host.telemetry.begin_advance_profile()
 	if not host._running:
 		return host._command_failure("WORLD_NOT_RUNNING", ["世界尚未运行"])
+	# 警察审讯会: 大会进行中世界冻结(分钟不推进)。每帧仍先 tick 大会
+	# 超时(汇报/审讯/投票阶段的真实秒推进), 再短路返回。冻结不置
+	# is_paused, 因此 LLM 决策派发与对话提交仍然放行(见
+	# TownAgentDecisionDispatchRuntime.take / TownWerewolfRuntime.assembly_frozen)。
+	host.WEREWOLF_RUNTIME.tick_assembly(host, real_seconds)
+	if host.WEREWOLF_RUNTIME.assembly_frozen(host):
+		return host._decorate_command_result({
+			"ok": true,
+			"frozen": true,
+			"assemblyPhase": host.WEREWOLF_RUNTIME.assembly_phase(host),
+			"simulationSpeed": host._simulation_speed,
+			"pauseReasons": host.get_lifecycle_state().get("pauseReasons", []),
+			"minutesAdvanced": 0,
+			"events": [],
+		})
 	if host.is_paused():
 		return host._decorate_command_result({
 			"ok": true,

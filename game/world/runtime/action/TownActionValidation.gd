@@ -60,6 +60,17 @@ const ACTION_FIELDS := {
 		"target_resident_id",
 		"line",
 	],
+	"向警察汇报": [
+		"action_id",
+		"type",
+		"kind",
+		"line",
+	],
+	"结束审讯": [
+		"action_id",
+		"type",
+		"line",
+	],
 	"使用技能": [
 		"action_id",
 		"type",
@@ -179,6 +190,13 @@ static func validate_action_shape(action: Dictionary) -> String:
 				["target_resident_id", "line"],
 				action_type,
 			)
+		"向警察汇报":
+			# 审讯会汇报期即时动作: kind 用 目击/听到/怀疑/不汇报(与
+			# TownWerewolfRuntime.ASSEMBLY_REPORT_KINDS 一致), line 允许为空(不汇报)。
+			return require_action_texts(action, ["kind"], action_type)
+		"结束审讯":
+			# 审讯会审讯期即时动作(警察专用): 结束审讯进入投票期, 无必填文本。
+			return ""
 		"使用技能":
 			# 夜间技能即时动作: skill_id 用 skill 列表里的技能 id,
 			# target_resident_id 用居民ID(与 night_skill_snapshot 候选名单一致)。

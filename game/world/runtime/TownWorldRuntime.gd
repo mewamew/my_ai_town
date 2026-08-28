@@ -3593,6 +3593,53 @@ func _record_police_eavesdrop_turn(
 	return recorded
 
 
+## 警察审讯会对话钩子(ConversationRuntime 对话开场时调用): 审讯期警察发起的
+## 对话登记一次审讯(计数+被审者标记, 幂等), 普通居民对话/非审讯期自动忽略。
+func _record_assembly_interrogation_started(
+	initiator_name: String,
+	target_name: String,
+) -> bool:
+	var initiator_id := _resident_key(initiator_name)
+	var target_id := _resident_key(target_name)
+	if initiator_id.is_empty() or target_id.is_empty():
+		return false
+	var registered := WEREWOLF_RUNTIME.begin_interrogation_target(
+		self, initiator_id, target_id,
+	)
+	if registered:
+		TOWN_LOG.line(
+			"CATMOUSE",
+			"%s | 审讯登记 | %s → %s" % [
+				_time_label(),
+				_resident_display_name(initiator_id),
+				_resident_display_name(target_id),
+			],
+		)
+	return registered
+
+
+## 警察审讯会逐字稿钩子(ConversationRuntime 每轮对话产生时调用):
+## 审讯期且双方为警察+居民时记入大会逐字稿(不实时广播, 散会时一次性注入投票 wake)。
+func _record_assembly_interrogation_turn(
+	speaker_name: String,
+	other_name: String,
+	say_text: String,
+) -> bool:
+	if say_text.strip_edges().is_empty():
+		return false
+	var speaker_id := _resident_key(speaker_name)
+	var other_id := _resident_key(other_name)
+	if speaker_id.is_empty() or other_id.is_empty():
+		return false
+	return WEREWOLF_RUNTIME.record_interrogation_turn(
+		self,
+		speaker_id,
+		other_id,
+		_authoritative_absolute_minute(),
+		say_text,
+	)
+
+
 ## 追踪装置行踪钩子(居民"去"动作准备成功时调用): 目标被追踪且未到期
 ## 则把目的地记入追踪档案(不再实时投递事件给警察)。
 func _record_police_tracker_visit(

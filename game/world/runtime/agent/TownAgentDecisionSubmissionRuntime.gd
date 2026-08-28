@@ -185,6 +185,12 @@ static func consume(
 			resident_id,
 			decision.get("exile_vote") as Dictionary,
 		)
+	if decision.has("report"):
+		host.WEREWOLF_RUNTIME.submit_report(
+			host,
+			resident_id,
+			decision.get("report") as Dictionary,
+		)
 	if decision.has("night_skill"):
 		host.ROLE_SKILL_RUNTIME.submit_night_skill(
 			host,
@@ -354,6 +360,40 @@ static func submit_valid(
 			return host._complete_agent_submission(
 				ACTION_RESULT_RUNTIME.reject_invalid(
 					host, resident_id, resident, action, skill_error
+				)
+			)
+		return host._complete_agent_submission({
+			"ok": true,
+			"consumed": true,
+			"stale": false,
+		})
+	if action_type == "向警察汇报":
+		# 审讯会汇报期: 居民向警察秘密汇报(目击/听到/怀疑/不汇报), 即时提交。
+		# 内容保密不广播, 只进警察侧汇总; 失败反馈模型重试。
+		var report_error: String = host.WEREWOLF_RUNTIME.submit_report(host, resident_id, {
+			"kind": String(action.get("kind", "")),
+			"line": String(action.get("line", "")),
+		})
+		if not report_error.is_empty():
+			return host._complete_agent_submission(
+				ACTION_RESULT_RUNTIME.reject_invalid(
+					host, resident_id, resident, action, report_error
+				)
+			)
+		return host._complete_agent_submission({
+			"ok": true,
+			"consumed": true,
+			"stale": false,
+		})
+	if action_type == "结束审讯":
+		# 审讯会审讯期: 警察主动结束审讯(逐字稿随投票 wake 注入全员), 即时提交。
+		var end_error: String = host.WEREWOLF_RUNTIME.end_interrogation(
+			host, resident_id,
+		)
+		if not end_error.is_empty():
+			return host._complete_agent_submission(
+				ACTION_RESULT_RUNTIME.reject_invalid(
+					host, resident_id, resident, action, end_error
 				)
 			)
 		return host._complete_agent_submission({

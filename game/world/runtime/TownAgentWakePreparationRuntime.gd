@@ -435,66 +435,75 @@ func _advance_preparation(
 			preparation["stage"] = "finalize"
 		"finalize":
 			var conflict_snapshot := preparation.get("conflictSnapshot", {}) as Dictionary
+			var wake_snapshot := {
+				"time": (preparation.get("time", {}) as Dictionary).duplicate(true),
+				"weather": String(preparation.get("weather", "")),
+				"weather_context": world._activity_runtime.weather_context(
+					String(preparation.get("weather", "")),
+					String(perception_resident.get("currentPlace", "")),
+				),
+				"me": {
+					"doing": String(perception_resident.get("doing", "")),
+					"current_action": ACTION_PRESENTATION._agent_current_action(
+						world,
+						perception_resident.get("currentAction", {}) as Dictionary,
+					),
+					"body": (perception_resident.get("body", {}) as Dictionary).duplicate(true),
+					"activityNeeds": (perception_resident.get("activityState", world.ACTIVITY_SCALARS.empty_activity_state()) as Dictionary).duplicate(true),
+					"conditions": world._resident_conditions.get_conditions(resident_id,) as Array,
+					"activeNeeds": world._resident_conditions.get_active_needs(resident_id,) as Array,
+				},
+				"nearby": preparation.get("nearby", []) as Array,
+				"place": preparation.get("placeSnapshot", {}) as Dictionary,
+				"rhythm": AGENT_WORLD_QUERY_RUNTIME.life_rhythm(world, resident),
+				"work_tasks": world.get_work_tasks_for_resident(resident_id),
+				"life_destination_options": preparation.get("lifeDestinationOptions", []) as Array,
+				"known_announcements": AGENT_WORLD_QUERY_RUNTIME.known_announcements(
+					world, resident_id,
+				),
+				"conversation": world.ACTIVITY_SCALARS.duplicate_optional_dictionary(resident.get("conversation")),
+				"conversation_follow_up_options": preparation.get("conversationFollowUpOptions", []) as Array,
+				"social_matters": preparation.get("socialMatters", []) as Array,
+				"social_exposures": preparation.get("socialExposures", []) as Array,
+				"conflicts": (conflict_snapshot.get("conflicts", []) as Array).duplicate(true),
+				"conflict_injuries": (conflict_snapshot.get("conflict_injuries", []) as Array).duplicate(true),
+				"conflict_tension_options": (conflict_snapshot.get("conflict_tension_options", []) as Array).duplicate(true),
+				"medical_follow_up": (conflict_snapshot.get("medical_follow_up", {}) as Dictionary).duplicate(true),
+				"post_injury_reaction": preparation.get("postInjuryReaction", {}) as Dictionary,
+				# 狼人杀附件(迁移注入, 与 TownAgentWakeContextRuntime.wake_packet 同源):
+				# 真实游戏 wake 由本模块 finalize 直接拼装, 不经过 wake_packet,
+				# 缺失这些键会导致投票/夜间技能/警察侦查装备在真实游戏里全部不注入。
+				"exile_vote": world.WEREWOLF_RUNTIME.vote_snapshot(
+					world, resident_id,
+				),
+				"night_skill": world.ROLE_SKILL_RUNTIME.night_skill_snapshot(
+					world, resident_id,
+				),
+				"undercover_kill_quota_exhausted": (
+					world._undercover_resident_ids().has(resident_id)
+					and world.WEREWOLF_RUNTIME.undercover_kill_quota_exhausted(
+						world,
+						int(preparation.get("absoluteMinute", 0)),
+					)
+				),
+				"town_death_cases": world._police_death_cases(
+					resident_id,
+				),
+				"police_intel": AGENT_WAKE_CONTEXT_RUNTIME._police_intel_context(
+					world, resident_id,
+				),
+				# 警察审讯会: 各阶段提示/汇报汇总/审讯记录(见 TownWerewolfRuntime)。
+				"assembly": world.WEREWOLF_RUNTIME.assembly_wake_snapshot(
+					world, resident_id,
+				),
+			}
+			# 审讯会: 大会进行期间裁剪日常选项, 实现"各阶段只有该阶段允许的选项"
+			# (汇报期只有汇报 / 审讯期警察只有询问与结束 / 投票期只有投票)。
+			if world.WEREWOLF_RUNTIME.assembly_active(world):
+				world.WEREWOLF_RUNTIME.constrain_wake(world, resident_id, wake_snapshot)
 			preparation["wakePacket"] = {
 				"decision_id": decision_id,
-				"snapshot": {
-					"time": (preparation.get("time", {}) as Dictionary).duplicate(true),
-					"weather": String(preparation.get("weather", "")),
-					"weather_context": world._activity_runtime.weather_context(
-						String(preparation.get("weather", "")),
-						String(perception_resident.get("currentPlace", "")),
-					),
-					"me": {
-						"doing": String(perception_resident.get("doing", "")),
-						"current_action": ACTION_PRESENTATION._agent_current_action(
-							world,
-							perception_resident.get("currentAction", {}) as Dictionary,
-						),
-						"body": (perception_resident.get("body", {}) as Dictionary).duplicate(true),
-						"activityNeeds": (perception_resident.get("activityState", world.ACTIVITY_SCALARS.empty_activity_state()) as Dictionary).duplicate(true),
-						"conditions": world._resident_conditions.get_conditions(resident_id,) as Array,
-						"activeNeeds": world._resident_conditions.get_active_needs(resident_id,) as Array,
-					},
-					"nearby": preparation.get("nearby", []) as Array,
-					"place": preparation.get("placeSnapshot", {}) as Dictionary,
-					"rhythm": AGENT_WORLD_QUERY_RUNTIME.life_rhythm(world, resident),
-					"work_tasks": world.get_work_tasks_for_resident(resident_id),
-					"life_destination_options": preparation.get("lifeDestinationOptions", []) as Array,
-					"known_announcements": AGENT_WORLD_QUERY_RUNTIME.known_announcements(
-						world, resident_id,
-					),
-					"conversation": world.ACTIVITY_SCALARS.duplicate_optional_dictionary(resident.get("conversation")),
-					"conversation_follow_up_options": preparation.get("conversationFollowUpOptions", []) as Array,
-					"social_matters": preparation.get("socialMatters", []) as Array,
-					"social_exposures": preparation.get("socialExposures", []) as Array,
-					"conflicts": (conflict_snapshot.get("conflicts", []) as Array).duplicate(true),
-					"conflict_injuries": (conflict_snapshot.get("conflict_injuries", []) as Array).duplicate(true),
-					"conflict_tension_options": (conflict_snapshot.get("conflict_tension_options", []) as Array).duplicate(true),
-					"medical_follow_up": (conflict_snapshot.get("medical_follow_up", {}) as Dictionary).duplicate(true),
-					"post_injury_reaction": preparation.get("postInjuryReaction", {}) as Dictionary,
-					# 狼人杀附件(迁移注入, 与 TownAgentWakeContextRuntime.wake_packet 同源):
-					# 真实游戏 wake 由本模块 finalize 直接拼装, 不经过 wake_packet,
-					# 缺失这些键会导致投票/夜间技能/警察侦查装备在真实游戏里全部不注入。
-					"exile_vote": world.WEREWOLF_RUNTIME.vote_snapshot(
-						world, resident_id,
-					),
-					"night_skill": world.ROLE_SKILL_RUNTIME.night_skill_snapshot(
-						world, resident_id,
-					),
-					"undercover_kill_quota_exhausted": (
-						world._undercover_resident_ids().has(resident_id)
-						and world.WEREWOLF_RUNTIME.undercover_kill_quota_exhausted(
-							world,
-							int(preparation.get("absoluteMinute", 0)),
-						)
-					),
-					"town_death_cases": world._police_death_cases(
-						resident_id,
-					),
-					"police_intel": AGENT_WAKE_CONTEXT_RUNTIME._police_intel_context(
-						world, resident_id,
-					),
-				},
+				"snapshot": wake_snapshot,
 				"events": preparation.get("publicEvents", []) as Array,
 				"action_results": preparation.get("publicResults", []) as Array,
 				"social_response_results": preparation.get("socialResults", []) as Array,

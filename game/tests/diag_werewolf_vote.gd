@@ -139,7 +139,7 @@ func _verify_feature_inactive_without_undercover() -> void:
 	world.call("stop")
 
 
-# 场景4: 镇民大会投票 → 开票放逐
+# 场景4: 审讯会流程 → 投票 → 收齐立即开票放逐
 func _verify_vote_round() -> void:
 	var data := _build_data()
 	var opening := _garden_opening(data, "werewolf vote round opening")
@@ -149,28 +149,46 @@ func _verify_vote_round() -> void:
 	if started.get("ok") != true:
 		return
 	_inject_undercover_stub(world, UNDERCOVER_IDS[0])
+	var police_id := _inject_police_stub(world)
+	_expect_equal(police_id.is_empty(), false, "找到警察居民")
+	if police_id.is_empty():
+		world.call("stop")
+		return
 	_advance_to_minute_of_day(world, 480)  # 08:00
-	# 第0天(开局日)不开镇民大会,推到第1天 8:00
+	# 第0天(开局日)不开审讯会,推到第1天 8:00
 	var current_day := int(world.get("_environment").call("get_absolute_minute")) / 1440
 	if current_day < 1:
 		_advance_to_minute_of_day(world, 480)
+	# 审讯会: 全员汇报收齐 → 审讯 → 结束审讯 → 投票回合
+	var civilians := _alive_civilian_ids(world, police_id)
+	_expect_equal(civilians.size() >= 4, true, "有足够平民 (%d)" % civilians.size())
+	for index: int in civilians.size():
+		var is_eyewitness := index % 2 == 0
+		WEREWOLF.submit_report(world, civilians[index], {
+			"kind": "目击" if is_eyewitness else "不汇报",
+			"line": "第%d条线索" % index if is_eyewitness else "",
+		})
+	_expect_equal(WEREWOLF.assembly_phase(world), "interrogation", "汇报收齐进入审讯期")
+	_expect_equal(WEREWOLF.end_interrogation(world, police_id), "", "警察结束审讯")
 	var state: Dictionary = world.get("_werewolf_state") as Dictionary
 	var vote: Dictionary = state.get("vote", {}) as Dictionary
 	var day := int(world.get("_environment").call("get_absolute_minute")) / 1440
 	_expect_equal(int(vote.get("day", -1)), day, "投票回合开启 (day=%d)" % day)
 	var candidates: Array = vote.get("candidateIds", []) as Array
 	_expect_equal(candidates.size() >= 3, true, "候选人名单非空 (%d人)" % candidates.size())
-	_expect_equal(candidates.has(CIVILIAN_ID), true, "林岚在候选人名单中")
-	# 3 票投林岚,1 票投唐小满 → 林岚被放逐
-	var voters := _alive_voter_ids(world, [CIVILIAN_ID], 4)
-	_expect_equal(voters.size() >= 4, true, "有足够在世投票人 (%d)" % voters.size())
-	if voters.size() < 4:
+	_expect_equal(candidates.has(civilians[0]), true, "平民在候选人名单中")
+	# 全员投票: 前8票投 civilians[0],其余投 civilians[1] → 收齐立即开票
+	var target_high := civilians[0]
+	var target_low := civilians[1]
+	var voters := _alive_voter_ids(world, [], 99)
+	_expect_equal(voters.size() >= 9, true, "有足够在世投票人 (%d)" % voters.size())
+	if voters.size() < 9:
 		world.call("stop")
 		return
 	for index: int in voters.size():
 		var ballot := {
 			"target_resident_id": (
-				CIVILIAN_ID if index < 3 else "resident_tang_xiaoman_01"
+				target_high if index < 8 else target_low
 			),
 			"line": "案发那晚他的行踪说不清。",
 		}
@@ -179,30 +197,21 @@ func _verify_vote_round() -> void:
 		"vote",
 		{},
 	) as Dictionary
-	_expect_equal(
-		(votes.get("votes", {}) as Dictionary).size(),
-		voters.size(),
-		"选票全部登记",
-	)
-	_advance_to_minute_of_day(world, 750)  # 12:30 开票
+	_expect_equal(votes.is_empty(), true, "全员投完立即开票并清空投票回合")
 	var lifecycle := world.call(
 		"get_resident_lifecycle_state",
-		CIVILIAN_ID,
+		target_high,
 	) as Dictionary
 	_expect_equal(
 		String(lifecycle.get("status", "")),
 		"dead",
 		"最高票者被放逐 (死因:%s)" % String(lifecycle.get("deathEvent", {}).get("reason", "")),
 	)
-	var settled: Dictionary = (world.get("_werewolf_state") as Dictionary).get(
-		"vote",
-		{},
-	) as Dictionary
-	_expect_equal(settled.is_empty(), true, "开票后投票回合清空")
+	_expect_equal(WEREWOLF.assembly_phase(world), "idle", "开票后审讯会散会")
 	world.call("stop")
 
 
-# 场景5: 终局后 12:30 不再开票(阻止终局后额外放逐)
+# 场景5: 终局后投票开票被跳过(阻止终局后额外放逐), 且大会散会解冻
 func _verify_settle_skipped_after_game_over() -> void:
 	var data := _build_data()
 	var opening := _garden_opening(data, "werewolf settle after game over opening")
@@ -212,43 +221,55 @@ func _verify_settle_skipped_after_game_over() -> void:
 	if started.get("ok") != true:
 		return
 	_inject_undercover_stub(world, UNDERCOVER_IDS[0])
+	var police_id := _inject_police_stub(world)
+	if police_id.is_empty():
+		world.call("stop")
+		return
 	_advance_to_minute_of_day(world, 480)  # 08:00
 	var current_day := int(world.get("_environment").call("get_absolute_minute")) / 1440
 	if current_day < 1:
 		_advance_to_minute_of_day(world, 480)
+	var civilians := _alive_civilian_ids(world, police_id)
+	for index: int in civilians.size():
+		WEREWOLF.submit_report(world, civilians[index], {"kind": "不汇报", "line": ""})
+	WEREWOLF.end_interrogation(world, police_id)
 	var vote: Dictionary = (world.get("_werewolf_state") as Dictionary).get(
 		"vote",
 		{},
 	) as Dictionary
 	_expect_equal(vote.is_empty(), false, "终局场景投票回合已开启")
-	var voters := _alive_voter_ids(world, [CIVILIAN_ID], 1)
-	_expect_equal(voters.size() >= 1, true, "终局场景有投票人")
-	if voters.size() < 1:
+	# 投票途中胜负已定
+	var voters := _alive_voter_ids(world, [], 99)
+	_expect_equal(voters.size() >= 2, true, "终局场景有投票人 (%d)" % voters.size())
+	if voters.size() < 2:
 		world.call("stop")
 		return
-	WEREWOLF.submit_vote(world, voters[0], {
-		"target_resident_id": CIVILIAN_ID,
-		"line": "开票前胜负已分。",
-	})
+	var target_civilian := civilians[0]
+	# 投票途中胜负已定 → 投票被拒, 大会散会解冻(不作废于放逐)
 	var state: Dictionary = world.get("_werewolf_state") as Dictionary
 	state["gameOver"] = true
 	state["winner"] = "镇民"
 	state["winnerAnnounced"] = true
-	_advance_to_minute_of_day(world, 750)  # 12:30 开票(应被跳过)
+	var rejected := WEREWOLF.submit_vote(world, voters[0], {
+		"target_resident_id": target_civilian,
+		"line": "开票前胜负已分。",
+	})
+	_expect_equal(rejected.is_empty(), false, "胜负已定后投票被拒绝")
 	var lifecycle := world.call(
 		"get_resident_lifecycle_state",
-		CIVILIAN_ID,
+		target_civilian,
 	) as Dictionary
 	_expect_equal(
 		String(lifecycle.get("status", "")),
 		"alive",
-		"胜负已定后 12:30 不再放逐最高票者",
+		"胜负已定后不再放逐最高票者",
 	)
 	_expect_equal(
 		((world.get("_werewolf_state") as Dictionary).get("vote", {}) as Dictionary).is_empty(),
 		true,
 		"终局后开票时投票回合被作废",
 	)
+	_expect_equal(WEREWOLF.assembly_phase(world), "idle", "终局后审讯会散会解冻")
 	world.call("stop")
 
 
@@ -390,6 +411,35 @@ func _inject_undercover_stub(world: RefCounted, undercover_id: String) -> void:
 		"residentId": undercover_id,
 		"arrivalState": {"status": "arrived"},
 	}
+
+
+## 把第一个存活居民设为警察(审讯会流程需要警察主持审讯)。
+func _inject_police_stub(world: RefCounted) -> String:
+	var residents: Dictionary = world.call("residents")
+	for key_value: Variant in residents.keys():
+		var resident_id := String(key_value)
+		if resident_id.is_empty():
+			continue
+		if not world.call("_resident_is_alive", resident_id):
+			continue
+		var registry: Object = world.get("resident_registry")
+		var records: Dictionary = registry.get("records")
+		var record := records.get(resident_id, {}) as Dictionary
+		record["socialState"] = {"job": "警察"}
+		return resident_id
+	return ""
+
+
+func _alive_civilian_ids(world: RefCounted, police_id: String) -> Array[String]:
+	var civilians: Array[String] = []
+	var residents: Dictionary = world.call("residents")
+	for key_value: Variant in residents.keys():
+		var resident_id := String(key_value)
+		if resident_id.is_empty() or resident_id == police_id:
+			continue
+		if world.call("_resident_is_alive", resident_id):
+			civilians.append(resident_id)
+	return civilians
 
 
 ## 推进到下一个指定 minute_of_day(跨天自动加 1440)
