@@ -529,6 +529,16 @@ static func submit_night_skill(world, resident_id: String, value: Dictionary) ->
 			String(value.get("line", "")),
 		],
 	)
+	if skill_id == SKILL_FRAME:
+		# 嫁祸部署反馈: 提交即说明效果, 否则没有暗杀发生时玩家/卧底
+		# 完全看不到嫁祸已经部署(生效日志只在暗杀消费时出现)。
+		TOWN_LOG.line(
+			"ROLE_SKILL",
+			"%s | 卧底嫁祸已部署：下一次暗杀案件的线索将指向 %s" % [
+				world._time_label(),
+				target_name,
+			],
+		)
 	# 追踪装置: 被追踪目标提交夜间技能时实时上报安装者(警察)。
 	if world.has_method("_record_police_device_action_intel"):
 		world._record_police_device_action_intel(
