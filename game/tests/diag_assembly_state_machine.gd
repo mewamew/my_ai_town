@@ -72,7 +72,7 @@ func _verify_fake_state_machine() -> void:
 	_expect_equal(WEREWOLF.assembly_phase(fake), "report", "未收齐仍在汇报期")
 	_expect_equal(int(fake._werewolf_state.get("assembly", {}).get("reportElapsed", 0.0)), 0, "reportElapsed 初始 0")
 	# 汇报期超时兜底(累计 >60s)
-	WEREWOLF.tick_assembly(fake, 61.0)
+	WEREWOLF.tick_assembly(fake, 121.0)
 	_expect_equal(WEREWOLF.assembly_phase(fake), "interrogation", "汇报超时→审讯期")
 	var summary: Array = fake._werewolf_state.get("assembly", {}).get("reportSummary", [])
 	_expect_equal(summary.size(), 3, "汇报汇总含全部存活非警察")

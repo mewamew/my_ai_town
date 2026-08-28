@@ -40,6 +40,17 @@ static func take(
 			or not bool(resident.get("wakeDispatchQueued", false))
 		):
 			continue
+		# 警察审讯会: 大会冻结期间只派发参与者(汇报期=尚未汇报的非警察、
+		# 审讯期=警察与被审者、投票期=尚未投票者)。非参与者请求直接丢弃,
+		# 否则冻结期间全体居民持续决策(实测: 审讯期每人烧多个"待着"/
+		# 被拦动作请求, 拖慢日志与模型配额)。玩家指定(allow 非空)放行。
+		if (
+			allowed.is_empty()
+			and host.WEREWOLF_RUNTIME.assembly_frozen(host)
+			and not host.WEREWOLF_RUNTIME.assembly_participant(host, resident_id)
+		):
+			resident["wakeDispatchQueued"] = false
+			continue
 		pending_count += 1
 		var lap_usec := Time.get_ticks_usec() if host.telemetry.frame_probe != null else 0
 		if materialize_snapshots and WAKE_STATE_RUNTIME.needs_refresh(resident, 0, ""):
