@@ -3368,20 +3368,31 @@ func _record_error(
 	diagnostic: Dictionary = {},
 ) -> void:
 	_error_sequence += 1
-	# 行为流日志: 居民决策请求失败(排查卡住/fallback 循环用)
+	# 行为流日志: 居民决策请求失败(排查卡住/fallback 循环用)。
+	# 详情优先用 Provider 的原始错误(diagnostic.errors 保存了真实 HTTP 状态/
+	# 网络/解析原因), 否则用 Agent 层错误——此前 Agent 层把 Provider 错误
+	# 统一抹平为"模型调用失败", 日志只显示 error_type=http 而看不到 HTTP
+	# 状态码与响应体(实锤: 用户只见"http 接到后面就没有了")。
 	var agent_errors_text := ""
-	var agent_errors_value: Variant = diagnostic.get(
-		"agentErrors",
-		diagnostic.get("agent_errors", []),
-	)
-	if agent_errors_value is Array:
-		var error_parts: Array[String] = []
-		for error_value: Variant in agent_errors_value as Array:
+	var provider_errors_value: Variant = diagnostic.get("errors", [])
+	if provider_errors_value is Array and not (provider_errors_value as Array).is_empty():
+		var provider_error_parts: Array[String] = []
+		for error_value: Variant in provider_errors_value as Array:
 			if error_value is String:
-				error_parts.append(error_value as String)
+				provider_error_parts.append(error_value as String)
 			else:
-				error_parts.append(str(error_value))
-		agent_errors_text = "、".join(error_parts)
+				provider_error_parts.append(str(error_value))
+		agent_errors_text = "、".join(provider_error_parts)
+	elif diagnostic.has("agent_errors"):
+		var agent_errors_value: Variant = diagnostic.get("agent_errors", [])
+		if agent_errors_value is Array:
+			var error_parts: Array[String] = []
+			for error_value: Variant in agent_errors_value as Array:
+				if error_value is String:
+					error_parts.append(error_value as String)
+				else:
+					error_parts.append(str(error_value))
+			agent_errors_text = "、".join(error_parts)
 	var submission_text := ""
 	var submission_value: Variant = diagnostic.get("submission", {})
 	if submission_value is Dictionary:

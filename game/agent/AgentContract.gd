@@ -46,6 +46,8 @@ const EVENT_TYPES := [
 	"公告到点",
 	"公告阅读",
 	"公告转告",
+	"钟声公告",
+	"正式通知送达",
 	"营业状态变化",
 	"身体状况变化",
 	"承诺条件变化",
@@ -60,6 +62,10 @@ const EVENT_TYPES := [
 	"暗杀失败",
 	"暗杀未遂",
 	"查案线索",
+	# 公共日志事件类型(可能被重新投射进居民 wake 或存档恢复重放):
+	"居民公开反应",
+	"外出就医",
+	"卧底任务完成",
 ]
 const ACTION_RESULT_STATUSES := [
 	"completed", "interrupted", "rejected", "replaced", "failed",
