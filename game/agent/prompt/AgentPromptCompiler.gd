@@ -2022,27 +2022,43 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 			"required": false,
 			"max_line_characters": int(night_skill.get("max_line_characters", 80)),
 		}
-	# 警察审讯会: 按阶段注入专属即时动作。模型不知道这些动作存在就只会选
-	# 普通动作被白名单拒绝(实锤: 汇报期居民全选"去镇公所"被拒, 120s 后
-	# 0 人汇报、警察零线索)。
+	# 警察审讯会: 按阶段裁剪动作选项——只保留该阶段白名单允许的动作,
+	# 否则模型会选到"去/做活动/待着"等被白名单拒绝的动作(实锤: 汇报期
+	# 居民全选"去镇公所"被拒, 120s 0 人汇报; 唐小满"去公共食堂"被拒,
+	# 内心'去不了镇公所，真急人')。
 	var assembly_snapshot := snapshot.get("assembly", {}) as Dictionary
 	var assembly_phase := String(assembly_snapshot.get("phase", ""))
 	if assembly_phase == "report":
-		(constraints["actions"] as Dictionary)["向警察汇报"] = {
-			"fields": ["action_id", "type", "kind", "line"],
-			"kinds": (assembly_snapshot.get("kinds", []) as Array).duplicate(),
-			"required": false,
-			"max_line_characters": 80,
+		# 汇报期非警察: 唯一动作=向警察汇报(不需要去任何地方)。
+		constraints["actions"] = {
+			"向警察汇报": {
+				"fields": ["action_id", "type", "kind", "line"],
+				"kinds": (assembly_snapshot.get("kinds", []) as Array).duplicate(),
+				"required": false,
+				"max_line_characters": 80,
+			},
 		}
-	elif (
-		assembly_phase == "interrogation"
-		and String(assembly_snapshot.get("role", "")) == "police"
-	):
-		(constraints["actions"] as Dictionary)["结束审讯"] = {
-			"fields": ["action_id", "type", "line"],
-			"required": false,
-			"max_line_characters": 80,
-		}
+	elif assembly_phase == "interrogation":
+		# 审讯期白名单: 警察=搭话/答话/结束审讯; 平民=答话(被审中)/待着。
+		var interrogation_actions := constraints["actions"] as Dictionary
+		var interrogation_allowed := ["搭话", "答话", "结束审讯", "待着"]
+		for action_key: String in interrogation_actions.keys():
+			if not interrogation_allowed.has(action_key):
+				interrogation_actions.erase(action_key)
+		if String(assembly_snapshot.get("role", "")) == "police":
+			(constraints["actions"] as Dictionary)["结束审讯"] = {
+				"fields": ["action_id", "type", "line"],
+				"required": false,
+				"max_line_characters": 80,
+			}
+	elif assembly_phase == "vote":
+		# 投票期: 唯一动作=投票放逐(排除日常/对话/活动)。
+		var vote_action := (
+			(constraints["actions"] as Dictionary).get("投票放逐", {}) as Dictionary
+		).duplicate(true)
+		constraints["actions"] = {}
+		if not vote_action.is_empty():
+			(constraints["actions"] as Dictionary)["投票放逐"] = vote_action
 	var police_intel := snapshot.get("police_intel", {}) as Dictionary
 	if not police_intel.is_empty():
 		# 警察追踪装置动作选项(仅警察注入): 原窃听+定位合并, 有次数限制, 目标=感知范围内的在世居民。
