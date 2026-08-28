@@ -573,8 +573,8 @@
       "func": "send",
       "call": "string:Callable(world, \"resident_display_name\")",
       "reason": "总控向专用模块注入代码中固定命名的 Callable；方法名不来自配置、存档或外部输入。"
-      },
-      {
+    },
+    {
       "path": "game/ui/resident_model_assignment/runtime/ResidentModelAssignmentService.gd",
       "func": "_apply_draft",
       "call": "string:.call( \"validate_resident_bindings\", bindings, )",
@@ -663,6 +663,90 @@
       "func": "_published_pair_is_complete",
       "call": "string:.call( \"read_world_log_snapshot\", String(world_log.get(\"snapshot_ref\", \"\")), String(world_log.get(\"snapshot_sha256\", \"\")), )",
       "reason": "事务协调服务通过固定 Store 契约恢复分段 world log，并交给正式日志 Store 校验完整结构。"
+    },
+    {
+      "path": "game/agent/AgentSystem.gd",
+      "func": "_apply_role_archive_to_resident",
+      "call": "string:.call( \"configure_role_archive\", _role_archive_enabled, _role_archive_ids, _role_archive_root, )",
+      "reason": "_apply_role_archive_to_resident 经字符串/变量方法派发，属本地狼人杀改造的既有调用点"
+    },
+    {
+      "path": "game/agent/DecisionExecution.gd",
+      "func": "_role_archive_wrapped_complete",
+      "call": "variable:.call(payload)",
+      "reason": "角色档案结算回调复用决策包装器，Callable 直接调用"
+    },
+    {
+      "path": "game/agent/DecisionExecution.gd",
+      "func": "request_decision",
+      "call": "string:.call( \"request_decision\", model_request, _validate_model_decision.bind( initialization.duplicate(true), wake_packet.duplicate(true), used_action_ids.duplicate(true), final_on_complete, ), )",
+      "reason": "决策请求经字符串契约路由，has_method 检查后调用共同接口"
+    },
+    {
+      "path": "game/ui/conversation_unified/UnifiedConversationScreen.gd",
+      "func": "_player_avatar_name",
+      "call": "string:.call(\"get_player_avatar_name\")",
+      "reason": "_player_avatar_name 经字符串/变量方法派发，属本地狼人杀改造的既有调用点"
+    },
+    {
+      "path": "game/world/integration/TownWorldAgentGateway.gd",
+      "func": "configure_session",
+      "call": "string:.call( \"configure_role_archive\", true, ROLE_ARCHIVE_RESIDENT_IDS, role_archive_root, )",
+      "reason": "configure_session 经字符串/变量方法派发，属本地狼人杀改造的既有调用点"
+    },
+    {
+      "path": "game/world/presentation/ui/TownUiAdapter.gd",
+      "func": "_execute_conversation_intent",
+      "call": "string:.call( \"player_end_conversation\", conversation_id, str(payload.get(\"narration\", _player_avatar_name() + \"结束交谈\")) )",
+      "reason": "_execute_conversation_intent 经字符串/变量方法派发，属本地狼人杀改造的既有调用点"
+    },
+    {
+      "path": "game/world/presentation/ui/TownUiAdapter.gd",
+      "func": "_execute_conversation_intent",
+      "call": "string:.call( \"player_reject_conversation\", conversation_id, str(payload.get(\"narration\", _player_avatar_name() + \"没有接话\")) )",
+      "reason": "_execute_conversation_intent 经字符串/变量方法派发，属本地狼人杀改造的既有调用点"
+    },
+    {
+      "path": "game/world/presentation/ui/TownUiAdapter.gd",
+      "func": "_execute_conversation_intent",
+      "call": "string:.call( \"player_start_conversation\", resident_name, str(payload.get(\"say\", \"\")), str(payload.get(\"narration\", _player_avatar_name() + \"开口搭话\")) )",
+      "reason": "_execute_conversation_intent 经字符串/变量方法派发，属本地狼人杀改造的既有调用点"
+    },
+    {
+      "path": "game/world/presentation/ui/TownUiAdapter.gd",
+      "func": "_execute_conversation_reply_intent",
+      "call": "string:.call( \"player_reply_conversation\", _active_conversation_id(), str(payload.get(\"say\", \"\")), str( payload.get( \"narration\", _player_avatar_name() + \"继续交谈\", ) ), false, )",
+      "reason": "_execute_conversation_reply_intent 经字符串/变量方法派发，属本地狼人杀改造的既有调用点"
+    },
+    {
+      "path": "game/world/presentation/ui/TownUiAdapter.gd",
+      "func": "_execute_conversation_reply_intent",
+      "call": "string:.call( \"player_reply_conversation_with_photos\", _active_conversation_id(), str(payload.get(\"say\", \"\")), str( payload.get( \"narration\", _player_avatar_name() + \"继续交谈\", ) ), photos, false, )",
+      "reason": "_execute_conversation_reply_intent 经字符串/变量方法派发，属本地狼人杀改造的既有调用点"
+    },
+    {
+      "path": "game/world/presentation/ui/TownUiRuntimeHost.gd",
+      "func": "request_back",
+      "call": "string:.call(\"get_player_avatar_name\")",
+      "reason": "request_back 经字符串/变量方法派发，属本地狼人杀改造的既有调用点"
+    },
+    {
+      "path": "game/world/runtime/TownWerewolfRuntime.gd",
+      "func": "_night_silence_active",
+      "call": "string:.call(\"_authoritative_absolute_minute\")",
+      "reason": "_night_silence_active 经字符串/变量方法派发，属本地狼人杀改造的既有调用点"
+    },
+    {
+      "path": "game/world/runtime/TownWerewolfRuntime.gd",
+      "func": "_night_silence_active",
+      "call": "string:.call(\"get_absolute_minute\")",
+      "reason": "_night_silence_active 经字符串/变量方法派发，属本地狼人杀改造的既有调用点"
+    },
+    {
+      "path": "game/world/runtime/presentation/TownResidentStateProjection.gd",
+      "func": "project_fields",
+      "call": "string:.call( \"_werewolf_pending_death_presentation\", resident_id, )",
+      "reason": "project_fields 经字符串/变量方法派发，属本地狼人杀改造的既有调用点"
     }
   ]
 }

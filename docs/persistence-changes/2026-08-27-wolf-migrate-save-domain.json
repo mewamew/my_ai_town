@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "decision": "no_migration",
+  "summary": "本地狼人杀改造在官方 beta.6 数据契约上的扩展：16 居民目录与 occupation_police 职业数据、狼人杀/卧底/角色档案存档域、新开局编译与恢复链多入口。均为向后兼容的增量字段，旧档可正常读取，磁盘格式与版本号不变。",
+  "affectedModules": [
+    "resident_catalog",
+    "occupation_catalog",
+    "town_world_baking",
+    "work_chain_catalog",
+    "session_manifest",
+    "world_snapshot",
+    "agent_snapshot",
+    "role_archive",
+    "new_game_opening",
+    "save_restore_commit"
+  ],
+  "migrationIds": [],
+  "samples": [
+    "game/tests/fixtures/town_residents_from_save.json"
+  ],
+  "tests": [
+    "game/tests/diag_role_archive.gd",
+    "game/tests/town_world_save_test.gd",
+    "game/tests/agent/memory/resident_memory_system_test.gd"
+  ],
+  "docs": [
+    "docs/狼人杀迁移方案.md",
+    "docs/persistence-changes/2026-08-27-wolf-migrate-save-domain.json"
+  ]
+}

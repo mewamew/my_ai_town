@@ -190,12 +190,14 @@ const RELEASES := [
 		"worldSectionCount": 27,
 		"activitySourceFingerprint": (
 			SAVE_SCHEMA_REGISTRY
-			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_UNSTAFFED_PUBLIC_PLACE_ACCESS
+			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_LOCAL_POLICE_OCCUPATION
 		),
-		# beta6 样本在当前无人值守公共场所规则合入前生成；它已经带有
-		# beta6 写入标记，仍应按当前发行版识别，再由恢复流水线重写当前指纹。
+		# beta6 样本在无人值守公共场所规则合入前生成；fork 的警察职业数据使
+		# 当前指纹为本地节点（bf242f42），官方 beta6 指纹（44815398）与更早的
+		# beta6 指纹仍按当前发行版识别，再由恢复流水线重写当前指纹。
 		"legacyActivitySourceFingerprints": [
 			SAVE_SCHEMA_REGISTRY.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK,
+			SAVE_SCHEMA_REGISTRY.ACTIVITY_SOURCE_FINGERPRINT_AFTER_UNSTAFFED_PUBLIC_PLACE_ACCESS,
 		],
 		"residentPathLayout": "hashed",
 		"nextEdge": {},

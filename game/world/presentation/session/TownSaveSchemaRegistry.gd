@@ -51,6 +51,11 @@ const ACTIVITY_SOURCE_FINGERPRINT_AFTER_CLINIC_SELF_CARE := (
 const ACTIVITY_SOURCE_FINGERPRINT_AFTER_UNSTAFFED_PUBLIC_PLACE_ACCESS := (
 	"44815398b66700e89ebd014692af12d17c754bac2746d026f6796b35872b0cfd"
 )
+# 本地 fork：world/data/town/source/occupation_catalog.json 新增 occupation_police（警察职业）
+# 后的世界数据聚合指纹（TownWorldDataBuild 重建产物）。
+const ACTIVITY_SOURCE_FINGERPRINT_AFTER_LOCAL_POLICE_OCCUPATION := (
+	"bf242f42dae623b44ec47902d4defea29314286de0be16a619683a5b61ad298f"
+)
 const ACTIVITY_SAVE_MIGRATIONS := [
 	{
 		"id": "2026-08-10-public-dining-prepare-dough-target",
@@ -146,6 +151,19 @@ const ACTIVITY_SAVE_MIGRATIONS := [
 			ACTIVITY_SOURCE_FINGERPRINT_AFTER_UNSTAFFED_PUBLIC_PLACE_ACCESS
 		),
 		# 只增加从静态地点配置推导的无人值守访问规则，不改写已保存活动引用。
+		"executionRewrites": [],
+		"placeServiceStateRewrites": [],
+	},
+	{
+		"id": "2026-08-27-local-police-occupation-catalog",
+		"fromSourceFingerprint": (
+			ACTIVITY_SOURCE_FINGERPRINT_AFTER_UNSTAFFED_PUBLIC_PLACE_ACCESS
+		),
+		"toSourceFingerprint": (
+			ACTIVITY_SOURCE_FINGERPRINT_AFTER_LOCAL_POLICE_OCCUPATION
+		),
+		# 本地 fork 在 occupation_catalog 增加警察职业，世界数据聚合指纹随之改变；
+		# 只推进指纹节点，不改写已保存活动执行引用。
 		"executionRewrites": [],
 		"placeServiceStateRewrites": [],
 	},
