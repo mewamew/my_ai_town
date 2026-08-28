@@ -200,6 +200,26 @@ const RELEASES := [
 			SAVE_SCHEMA_REGISTRY.ACTIVITY_SOURCE_FINGERPRINT_AFTER_UNSTAFFED_PUBLIC_PLACE_ACCESS,
 		],
 		"residentPathLayout": "hashed",
+		"nextEdge": {
+			"id": "beta6-to-beta7",
+			"kind": "no_change",
+			"modules": [],
+			"migrationIds": [],
+			"reason": "fork 登记: 狼人杀化改造给 world state 增加 werewolfState 域(worldSectionCount 27→28), 无迁移; 旧 beta6 记录档按同结构识别为 beta7 后重写发行标记。",
+		},
+	},
+	{
+		# fork 登记(2026-08-29): 狼人杀化改造(TownWerewolfRuntime)把狼人杀状态
+		# 挂到 world._werewolf_state 并随存档持久化(werewolfState 域), world
+		# state 键数 27→28。官方 beta6 存档(27 键 + 官方指纹)仍识别为 beta6;
+		# 本 fork 的存档(28 键 + 本地警察职业指纹 bf242f42)识别为 beta7。
+		"id": "beta7",
+		"worldSectionCount": 28,
+		"activitySourceFingerprint": (
+			SAVE_SCHEMA_REGISTRY
+			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_LOCAL_POLICE_OCCUPATION
+		),
+		"residentPathLayout": "hashed",
 		"nextEdge": {},
 	},
 ]
@@ -398,12 +418,27 @@ static func detect_release(evidence: Dictionary) -> Dictionary:
 		)
 	if not recorded_release.is_empty():
 		if not candidates.has(recorded_release):
-			return _detection_error(
-				"unknown_combination",
-				STATUS_INVALID,
-				"recorded release conflicts with save evidence",
+			# fork 升级场景: 存档记录的 release 是候选 release 的前序(如旧档
+			# 记录 beta6, 但结构证据匹配 beta7——beta6 时代保存的 28 键档)。
+			# 视为同结构升级, 按候选 release 识别, 恢复后由升级器重写标记。
+			var recorded_index := _release_order().find(recorded_release)
+			var first_candidate_index := (
+				_release_order().find(String(candidates[0]))
+				if not candidates.is_empty()
+				else -1
 			)
-		candidates = [recorded_release]
+			if (
+				recorded_index < 0
+				or first_candidate_index < 0
+				or recorded_index >= first_candidate_index
+			):
+				return _detection_error(
+					"unknown_combination",
+					STATUS_INVALID,
+					"recorded release conflicts with save evidence",
+				)
+		else:
+			candidates = [recorded_release]
 	var exact := candidates.size() == 1
 	var release := candidates[0] if exact else ""
 	return {

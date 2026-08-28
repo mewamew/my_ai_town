@@ -80,8 +80,8 @@ func _run() -> void:
 		_slot_id = requested_slot_id
 	if not requested_session_id.is_empty():
 		_session_id = requested_session_id
-	if _release_id == "beta6":
-		_expect_ok(_mark_fixture_as_current_release(), "beta6 样本写入当前发行标记")
+	if _release_id == COMPATIBILITY.current_release():
+		_expect_ok(_mark_fixture_as_current_release(), "%s 样本写入当前发行标记" % _release_id)
 	var store: RefCounted = STORE.new()
 	var catalog: RefCounted = STARTUP_CATALOG.new()
 	_expect_ok(
@@ -204,7 +204,7 @@ func _run() -> void:
 		catalog,
 	) as Dictionary
 	_expect_ok(upgraded, "%s 存档可通过正式继续入口恢复" % _release_id)
-	var is_current_release := _release_id == "beta6"
+	var is_current_release := _release_id == COMPATIBILITY.current_release()
 	_expect_equal(
 		upgraded.get("changed", false),
 		false if is_current_release else true,

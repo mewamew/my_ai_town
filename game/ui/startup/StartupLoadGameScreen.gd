@@ -32,6 +32,10 @@ const VALID_SLOT_STATES: Array[String] = [
 	"recoverable",
 	"incomplete",
 	"corrupt",
+	# 只读档(未来版本/版本组合不支持): 目录会正常下发, 白名单必须认识,
+	# 否则加载页整体打不开(实锤: 兼容账本升级前 28 键存档被判 read_only,
+	# 整页 push_error 空白)。只读槽位不可继续, 按禁用态展示。
+	"read_only",
 	# Keep the old projection name readable while all callers migrate to
 	# TownStartupSaveCatalog's `healthy` state.
 	"complete",
@@ -119,6 +123,7 @@ func get_contract_snapshot() -> Dictionary:
 			"empty": VISUAL_STATE_DISABLED,
 			"incomplete": VISUAL_STATE_DISABLED,
 			"corrupt": VISUAL_STATE_DISABLED,
+			"read_only": VISUAL_STATE_DISABLED,
 		},
 		"olderRevisionSelectionEnabled": false,
 		"olderRevisionSelectionDisabledReason": (
@@ -643,6 +648,8 @@ func _state_copy(state: String) -> String:
 			return "存档损坏"
 		"empty":
 			return "空槽"
+		"read_only":
+			return "只读存档"
 	return "状态未知"
 
 
