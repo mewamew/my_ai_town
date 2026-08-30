@@ -14,6 +14,9 @@ const DECISION_ENVELOPE_RUNTIME := preload(
 const GO_ACTION_PREFETCH_RUNTIME := preload(
 	"res://world/runtime/movement/TownGoActionPrefetchRuntime.gd"
 )
+const RESIDENT_EVENT_QUEUE_RUNTIME := preload(
+	"res://world/runtime/event/TownResidentEventQueueRuntime.gd"
+)
 
 
 static func take(
@@ -41,15 +44,29 @@ static func take(
 		):
 			continue
 		# 警察审讯会: 大会冻结期间只派发参与者(汇报期=尚未汇报的非警察、
-		# 审讯期=警察与被审者、投票期=尚未投票者)。非参与者请求直接丢弃,
+		# 审讯期=警察与被审者、投票期=尚未投票者)。非参与者请求直接作废,
 		# 否则冻结期间全体居民持续决策(实测: 审讯期每人烧多个"待着"/
-		# 被拦动作请求, 拖慢日志与模型配额)。玩家指定(allow 非空)放行。
+		# 被拦动作请求, 拖慢日志与模型配额)。玩家指定(allow 非空)同样过滤:
+		# 生产环境网关总是传全量连接居民, 旧的 allowed.is_empty() 前置条件
+		# 让这个过滤在生产中从未生效(实锤: 汇报期警察收到请求并提交汇报)。
+		# 作废必须清干净 decisionPending——残留会让后续阶段的补投扫描
+		# 一直跳过该居民(再也不会被唤醒)。
 		if (
-			allowed.is_empty()
-			and host.WEREWOLF_RUNTIME.assembly_frozen(host)
+			host.WEREWOLF_RUNTIME.assembly_frozen(host)
 			and not host.WEREWOLF_RUNTIME.assembly_participant(host, resident_id)
 		):
+			host._agent_wake_preparation_runtime.clear_resident(
+				String(resident.get("residentId", resident_id)),
+				String(resident.get("validDecisionId", "")),
+			)
+			RESIDENT_EVENT_QUEUE_RUNTIME.restore_inflight_facts(resident)
+			resident["decisionPending"] = false
+			resident["validDecisionId"] = ""
+			resident["pendingWake"] = {}
 			resident["wakeDispatchQueued"] = false
+			resident["decisionPrefetch"] = false
+			resident["prefetchedDecision"] = {}
+			resident["decisionMayInterruptCurrent"] = false
 			continue
 		pending_count += 1
 		var lap_usec := Time.get_ticks_usec() if host.telemetry.frame_probe != null else 0

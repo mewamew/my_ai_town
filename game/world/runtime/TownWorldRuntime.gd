@@ -1966,6 +1966,21 @@ func submit_agent_decision_by_id(
 		decision,
 	)
 
+
+## 大会冻结期给连续性兜底用的决策(空字典=不适用)。见
+## TownWerewolfRuntime.continuity_fallback_decision。
+func assembly_continuity_decision(
+	resident_id: String,
+	decision_id: String,
+	snapshot: Dictionary,
+) -> Dictionary:
+	return WEREWOLF_RUNTIME.continuity_fallback_decision(
+		self,
+		resident_id,
+		decision_id,
+		snapshot,
+	)
+
 func submit_agent_decision(resident_name: String, decision: Dictionary) -> Dictionary:
 	return AGENT_DECISION_SUBMISSION_RUNTIME.submit(self, resident_name, decision)
 
@@ -3182,6 +3197,16 @@ func _activate_assassination_action(
 		"completed" if ok else "rejected",
 		feedback,
 	)
+	# 私密回执落日志: 暗杀结果此前只进动作结果通道(下一次 wake 才可见),
+	# 控制台/日志里没有任何"成功/失败"痕迹, 旁观排查时像凭空消失。
+	TOWN_LOG.line(
+		"CATMOUSE",
+		"%s | 私密回执→%s：%s" % [
+			_time_label(),
+			_resident_display_name(resident_id),
+			feedback,
+		],
+	)
 	_schedule_decision(resident_id, true)
 	_emit_resident_state_changed(resident_id)
 	if ok:
@@ -3629,6 +3654,53 @@ func _record_assembly_interrogation_started(
 			],
 		)
 	return registered
+
+
+## 线索已告知桥接(ConversationRuntime 对话轮次落库时调用): 听者必须是警察
+## 才记账(记录"说话者把线索当面告诉了警察"), 其余对话自动忽略。
+func _record_police_lead_told(
+	teller_name: String,
+	listener_name: String,
+	channel: String,
+	summary: String,
+) -> bool:
+	if summary.strip_edges().is_empty():
+		return false
+	var teller_id := _resident_key(teller_name)
+	var listener_id := _resident_key(listener_name)
+	if teller_id.is_empty() or listener_id.is_empty():
+		return false
+	if not WEREWOLF_RUNTIME.feature_active(self):
+		return false
+	if not _resident_is_police(listener_id):
+		return false
+	WEREWOLF_RUNTIME.record_police_lead(self, teller_id, channel, summary)
+	return true
+
+
+## 网关丢弃响应回调(superseded/stale): 若世界侧仍挂着该决策的 pending
+## (它永远不会被消费), 清掉并重新调度。没有这条对账, 最后一个在飞请求
+## 被丢弃后居民永久卡死(实锤: 花子从 23:51 起整场大会零决策零唤醒)。
+func reconcile_discarded_decision(resident_id: String, decision_id: String) -> void:
+	var resident := resident_registry.records.get(resident_id, {}) as Dictionary
+	if resident.is_empty():
+		return
+	if not bool(resident.get("decisionPending", false)):
+		return
+	if String(resident.get("validDecisionId", "")) != decision_id:
+		# 已被更新的决策接管(新请求在飞), 无需对账。
+		return
+	RESIDENT_EVENT_QUEUE_RUNTIME.restore_inflight_facts(resident)
+	resident["decisionPending"] = false
+	resident["validDecisionId"] = ""
+	resident["pendingWake"] = {}
+	resident["wakeDispatchQueued"] = false
+	resident["decisionPrefetch"] = false
+	resident["prefetchedDecision"] = {}
+	resident["decisionMayInterruptCurrent"] = false
+	resident["reRequestAfterResponse"] = false
+	resident["decisionPendingSinceMsec"] = 0
+	_schedule_decision(resident_id, false, false, false, true, false)
 
 
 ## 警察审讯会逐字稿钩子(ConversationRuntime 每轮对话产生时调用):

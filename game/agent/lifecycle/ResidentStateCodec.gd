@@ -164,6 +164,10 @@ func _initialization_without_display_names(initialization: Dictionary) -> Dictio
 		if typeof(me_social) == TYPE_DICTIONARY:
 			(me_social as Dictionary).erase("money")
 			(me_social as Dictionary).erase("reputation")
+		# 卧底标记由当前 World 的卧底名单派生(hydration 时以当前初始化构建
+		# ResidentRuntime), 旧档载荷无此字段, 参与等价比较会把旧档恢复误判为
+		# "初始化资料与保存点不一致"(实证: beta2 样本 resident_hanako_01)。
+		(me_value as Dictionary).erase("is_undercover")
 	var residents_value: Variant = normalized.get("residents")
 	if typeof(residents_value) == TYPE_ARRAY:
 		for resident_value: Variant in residents_value as Array:

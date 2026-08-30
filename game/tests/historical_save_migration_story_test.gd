@@ -309,10 +309,11 @@ func _run() -> void:
 	)
 
 	var saved_snapshot := _read_world_snapshot(store, _slot_id, _session_id, played_revision)
+	# 当前发行版 beta7: 狼人杀化在 beta6 的 27 个分区上新增 werewolfState 域。
 	_expect_equal(
 		(saved_snapshot.get("state", {}) as Dictionary).size(),
-		27,
-		"升级后存档只保留 beta6 的 27 个 World 分区",
+		28,
+		"升级后存档只保留 beta7 的 28 个 World 分区",
 	)
 	var saved_state := saved_snapshot.get("state", {}) as Dictionary
 	_expect_equal(

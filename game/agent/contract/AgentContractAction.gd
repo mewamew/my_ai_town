@@ -146,6 +146,20 @@ static func _validate_action(
 			errors.append("action.content 必须是最多 240 字的单行文字")
 	elif action_type == "待着":
 		AgentContract._require_non_empty_string(action, "line", "action.line", errors)
+	elif action_type == "向警察汇报":
+		# 审讯会汇报期动作: kind 必填; wake 带有汇报类型清单时必须取自其中
+		# (与 TownWerewolfRuntime.ASSEMBLY_REPORT_KINDS 的世界侧校验一致)。
+		var report_kind := AgentContract._require_non_empty_string(action, "kind", "action.kind", errors)
+		var assembly_value: Variant = (
+			(wake_packet.get("snapshot", {}) as Dictionary).get("assembly", {})
+		)
+		if (
+			not report_kind.is_empty()
+			and assembly_value is Dictionary
+		):
+			var report_kinds := (assembly_value as Dictionary).get("kinds", []) as Array
+			if not report_kinds.is_empty() and not report_kinds.has(report_kind):
+				errors.append("action.kind 必须来自当前汇报类型")
 	elif action_type == "搭话":
 		var target_resident_id := AgentContractIdentity._validate_resident_id(
 			action,
@@ -158,6 +172,7 @@ static func _validate_action(
 		if (
 			not target_resident_id.is_empty()
 			and not AgentContractWake._wake_has_nearby_person(wake_packet, target_resident_id)
+			and not _wake_has_interrogation_target(wake_packet, target_resident_id)
 		):
 			errors.append("action.target_resident_id 必须来自 snapshot.nearby")
 	elif action_type == "答话":
@@ -298,6 +313,30 @@ static func _validate_photos(
 		AgentContract._require_non_empty_string(photo, "mime_type", "%s.mime_type" % photo_path, errors)
 		if not ref.is_empty() and restrict_refs and not available_refs.has(ref):
 			errors.append("%s.ref 不是本次输入中的有效照片引用" % photo_path)
+
+
+## 审讯期警察远程提审: 搭话目标允许来自 wake 的 assembly.targets(可审候选),
+## 不受 snapshot.nearby 感知范围限制(世界侧 prepare_talk_action 的
+## interrogation_allowed 已豁免, 契约侧必须同步, 否则远程提审全被拒)。
+static func _wake_has_interrogation_target(wake_packet: Dictionary, target_resident_id: String) -> bool:
+	var assembly_value: Variant = (
+		(wake_packet.get("snapshot", {}) as Dictionary).get("assembly", {})
+	)
+	if not assembly_value is Dictionary:
+		return false
+	var assembly := assembly_value as Dictionary
+	if (
+		String(assembly.get("phase", "")) != "interrogation"
+		or String(assembly.get("role", "")) != "police"
+	):
+		return false
+	for target_value: Variant in assembly.get("targets", []) as Array:
+		if (
+			target_value is Dictionary
+			and String((target_value as Dictionary).get("resident_id", "")) == target_resident_id
+		):
+			return true
+	return false
 
 
 static func _validate_action_environment_references(

@@ -20,7 +20,8 @@ const VOTE_SETTLE_MINUTE := 750   # 12:30 兜底开票(大会冻结期间到不�
 const EXILE_REASON := "被警察审讯会投票放逐"
 ## 警察审讯会参数。
 const ASSEMBLY_REPORT_TIMEOUT_SECONDS := 120.0  # 汇报期真实超时(模型慢时 60s 不够 14 人汇报, 实测 0 人完成)
-const ASSEMBLY_VOTE_TIMEOUT_SECONDS := 90.0     # 投票期真实超时(超时未投者弃权,立即开票)
+const ASSEMBLY_VOTE_TIMEOUT_SECONDS := 180.0    # 投票期真实超时(超时未投者弃权,立即开票; 90s 实测 14 人串行派发投不完, 三天全超时)
+const ASSEMBLY_REWAKE_INTERVAL_SECONDS := 20.0  # 大会各阶段补投扫描间隔: 给被调度早退分支吞掉唤醒的参与者重新派发(实锤: 投票期乔一鸣整场没收到投票选项)
 const ASSEMBLY_INTERROGATION_MAX := 5           # 警察最多审讯人数(每次发起新询问 +1,追问不限)
 const ASSEMBLY_INTERROGATION_TIMEOUT_SECONDS := 600.0  # 审讯期兜底超时(警察卡死防永久冻结)
 ## 汇报类型: 目击/听到/怀疑 为有内容汇报, 不汇报 计入"已交"但内容为空。
@@ -29,6 +30,9 @@ const TOWN_LOG := preload("res://world/runtime/TownLog.gd")
 const ROLE_SKILL_RUNTIME := preload("res://world/runtime/TownRoleSkillRuntime.gd")
 const CONVERSATION_RUNTIME := preload(
 	"res://world/runtime/conversation/TownConversationRuntime.gd"
+)
+const RESIDENT_EVENT_QUEUE_RUNTIME := preload(
+	"res://world/runtime/event/TownResidentEventQueueRuntime.gd"
 )
 
 
@@ -139,6 +143,7 @@ static func default_assembly_state() -> Dictionary:
 		"interrogationTranscript": [],  # 审讯逐字稿: {minute, speaker_id, speaker, say}
 		"interrogationElapsed": 0.0,    # 审讯期已过真实秒(兜底超时用)
 		"voteElapsed": 0.0,       # 投票期已过真实秒
+		"rewakeElapsed": 0.0,     # 补投扫描已过真实秒(tick_assembly 定期补投)
 		"announced": false,       # 本次大会是否已开票公布
 	}
 
@@ -490,6 +495,9 @@ static func start_assembly(world, absolute_minute: int) -> void:
 			alive_ids.size(),
 		],
 	)
+	# 冻结即硬截止: 收束所有进行中的民间对话。挂在"等待本人答话"状态的
+	# 对话会让居民整场大会既答不了话也做不了大会动作(双向拒绝死锁)。
+	_end_all_active_conversations(world)
 	# 汇报期唤醒: 非警察居民提交汇报。警察不汇报, 等汇报收齐后一次性唤醒。
 	for resident_id: String in alive_ids:
 		if world._resident_is_police(resident_id):
@@ -537,9 +545,53 @@ static func submit_report(world, resident_id: String, value: Dictionary) -> Stri
 			("：" + line) if not line.is_empty() else "",
 		],
 	)
+	if kind != "不汇报":
+		record_police_lead(world, resident_id, "审讯会汇报", line)
 	if _assembly_reports_collected(world, assembly):
 		_begin_interrogation(world)
 	return ""
+
+
+## 线索已告知账本: 记录居民把线索送达警察的每一次(审讯会汇报/当面告知/
+## 托人传话送达), 注入该居民后续 wake, 让模型知道"这事我已经告诉过警察了"。
+## 没有这份记账, 执念型居民会无限重复"我要去告诉闻叙"(实锤: 唐小满
+## 从第1天到第4天十几次尝试说同一件黑影的事, 第2天当面说过后第3天
+## 目标又复活)。条目按居民封顶, 防止存档无限膨胀。
+const POLICE_LEAD_MAX_ENTRIES := 6
+const POLICE_LEAD_SUMMARY_MAX_CHARS := 40
+
+
+static func record_police_lead(
+	world,
+	teller_id: String,
+	channel: String,
+	summary: String,
+) -> void:
+	var leads := world._werewolf_state.get("policeLeads", {}) as Dictionary
+	var entries: Array = (leads.get(teller_id, []) as Array).duplicate()
+	var trimmed := summary.strip_edges().replace("\n", " ")
+	if trimmed.length() > POLICE_LEAD_SUMMARY_MAX_CHARS:
+		trimmed = trimmed.substr(0, POLICE_LEAD_SUMMARY_MAX_CHARS) + "…"
+	var minute := int(world._authoritative_absolute_minute())
+	entries.append({
+		"day": minute / 1440 + 1,
+		"minute_label": world._time_label(),
+		"channel": channel,
+		"summary": trimmed,
+	})
+	while entries.size() > POLICE_LEAD_MAX_ENTRIES:
+		entries.pop_front()
+	leads[teller_id] = entries
+	world._werewolf_state["policeLeads"] = leads
+
+
+## 注入 wake 的已告知线索快照(空账本返回空字典, prompt 不渲染)。
+static func police_lead_snapshot(world, resident_id: String) -> Dictionary:
+	var leads := world._werewolf_state.get("policeLeads", {}) as Dictionary
+	var entries: Array = leads.get(resident_id, []) as Array
+	if entries.is_empty():
+		return {}
+	return {"entries": entries.duplicate(true)}
 
 
 ## 汇报是否收齐: 所有存活非警察居民均已提交(含"不汇报")。
@@ -558,10 +610,16 @@ static func _assembly_reports_collected(world, assembly: Dictionary) -> bool:
 ## 汇报收齐/超时 → 进入审讯期: 打包汇报汇总, 一次性唤醒警察(零请求零回复,
 ## 汇总直接注入警察 wake), 警察最多审 ASSEMBLY_INTERROGATION_MAX 人。
 static func _begin_interrogation(world) -> void:
+	# 先结束警察手头的活跃对话(汇报期遗留的日常闲聊等): 警察带着活跃对话
+	# 进审讯期时, prompt 编译器的搭话约束块在"无活跃对话"分支内, 搭话选项
+	# 整段缺失, 警察无法发起审讯, 只能干等到 600s 兜底(实锤: 第2天审讯期
+	# 警察 0 审讯)。世界侧对"有活跃对话时搭话"是硬拒绝, 必须先释放。
+	_end_police_interrogation_conversations(world)
 	var assembly := world._werewolf_state.get("assembly", {}) as Dictionary
 	assembly["phase"] = "interrogation"
 	assembly["reportElapsed"] = 0.0
 	assembly["interrogationElapsed"] = 0.0
+	assembly["rewakeElapsed"] = 0.0
 	assembly["interrogationTranscript"] = []
 	assembly["interrogationCount"] = 0
 	assembly["interrogated"] = []
@@ -761,6 +819,50 @@ static func end_interrogation(world, resident_id: String) -> String:
 	return ""
 
 
+## 大会冻结期给连续性兜底用的决策(网关 _submit_continuity_fallback 调用)。
+## 返回空字典表示不适用(非冻结期或走默认兜底)。
+## 汇报期未汇报者兜底提交"不汇报"——与超时视为不汇报同义, 且让居民立即
+## 退出参与者集合, 避免默认"待着"被白名单拒绝→重唤醒→再失败的烧请求循环
+## (实锤: 汇报期白芷/陆青舟每 5 秒一轮循环)。待着不被允许的其他阶段
+## (投票期/汇报期警察)改为继续当前动作, 不产生必被拒绝的新动作。
+static func continuity_fallback_decision(
+	world,
+	resident_id: String,
+	decision_id: String,
+	snapshot: Dictionary,
+) -> Dictionary:
+	if not assembly_frozen(world):
+		return {}
+	if assembly_phase(world) == "report" and assembly_participant(world, resident_id):
+		return {
+			"decision_id": decision_id,
+			"handling": "replace_current",
+			"action": {
+				"action_id": "%s-continuity-no-report" % decision_id,
+				"type": "向警察汇报",
+				"kind": "不汇报",
+				"line": "",
+			},
+		}
+	if not assembly_action_allowed(world, resident_id, "待着").is_empty():
+		return {}
+	var me_value: Variant = snapshot.get("me", {})
+	var me: Dictionary = me_value as Dictionary if me_value is Dictionary else {}
+	var resident_current: Variant = me.get("current_action")
+	if (
+		resident_current is Dictionary
+		and not (resident_current as Dictionary).is_empty()
+		and not String((resident_current as Dictionary).get("action_id", "")).ends_with(
+			"-continuity",
+		)
+	):
+		return {
+			"decision_id": decision_id,
+			"handling": "continue_current",
+		}
+	return {}
+
+
 ## 结束警察参与的活跃对话(审讯对话在投票期已无意义)。防御性跳过
 ## 无对话引擎的世界(测试桩/FakeWorld 无 conversation_state)。
 static func _end_police_interrogation_conversations(world) -> void:
@@ -786,14 +888,52 @@ static func _end_police_interrogation_conversations(world) -> void:
 			world,
 			world._traveler_relationship_state,
 			conversation_id,
-			"审讯结束",
+			# 原因必须是契约 CONVERSATION_END_REASONS 枚举值——"审讯结束"
+			# 不在枚举里, 对话结束事件进 wake 会被整包拒绝(实锤: 投票期
+			# 开始时沈桥/闻叙 wake 包 "reason 不是合法对话结束原因")。
+			"无法继续",
 			"completed",
 		)
 		ended_any = true
 	if ended_any:
 		TOWN_LOG.line(
 			"WEREWOLF",
-			"%s | 审讯对话已随投票期开始而结束(被审者不再被答话锁定)" % world._time_label(),
+			"%s | 警察手头对话已随大会推进结束(不再占用对话锁)" % world._time_label(),
+		)
+
+
+## 大会冻结时收束所有活跃民间对话。冻结期间对话无法推进(空闲计时
+## 不走), 挂在"等待本人答话"状态的对话会同时锁死两件事: 答话被
+## 阶段白名单拒绝(汇报期只能汇报/投票期只能投票), 大会动作又被
+## 接受策略拒绝("当前对话正在等待本居民提交答话动作")——居民整场
+## 大会既不能汇报也不能投票(实锤: 乔一鸣/周既明各烧 66/55 次请求,
+## 两人全部缺票)。冻结=硬截止, 散会后居民自然会重新攀谈。
+static func _end_all_active_conversations(world) -> void:
+	var conversation_state: Variant = world.get("conversation_state")
+	if conversation_state == null or not (conversation_state is Object):
+		return
+	var records_value: Variant = conversation_state.get("records")
+	if not (records_value is Dictionary):
+		return
+	var records := records_value as Dictionary
+	var ended_any := false
+	for conversation_id_value: Variant in records.keys():
+		var conversation_id := String(conversation_id_value)
+		var conversation := records.get(conversation_id, {}) as Dictionary
+		if String(conversation.get("status", "")) != "active":
+			continue
+		CONVERSATION_RUNTIME._end_conversation(
+			world,
+			world._traveler_relationship_state,
+			conversation_id,
+			"无法继续",
+			"completed",
+		)
+		ended_any = true
+	if ended_any:
+		TOWN_LOG.line(
+			"WEREWOLF",
+			"%s | 大会冻结，所有进行中的对话已收束(散会后可重新交谈)" % world._time_label(),
 		)
 
 
@@ -815,6 +955,7 @@ static func _begin_vote(world) -> void:
 		candidate_ids.append(resident_id)
 	assembly["phase"] = "vote"
 	assembly["voteElapsed"] = 0.0
+	assembly["rewakeElapsed"] = 0.0
 	world._werewolf_state["assembly"] = assembly
 	world._werewolf_state["vote"] = {
 		"day": int(assembly.get("day", -1)),
@@ -830,7 +971,9 @@ static func _begin_vote(world) -> void:
 	)
 	world.broadcast_announcement(
 		"警察审讯结束。全体居民请根据审讯记录投出你怀疑的人：得票最高者将被"
-		+ "放逐出镇并公布其身份；平票则无人出局。投票收齐或 90 秒后立即开票。",
+		+ "放逐出镇并公布其身份；平票则无人出局。投票收齐或 %d 秒后立即开票。" % int(
+			ASSEMBLY_VOTE_TIMEOUT_SECONDS,
+		),
 	)
 	_assembly_wake_all(world)
 
@@ -855,6 +998,12 @@ static func tick_assembly(world, real_seconds: float) -> void:
 		_dismiss_assembly_if_assembly_vote(world)
 		return
 	var assembly := world._werewolf_state.get("assembly", {}) as Dictionary
+	assembly["rewakeElapsed"] = float(assembly.get("rewakeElapsed", 0.0)) + real_seconds
+	var due_rewake := (
+		float(assembly.get("rewakeElapsed", 0.0)) >= ASSEMBLY_REWAKE_INTERVAL_SECONDS
+	)
+	if due_rewake:
+		assembly["rewakeElapsed"] = 0.0
 	match String(assembly.get("phase", "idle")):
 		"report":
 			assembly["reportElapsed"] = float(assembly.get("reportElapsed", 0.0)) + real_seconds
@@ -870,6 +1019,8 @@ static func tick_assembly(world, real_seconds: float) -> void:
 				_begin_interrogation(world)
 				return
 			world._werewolf_state["assembly"] = assembly
+			if due_rewake:
+				_assembly_rewake(world)
 		"interrogation":
 			assembly["interrogationElapsed"] = (
 				float(assembly.get("interrogationElapsed", 0.0)) + real_seconds
@@ -886,6 +1037,8 @@ static func tick_assembly(world, real_seconds: float) -> void:
 				_begin_vote(world)
 				return
 			world._werewolf_state["assembly"] = assembly
+			if due_rewake:
+				_assembly_rewake(world)
 		"vote":
 			assembly["voteElapsed"] = float(assembly.get("voteElapsed", 0.0)) + real_seconds
 			if float(assembly.get("voteElapsed", 0.0)) >= ASSEMBLY_VOTE_TIMEOUT_SECONDS:
@@ -900,6 +1053,79 @@ static func tick_assembly(world, real_seconds: float) -> void:
 				settle_vote_round(world, int(world._authoritative_absolute_minute()))
 				return
 			world._werewolf_state["assembly"] = assembly
+			if due_rewake:
+				_assembly_rewake(world)
+
+
+## 大会阶段补投扫描: 给"没有任何挂起决策"的参与者重新调度一次。
+## 一次性全员唤醒会被调度层的各种早退分支静默吞掉(实锤: 投票期
+## 乔一鸣被 confirmedActionPreview 分支吞掉, 整场 90 秒没投上票;
+## 汇报期/审讯期同样存在), 定期补扫让参与者最终都能收到请求。
+## 已有挂起/在飞请求的居民原则上跳过, 避免取消在飞请求白烧配额;
+## 但挂起超过 40 秒的视为卡死强制清掉重建——在飞响应最终回来只会
+## 被"决定已失效"拒绝, 一次配额换大会不再有缺席者(实锤: 花子
+## pending 卡死整场大会, 既没汇报也没投票)。
+## 审讯期警察正在对话中等待答话时跳过——他不该在等待中被重新
+## 唤醒(可能触发提前「结束审讯」或必被拒绝的重复搭话)。
+const ASSEMBLY_PENDING_STALE_MSEC := 40000
+
+static func _assembly_rewake(world) -> void:
+	if not assembly_active(world):
+		return
+	# 测试桩世界可能没有居民注册表/调度接口: 无注册表则跳过补投扫描,
+	# 只保留超时兜底路径。
+	var registry: Variant = world.get("resident_registry")
+	if registry == null:
+		return
+	if not (registry is Object) and not (registry is Dictionary):
+		return
+	var phase := assembly_phase(world)
+	var records_value: Variant = registry.get("records")
+	if not (records_value is Dictionary):
+		return
+	var records := records_value as Dictionary
+	var now_msec := Time.get_ticks_msec()
+	for resident_id: String in world._resident_order:
+		if not assembly_participant(world, resident_id):
+			continue
+		if not records.has(resident_id):
+			continue
+		var resident := records.get(resident_id, {}) as Dictionary
+		if bool(resident.get("decisionPending", false)):
+			# 无时间戳/负值(引擎刚启动)一律按卡死处理: 宁可多花一次
+			# 请求(迟到响应会被"决定已失效"拒绝), 不允许缺席大会。
+			var pending_since := int(resident.get("decisionPendingSinceMsec", 0))
+			if (
+				pending_since > 0
+				and now_msec - pending_since < ASSEMBLY_PENDING_STALE_MSEC
+			):
+				continue
+			# 挂起超龄: 清掉重建(响应回来会被失效拒绝, 可接受)。
+			world._agent_wake_preparation_runtime.clear_resident(
+				String(resident.get("residentId", resident_id)),
+				String(resident.get("validDecisionId", "")),
+			)
+			RESIDENT_EVENT_QUEUE_RUNTIME.restore_inflight_facts(resident)
+			resident["decisionPending"] = false
+			resident["validDecisionId"] = ""
+			resident["pendingWake"] = {}
+			resident["wakeDispatchQueued"] = false
+			resident["decisionPrefetch"] = false
+			resident["prefetchedDecision"] = {}
+			resident["decisionMayInterruptCurrent"] = false
+			resident["reRequestAfterResponse"] = false
+			resident["decisionPendingSinceMsec"] = 0
+		if bool(resident.get("wakeDispatchQueued", false)):
+			continue
+		if (
+			phase == "interrogation"
+			and world._resident_is_police(resident_id)
+			and not CONVERSATION_RUNTIME._active_conversation_for_person(
+				world, resident_id,
+			).is_empty()
+		):
+			continue
+		world._schedule_decision(resident_id, true, false, false, false, true)
 
 
 ## 大会期间动作白名单(TownActionPreparationRuntime.prepare 入口调用)。
@@ -915,6 +1141,10 @@ static func assembly_action_allowed(world, resident_id: String, action_type: Str
 	match phase:
 		"report":
 			if is_police:
+				# 汇报期警察唯一该做的事就是等待: 放行「待着」, 其余拒绝。
+				# (此前待着也被拒, 警察在汇报期提交任何动作都被打回。)
+				if action_type == "待着":
+					return ""
 				return "汇报正在收集中，警察请等待"
 			if action_type == "向警察汇报":
 				return ""

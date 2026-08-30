@@ -665,6 +665,22 @@ func _render_snapshot(wake_packet: Dictionary) -> String:
 					lines.append("- %s：「%s」" % [_safe(turn.get("speaker", "")), _safe(turn.get("say", ""))])
 			else:
 				lines.append("（本轮没有审讯记录）")
+	# 线索已告知账本: 提醒模型哪些线索已经送达警察, 终结执念型重复汇报
+	# (实锤: 唐小满从第1天到第4天反复要"当面告诉闻叙黑影的事", 即使
+	# 第2天已当面说过、审讯会也汇报过)。
+	var police_lead_log := snapshot.get("police_lead_log", {}) as Dictionary
+	if not police_lead_log.is_empty():
+		var lead_entries := police_lead_log.get("entries", []) as Array
+		if not lead_entries.is_empty():
+			lines.append("")
+			lines.append("你已告诉过警察的线索（同一件事不要再重复去说，有了新线索再补充）：")
+			for lead_value: Variant in lead_entries:
+				var lead := lead_value as Dictionary
+				lines.append("- %s（%s，%s）" % [
+					_safe(lead.get("summary", "")),
+					_safe(lead.get("channel", "")),
+					_safe(lead.get("minute_label", "")),
+				])
 	var rhythm := snapshot.get("rhythm", {}) as Dictionary
 	if not rhythm.is_empty():
 		lines.append(
@@ -2110,15 +2126,22 @@ func _build_derived_constraints(wake_packet: Dictionary) -> Dictionary:
 	var assembly_snapshot := snapshot.get("assembly", {}) as Dictionary
 	var assembly_phase := String(assembly_snapshot.get("phase", ""))
 	if assembly_phase == "report":
-		# 汇报期非警察: 唯一动作=向警察汇报(不需要去任何地方)。
-		constraints["actions"] = {
-			"向警察汇报": {
-				"fields": ["action_id", "type", "kind", "line"],
-				"kinds": (assembly_snapshot.get("kinds", []) as Array).duplicate(),
-				"required": false,
-				"max_line_characters": 80,
-			},
-		}
+		if String(assembly_snapshot.get("role", "")) == "police":
+			# 汇报期警察: 不汇报, 只等待(白名单同步放行"待着")。
+			# 此前"向警察汇报"也注入给了警察, 模型照选必被白名单拒绝,
+			# 还出现过警察试图汇报"周既明昨夜行踪可疑"的怪决策。
+			(constraints["actions"] as Dictionary).clear()
+			(constraints["actions"] as Dictionary)["待着"] = _action_constraints("待着")
+		else:
+			# 汇报期非警察: 唯一动作=向警察汇报(不需要去任何地方)。
+			constraints["actions"] = {
+				"向警察汇报": {
+					"fields": ["action_id", "type", "kind", "line"],
+					"kinds": (assembly_snapshot.get("kinds", []) as Array).duplicate(),
+					"required": false,
+					"max_line_characters": 80,
+				},
+			}
 	elif assembly_phase == "interrogation":
 		# 审讯期白名单: 警察=搭话/答话/结束审讯; 平民=答话(被审中)/待着。
 		var interrogation_actions := constraints["actions"] as Dictionary

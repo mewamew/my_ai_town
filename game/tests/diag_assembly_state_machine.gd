@@ -7,6 +7,7 @@ extends "res://tests/support/TownWorldTestCase.gd"
 ## 运行: Godot --headless --path game --script res://tests/diag_assembly_state_machine.gd
 
 const WEREWOLF := preload("res://world/runtime/TownWerewolfRuntime.gd")
+const AGENT_CONTRACT := preload("res://agent/AgentContract.gd")
 
 const UNDERCOVER_IDS: Array[String] = [
 	"resident_xie_mian_01",
@@ -19,8 +20,137 @@ func _initialize() -> void:
 	print("===== 警察审讯会状态机验证 =====")
 	_verify_fake_state_machine()
 	_verify_fake_phase_timeouts()
+	_verify_police_leads()
+	_verify_assembly_rewake()
+	_verify_contract_consistency()
 	_verify_real_world_assembly()
 	_finish_suite("ASSEMBLY_STATE_MACHINE_PASS")
+
+
+# —— 场景1b: 线索已告知账本 ——
+
+func _verify_police_leads() -> void:
+	var fake := _make_fake_world()
+	fake.absolute_minute = 1440 + 480
+	WEREWOLF.start_assembly(fake, fake.absolute_minute)
+	# 有内容汇报记入账本; 不汇报不记。
+	_expect_equal(
+		WEREWOLF.submit_report(fake, "c1", {"kind": "目击", "line": "我看见有人影闪过"}),
+		"",
+		"目击汇报提交成功",
+	)
+	_expect_equal(
+		WEREWOLF.submit_report(fake, "c2", {"kind": "不汇报", "line": ""}),
+		"",
+		"不汇报提交成功",
+	)
+	var c1_snapshot := WEREWOLF.police_lead_snapshot(fake, "c1") as Dictionary
+	var c1_entries := c1_snapshot.get("entries", []) as Array
+	_expect_equal(c1_entries.size(), 1, "有内容汇报记入已告知账本")
+	if not c1_entries.is_empty():
+		_expect_equal(
+			String((c1_entries[0] as Dictionary).get("channel", "")),
+			"审讯会汇报",
+			"账本条目标注汇报通道",
+		)
+		_expect(
+			String((c1_entries[0] as Dictionary).get("summary", "")).contains("人影"),
+			"账本条目带内容摘要",
+		)
+	_expect_equal(
+		(WEREWOLF.police_lead_snapshot(fake, "c2") as Dictionary).is_empty(),
+		true,
+		"不汇报不记入账本",
+	)
+	# 封顶: 超过上限丢最旧条目。
+	for index: int in range(10):
+		WEREWOLF.record_police_lead(fake, "c3", "当面告知", "第%d条线索" % index)
+	var c3_snapshot := WEREWOLF.police_lead_snapshot(fake, "c3") as Dictionary
+	_expect_equal(
+		(c3_snapshot.get("entries", []) as Array).size(),
+		WEREWOLF.POLICE_LEAD_MAX_ENTRIES,
+		"账本条目按居民封顶",
+	)
+
+
+# —— 场景1c: 大会阶段补投扫描 ——
+
+func _verify_assembly_rewake() -> void:
+	var fake := _make_fake_world()
+	fake.absolute_minute = 1440 + 480
+	WEREWOLF.start_assembly(fake, fake.absolute_minute)
+	fake.scheduled_ids = []  # 开会唤醒不算补投
+	# 注册表桩: c1 刚挂起(应跳过), c2/c3 无挂起(应补投)。
+	fake.resident_registry = {
+		"records": {
+			"c1": {
+				"decisionPending": true,
+				"decisionPendingSinceMsec": Time.get_ticks_msec(),
+			},
+			"c2": {},
+			"c3": {},
+		},
+	}
+	WEREWOLF.tick_assembly(fake, 21.0)
+	var scheduled := fake.scheduled_ids
+	_expect(
+		not scheduled.has("c1"),
+		"补投跳过已有挂起决策的居民: %s" % str(scheduled),
+	)
+	_expect(
+		scheduled.has("c2") and scheduled.has("c3"),
+		"补投为无挂起决策的未汇报者补发: %s" % str(scheduled),
+	)
+	# 挂起超龄(>40s)视为卡死: 强制清掉重建, 不允许缺席大会。
+	# (headless 测试引擎启动不到 40 秒, 用负时间戳构造"超龄"——
+	# 运行时语义: 无时间戳/负值一律按卡死处理。)
+	var stale_registry := {
+		"records": {
+			"c1": {
+				"decisionPending": true,
+				"decisionPendingSinceMsec": -40000,
+			},
+			"c2": {
+				"decisionPending": true,
+				"decisionPendingSinceMsec": Time.get_ticks_msec(),
+			},
+		},
+	}
+	fake.resident_registry = stale_registry
+	fake.scheduled_ids = []
+	WEREWOLF.tick_assembly(fake, 21.0)
+	_expect(
+		fake.scheduled_ids.has("c1"),
+		"挂起超龄的参与者被强制清掉重建: %s" % str(fake.scheduled_ids),
+	)
+	_expect(
+		not fake.scheduled_ids.has("c2"),
+		"挂起未超龄的参与者仍跳过: %s" % str(fake.scheduled_ids),
+	)
+	# 已汇报者不再是参与者, 不补投。
+	fake.scheduled_ids = []
+	WEREWOLF.submit_report(fake, "c2", {"kind": "不汇报", "line": ""})
+	WEREWOLF.tick_assembly(fake, 21.0)
+	_expect(
+		not fake.scheduled_ids.has("c2"),
+		"已汇报者退出参与者集合不再补投: %s" % str(fake.scheduled_ids),
+	)
+	# 投票期: 未投票者补投。
+	fake.resident_registry = {
+		"records": {"c1": {}, "c2": {}, "c3": {}},
+	}
+	WEREWOLF.submit_report(fake, "c1", {"kind": "不汇报", "line": ""})
+	WEREWOLF.submit_report(fake, "c3", {"kind": "不汇报", "line": ""})
+	WEREWOLF.end_interrogation(fake, "p")
+	_expect_equal(WEREWOLF.assembly_phase(fake), "vote", "进入投票期")
+	fake.scheduled_ids = []
+	WEREWOLF.tick_assembly(fake, 21.0)
+	_expect(
+		fake.scheduled_ids.has("c1")
+		and fake.scheduled_ids.has("c2")
+		and fake.scheduled_ids.has("c3"),
+		"投票期补投覆盖全部未投票者: %s" % str(fake.scheduled_ids),
+	)
 
 
 # —— 场景1: FakeWorld 全流程状态机 ——
@@ -242,8 +372,8 @@ func _verify_fake_phase_timeouts() -> void:
 	WEREWOLF.submit_report(fake, "c3", {"kind": "怀疑", "line": "b"})
 	WEREWOLF.end_interrogation(fake, "p")
 	_expect_equal(WEREWOLF.assembly_phase(fake), "vote", "第3天进入投票期")
-	# 投票期超时(>90s)无人投票 → 流会并散会解冻
-	WEREWOLF.tick_assembly(fake, 91.0)
+	# 投票期超时(>180s)无人投票 → 流会并散会解冻
+	WEREWOLF.tick_assembly(fake, 181.0)
 	_expect_equal(
 		_announcement_text(fake).contains("审讯会投票流会"),
 		true,
@@ -274,6 +404,112 @@ func _verify_fake_phase_timeouts() -> void:
 # 真实世界开局时间与 agent 决策时序不可控, 故全部手动驱动(start_assembly/
 # submit_report/end_interrogation/submit_vote 直调), 只验证世界层集成:
 # 冻结(advance 短路)、桥接钩子、wake snapshot 注入、收齐立即开票、解冻恢复。
+
+# —— 场景3: prompt 教的提交格式必须通过 AgentContract 决策校验 ——
+# 三个大会动作都曾因契约侧缺登记/缺豁免被 agent 侧整单打回:
+#   向警察汇报/结束审讯 不在 ACTION_TYPES → "action.type 不是合法动作类型"
+#   (实锤: 汇报期 13 人全按教学格式提交, 0 人汇报);
+#   远程提审搭话目标不在 snapshot.nearby → "必须来自 snapshot.nearby"。
+# 本场景对每个大会动作断言契约校验通过, 对已知非法形态断言有对应错误。
+
+func _verify_contract_consistency() -> void:
+	var report_wake := {
+		"decision_id": "d-report",
+		"events": [],
+		"action_results": [],
+		"snapshot": {
+			"assembly": {
+				"phase": "report",
+				"kinds": ["目击", "听到", "怀疑", "不汇报"],
+			},
+		},
+	}
+	var report_decision := {
+		"decision_id": "d-report",
+		"handling": "replace_current",
+		"action": {
+			"action_id": "a-report-1",
+			"type": "向警察汇报",
+			"kind": "目击",
+			"line": "我昨晚看见有人翻墙出镇。",
+		},
+	}
+	_expect_equal(
+		AGENT_CONTRACT.validate_decision(report_decision, {}, report_wake, {}),
+		[],
+		"汇报期动作(向警察汇报)通过契约校验",
+	)
+	var report_canonical := AGENT_CONTRACT.canonicalize_decision(report_decision)
+	_expect_equal(
+		(report_canonical.get("action", {}) as Dictionary).has("kind"),
+		true,
+		"向警察汇报规范化保留 kind",
+	)
+	var bad_kind_wake: Dictionary = report_wake.duplicate(true)
+	var bad_kind_decision: Dictionary = report_decision.duplicate(true)
+	(bad_kind_decision["action"] as Dictionary)["kind"] = "道听途说"
+	_expect(
+		not (AGENT_CONTRACT.validate_decision(bad_kind_decision, {}, bad_kind_wake, {}) as Array).is_empty(),
+		"汇报 kind 不在类型清单被契约拒绝",
+	)
+	var interrogation_wake := {
+		"decision_id": "d-interrogate",
+		"events": [],
+		"action_results": [],
+		"snapshot": {
+			"assembly": {
+				"phase": "interrogation",
+				"role": "police",
+				"targets": [{"resident_id": "c2", "name": "沈桥"}],
+			},
+			"nearby": [],
+		},
+	}
+	_expect_equal(
+		AGENT_CONTRACT.validate_decision({
+			"decision_id": "d-interrogate",
+			"handling": "replace_current",
+			"action": {
+				"action_id": "a-interrogate-1",
+				"type": "搭话",
+				"target_resident_id": "c2",
+				"say": "昨晚你在哪里？",
+				"narration": "我盯着他的眼睛。",
+				"photos": [],
+			},
+		}, {}, interrogation_wake, {}),
+		[],
+		"审讯期警察远程提审搭话(可审候选)通过契约校验",
+	)
+	_expect(
+		not (AGENT_CONTRACT.validate_decision({
+			"decision_id": "d-interrogate",
+			"handling": "replace_current",
+			"action": {
+				"action_id": "a-interrogate-2",
+				"type": "搭话",
+				"target_resident_id": "c9",
+				"say": "你在哪里？",
+				"narration": "我看着对方。",
+				"photos": [],
+			},
+		}, {}, interrogation_wake, {}) as Array).is_empty(),
+		"搭话目标既不在附近也不是可审候选被契约拒绝",
+	)
+	_expect_equal(
+		AGENT_CONTRACT.validate_decision({
+			"decision_id": "d-interrogate",
+			"handling": "replace_current",
+			"action": {
+				"action_id": "a-interrogate-end",
+				"type": "结束审讯",
+				"line": "先问到这里。",
+			},
+		}, {}, interrogation_wake, {}),
+		[],
+		"结束审讯动作通过契约校验",
+	)
+
 
 func _verify_real_world_assembly() -> void:
 	var data := _build_data()
@@ -503,6 +739,12 @@ func _advance_to_minute_of_day(world: RefCounted, target_minute: int) -> void:
 
 
 ## 警察审讯会状态机桩世界: 实现 TWR assembly 状态机调用面。
+class StubWakePreparation:
+	extends RefCounted
+	func clear_resident(_resident_id: String, _decision_id: String) -> void:
+		pass
+
+
 class FakeWorld:
 	extends RefCounted
 	var _running := true
@@ -514,6 +756,9 @@ class FakeWorld:
 	var alive: Dictionary = {}
 	var announcements: Array[String] = []
 	var absolute_minute := 1440 + 480
+	var scheduled_ids: Array[String] = []
+	var resident_registry: Variant = null
+	var _agent_wake_preparation_runtime: Variant = StubWakePreparation.new()
 
 	func _resident_is_alive(resident_id: String) -> bool:
 		return bool(alive.get(resident_id, false))
@@ -541,14 +786,14 @@ class FakeWorld:
 		return announcements
 
 	func _schedule_decision(
-		_resident_id: String,
+		resident_id: String,
 		_urgent := false,
 		_a := false,
 		_b := false,
 		_c := false,
 		_d := false,
 	) -> void:
-		pass
+		scheduled_ids.append(resident_id)
 
 	func confirm_resident_death(resident_id: String, _reason: String) -> Dictionary:
 		alive[resident_id] = false

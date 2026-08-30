@@ -144,6 +144,11 @@ const RELEASES := [
 			SAVE_SCHEMA_REGISTRY
 			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK
 		),
+		# 34c2222 同步前该发行版的活动数据指纹为 PRE_SYNC(70dcd5)。
+		"legacyActivitySourceFingerprints": [
+			SAVE_SCHEMA_REGISTRY
+			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK_PRE_SYNC,
+		],
 		"residentPathLayout": "hashed",
 		"nextEdge": {
 			"id": "beta3-to-beta4",
@@ -160,6 +165,10 @@ const RELEASES := [
 			SAVE_SCHEMA_REGISTRY
 			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK
 		),
+		"legacyActivitySourceFingerprints": [
+			SAVE_SCHEMA_REGISTRY
+			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK_PRE_SYNC,
+		],
 		"residentPathLayout": "hashed",
 		"nextEdge": {
 			"id": "beta4-to-beta5",
@@ -176,6 +185,10 @@ const RELEASES := [
 			SAVE_SCHEMA_REGISTRY
 			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK
 		),
+		"legacyActivitySourceFingerprints": [
+			SAVE_SCHEMA_REGISTRY
+			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK_PRE_SYNC,
+		],
 		"residentPathLayout": "hashed",
 		"nextEdge": {
 			"id": "beta5-to-beta6",
@@ -198,6 +211,9 @@ const RELEASES := [
 		"legacyActivitySourceFingerprints": [
 			SAVE_SCHEMA_REGISTRY.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK,
 			SAVE_SCHEMA_REGISTRY.ACTIVITY_SOURCE_FINGERPRINT_AFTER_UNSTAFFED_PUBLIC_PLACE_ACCESS,
+			# 34c2222 同步前该发行版的活动数据指纹为 PRE_SYNC(70dcd5)。
+			SAVE_SCHEMA_REGISTRY
+			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK_PRE_SYNC,
 		],
 		"residentPathLayout": "hashed",
 		"nextEdge": {

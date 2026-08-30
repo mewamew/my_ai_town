@@ -2067,7 +2067,10 @@ func _start_world() -> void:
 	_sync_audio_environment(_world.get_time(), String(_world.get_weather()))
 	var gateway_result := _initialize_agent_gateway()
 	if gateway_result.get("ok") != true:
-		_fail_start("Agent Gateway 初始化失败：%s" % "; ".join(gateway_result.get("errors", [])))
+		_fail_start("Agent Gateway 初始化失败：%s（code=%s）" % [
+			"; ".join(gateway_result.get("errors", []) as Array),
+			String(gateway_result.get("errorCode", "")),
+		])
 		return
 	if _agent_gateway != null:
 		_agent_gateway.pump_frame_budgeted(AGENT_DISPATCH_BUDGET_PER_FRAME,)

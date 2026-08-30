@@ -38,6 +38,23 @@ const ACTION_VALIDATION := preload(
 )
 const TOWN_LOG := preload("res://world/runtime/TownLog.gd")
 
+## 即时/回合制关键动作: 这些动作的价值随时间清零, 永不允许走
+## prefetched 暂存路径(暂存=回合结束后作废, 模型永远看不到结果)。
+## 暗杀/制服/发布公告是提交即结算的即时动作, 暂存后目标可能移动/
+## 回合可能结束, 且暂存被 invalidate 清掉时连拒绝反馈都没有
+## (实锤: 花子第1天20:23提交暗杀姜澄后被静默暂存销毁, 无成功/
+## 失败/回执任何痕迹——用户看到的"暗杀没回复")。
+const IMMEDIATE_ACTION_TYPES: Array[String] = [
+	"向警察汇报",
+	"投票放逐",
+	"结束审讯",
+	"使用技能",
+	"答话",
+	"暗杀",
+	"制服",
+	"发布公告",
+]
+
 
 static func submit(host, resident_name: String, decision: Dictionary) -> Dictionary:
 	var submitted_resident_ref := resident_name
@@ -141,6 +158,12 @@ static func consume(
 	var inflight_results := context.get("inflightResults", []) as Array
 	var decision_wake := context.get("wakePacket", {}) as Dictionary
 	ACTION_SUPPORT.consume_valid_request(resident)
+	# 飞行期间收到过作废请求(见 Scheduling 的 reRequestAfterResponse):
+	# 此处只清标记, 不立即补调度——决策尚未应用, 立即调度会让下一次
+	# wake 拿到应用前的世界状态(实锤: 化身对话中居民答完一轮后又被
+	# 旧状态唤醒多答一轮, 轮到化身回应的判定被打穿)。后续事件流会
+	# 以最新状态重新调度, 无需在这里抢跑。
+	resident["reRequestAfterResponse"] = false
 	host._bump_world_revision(false)
 	var decision_shape_error := ACTION_VALIDATION.validate_decision_shape(
 		decision,
@@ -180,29 +203,51 @@ static func consume(
 			decision.get("social_response"),
 		)
 	var attachment_submitted := {}
+	var attachment_errors: Array[String] = []
 	# 附件通道(汇报/投票/夜间技能)先于动作通道提交。记录提交结果供
 	# submit_valid 做双通道幂等: 模型同时输出附件+同类型动作(或只输出
 	# 附件)时, 附件已生效而动作被拒("已经提交过")会把决策整体打回重试,
 	# 重试时附件再报"已经提交过"——汇报实际成功但模型永远看不到成功反馈。
 	if decision.has("exile_vote"):
-		attachment_submitted["exile_vote"] = host.WEREWOLF_RUNTIME.submit_vote(
+		var vote_error: String = host.WEREWOLF_RUNTIME.submit_vote(
 			host,
 			resident_id,
 			decision.get("exile_vote") as Dictionary,
-		).is_empty()
+		)
+		attachment_submitted["exile_vote"] = vote_error.is_empty()
+		if not vote_error.is_empty():
+			attachment_errors.append(vote_error)
 	if decision.has("report"):
-		attachment_submitted["report"] = host.WEREWOLF_RUNTIME.submit_report(
+		var report_error: String = host.WEREWOLF_RUNTIME.submit_report(
 			host,
 			resident_id,
 			decision.get("report") as Dictionary,
-		).is_empty()
+		)
+		attachment_submitted["report"] = report_error.is_empty()
+		if not report_error.is_empty():
+			attachment_errors.append(report_error)
 	if decision.has("night_skill"):
-		attachment_submitted["night_skill"] = host.ROLE_SKILL_RUNTIME.submit_night_skill(
+		var skill_error: String = host.ROLE_SKILL_RUNTIME.submit_night_skill(
 			host,
 			resident_id,
 			decision.get("night_skill") as Dictionary,
-		).is_empty()
+		)
+		attachment_submitted["night_skill"] = skill_error.is_empty()
+		if not skill_error.is_empty():
+			attachment_errors.append(skill_error)
+	if not attachment_errors.is_empty():
+		# 附件被世界侧拒绝时必须留下可见痕迹: 此前失败被吞进布尔值,
+		# 模型看不到任何原因(实锤: 警察汇报期的提交凭空消失)。
+		TOWN_LOG.line(
+			"AGENT",
+			"%s | %s 附件提交失败：%s" % [
+				host._time_label(),
+				host.resident_display_name(resident_id),
+				"；".join(attachment_errors),
+			],
+		)
 	context["attachmentSubmitted"] = attachment_submitted
+	context["attachmentErrors"] = attachment_errors
 	context["probeLapUsec"] = WORLD_PERFORMANCE_PROBE.record_lap(
 		int(context.get("probeLapUsec", 0)),
 		"submission_validate_and_social",
@@ -301,7 +346,15 @@ static func submit_valid(
 		],
 	)
 	var current_action := resident.get("currentAction", {}) as Dictionary
-	if bool(context.get("wasPrefetched", false)) and not current_action.is_empty():
+	if (
+		bool(context.get("wasPrefetched", false))
+		and not current_action.is_empty()
+		and not IMMEDIATE_ACTION_TYPES.has(String(action.get("type", "")))
+	):
+		# 大会/回合制关键动作(见 IMMEDIATE_ACTION_TYPES)永不暂存:
+		# 暂存到以后执行时回合早就结束(实锤: 第3天开票后谢眠/许照/沈桥/
+		# 唐小满的迟到票被静默暂存再作废, 凭空消失), 必须立即校验——
+		# 成则生效, 败则给模型明确拒绝。
 		return host._complete_agent_submission(
 			AGENT_DECISION_ENVELOPE_RUNTIME.store_prefetched_decision(
 				resident,
@@ -314,6 +367,25 @@ static func submit_valid(
 			)
 		)
 	var action_type := String(action.get("type", ""))
+	# 大会冻结期: 所有动作(含下面的即时动作分支)统一先过阶段白名单。
+	# 此前做活动/用道具/追踪/查案等即时分支不经过 prepare 入口检查——
+	# 连续性兜底在冻结期给居民塞生活动作(实锤: 汇报期"我先取餐"开工),
+	# 警察也能在审讯期装追踪器, 全部绕过了"汇报期只能向警察汇报"等约束。
+	var assembly_rejection: String = host.WEREWOLF_RUNTIME.assembly_action_allowed(
+		host,
+		resident_id,
+		action_type,
+	)
+	if not assembly_rejection.is_empty():
+		return host._complete_agent_submission(
+			ACTION_RESULT_RUNTIME.reject_invalid(
+				host,
+				resident_id,
+				resident,
+				action,
+				assembly_rejection,
+			)
+		)
 	var conflict_intent := (
 		decision.get("conflict_intent", {}) as Dictionary
 		if decision.get("conflict_intent") is Dictionary

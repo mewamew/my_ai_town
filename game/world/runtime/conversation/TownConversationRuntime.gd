@@ -109,6 +109,15 @@ static func _start_conversation(
 	# 桥接层过滤非审讯期/非警察发起的普通对话)。
 	if world.has_method("_record_assembly_interrogation_started"):
 		world._record_assembly_interrogation_started(initiator_name, target_name)
+	# 线索已告知: 居民开场搭话警察且说了内容, 记入其"已告知账本"
+	# (桥接层校验听者是警察, 其余对话忽略)。
+	if world.has_method("_record_police_lead_told"):
+		world._record_police_lead_told(
+			initiator_name,
+			target_name,
+			"当面告知",
+			String(turn.get("say", "")),
+		)
 	# 警察审讯会: 审讯开场白进入逐字稿。
 	if world.has_method("_record_assembly_interrogation_turn"):
 		world._record_assembly_interrogation_turn(
@@ -204,6 +213,14 @@ static func _apply_conversation_reply(
 		world._record_assembly_interrogation_turn(
 			String(turn.get("speaker", "")),
 			other_name,
+			String(turn.get("say", "")),
+		)
+	# 线索已告知: 说话者回复警察且说了内容, 记入其"已告知账本"。
+	if world.has_method("_record_police_lead_told"):
+		world._record_police_lead_told(
+			speaker_name,
+			other_name,
+			"当面告知",
 			String(turn.get("say", "")),
 		)
 	if bool(action.get("end", false)):

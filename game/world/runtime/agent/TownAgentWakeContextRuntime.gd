@@ -211,6 +211,9 @@ static func wake_packet(
 			),
 			"townDeathCases": host._police_death_cases(resident_name),
 			"policeIntel": _police_intel_context(host, resident_name),
+			"policeLeadLog": host.WEREWOLF_RUNTIME.police_lead_snapshot(
+				host, resident_name,
+			),
 		},
 		public_events,
 		public_results,

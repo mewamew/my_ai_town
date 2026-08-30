@@ -496,6 +496,10 @@ func _advance_preparation(
 				"assembly": world.WEREWOLF_RUNTIME.assembly_wake_snapshot(
 					world, resident_id,
 				),
+				# 线索已告知账本: 空账本为空字典(prompt 不渲染)。
+				"police_lead_log": world.WEREWOLF_RUNTIME.police_lead_snapshot(
+					world, resident_id,
+				),
 			}
 			# 审讯会: 大会进行期间裁剪日常选项, 实现"各阶段只有该阶段允许的选项"
 			# (汇报期只有汇报 / 审讯期警察只有询问与结束 / 投票期只有投票)。

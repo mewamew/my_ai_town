@@ -2525,6 +2525,11 @@ func _on_agent_result(
 	_inflight.erase(decision_id)
 	if superseded or bool(result.get("stale", false)):
 		_decision_attempts.erase(decision_id)
+		# 被丢弃的响应必须回报世界对账: 若世界侧还挂着这个决策的
+		# pending(它已永远不会被消费), 居民会整场卡死(实锤: 花子从
+		# 23:51 起整场大会零决策——pending 无自愈通道)。
+		if _world != null and _world.has_method("reconcile_discarded_decision"):
+			_world.reconcile_discarded_decision(resident_id, decision_id)
 		if not debug_decision_completed.get_connections().is_empty():
 			debug_decision_completed.emit({
 				"residentId": resident_id,
@@ -2654,6 +2659,25 @@ func _on_agent_result(
 			inflight.get("wakePacket", {}) as Dictionary,
 			decision,
 			submission,
+		)
+		# 世界层拒绝同步打控制台: 此前只落盘, 控制台看不到——大会投票
+		# 被"当前对话正在等待本居民提交答话动作"拒绝时, 日志里票凭空
+		# 消失, 排查只能靠猜(实锤: 乔一鸣/周既明的三次投票)。
+		var rejection_time_label := ""
+		if _world != null and _world.has_method("_time_label"):
+			rejection_time_label = String(_world._time_label())
+		TOWN_LOG.line(
+			"AGENT",
+			"%s | 世界拒绝 | %s | %s | %s" % [
+				rejection_time_label,
+				resident_name,
+				String((decision.get("action", {}) as Dictionary).get("type", "")),
+				"；".join(
+					(submission.get("errors", []) as Array).map(
+						func(e: Variant) -> String: return String(e)
+					)
+				),
+			],
 		)
 	# A consumed rejection has already queued an authoritative World result for
 	# this action. Keep the Agent-side pending intention until that result is
@@ -3079,6 +3103,18 @@ func _submit_continuity_fallback(
 			"photos": [],
 			"end": true,
 		}
+	elif _world != null and _world.has_method("assembly_continuity_decision"):
+		# 大会冻结期专用兜底: 汇报期未汇报者直接提交"不汇报"(退出参与者
+		# 集合, 不再烧请求); 待着不被允许的阶段改为继续当前动作。空字典
+		# 表示不适用, 落回默认"待着"兜底。详见
+		# TownWerewolfRuntime.continuity_fallback_decision。
+		var assembly_decision: Dictionary = _world.assembly_continuity_decision(
+			resident_id,
+			decision_id,
+			snapshot,
+		)
+		if not assembly_decision.is_empty():
+			decision = assembly_decision
 	else:
 		var current_action: Variant = (
 			snapshot.get("me", {}) as Dictionary

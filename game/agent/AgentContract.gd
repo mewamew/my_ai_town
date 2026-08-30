@@ -31,6 +31,11 @@ const ACTION_TYPES := [
 	"制服",
 	"投票放逐",
 	"使用技能",
+	# 警察审讯会即时动作: prompt 阶段提示教模型用这两种 type 提交, 必须在
+	# 契约登记, 否则 agent 侧校验全部打回 "action.type 不是合法动作类型"
+	# (实锤: 汇报期 13 人全部按教学格式提交, 0 人汇报, 每人烧 10+ 请求)。
+	"向警察汇报",
+	"结束审讯",
 	"追踪",
 	"查案",
 	"回应冲突",
@@ -66,6 +71,10 @@ const EVENT_TYPES := [
 	"居民公开反应",
 	"外出就医",
 	"卧底任务完成",
+	# 居民死亡: 新档死亡走公告/天亮统一公布不入队, 但旧档(beta5/beta6)
+	# 可合法携带排队死亡事件(TownWorldRestorePeople.SAVED_EVENT_FIELDS),
+	# 恢复后随 wake 重放——漏登记会让该居民决策 REJECTED。
+	"居民死亡",
 ]
 const ACTION_RESULT_STATUSES := [
 	"completed", "interrupted", "rejected", "replaced", "failed",
@@ -154,6 +163,8 @@ const ACTION_FIELDS := {
 	"制服": ["action_id", "type", "target_resident_id", "line"],
 	"投票放逐": ["action_id", "type", "target_resident_id", "line"],
 	"使用技能": ["action_id", "type", "skill_id", "target_resident_id", "line"],
+	"向警察汇报": ["action_id", "type", "kind", "line"],
+	"结束审讯": ["action_id", "type", "line"],
 	"追踪": ["action_id", "type", "target_resident_id", "line"],
 	"查案": ["action_id", "type", "line"],
 	"回应冲突": ["action_id", "type", "conflict_id", "response_kind", "line"],

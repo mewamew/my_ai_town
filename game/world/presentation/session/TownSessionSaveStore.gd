@@ -1554,9 +1554,12 @@ func _valid_payload_for_stage(
 	)
 	if not known_stage:
 		return false
-	var allowed_fields: Array[String] = ["stage"]
+	# errorCode 对所有失败阶段放行: 协调器在各阶段失败时都会带 errorCode
+	# 写 transaction_failed(如 agent_hydrate), 拒写会让意图日志悬空在中途
+	# 状态, 槽位被目录永久判为"需要对账"(实证: beta2 恢复注水失败无 240 记录)。
+	var allowed_fields: Array[String] = ["stage", "errorCode"]
 	if failed_stage == "world_prepare":
-		allowed_fields.append_array(["errorCode", "errors"])
+		allowed_fields.append_array(["errors"])
 	for key: Variant in payload:
 		if not key is String or key not in allowed_fields:
 			return false

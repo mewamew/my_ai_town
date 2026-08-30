@@ -37,6 +37,7 @@ static func agent_activity_step(
 
 static func consume_valid_request(resident: Dictionary) -> void:
 	resident["decisionPending"] = false
+	resident["decisionPendingSinceMsec"] = 0
 	resident["validDecisionId"] = ""
 	resident["pendingWake"] = {}
 	resident["wakeDispatchQueued"] = false

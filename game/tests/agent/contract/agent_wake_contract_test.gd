@@ -34,6 +34,34 @@ func _initialize() -> void:
 		[],
 		"世界自然产生的身体状况事件可以唤醒居民 Agent",
 	)
+	# 居民死亡: 旧档(beta5/beta6)可合法携带排队死亡事件(SAVED_EVENT_FIELDS),
+	# 恢复后随 wake 重放, 契约必须放行且字段校验与恢复校验一致。
+	var death_event_wake := valid.duplicate(true)
+	death_event_wake["events"] = [{
+		"event_id": "world-event-death-1",
+		"type": "居民死亡",
+		"time": {"day": 2, "clock": "08:00", "period": "上午"},
+		"deceased_resident_id": "resident-ah-e",
+		"deceased_resident_name": "阿禾",
+		"reason": "夜里遇害",
+		"location": {"placeName": "镇公所"},
+		"residentId": "resident-tang-xiao-man",
+	}]
+	_expect_equal(
+		AgentContractScript.validate_wake_packet(death_event_wake),
+		[],
+		"旧档恢复重放的居民死亡事件可以唤醒居民 Agent",
+	)
+	var death_event_missing_location_wake := death_event_wake.duplicate(true)
+	(death_event_missing_location_wake["events"][0] as Dictionary).erase("location")
+	var death_event_errors: Array[String] = AgentContractScript.validate_wake_packet(
+		death_event_missing_location_wake
+	)
+	_expect_error_contains(
+		{"ok": false, "errors": death_event_errors},
+		"events[0].location",
+		"居民死亡事件缺少 location 必须由契约拒绝",
+	)
 	var cases: Array[Dictionary] = [
 		{"id": "not_object", "value": "wake", "error": "唤醒包必须是对象"},
 		{"id": "empty_decision_id", "value": _with(valid, ["decision_id"], ""), "error": "decision_id"},

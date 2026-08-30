@@ -90,6 +90,7 @@ static func packet(
 			),
 			"town_death_cases": context.get("townDeathCases", []) as Array,
 			"police_intel": context.get("policeIntel", {}) as Dictionary,
+			"police_lead_log": context.get("policeLeadLog", {}) as Dictionary,
 		},
 		"events": events,
 		"action_results": results,

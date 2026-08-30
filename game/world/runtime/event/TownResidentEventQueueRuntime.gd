@@ -154,6 +154,7 @@ static func begin_decision(
 	resident["inflightResults"] = results.duplicate(true)
 	resident["validDecisionId"] = decision_id
 	resident["decisionPending"] = true
+	resident["decisionPendingSinceMsec"] = Time.get_ticks_msec()
 	resident["decisionPrefetch"] = prefetch
 	resident["decisionMayInterruptCurrent"] = (
 		allow_current_activity_interrupt and not prefetch
