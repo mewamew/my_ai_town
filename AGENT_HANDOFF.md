@@ -84,6 +84,9 @@ game/tests/diag_subdue.gd                 —— 制服全链路 7 项
 game/tests/diag_subdue_announcement.gd    —— 制服公告三态 5 项
 game/tests/town_world_action_type_registry_test.gd —— 注册表 79 项（数量=16 种动作）
 game/tests/town_conflict_contract_test.gd —— 冲突契约 35 项
+game/tests/diag_werewolf_vote.gd         —— 审讯会投票语义 72 项
+game/tests/diag_assembly_state_machine.gd —— 审讯会状态机+契约一致性 161 项
+game/tests/diag_assembly_live.gd         —— 审讯会实机验收（真实LLM ~5分钟，开新档自动快进到第2天08:00；用法见 docs/审讯会实机测试指南-20260829.md）
 运行：<godot> --headless --path F:/my_ai_town/game --script res://tests/<文件名>
 ```
 
