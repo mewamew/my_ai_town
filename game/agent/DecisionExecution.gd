@@ -7,6 +7,14 @@ const AgentContractScript := preload("res://agent/AgentContract.gd")
 var _model_provider: Object
 var _prompt_compiler: RefCounted
 
+# 角色请求留档(狼人杀警察/卧底调试): configure_role_archive 装配后,
+# 目标居民的每次模型请求会把编译出的提示词(messages)与最终决策 JSON
+# 成对写入 <root>/<时间戳>_<居民id>_<决策id前段>.json。
+var _role_archive_enabled := false
+var _role_archive_ids: Array[String] = []
+var _role_archive_root := ""
+var _role_archive_prompts := {}
+
 
 func _init(model_provider: Object, prompt_compiler: RefCounted) -> void:
 	_model_provider = model_provider
@@ -33,6 +41,22 @@ static func _probe_active() -> bool:
 	return _probe_enabled
 
 
+func configure_role_archive(
+	enabled: bool,
+	resident_ids: Array,
+	root: String,
+) -> void:
+	_role_archive_enabled = enabled
+	_role_archive_ids.clear()
+	for resident_value: Variant in resident_ids:
+		var candidate := String(resident_value).strip_edges()
+		if not candidate.is_empty():
+			_role_archive_ids.append(candidate)
+	_role_archive_root = root.strip_edges()
+	if not enabled:
+		_role_archive_prompts.clear()
+
+
 func request_decision(
 	initialization: Dictionary,
 	wake_packet: Dictionary,
@@ -42,6 +66,27 @@ func request_decision(
 	retry_feedback: String = "",
 ) -> void:
 	var probe_lap_usec := Time.get_ticks_usec() if _probe_active() else 0
+	var request_id := String(wake_packet.get("decision_id", "")).strip_edges()
+	var resident_id := String(
+		(initialization.get("me", {}) as Dictionary).get("resident_id", ""),
+	)
+	var archive_target := (
+		_role_archive_enabled
+		and not resident_id.is_empty()
+		and _role_archive_ids.has(resident_id)
+	)
+	var final_on_complete := on_complete
+	if archive_target:
+		var resident_name := String(
+			(initialization.get("me", {}) as Dictionary).get("name", resident_id),
+		)
+		final_on_complete = _role_archive_wrapped_complete.bind(
+			resident_id,
+			resident_name,
+			request_id,
+			wake_packet.duplicate(true),
+			on_complete,
+		)
 	var model_request: Dictionary = _prompt_compiler.call(
 		"compile",
 		wake_packet,
@@ -57,12 +102,15 @@ func request_decision(
 		])
 		probe_lap_usec = now_usec
 	if model_request.get("ok") == false:
-		on_complete.call({
+		final_on_complete.call({
 			"ok": false,
 			"errors": model_request.get("errors", ["模型输入组装失败"]),
 		})
 		return
-	var request_id := String(wake_packet.get("decision_id", "")).strip_edges()
+	if archive_target and not request_id.is_empty():
+		_role_archive_prompts[request_id] = (
+			(model_request.get("messages", []) as Array).duplicate(true)
+		)
 	if not request_id.is_empty():
 		# 这是 Provider 内部的请求关联号，不会进入供应商请求 body；
 		# Gateway 取消旧决策时用它终止真实传输。
@@ -74,7 +122,7 @@ func request_decision(
 			initialization.duplicate(true),
 			wake_packet.duplicate(true),
 			used_action_ids.duplicate(true),
-			on_complete,
+			final_on_complete,
 		),
 	)
 	if _probe_active():
@@ -337,3 +385,87 @@ func _repair_opaque_action_id_collision(
 	action["action_id"] = candidate
 	decision["action"] = action
 	return true
+
+
+## 目标居民的回调包装: 拿到结果后先落盘(提示词 + 输出 JSON), 再透传原回调。
+func _role_archive_wrapped_complete(
+	payload: Dictionary,
+	resident_id: String,
+	resident_name: String,
+	request_id: String,
+	wake_packet: Dictionary,
+	on_complete: Callable,
+) -> void:
+	# 无提示词缓存(如编译失败路径)时只透传, 不写半条记录。
+	if _role_archive_prompts.has(request_id):
+		_persist_role_archive(
+			resident_id,
+			resident_name,
+			request_id,
+			wake_packet,
+			payload,
+		)
+		_role_archive_prompts.erase(request_id)
+	on_complete.call(payload)
+
+
+## 写角色请求留档: user://logs/requests/role 之外的固定目录(由装配方注入),
+## 每条 = 提示词全量(messages) + 居民最终决策 JSON(或错误)。
+func _persist_role_archive(
+	resident_id: String,
+	resident_name: String,
+	request_id: String,
+	wake_packet: Dictionary,
+	payload: Dictionary,
+) -> void:
+	if _role_archive_root.is_empty():
+		return
+	var root := ProjectSettings.globalize_path(_role_archive_root)
+	DirAccess.make_dir_recursive_absolute(root)
+	var game_time := ""
+	var snapshot := wake_packet.get("snapshot", {}) as Dictionary
+	# 真实 wake 的 snapshot 时间在 "time" 键内({day, clock}),
+	# 旧实现查顶层 "clock" 永远为空 → game_time 恒为 ""。
+	# 兼容两种形态: 优先 time.day+clock, 回退顶层 clock 字符串。
+	var time_snapshot := snapshot.get("time", {}) as Dictionary
+	var time_day := int(time_snapshot.get("day", 0))
+	var time_clock := String(time_snapshot.get("clock", "")).strip_edges()
+	if time_day > 0 or not time_clock.is_empty():
+		game_time = "第%d天 %s" % [time_day, time_clock]
+	elif snapshot.has("clock"):
+		game_time = JSON.stringify(snapshot.get("clock"))
+	var now := Time.get_unix_time_from_system()
+	var dt := Time.get_datetime_dict_from_unix_time(now)
+	var stamp := "%04d%02d%02d-%02d%02d%02d" % [
+		dt.year,
+		dt.month,
+		dt.day,
+		dt.hour,
+		dt.minute,
+		dt.second,
+	]
+	var archive := {
+		"schema": "agent-decision-role-archive",
+		"resident_id": resident_id,
+		"resident_name": resident_name,
+		"request_id": request_id,
+		"recorded_at": stamp,
+		"game_time": game_time,
+		"ok": bool(payload.get("ok", false)),
+		"messages": _role_archive_prompts.get(request_id, []),
+	}
+	if payload.has("decision"):
+		archive["decision"] = payload.get("decision")
+	if payload.has("errors"):
+		archive["errors"] = payload.get("errors")
+	var file_path := "%s/%s_%s_%s.json" % [
+		root,
+		stamp,
+		resident_id,
+		String(request_id).left(8),
+	]
+	var file := FileAccess.open(file_path, FileAccess.WRITE)
+	if file == null:
+		return
+	file.store_string(JSON.stringify(archive, "  "))
+	file.close()

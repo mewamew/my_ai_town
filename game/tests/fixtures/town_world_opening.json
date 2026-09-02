@@ -1,111 +1,557 @@
 {
   "schemaVersion": 1,
   "worldId": "town",
-  "environment": {"day": 1, "clock": "09:20", "weather": "晴天", "randomSeed": 20260716},
+  "environment": {
+    "day": 1,
+    "clock": "09:20",
+    "weather": "晴天",
+    "randomSeed": 20260716
+  },
   "ownerAssignments": {
-	"北街一号住宅": "resident_lin_lan_01", "北街二号住宅": "resident_tang_xiaoman_01", "北街三号住宅": "resident_a_he_01",
-	"西街一号住宅": "resident_gu_chuan_01", "西街二号住宅": "resident_su_he_01", "西街三号住宅": "resident_zhao_tang_01",
-	"西街四号住宅": "resident_chen_zhou_01", "西街五号住宅": "resident_shen_yao_01", "西街六号住宅": "resident_lu_qing_01",
-	"南街一号住宅": "resident_he_yu_01", "南街二号住宅": "resident_zhou_ning_01", "南街三号住宅": "resident_bai_yu_01",
-	"南街四号住宅": "resident_jiang_lin_01", "南街五号住宅": "resident_xu_an_01", "东南街住宅": "resident_ye_cheng_01",
-	"工作坊": "resident_lin_lan_01", "花房咖啡馆": "resident_a_he_01", "独立市集": "resident_he_yu_01",
-	"码头仓库": "resident_chen_zhou_01"
+    "北街一号住宅": "resident_lin_lan_01",
+    "北街二号住宅": "resident_tang_xiaoman_01",
+    "北街三号住宅": "resident_a_he_01",
+    "西街一号住宅": "resident_gu_chuan_01",
+    "西街二号住宅": "resident_su_he_01",
+    "西街三号住宅": "resident_zhao_tang_01",
+    "西街四号住宅": "resident_chen_zhou_01",
+    "西街五号住宅": "resident_shen_yao_01",
+    "西街六号住宅": "resident_lu_qing_01",
+    "南街一号住宅": "resident_he_yu_01",
+    "南街二号住宅": "resident_zhou_ning_01",
+    "南街三号住宅": "resident_bai_yu_01",
+    "南街四号住宅": "resident_jiang_lin_01",
+    "南街五号住宅": "resident_xu_an_01",
+    "东南街住宅": "resident_ye_cheng_01",
+    "工作坊": "resident_lin_lan_01",
+    "花房咖啡馆": "resident_a_he_01",
+    "独立市集": "resident_he_yu_01",
+    "码头仓库": "resident_chen_zhou_01"
   },
   "residents": [
-	{
-	  "residentId": "resident_lin_lan_01",
-	  "attributes": {"name": "林岚", "gender": "男", "age": 32, "appearance": "resident_wardrobe_v1:look_01", "desire": "把手艺做到让人服气，不欠任何人的人情", "personality": "话少，慢热，被打扰时心里烦，但通常不当场发作", "speech": "说话简短，很少主动解释"},
-	  "socialState": {"home": "北街一号住宅", "job": "木匠", "workplace": "工作坊"},
-	  "worldState": {"place": "中心广场", "spaceId": "town_outdoor", "regionId": "outdoor_plaza_01", "position": [3250, 2050], "doing": "站在中心广场观察周围", "body": {"困": "不困", "饿": "不饿", "累": "不累"}}
-	},
-	{
-	  "residentId": "resident_tang_xiaoman_01",
-	  "attributes": {"name": "唐小满", "gender": "女", "age": 29, "appearance": "resident_wardrobe_v1:look_02", "desire": "让镇上的日子热闹起来，也让自己的摊子真正站稳脚跟", "personality": "行动直接，热心，想到什么常常马上去做", "speech": "语速快，爱用短句，情绪很少藏着"},
-	  "socialState": {"home": "北街二号住宅", "job": "摊主", "workplace": "市集"},
-	  "worldState": {"place": "社区花园", "spaceId": "town_outdoor", "regionId": "outdoor_garden_01", "position": [3396, 2772], "doing": "在社区花园看新开的花", "body": {"困": "不困", "饿": "不饿", "累": "不累"}}
-	},
-	{
-	  "residentId": "resident_a_he_01",
-	  "attributes": {"name": "阿禾", "gender": "女", "age": 28, "appearance": "resident_wardrobe_v1:look_03", "desire": "做出一间让大家愿意坐下来慢慢说话的咖啡馆", "personality": "温和细致，对自己的手艺要求很高，偶尔会过分担心评价", "speech": "说话柔和，会先听完再回答"},
-	  "socialState": {"home": "北街三号住宅", "job": "咖啡师", "workplace": "花房咖啡馆"},
-	  "worldState": {"place": "市集", "spaceId": "town_outdoor", "regionId": "outdoor_market_01", "position": [4086, 2058], "doing": "在市集挑选咖啡馆要用的食材", "body": {"困": "不困", "饿": "不饿", "累": "不累"}}
-	},
-	{
-	  "residentId": "resident_gu_chuan_01",
-	  "attributes": {"name": "顾川", "gender": "男", "age": 41, "appearance": "resident_wardrobe_v1:look_04", "desire": "让镇上每个人在生病时都能得到可靠照料", "personality": "稳重谨慎，遇到紧急情况反而格外冷静", "speech": "措辞准确，习惯先说明结论"},
-	  "socialState": {"home": "西街一号住宅", "job": "医生", "workplace": "诊所"},
-	  "worldState": {"place": "诊所", "spaceId": "indoor_clinic", "regionId": "region_portal_clinic_entry", "position": [16, 752], "doing": "在诊所入口整理药箱", "body": {"困": "不困", "饿": "不饿", "累": "不累"}}
-	},
-	{
-	  "residentId": "resident_su_he_01",
-	  "attributes": {"name": "苏禾", "gender": "女", "age": 35, "appearance": "resident_wardrobe_v1:look_05", "desire": "把镇上的故事和知识好好保存下来", "personality": "安静耐心，对细小线索有很强的好奇心", "speech": "语气平缓，喜欢把事情讲清楚"},
-	  "socialState": {"home": "西街二号住宅", "job": "图书管理员", "workplace": "图书馆"},
-	  "worldState": {"place": "图书馆", "spaceId": "indoor_library", "regionId": "region_portal_library_entry", "position": [656, 976], "doing": "在图书馆入口清点还书", "body": {"困": "不困", "饿": "不饿", "累": "不累"}}
-	},
-	{
-	  "residentId": "resident_zhao_tang_01",
-	  "attributes": {"name": "赵棠", "gender": "女", "age": 38, "appearance": "resident_wardrobe_v1:look_06", "desire": "让镇里的大小事务都有章法又不失人情", "personality": "有条理，责任心强，讨厌含糊不清", "speech": "说话干练，常把重点分条讲"},
-	  "socialState": {"home": "西街三号住宅", "job": "文书", "workplace": "镇公所"},
-	  "worldState": {"place": "镇公所", "spaceId": "indoor_town_hall", "regionId": "region_portal_town_hall_entry", "position": [-16, 304], "doing": "在镇公所入口整理公文", "body": {"困": "不困", "饿": "不饿", "累": "不累"}}
-	},
-	{
-	  "residentId": "resident_chen_zhou_01",
-	  "attributes": {"name": "陈舟", "gender": "男", "age": 44, "appearance": "resident_wardrobe_v1:look_07", "desire": "把码头的每一批货都稳稳当当地交到该去的人手里", "personality": "沉着务实，不爱冒险，认准的责任不会推给别人", "speech": "话不多，习惯用具体数字和事实说话"},
-	  "socialState": {"home": "西街四号住宅", "job": "仓管", "workplace": "码头仓库"},
-	  "worldState": {"place": "码头仓库", "spaceId": "indoor_dock_warehouse", "regionId": "region_portal_dock_warehouse_entry", "position": [432, 784], "doing": "在码头仓库入口核对货单", "body": {"困": "不困", "饿": "不饿", "累": "不累"}}
-	},
-	{
-	  "residentId": "resident_shen_yao_01",
-	  "attributes": {"name": "沈遥", "gender": "女", "age": 36, "appearance": "resident_wardrobe_v1:look_08", "desire": "让每个走进食堂的人都能暂时放下疲惫", "personality": "善于察言观色，待人周到，但不会轻易交出自己的心事", "speech": "语气亲切，擅长用问题让对方继续说"},
-	  "socialState": {"home": "西街五号住宅", "job": "食堂前厅接待", "workplace": "公共食堂"},
-	  "worldState": {"place": "公共食堂", "spaceId": "indoor_dining_hall", "regionId": "region_portal_dining_hall_entry", "position": [528, 1040], "doing": "在公共食堂前厅接待", "body": {"困": "不困", "饿": "不饿", "累": "不累"}}
-	},
-	{
-	  "residentId": "resident_lu_qing_01",
-	  "attributes": {"name": "陆青", "gender": "男", "age": 30, "appearance": "resident_wardrobe_v1:look_09", "desire": "让食堂每天都能端出大家真心想吃的饭", "personality": "爽朗随和，做事讲效率，忙起来容易忘记休息", "speech": "说话直白，常用做饭打比方"},
-	  "socialState": {"home": "西街六号住宅", "job": "厨师", "workplace": "公共食堂"},
-	  "worldState": {"place": "公共食堂", "spaceId": "indoor_dining_hall", "regionId": "region_portal_dining_hall_entry", "position": [528, 1040], "doing": "在公共食堂入口准备食材", "body": {"困": "不困", "饿": "不饿", "累": "不累"}}
-	},
-	{
-	  "residentId": "resident_he_yu_01",
-	  "attributes": {"name": "何雨", "gender": "女", "age": 27, "appearance": "resident_wardrobe_v1:look_10", "desire": "把稀奇又实用的东西带进这个小镇", "personality": "机灵外向，喜欢新鲜事物，谈生意时很有耐心", "speech": "表达活泼，喜欢举眼前的例子"},
-	  "socialState": {"home": "南街一号住宅", "job": "杂货商", "workplace": "独立市集"},
-	  "worldState": {"place": "独立市集", "spaceId": "indoor_market_shop", "regionId": "region_portal_market_shop_entry", "position": [624, 912], "doing": "在独立市集入口清点货物", "body": {"困": "不困", "饿": "不饿", "累": "不累"}}
-	},
-	{
-	  "residentId": "resident_zhou_ning_01",
-	  "attributes": {"name": "周宁", "gender": "男", "age": 33, "appearance": "resident_wardrobe_v1:look_11", "desire": "找到药材与日常生活之间真正有用的平衡", "personality": "专注克制，面对未知问题会反复核对", "speech": "说话温吞但严谨，不轻易下断言"},
-	  "socialState": {"home": "南街二号住宅", "job": "药师", "workplace": "诊所"},
-	  "worldState": {"place": "诊所", "spaceId": "indoor_clinic", "regionId": "region_portal_clinic_entry", "position": [16, 752], "doing": "在诊所入口核对药品", "body": {"困": "不困", "饿": "不饿", "累": "不累"}}
-	},
-	{
-	  "residentId": "resident_bai_yu_01",
-	  "attributes": {"name": "白榆", "gender": "女", "age": 31, "appearance": "resident_wardrobe_v1:look_12", "desire": "让镇里的孩子知道山外很大，也知道这里值得珍惜", "personality": "耐心坚定，对不公平的事会直接指出", "speech": "条理清楚，解释时会照顾对方是否听懂"},
-	  "socialState": {"home": "南街三号住宅", "job": "教师", "workplace": "图书馆"},
-	  "worldState": {"place": "图书馆", "spaceId": "indoor_library", "regionId": "region_portal_library_entry", "position": [656, 976], "doing": "在图书馆入口整理讲义", "body": {"困": "不困", "饿": "不饿", "累": "不累"}}
-	},
-	{
-	  "residentId": "resident_jiang_lin_01",
-	  "attributes": {"name": "江临", "gender": "男", "age": 26, "appearance": "resident_wardrobe_v1:look_13", "desire": "凭自己的手艺成为能独当一面的木匠", "personality": "认真好学，自尊心强，犯错后会暗自较劲", "speech": "平时随和，谈到手艺时格外认真"},
-	  "socialState": {"home": "南街四号住宅", "job": "木工学徒", "workplace": "工作坊"},
-	  "worldState": {"place": "工作坊", "spaceId": "indoor_workshop", "regionId": "region_portal_workshop_entry", "position": [16, 752], "doing": "在工作坊入口整理木料", "body": {"困": "不困", "饿": "不饿", "累": "不累"}}
-	},
-	{
-	  "residentId": "resident_xu_an_01",
-	  "attributes": {"name": "许安", "gender": "女", "age": 48, "appearance": "resident_wardrobe_v1:look_14", "desire": "让镇上不管是谁都能按时吃上一口热饭", "personality": "能干爽快，嘴上严格，实际很会照顾人", "speech": "语气利落，关心别人时也像在安排事情"},
-	  "socialState": {"home": "南街五号住宅", "job": "食堂管事", "workplace": "公共食堂"},
-	  "worldState": {"place": "公共食堂", "spaceId": "indoor_dining_hall", "regionId": "region_portal_dining_hall_entry", "position": [528, 1040], "doing": "在公共食堂入口安排菜单", "body": {"困": "不困", "饿": "不饿", "累": "不累"}}
-	},
-	{
-	  "residentId": "resident_ye_cheng_01",
-	  "attributes": {"name": "叶澄", "gender": "男", "age": 39, "appearance": "resident_wardrobe_v1:look_15", "desire": "守住这片河湾，也保有随时驶向远处的自由", "personality": "独立沉静，习惯先观察水势和人心再行动", "speech": "用词简洁，偶尔会说些和河流有关的话"},
-	  "socialState": {"home": "东南街住宅", "job": "渔夫", "workplace": "渔港"},
-	  "worldState": {"place": "渔港", "spaceId": "town_outdoor", "regionId": "outdoor_harbor_01", "position": [5766, 3114], "doing": "在渔港检查渔具", "body": {"困": "不困", "饿": "不饿", "累": "不累"}}
-	}
+    {
+      "residentId": "resident_lin_lan_01",
+      "attributes": {
+        "name": "林岚",
+        "gender": "男",
+        "age": 32,
+        "appearance": "resident_wardrobe_v1:look_01",
+        "desire": "把手艺做到让人服气，不欠任何人的人情",
+        "personality": "话少，慢热，被打扰时心里烦，但通常不当场发作",
+        "speech": "说话简短，很少主动解释"
+      },
+      "socialState": {
+        "home": "北街一号住宅",
+        "job": "木匠",
+        "workplace": "工作坊",
+        "money": 40,
+        "reputation": 30
+      },
+      "worldState": {
+        "place": "中心广场",
+        "spaceId": "town_outdoor",
+        "regionId": "outdoor_plaza_01",
+        "position": [
+          3250,
+          2050
+        ],
+        "doing": "站在中心广场观察周围",
+        "body": {
+          "困": "不困",
+          "饿": "不饿",
+          "累": "不累"
+        }
+      }
+    },
+    {
+      "residentId": "resident_tang_xiaoman_01",
+      "attributes": {
+        "name": "唐小满",
+        "gender": "女",
+        "age": 29,
+        "appearance": "resident_wardrobe_v1:look_02",
+        "desire": "让镇上的日子热闹起来，也让自己的摊子真正站稳脚跟",
+        "personality": "行动直接，热心，想到什么常常马上去做",
+        "speech": "语速快，爱用短句，情绪很少藏着"
+      },
+      "socialState": {
+        "home": "北街二号住宅",
+        "job": "摊主",
+        "workplace": "市集",
+        "money": 40,
+        "reputation": 30
+      },
+      "worldState": {
+        "place": "社区花园",
+        "spaceId": "town_outdoor",
+        "regionId": "outdoor_garden_01",
+        "position": [
+          3396,
+          2772
+        ],
+        "doing": "在社区花园看新开的花",
+        "body": {
+          "困": "不困",
+          "饿": "不饿",
+          "累": "不累"
+        }
+      }
+    },
+    {
+      "residentId": "resident_a_he_01",
+      "attributes": {
+        "name": "阿禾",
+        "gender": "女",
+        "age": 28,
+        "appearance": "resident_wardrobe_v1:look_03",
+        "desire": "做出一间让大家愿意坐下来慢慢说话的咖啡馆",
+        "personality": "温和细致，对自己的手艺要求很高，偶尔会过分担心评价",
+        "speech": "说话柔和，会先听完再回答"
+      },
+      "socialState": {
+        "home": "北街三号住宅",
+        "job": "咖啡师",
+        "workplace": "花房咖啡馆",
+        "money": 40,
+        "reputation": 30
+      },
+      "worldState": {
+        "place": "市集",
+        "spaceId": "town_outdoor",
+        "regionId": "outdoor_market_01",
+        "position": [
+          4086,
+          2058
+        ],
+        "doing": "在市集挑选咖啡馆要用的食材",
+        "body": {
+          "困": "不困",
+          "饿": "不饿",
+          "累": "不累"
+        }
+      }
+    },
+    {
+      "residentId": "resident_gu_chuan_01",
+      "attributes": {
+        "name": "顾川",
+        "gender": "男",
+        "age": 41,
+        "appearance": "resident_wardrobe_v1:look_04",
+        "desire": "让镇上每个人在生病时都能得到可靠照料",
+        "personality": "稳重谨慎，遇到紧急情况反而格外冷静",
+        "speech": "措辞准确，习惯先说明结论"
+      },
+      "socialState": {
+        "home": "西街一号住宅",
+        "job": "医生",
+        "workplace": "诊所",
+        "money": 40,
+        "reputation": 30
+      },
+      "worldState": {
+        "place": "诊所",
+        "spaceId": "indoor_clinic",
+        "regionId": "region_portal_clinic_entry",
+        "position": [
+          16,
+          752
+        ],
+        "doing": "在诊所入口整理药箱",
+        "body": {
+          "困": "不困",
+          "饿": "不饿",
+          "累": "不累"
+        }
+      }
+    },
+    {
+      "residentId": "resident_su_he_01",
+      "attributes": {
+        "name": "苏禾",
+        "gender": "女",
+        "age": 35,
+        "appearance": "resident_wardrobe_v1:look_05",
+        "desire": "把镇上的故事和知识好好保存下来",
+        "personality": "安静耐心，对细小线索有很强的好奇心",
+        "speech": "语气平缓，喜欢把事情讲清楚"
+      },
+      "socialState": {
+        "home": "西街二号住宅",
+        "job": "图书管理员",
+        "workplace": "图书馆",
+        "money": 40,
+        "reputation": 30
+      },
+      "worldState": {
+        "place": "图书馆",
+        "spaceId": "indoor_library",
+        "regionId": "region_portal_library_entry",
+        "position": [
+          656,
+          976
+        ],
+        "doing": "在图书馆入口清点还书",
+        "body": {
+          "困": "不困",
+          "饿": "不饿",
+          "累": "不累"
+        }
+      }
+    },
+    {
+      "residentId": "resident_zhao_tang_01",
+      "attributes": {
+        "name": "赵棠",
+        "gender": "女",
+        "age": 38,
+        "appearance": "resident_wardrobe_v1:look_06",
+        "desire": "让镇里的大小事务都有章法又不失人情",
+        "personality": "有条理，责任心强，讨厌含糊不清",
+        "speech": "说话干练，常把重点分条讲"
+      },
+      "socialState": {
+        "home": "西街三号住宅",
+        "job": "文书",
+        "workplace": "镇公所",
+        "money": 40,
+        "reputation": 30
+      },
+      "worldState": {
+        "place": "镇公所",
+        "spaceId": "indoor_town_hall",
+        "regionId": "region_portal_town_hall_entry",
+        "position": [
+          -16,
+          304
+        ],
+        "doing": "在镇公所入口整理公文",
+        "body": {
+          "困": "不困",
+          "饿": "不饿",
+          "累": "不累"
+        }
+      }
+    },
+    {
+      "residentId": "resident_chen_zhou_01",
+      "attributes": {
+        "name": "陈舟",
+        "gender": "男",
+        "age": 44,
+        "appearance": "resident_wardrobe_v1:look_07",
+        "desire": "把码头的每一批货都稳稳当当地交到该去的人手里",
+        "personality": "沉着务实，不爱冒险，认准的责任不会推给别人",
+        "speech": "话不多，习惯用具体数字和事实说话"
+      },
+      "socialState": {
+        "home": "西街四号住宅",
+        "job": "仓管",
+        "workplace": "码头仓库",
+        "money": 40,
+        "reputation": 30
+      },
+      "worldState": {
+        "place": "码头仓库",
+        "spaceId": "indoor_dock_warehouse",
+        "regionId": "region_portal_dock_warehouse_entry",
+        "position": [
+          432,
+          784
+        ],
+        "doing": "在码头仓库入口核对货单",
+        "body": {
+          "困": "不困",
+          "饿": "不饿",
+          "累": "不累"
+        }
+      }
+    },
+    {
+      "residentId": "resident_shen_yao_01",
+      "attributes": {
+        "name": "沈遥",
+        "gender": "女",
+        "age": 36,
+        "appearance": "resident_wardrobe_v1:look_08",
+        "desire": "让每个走进食堂的人都能暂时放下疲惫",
+        "personality": "善于察言观色，待人周到，但不会轻易交出自己的心事",
+        "speech": "语气亲切，擅长用问题让对方继续说"
+      },
+      "socialState": {
+        "home": "西街五号住宅",
+        "job": "食堂前厅接待",
+        "workplace": "公共食堂",
+        "money": 40,
+        "reputation": 30
+      },
+      "worldState": {
+        "place": "公共食堂",
+        "spaceId": "indoor_dining_hall",
+        "regionId": "region_portal_dining_hall_entry",
+        "position": [
+          528,
+          1040
+        ],
+        "doing": "在公共食堂前厅接待",
+        "body": {
+          "困": "不困",
+          "饿": "不饿",
+          "累": "不累"
+        }
+      }
+    },
+    {
+      "residentId": "resident_lu_qing_01",
+      "attributes": {
+        "name": "陆青",
+        "gender": "男",
+        "age": 30,
+        "appearance": "resident_wardrobe_v1:look_09",
+        "desire": "让食堂每天都能端出大家真心想吃的饭",
+        "personality": "爽朗随和，做事讲效率，忙起来容易忘记休息",
+        "speech": "说话直白，常用做饭打比方"
+      },
+      "socialState": {
+        "home": "西街六号住宅",
+        "job": "厨师",
+        "workplace": "公共食堂",
+        "money": 40,
+        "reputation": 30
+      },
+      "worldState": {
+        "place": "公共食堂",
+        "spaceId": "indoor_dining_hall",
+        "regionId": "region_portal_dining_hall_entry",
+        "position": [
+          528,
+          1040
+        ],
+        "doing": "在公共食堂入口准备食材",
+        "body": {
+          "困": "不困",
+          "饿": "不饿",
+          "累": "不累"
+        }
+      }
+    },
+    {
+      "residentId": "resident_he_yu_01",
+      "attributes": {
+        "name": "何雨",
+        "gender": "女",
+        "age": 27,
+        "appearance": "resident_wardrobe_v1:look_10",
+        "desire": "把稀奇又实用的东西带进这个小镇",
+        "personality": "机灵外向，喜欢新鲜事物，谈生意时很有耐心",
+        "speech": "表达活泼，喜欢举眼前的例子"
+      },
+      "socialState": {
+        "home": "南街一号住宅",
+        "job": "杂货商",
+        "workplace": "独立市集",
+        "money": 40,
+        "reputation": 30
+      },
+      "worldState": {
+        "place": "独立市集",
+        "spaceId": "indoor_market_shop",
+        "regionId": "region_portal_market_shop_entry",
+        "position": [
+          624,
+          912
+        ],
+        "doing": "在独立市集入口清点货物",
+        "body": {
+          "困": "不困",
+          "饿": "不饿",
+          "累": "不累"
+        }
+      }
+    },
+    {
+      "residentId": "resident_zhou_ning_01",
+      "attributes": {
+        "name": "周宁",
+        "gender": "男",
+        "age": 33,
+        "appearance": "resident_wardrobe_v1:look_11",
+        "desire": "找到药材与日常生活之间真正有用的平衡",
+        "personality": "专注克制，面对未知问题会反复核对",
+        "speech": "说话温吞但严谨，不轻易下断言"
+      },
+      "socialState": {
+        "home": "南街二号住宅",
+        "job": "药师",
+        "workplace": "诊所",
+        "money": 40,
+        "reputation": 30
+      },
+      "worldState": {
+        "place": "诊所",
+        "spaceId": "indoor_clinic",
+        "regionId": "region_portal_clinic_entry",
+        "position": [
+          16,
+          752
+        ],
+        "doing": "在诊所入口核对药品",
+        "body": {
+          "困": "不困",
+          "饿": "不饿",
+          "累": "不累"
+        }
+      }
+    },
+    {
+      "residentId": "resident_bai_yu_01",
+      "attributes": {
+        "name": "白榆",
+        "gender": "女",
+        "age": 31,
+        "appearance": "resident_wardrobe_v1:look_12",
+        "desire": "让镇里的孩子知道山外很大，也知道这里值得珍惜",
+        "personality": "耐心坚定，对不公平的事会直接指出",
+        "speech": "条理清楚，解释时会照顾对方是否听懂"
+      },
+      "socialState": {
+        "home": "南街三号住宅",
+        "job": "教师",
+        "workplace": "图书馆",
+        "money": 40,
+        "reputation": 30
+      },
+      "worldState": {
+        "place": "图书馆",
+        "spaceId": "indoor_library",
+        "regionId": "region_portal_library_entry",
+        "position": [
+          656,
+          976
+        ],
+        "doing": "在图书馆入口整理讲义",
+        "body": {
+          "困": "不困",
+          "饿": "不饿",
+          "累": "不累"
+        }
+      }
+    },
+    {
+      "residentId": "resident_jiang_lin_01",
+      "attributes": {
+        "name": "江临",
+        "gender": "男",
+        "age": 26,
+        "appearance": "resident_wardrobe_v1:look_13",
+        "desire": "凭自己的手艺成为能独当一面的木匠",
+        "personality": "认真好学，自尊心强，犯错后会暗自较劲",
+        "speech": "平时随和，谈到手艺时格外认真"
+      },
+      "socialState": {
+        "home": "南街四号住宅",
+        "job": "木工学徒",
+        "workplace": "工作坊",
+        "money": 40,
+        "reputation": 30
+      },
+      "worldState": {
+        "place": "工作坊",
+        "spaceId": "indoor_workshop",
+        "regionId": "region_portal_workshop_entry",
+        "position": [
+          16,
+          752
+        ],
+        "doing": "在工作坊入口整理木料",
+        "body": {
+          "困": "不困",
+          "饿": "不饿",
+          "累": "不累"
+        }
+      }
+    },
+    {
+      "residentId": "resident_xu_an_01",
+      "attributes": {
+        "name": "许安",
+        "gender": "女",
+        "age": 48,
+        "appearance": "resident_wardrobe_v1:look_14",
+        "desire": "让镇上不管是谁都能按时吃上一口热饭",
+        "personality": "能干爽快，嘴上严格，实际很会照顾人",
+        "speech": "语气利落，关心别人时也像在安排事情"
+      },
+      "socialState": {
+        "home": "南街五号住宅",
+        "job": "食堂管事",
+        "workplace": "公共食堂",
+        "money": 40,
+        "reputation": 30
+      },
+      "worldState": {
+        "place": "公共食堂",
+        "spaceId": "indoor_dining_hall",
+        "regionId": "region_portal_dining_hall_entry",
+        "position": [
+          528,
+          1040
+        ],
+        "doing": "在公共食堂入口安排菜单",
+        "body": {
+          "困": "不困",
+          "饿": "不饿",
+          "累": "不累"
+        }
+      }
+    },
+    {
+      "residentId": "resident_ye_cheng_01",
+      "attributes": {
+        "name": "叶澄",
+        "gender": "男",
+        "age": 39,
+        "appearance": "resident_wardrobe_v1:look_15",
+        "desire": "守住这片河湾，也保有随时驶向远处的自由",
+        "personality": "独立沉静，习惯先观察水势和人心再行动",
+        "speech": "用词简洁，偶尔会说些和河流有关的话"
+      },
+      "socialState": {
+        "home": "东南街住宅",
+        "job": "渔夫",
+        "workplace": "渔港",
+        "money": 40,
+        "reputation": 30
+      },
+      "worldState": {
+        "place": "渔港",
+        "spaceId": "town_outdoor",
+        "regionId": "outdoor_harbor_01",
+        "position": [
+          5766,
+          3114
+        ],
+        "doing": "在渔港检查渔具",
+        "body": {
+          "困": "不困",
+          "饿": "不饿",
+          "累": "不累"
+        }
+      }
+    }
   ],
   "playerAvatar": {
-	"residentId": "player-avatar",
-	"name": "旅行者",
-	"worldState": {"place": "南入口", "spaceId": "town_outdoor", "regionId": "outdoor_south_gate_01", "position": [3240, 3600], "doing": "站在南入口"}
+    "residentId": "player-avatar",
+    "name": "旅行者",
+    "worldState": {
+      "place": "南入口",
+      "spaceId": "town_outdoor",
+      "regionId": "outdoor_south_gate_01",
+      "position": [
+        3240,
+        3600
+      ],
+      "doing": "站在南入口"
+    }
   }
 }

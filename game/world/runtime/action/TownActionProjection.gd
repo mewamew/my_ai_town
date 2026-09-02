@@ -160,6 +160,8 @@ static func default_doing(world, action: Dictionary) -> String:
 				if not recipient_name.is_empty()
 				else "正在托人带口信"
 			)
+		"发布公告":
+			return "正在中心广场张贴公告"
 		"待着":
 			return (
 				"正在找个不挡路的地方休息"

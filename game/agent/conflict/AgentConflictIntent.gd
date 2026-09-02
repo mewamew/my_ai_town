@@ -32,6 +32,12 @@ static func validate(value: Variant, wake_packet: Dictionary) -> Array[String]:
 	if not _non_empty(intent.get("action_id")):
 		errors.append("conflict_intent.action_id 必须是非空文本")
 	var attack := intent.duplicate(true)
+	# 先归一化 attack_kind 别名(kill/murder/致命等 → 合法值),
+	# 再走严格校验,避免 LLM 写 kill 被"不是合法攻击方式"打回。
+	attack = CONFLICT_CONTRACT.normalize_model_decision_references(
+		{"handling": "replace_current", "action": attack},
+		wake_packet,
+	).get("action", attack)
 	CONFLICT_CONTRACT.validate_action(attack, wake_packet, errors)
 	return errors
 

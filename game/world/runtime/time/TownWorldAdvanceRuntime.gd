@@ -49,6 +49,9 @@ const ANNOUNCEMENT_RESIDENT_RUNTIME := preload(
 const PASSIVE_NEED_ADVANCEMENT_RUNTIME := preload(
 	"res://world/runtime/activity/TownPassiveNeedAdvancementRuntime.gd"
 )
+const UNDERCOVER_DEADLINE_RUNTIME := preload(
+	"res://world/runtime/TownUndercoverDeadlineRuntime.gd"
+)
 
 
 static func advance(host, real_seconds: float, community_bulletin) -> Dictionary:
@@ -56,6 +59,21 @@ static func advance(host, real_seconds: float, community_bulletin) -> Dictionary
 	var advance_profile: Dictionary = host.telemetry.begin_advance_profile()
 	if not host._running:
 		return host._command_failure("WORLD_NOT_RUNNING", ["世界尚未运行"])
+	# 警察审讯会: 大会进行中世界冻结(分钟不推进)。每帧仍先 tick 大会
+	# 超时(汇报/审讯/投票阶段的真实秒推进), 再短路返回。冻结不置
+	# is_paused, 因此 LLM 决策派发与对话提交仍然放行(见
+	# TownAgentDecisionDispatchRuntime.take / TownWerewolfRuntime.assembly_frozen)。
+	host.WEREWOLF_RUNTIME.tick_assembly(host, real_seconds)
+	if host.WEREWOLF_RUNTIME.assembly_frozen(host):
+		return host._decorate_command_result({
+			"ok": true,
+			"frozen": true,
+			"assemblyPhase": host.WEREWOLF_RUNTIME.assembly_phase(host),
+			"simulationSpeed": host._simulation_speed,
+			"pauseReasons": host.get_lifecycle_state().get("pauseReasons", []),
+			"minutesAdvanced": 0,
+			"events": [],
+		})
 	if host.is_paused():
 		return host._decorate_command_result({
 			"ok": true,
@@ -137,6 +155,12 @@ static func advance(host, real_seconds: float, community_bulletin) -> Dictionary
 			host, absolute_minute, host.LIFE_RHYTHM_ANCHORS,
 		)
 		host.telemetry.lap(advance_profile, "lifeRhythmUsec", lap_usec)
+		# 夜间技能结算必须先于狼人杀天亮 flush: 医生守护要把被救者
+		# 移出待公布队列, 否则天亮会误公布死讯。
+		host.ROLE_SKILL_RUNTIME.advance(host, absolute_minute)
+		host.WEREWOLF_RUNTIME.advance(host, absolute_minute)
+		# 卧底期限(第6/7/8天处决、无辜全灭警察失败)与狼人杀同链推进。
+		UNDERCOVER_DEADLINE_RUNTIME.check_deadline(host, absolute_minute)
 	host._processing_tick_absolute_minute = -1
 	host._tick_weather_override = ""
 	for event_value: Variant in environment_update.get("events", []) as Array:

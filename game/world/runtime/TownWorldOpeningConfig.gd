@@ -31,6 +31,9 @@ static func load_config(path: String, world_data: Dictionary) -> Dictionary:
 
 
 static func validate(config: Dictionary, world_data: Dictionary) -> Array[String]:
+	# 恢复存档时 opening_config 来自 JSON 解析(整数会变成 float),
+	# 这里统一归一化,避免"age/money 必须是整数"等误报。
+	config = _normalize_numbers(config.duplicate(true)) as Dictionary
 	var errors: Array[String] = []
 	_validate_exact_keys(
 		config,
@@ -434,19 +437,28 @@ static func _validate_soul_profiles(
 
 
 static func _validate_social_state(name: String, state: Dictionary, places: Dictionary, errors: Array[String]) -> void:
-	_validate_exact_keys(state, ["home", "job", "workplace"], "居民 %s 的 socialState" % name, errors)
-	for key in ["home", "workplace"]:
-		var place_value: Variant = state.get(key)
-		var place_name := (
-			(place_value as String).strip_edges()
-			if place_value is String
-			else ""
-		)
-		if place_name.is_empty() or place_value != place_name:
-			errors.append("居民 %s 的 %s 不能为空" % [name, key])
-		elif not places.has(place_name):
-			errors.append("居民 %s 的 %s 不是已知地点" % [name, key])
-	if not _is_nonempty_string(state.get("job")):
+	# socialState 由装配流程补齐 home/job/workplace(此处不强制);
+	# money/reputation 为可选数值字段(金钱与声望),存在时校验类型。
+	_validate_exact_keys(state, ["home", "job", "workplace", "money", "reputation"], "居民 %s 的 socialState" % name, errors)
+	if state.has("money") and not state.get("money") is int:
+		errors.append("居民 %s 的 money 必须是整数" % name)
+	if state.has("reputation") and not state.get("reputation") is int:
+		errors.append("居民 %s 的 reputation 必须是整数" % name)
+	if state.has("home"):
+		var home_value: Variant = state.get("home")
+		var home_name := (home_value as String).strip_edges() if home_value is String else ""
+		if home_name.is_empty():
+			errors.append("居民 %s 的 home 不能为空" % name)
+		elif not places.has(home_name):
+			errors.append("居民 %s 的 home 不是已知地点" % name)
+	if state.has("workplace"):
+		var workplace_value: Variant = state.get("workplace")
+		var workplace_name := (workplace_value as String).strip_edges() if workplace_value is String else ""
+		if workplace_name.is_empty():
+			errors.append("居民 %s 的 workplace 不能为空" % name)
+		elif not places.has(workplace_name):
+			errors.append("居民 %s 的 workplace 不是已知地点" % name)
+	if state.has("job") and not _is_nonempty_string(state.get("job")):
 		errors.append("居民 %s 缺少职业" % name)
 
 
@@ -637,6 +649,12 @@ static func _validate_exact_keys(
 	for key_value: Variant in value:
 		if not key_value is String or not allowed.has(key_value as String):
 			errors.append("%s 包含未知字段：%s" % [label, str(key_value)])
+
+
+## 恢复存档时 opening_config 从 JSON 解析,整数会变成 float;
+## 此方法递归把整数值 float 归一回 int,供恢复流程使用。
+static func normalize_opening_numbers(config: Dictionary) -> Dictionary:
+	return _normalize_numbers(config) as Dictionary
 
 
 static func _normalize_numbers(value: Variant) -> Variant:

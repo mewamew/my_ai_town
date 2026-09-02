@@ -144,6 +144,11 @@ const SAVED_EVENT_FIELDS := {
 		"conflict_event_type", "knowledge_kind", "source_resident_id",
 		"actor_ids", "place_id", "severity", "summary", "residentId",
 	],
+	"目睹暗杀": [
+		"event_id", "time", "type", "attacker_resident_id",
+		"attacker_name", "victim_resident_id", "victim_name",
+		"summary", "residentId",
+	],
 	"居民死亡": [
 		"event_id", "time", "type", "deceased_resident_id",
 		"deceased_resident_name", "reason", "location", "residentId",
@@ -316,7 +321,9 @@ static func _validate_saved_resident(
 	if not social_value is Dictionary:
 		errors.append("世界存档居民 %s 的 socialState 必须是对象" % resident_id)
 	var social := social_value as Dictionary if social_value is Dictionary else {}
-	_validate_exact_keys(social, ["home", "job", "workplace"], "世界存档居民 %s 的 socialState" % resident_id, errors)
+	# money/reputation 是后加字段: 旧档(beta1~beta5)没有, 按官方语义保持可选,
+	# 运行时读取时取默认值——必填会拒掉全部旧档恢复(34c2222 同步回归实证)。
+	_validate_exact_keys(social, ["home", "job", "workplace"], "世界存档居民 %s 的 socialState" % resident_id, errors, ["money", "reputation"])
 	for key in ["home", "workplace"]:
 		if not _nonempty_string(social.get(key)) or not known_places.has(social.get(key)):
 			errors.append("世界存档居民 %s 的 %s 不是已知地点" % [resident_id, key])

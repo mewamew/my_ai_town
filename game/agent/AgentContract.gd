@@ -21,11 +21,23 @@ const ACTION_TYPES := [
 	"做活动",
 	"调整营业",
 	"托人传话",
+	"发布公告",
 	"待着",
 	"搭话",
 	"答话",
 	"争执",
 	"攻击",
+	"暗杀",
+	"制服",
+	"投票放逐",
+	"使用技能",
+	# 警察审讯会即时动作: prompt 阶段提示教模型用这两种 type 提交, 必须在
+	# 契约登记, 否则 agent 侧校验全部打回 "action.type 不是合法动作类型"
+	# (实锤: 汇报期 13 人全部按教学格式提交, 0 人汇报, 每人烧 10+ 请求)。
+	"向警察汇报",
+	"结束审讯",
+	"追踪",
+	"查案",
 	"回应冲突",
 	"介入冲突",
 	"离开冲突",
@@ -39,6 +51,8 @@ const EVENT_TYPES := [
 	"公告到点",
 	"公告阅读",
 	"公告转告",
+	"钟声公告",
+	"正式通知送达",
 	"营业状态变化",
 	"身体状况变化",
 	"承诺条件变化",
@@ -46,6 +60,21 @@ const EVENT_TYPES := [
 	"对方答话",
 	"对话结束",
 	"冲突见闻",
+	"目睹暗杀",
+	"守诊结果",
+	"查验结果",
+	"被救",
+	"暗杀失败",
+	"暗杀未遂",
+	"查案线索",
+	# 公共日志事件类型(可能被重新投射进居民 wake 或存档恢复重放):
+	"居民公开反应",
+	"外出就医",
+	"卧底任务完成",
+	# 居民死亡: 新档死亡走公告/天亮统一公布不入队, 但旧档(beta5/beta6)
+	# 可合法携带排队死亡事件(TownWorldRestorePeople.SAVED_EVENT_FIELDS),
+	# 恢复后随 wake 重放——漏登记会让该居民决策 REJECTED。
+	"居民死亡",
 ]
 const ACTION_RESULT_STATUSES := [
 	"completed", "interrupted", "rejected", "replaced", "failed",
@@ -66,6 +95,17 @@ const SOCIAL_RESPONSE_FIELDS := [
 	"public_text",
 ]
 const SOCIAL_RESPONSE_TEXT_MAX_LENGTH := 80
+const EXILE_VOTE_FIELDS := [
+	"target_resident_id",
+	"line",
+]
+const EXILE_VOTE_TEXT_MAX_LENGTH := 80
+const NIGHT_SKILL_FIELDS := [
+	"skill_id",
+	"target_resident_id",
+	"line",
+]
+const NIGHT_SKILL_TEXT_MAX_LENGTH := 80
 const SOCIAL_ATTENTION_FIELDS := [
 	"exposure_id",
 	"matter_id",
@@ -104,6 +144,7 @@ const ACTION_FIELDS := {
 		"content",
 		"line",
 	],
+	"发布公告": ["action_id", "type", "text", "line"],
 	"待着": ["action_id", "type", "line"],
 	"搭话": ["action_id", "type", "target_resident_id", "say", "narration", "photos"],
 	"答话": [
@@ -118,6 +159,14 @@ const ACTION_FIELDS := {
 	],
 	"争执": ["action_id", "type", "tension_option_id", "line"],
 	"攻击": ["action_id", "type", "target_resident_id", "attack_kind", "cause_id", "line"],
+	"暗杀": ["action_id", "type", "target_resident_id", "line"],
+	"制服": ["action_id", "type", "target_resident_id", "line"],
+	"投票放逐": ["action_id", "type", "target_resident_id", "line"],
+	"使用技能": ["action_id", "type", "skill_id", "target_resident_id", "line"],
+	"向警察汇报": ["action_id", "type", "kind", "line"],
+	"结束审讯": ["action_id", "type", "line"],
+	"追踪": ["action_id", "type", "target_resident_id", "line"],
+	"查案": ["action_id", "type", "line"],
 	"回应冲突": ["action_id", "type", "conflict_id", "response_kind", "line"],
 	"介入冲突": ["action_id", "type", "conflict_id", "intervention_kind", "line"],
 	"离开冲突": ["action_id", "type", "conflict_id", "reason", "line"],
@@ -246,6 +295,10 @@ static func validate_decision(
 		decision_fields.append("announcement_reactions")
 	if decision.has("social_response"):
 		decision_fields.append("social_response")
+	if decision.has("exile_vote"):
+		decision_fields.append("exile_vote")
+	if decision.has("night_skill"):
+		decision_fields.append("night_skill")
 	if decision.has("social_attention"):
 		decision_fields.append("social_attention")
 	if decision.has("social_request"):
@@ -273,6 +326,28 @@ static func validate_decision(
 				decision,
 				"social_response",
 				"social_response",
+				errors,
+			),
+			wake_packet,
+			errors,
+		)
+	if decision.has("exile_vote"):
+		AgentContractSnapshot._validate_exile_vote(
+			_require_dictionary(
+				decision,
+				"exile_vote",
+				"exile_vote",
+				errors,
+			),
+			wake_packet,
+			errors,
+		)
+	if decision.has("night_skill"):
+		AgentContractSnapshot._validate_night_skill(
+			_require_dictionary(
+				decision,
+				"night_skill",
+				"night_skill",
 				errors,
 			),
 			wake_packet,
@@ -426,6 +501,20 @@ static func canonicalize_decision(value: Dictionary) -> Dictionary:
 				canonical_social_response["matter_revision"]
 			)
 		canonical["social_response"] = canonical_social_response
+	if value.has("exile_vote"):
+		var exile_vote := value["exile_vote"] as Dictionary
+		var canonical_exile_vote := {}
+		for field: String in EXILE_VOTE_FIELDS:
+			if exile_vote.has(field):
+				canonical_exile_vote[field] = exile_vote[field]
+		canonical["exile_vote"] = canonical_exile_vote
+	if value.has("night_skill"):
+		var night_skill := value["night_skill"] as Dictionary
+		var canonical_night_skill := {}
+		for field: String in NIGHT_SKILL_FIELDS:
+			if night_skill.has(field):
+				canonical_night_skill[field] = night_skill[field]
+		canonical["night_skill"] = canonical_night_skill
 	if value.has("social_attention"):
 		canonical["social_attention"] = canonicalize_social_attention(
 			value["social_attention"] as Dictionary

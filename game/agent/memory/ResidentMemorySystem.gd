@@ -1442,6 +1442,7 @@ func _is_continuity_action_id(action_id: String) -> bool:
 		or action_id.begins_with("performance-listen:")
 		or action_id.begins_with("commitment:")
 		or action_id.begins_with("escort-follower:")
+		or action_id.begins_with("dining-close-home:")
 	):
 		return true
 	var marker_index := action_id.find("-continuity")

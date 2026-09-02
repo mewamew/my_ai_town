@@ -12,7 +12,191 @@ func _initialize() -> void:
 		_test_interest_labels_are_rendered(compiler_script)
 		_test_body_conditions_and_needs_are_rendered(compiler_script)
 		_test_social_assignment_context(compiler_script)
+		_test_interrogation_talk_targets(compiler_script)
+		_test_idle_talk_targets_restored(compiler_script)
+		_test_report_phase_police_options(compiler_script)
+		_test_police_lead_log_rendered(compiler_script)
 	_finish_prompt_test("AGENT_LIFE_PROMPT_PASS")
+
+
+func _test_report_phase_police_options(compiler_script: Script) -> void:
+	# 汇报期警察: 动作列表不能再注入"向警察汇报"(模型照选必被白名单
+	# 拒绝, 还出现过警察试图汇报"周既明昨夜行踪可疑"的怪决策)。
+	# 警察的唯一合法动作是"待着"(白名单同步放行)。
+	var compiler: RefCounted = compiler_script.new(_initialization())
+	var police_wake := _wake_packet("report-police-1", "晴天")
+	(police_wake.get("snapshot", {}) as Dictionary)["assembly"] = {
+		"phase": "report",
+		"frozen": true,
+		"role": "police",
+		"reportPrompt": "汇报正在收集中，警察请等待汇报收齐后开始审讯。",
+		"kinds": ["目击", "听到", "怀疑", "不汇报"],
+		"reported": true,
+	}
+	var police_request := compiler.call("compile", police_wake, "") as Dictionary
+	var police_actions := (
+		(police_request.get("derived_constraints", {}) as Dictionary).get(
+			"actions",
+			{},
+		) as Dictionary
+	).keys()
+	_expect(
+		not police_actions.has("向警察汇报"),
+		"汇报期警察动作列表不含向警察汇报: %s" % str(police_actions),
+	)
+	_expect(
+		police_actions.has("待着"),
+		"汇报期警察保留待着选项: %s" % str(police_actions),
+	)
+	var civilian_wake := _wake_packet("report-civilian-1", "晴天")
+	(civilian_wake.get("snapshot", {}) as Dictionary)["assembly"] = {
+		"phase": "report",
+		"frozen": true,
+		"reported": false,
+		"kinds": ["目击", "听到", "怀疑", "不汇报"],
+		"reportPrompt": "请向警察汇报。",
+	}
+	var civilian_request := compiler.call("compile", civilian_wake, "") as Dictionary
+	var civilian_actions := (
+		(civilian_request.get("derived_constraints", {}) as Dictionary).get(
+			"actions",
+			{},
+		) as Dictionary
+	).keys()
+	_expect_equal(
+		civilian_actions,
+		["向警察汇报"],
+		"汇报期平民动作列表只含向警察汇报: %s" % str(civilian_actions),
+	)
+
+
+func _test_police_lead_log_rendered(compiler_script: Script) -> void:
+	# 线索已告知账本: 注入 wake 的已告知条目必须渲染进提示词, 并带
+	# "不要重复去说"的提醒——终结执念型居民无限重复汇报同一线索。
+	var compiler: RefCounted = compiler_script.new(_initialization())
+	var wake := _wake_packet("police-lead-1", "晴天")
+	(wake.get("snapshot", {}) as Dictionary)["police_lead_log"] = {
+		"entries": [
+			{
+				"day": 2,
+				"minute_label": "第2天 08:00",
+				"channel": "审讯会汇报",
+				"summary": "我听见乔一鸣说看见个黑影……",
+			},
+		],
+	}
+	var request := compiler.call("compile", wake, "") as Dictionary
+	var user_text := String(
+		((request.get("messages", []) as Array)[1] as Dictionary).get(
+			"content",
+			"",
+		),
+	)
+	_expect(
+		user_text.contains("你已告诉过警察的线索")
+		and user_text.contains("我听见乔一鸣说看见个黑影")
+		and user_text.contains("审讯会汇报"),
+		"已告知线索账本渲染进提示词",
+	)
+	_expect(
+		user_text.contains("不要再重复去说"),
+		"已告知账本附带不重复提醒",
+	)
+	# 空账本不渲染任何内容。
+	var empty_wake := _wake_packet("police-lead-empty-1", "晴天")
+	var empty_request := compiler.call("compile", empty_wake, "") as Dictionary
+	var empty_text := String(
+		((empty_request.get("messages", []) as Array)[1] as Dictionary).get(
+			"content",
+			"",
+		),
+	)
+	_expect(
+		not empty_text.contains("你已告诉过警察的线索"),
+		"空账本不渲染已告知段落",
+	)
+
+
+func _test_idle_talk_targets_restored(compiler_script: Script) -> void:
+	# 冻结-解冻不变量: 审讯期"搭话目标合并可审候选"是瞬时叠加, 解冻后
+	# (assembly 快照为空)搭话目标必须回到纯 nearby 感知范围——否则远程
+	# 提审的宽松规则泄漏到正常时间, 警察平时也能隔空搭话全镇。
+	var compiler: RefCounted = compiler_script.new(_initialization())
+	var wake := _wake_packet("idle-talk-1", "晴天")
+	var snapshot := wake.get("snapshot", {}) as Dictionary
+	snapshot["assembly"] = {}  # 解冻后 assembly 快照为空
+	var request := compiler.call("compile", wake, "") as Dictionary
+	var constraints := request.get("derived_constraints", {}) as Dictionary
+	var actions := constraints.get("actions", {}) as Dictionary
+	var talk := actions.get("搭话", {}) as Dictionary
+	var talk_targets := talk.get("targets", []) as Array
+	_expect_equal(
+		talk_targets,
+		["resident-tang-xiao-man"],
+		"解冻后搭话目标恢复为纯 nearby(无审讯候选泄漏): %s" % str(talk_targets),
+	)
+	# 对应地: 汇报期居民也看不到搭话选项之外的东西(动作裁剪不泄漏)。
+	var report_wake := _wake_packet("report-restore-1", "晴天")
+	(report_wake.get("snapshot", {}) as Dictionary)["assembly"] = {
+		"phase": "report",
+		"frozen": true,
+		"reported": false,
+		"kinds": ["目击", "听到", "怀疑", "不汇报"],
+		"reportPrompt": "请向警察汇报。",
+	}
+	var report_request := compiler.call("compile", report_wake, "") as Dictionary
+	var report_constraints := report_request.get("derived_constraints", {}) as Dictionary
+	var report_actions := (report_constraints.get("actions", {}) as Dictionary).keys()
+	_expect_equal(
+		report_actions,
+		["向警察汇报"],
+		"汇报期动作裁剪只留汇报: %s" % str(report_actions),
+	)
+
+
+func _test_interrogation_talk_targets(compiler_script: Script) -> void:
+	# 警察审讯期: 搭话目标必须合并可审候选(远程提审), 不能只有 nearby。
+	# 否则 08:00 开会时警察身边人少, 想审的嫌疑人(不在附近)没有搭话
+	# 选项也没有 ID, 审讯 5 人额度用不满、身边无人时审讯期卡到兜底超时。
+	var compiler: RefCounted = compiler_script.new(_initialization())
+	var wake := _wake_packet("interrogation-talk-1", "晴天")
+	var snapshot := wake.get("snapshot", {}) as Dictionary
+	snapshot["assembly"] = {
+		"phase": "interrogation",
+		"frozen": true,
+		"role": "police",
+		"reportSummary": [],
+		"interrogationCount": 0,
+		"interrogationMax": 5,
+		"targets": [
+			{"resident_id": "resident-tang-xiao-man", "name": "唐小满"},
+			{"resident_id": "resident-lin-lan", "name": "林岚"},
+			{"resident_id": "resident-zhou-ning", "name": "周宁"},
+		],
+		"interrogated": [],
+		"prompt": "审讯进行中。",
+	}
+	var request := compiler.call("compile", wake, "") as Dictionary
+	var constraints := request.get("derived_constraints", {}) as Dictionary
+	var actions := constraints.get("actions", {}) as Dictionary
+	var talk := actions.get("搭话", {}) as Dictionary
+	var talk_targets := talk.get("targets", []) as Array
+	_expect(
+		talk_targets.has("resident-tang-xiao-man")
+		and talk_targets.has("resident-lin-lan")
+		and talk_targets.has("resident-zhou-ning"),
+		"审讯期警察搭话目标含全部可审候选(远程): %s" % str(talk_targets),
+	)
+	var user_text := String(
+		((request.get("messages", []) as Array)[1] as Dictionary).get(
+			"content",
+			"",
+		),
+	)
+	_expect(
+		user_text.contains("可审讯对象"),
+		"审讯期警察看到可审讯对象列表",
+	)
 
 
 func _test_life_and_social_context(compiler_script: Script) -> void:

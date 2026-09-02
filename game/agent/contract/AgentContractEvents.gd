@@ -49,7 +49,7 @@ static func _validate_event_fields(
 		var weather := AgentContract._require_non_empty_string(event, "weather", "%s.weather" % path, errors)
 		if not weather.is_empty() and not AgentContract.WEATHER_TYPES.has(weather):
 			errors.append("%s.weather 不是合法天气" % path)
-	elif event_type in ["公告发布", "公告阅读", "公告转告", "公告到点"]:
+	elif event_type in ["公告发布", "公告阅读", "公告转告", "公告到点", "钟声公告", "正式通知送达"]:
 		AgentContract._require_non_empty_string(
 			event,
 			"announcement_id",
@@ -57,6 +57,15 @@ static func _validate_event_fields(
 			errors,
 		)
 		AgentContract._require_non_empty_string(event, "text", "%s.text" % path, errors)
+		if event_type == "钟声公告" and not event.has("delivery_mode"):
+			errors.append("%s.delivery_mode 缺失" % path)
+		if event_type == "正式通知送达":
+			AgentContract._require_non_empty_string(
+				event,
+				"message_id",
+				"%s.message_id" % path,
+				errors,
+			)
 		if (
 			event.has("announcement_priority")
 			and String(event.get("announcement_priority", ""))
@@ -196,6 +205,31 @@ static func _validate_event_fields(
 		var reason := AgentContract._require_non_empty_string(event, "reason", "%s.reason" % path, errors)
 		if not reason.is_empty() and not AgentContract.CONVERSATION_END_REASONS.has(reason):
 			errors.append("%s.reason 不是合法对话结束原因" % path)
+	elif event_type == "居民死亡":
+		# 字段要求与存档恢复校验(TownWorldRestorePeople)保持一致, 避免恢复
+		# 路径放行而契约校验误伤。attacker/witness 为可选字段(旧档无)。
+		AgentContractIdentity._validate_resident_id(
+			event,
+			"deceased_resident_id",
+			"%s.deceased_resident_id" % path,
+			errors,
+		)
+		AgentContract._require_non_empty_string(
+			event,
+			"deceased_resident_name",
+			"%s.deceased_resident_name" % path,
+			errors,
+		)
+		AgentContract._require_non_empty_string(event, "reason", "%s.reason" % path, errors)
+		if event.get("location") is not Dictionary:
+			errors.append("%s.location 必须是对象" % path)
+		else:
+			AgentContract._require_non_empty_string(
+				(event.get("location") as Dictionary),
+				"placeName",
+				"%s.location.placeName" % path,
+				errors,
+			)
 
 
 static func _validate_action_results(action_results: Array, errors: Array[String]) -> void:

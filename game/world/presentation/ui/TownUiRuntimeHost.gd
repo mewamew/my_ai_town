@@ -537,9 +537,19 @@ func request_back() -> bool:
 			return bool(_active_page.call("request_back"))
 		if _active_route == &"conversation_spectator":
 			return close_page()
+		var avatar_narration := "旅行者结束交谈"
+		if (
+			is_instance_valid(_adapter)
+			and _adapter.has_method("get_player_avatar_name")
+		):
+			var avatar_name := str(
+				_adapter.call("get_player_avatar_name")
+			).strip_edges()
+			if not avatar_name.is_empty():
+				avatar_narration = "%s结束交谈" % avatar_name
 		var result := _dispatch_adapter(
 			"conversation.end",
-			{"narration": "旅行者结束交谈"},
+			{"narration": avatar_narration},
 		)
 		return bool(result.get("ok", false))
 	if _active_route == &"indoor":

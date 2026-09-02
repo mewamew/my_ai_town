@@ -44,21 +44,22 @@ static func _validate_action(
 		var current_place := String(
 			snapshot_place.get("name", ""),
 		)
-		if not place.is_empty() and place == current_place:
-			errors.append("action.place 不能是当前地点")
-		if (
-			not place.is_empty()
-			and snapshot_place.has("destinations")
-			and not (
-				snapshot_place.get("destinations", []) as Array
-			).has(place)
-		):
-			errors.append(
-				(
-					"action.place 当前不可前往，必须来自 snapshot.place.destinations；"
-					+ "已关闭或已失效的地点不能继续作为去的目标，想留在原地等候必须改用待着"
+		# 提交"当前地点"视为原地停留: 不拒绝、不检查 destinations。
+		# 夜间可去地点极少, 蹲守/留守的居民(如卧底跟踪)想留在原地时容易
+		# 误把当前地点填进"去", 拒绝会让居民反复提交同一失败动作而卡死循环。
+		if not place.is_empty() and place != current_place:
+			if (
+				snapshot_place.has("destinations")
+				and not (
+					snapshot_place.get("destinations", []) as Array
+				).has(place)
+			):
+				errors.append(
+					(
+						"action.place 当前不可前往，必须来自 snapshot.place.destinations；"
+						+ "已关闭或已失效的地点不能继续作为去的目标，想留在原地等候必须改用待着"
+					)
 				)
-			)
 	elif action_type == "用道具":
 		var prop := AgentContract._require_non_empty_string(action, "prop", "action.prop", errors)
 		var verb := AgentContract._require_non_empty_string(action, "verb", "action.verb", errors)
@@ -145,6 +146,20 @@ static func _validate_action(
 			errors.append("action.content 必须是最多 240 字的单行文字")
 	elif action_type == "待着":
 		AgentContract._require_non_empty_string(action, "line", "action.line", errors)
+	elif action_type == "向警察汇报":
+		# 审讯会汇报期动作: kind 必填; wake 带有汇报类型清单时必须取自其中
+		# (与 TownWerewolfRuntime.ASSEMBLY_REPORT_KINDS 的世界侧校验一致)。
+		var report_kind := AgentContract._require_non_empty_string(action, "kind", "action.kind", errors)
+		var assembly_value: Variant = (
+			(wake_packet.get("snapshot", {}) as Dictionary).get("assembly", {})
+		)
+		if (
+			not report_kind.is_empty()
+			and assembly_value is Dictionary
+		):
+			var report_kinds := (assembly_value as Dictionary).get("kinds", []) as Array
+			if not report_kinds.is_empty() and not report_kinds.has(report_kind):
+				errors.append("action.kind 必须来自当前汇报类型")
 	elif action_type == "搭话":
 		var target_resident_id := AgentContractIdentity._validate_resident_id(
 			action,
@@ -157,6 +172,7 @@ static func _validate_action(
 		if (
 			not target_resident_id.is_empty()
 			and not AgentContractWake._wake_has_nearby_person(wake_packet, target_resident_id)
+			and not _wake_has_interrogation_target(wake_packet, target_resident_id)
 		):
 			errors.append("action.target_resident_id 必须来自 snapshot.nearby")
 	elif action_type == "答话":
@@ -206,11 +222,17 @@ static func _validate_traveler_relationship_beat(
 	wake_packet: Dictionary,
 	errors: Array[String],
 ) -> void:
-	var conversation := (
-		(wake_packet.get("snapshot", {}) as Dictionary).get("conversation", {})
-		as Dictionary
-	)
-	var relationship := conversation.get("traveler_relationship", {}) as Dictionary
+	var snapshot_value: Variant = wake_packet.get("snapshot")
+	if not snapshot_value is Dictionary:
+		return
+	var conversation_value: Variant = (snapshot_value as Dictionary).get("conversation")
+	if not conversation_value is Dictionary:
+		return
+	var conversation := conversation_value as Dictionary
+	var relationship_value: Variant = conversation.get("traveler_relationship")
+	if not relationship_value is Dictionary:
+		return
+	var relationship := relationship_value as Dictionary
 	var affinity := int(relationship.get("affinity", 50))
 	if relationship.is_empty() or affinity < 53:
 		return
@@ -291,6 +313,30 @@ static func _validate_photos(
 		AgentContract._require_non_empty_string(photo, "mime_type", "%s.mime_type" % photo_path, errors)
 		if not ref.is_empty() and restrict_refs and not available_refs.has(ref):
 			errors.append("%s.ref 不是本次输入中的有效照片引用" % photo_path)
+
+
+## 审讯期警察远程提审: 搭话目标允许来自 wake 的 assembly.targets(可审候选),
+## 不受 snapshot.nearby 感知范围限制(世界侧 prepare_talk_action 的
+## interrogation_allowed 已豁免, 契约侧必须同步, 否则远程提审全被拒)。
+static func _wake_has_interrogation_target(wake_packet: Dictionary, target_resident_id: String) -> bool:
+	var assembly_value: Variant = (
+		(wake_packet.get("snapshot", {}) as Dictionary).get("assembly", {})
+	)
+	if not assembly_value is Dictionary:
+		return false
+	var assembly := assembly_value as Dictionary
+	if (
+		String(assembly.get("phase", "")) != "interrogation"
+		or String(assembly.get("role", "")) != "police"
+	):
+		return false
+	for target_value: Variant in assembly.get("targets", []) as Array:
+		if (
+			target_value is Dictionary
+			and String((target_value as Dictionary).get("resident_id", "")) == target_resident_id
+		):
+			return true
+	return false
 
 
 static func _validate_action_environment_references(

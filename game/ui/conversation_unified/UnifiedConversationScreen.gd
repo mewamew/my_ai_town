@@ -1286,6 +1286,15 @@ func _render_composer() -> void:
 		)
 
 
+## 玩家化身当前显示名（由 TownUiAdapter 提供），不可用时回退默认名。
+func _player_avatar_name() -> String:
+	if _adapter != null and _adapter.has_method("get_player_avatar_name"):
+		var name := str(_adapter.call("get_player_avatar_name")).strip_edges()
+		if not name.is_empty():
+			return name
+	return "旅行者"
+
+
 func _submit_reply() -> void:
 	var say := _draft_edit.text.strip_edges()
 	var has_photo := not _selected_photo_ref.is_empty()
@@ -1298,9 +1307,9 @@ func _submit_reply() -> void:
 			else say
 		),
 		"narration": (
-			"旅行者展示了一张照片"
+			_player_avatar_name() + "展示了一张照片"
 			if has_photo
-			else "旅行者继续交谈"
+			else _player_avatar_name() + "继续交谈"
 		),
 	}
 	if has_photo:
@@ -1359,7 +1368,7 @@ func _request_end_conversation() -> void:
 
 func _submit_end_conversation() -> void:
 	_restore_draft_focus_after_wait = false
-	_request_action("end", {"narration": "旅行者结束交谈"})
+	_request_action("end", {"narration": _player_avatar_name() + "结束交谈"})
 
 
 func _has_unsent_content() -> bool:

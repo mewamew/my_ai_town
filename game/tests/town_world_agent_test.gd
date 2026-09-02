@@ -226,6 +226,21 @@ class StagedPendingWorld:
 				"social_response_results": [],
 			},
 		}
+class StalledPendingWorld:
+	extends PendingWorld
+
+	# 世界侧准备永远返回 preparationPending, 模拟 refresh 阶段卡死
+	# (正常 15-50 帧完成, 此世界永不完结, 触发 Gateway 看门狗出口)。
+	func advance_pending_decision_preparation_by_id(
+		_resident_id: String,
+		_decision_id: String,
+	) -> Dictionary:
+		return {
+			"ok": true,
+			"stale": false,
+			"preparationPending": true,
+			"stage": "stuck",
+		}
 class PausedSubmissionWorld:
 	extends RefCounted
 
@@ -522,6 +537,7 @@ func _scenario_agent_gateway_continuity() -> void:
 	await _test_runtime_sync_agent_completion_is_deferred()
 	_test_world_heavy_frame_defers_agent_budget()
 	_test_gateway_staged_preparation_eventually_dispatches()
+	_test_gateway_stalled_preparation_watchdog_falls_back()
 	_test_service_option_route_preflight_uses_place_connectivity()
 	_test_same_place_service_option_route_preflight()
 	_test_replacement_request_retires_old_gateway_slot()
@@ -836,6 +852,93 @@ func _test_gateway_staged_preparation_eventually_dispatches() -> void:
 		(gateway.get("_agent_preparation_queue") as Array).size(),
 		0,
 		"分段准备完成后队列不会卡住",
+	)
+	gateway.free()
+
+
+func _test_gateway_stalled_preparation_watchdog_falls_back() -> void:
+	var agent := DelayedFailingAgent.new()
+	var world := StalledPendingWorld.new()
+	var gateway: Node = GATEWAY.new()
+	gateway.set("_agent_system", agent)
+	gateway.set("_provider_service", ProviderServiceStub.new())
+	gateway.set("_world", world)
+	var connected_resident_ids: Array[String] = ["resident-a"]
+	gateway.set("_connected_resident_ids", connected_resident_ids)
+	gateway.set("_session_active", true)
+	world.add_request({
+		"residentId": "resident-a",
+		"residentName": "居民甲",
+		"wakePacket": {"decision_id": "decision-stalled"},
+	})
+	get_root().add_child(gateway)
+	_expect_equal(
+		gateway.call("pump", 1),
+		1,
+		"卡死条目仍先被接纳进准备队列",
+	)
+	# 世界侧准备永久 preparationPending, 把计时起点拨到看门狗阈值之外,
+	# 模拟 refresh 阶段卡死超限(正常 15-50 帧, 此处已超 300 帧+5)。
+	var inflight := gateway.get("_inflight") as Dictionary
+	var pending := inflight.get("decision-stalled", {}) as Dictionary
+	pending["refreshStartedAtFrame"] = (
+		Engine.get_process_frames()
+		- GATEWAY.REFRESH_PREPARATION_STALL_FRAMES
+		- 5
+	)
+	pending["readyAfterProcessFrame"] = Engine.get_process_frames()
+	inflight["decision-stalled"] = pending
+	gateway.set("_inflight", inflight)
+	_expect_equal(
+		gateway.call("_advance_agent_preparation"),
+		true,
+		"看门狗超限时不再重排队尾而是直接裁决",
+	)
+	_expect(
+		not (gateway.get("_inflight") as Dictionary).has("decision-stalled"),
+		"看门狗裁决后占位已从 _inflight 清除",
+	)
+	_expect(
+		not ((gateway.get("_agent_preparation_queue") as Array).has(
+			"decision-stalled"
+		)),
+		"卡死条目不会重排回准备队列(防无限循环饿死泵头)",
+	)
+	_expect_equal(
+		world.redispatched.size(),
+		0,
+		"看门狗出口走 continuity fallback, 不 redispatch 回队",
+	)
+	_expect_equal(
+		agent.requested_resident_ids.size(),
+		0,
+		"准备卡死的请求不会触达 Agent",
+	)
+	_expect_equal(
+		world.submissions.size(),
+		1,
+		"continuity fallback 向世界侧结算 pending decision",
+	)
+	var submission := world.submissions[0]
+	_expect_equal(
+		submission.residentId,
+		"resident-a",
+		"fallback 提交归属正确居民",
+	)
+	_expect_equal(
+		submission.decision.decision_id,
+		"decision-stalled",
+		"fallback 决策沿用原 decision_id",
+	)
+	_expect_equal(
+		submission.decision.handling,
+		"replace_current",
+		"空 snapshot 下 fallback 决策语义为 replace_current",
+	)
+	_expect_equal(
+		submission.decision.action.type,
+		"待着",
+		"无上下文时 fallback 动作保持默认待着",
 	)
 	gateway.free()
 
@@ -1535,15 +1638,20 @@ func _test_failed_first_pair_cannot_starve_the_town() -> void:
 		5,
 		"the next bounded batch mixes correction attempts with waiting residents",
 	)
-	var correction_batch := agent.requested_resident_ids.slice(5)
+	var correction_batch := agent.requested_resident_ids.slice(2)
 	_expect(
-		correction_batch.has("resident-f")
-		and correction_batch.has("resident-g")
-		and correction_batch.has("resident-h"),
+		correction_batch.has("resident-c")
+		and correction_batch.has("resident-d"),
 		"a bad first group cannot starve residents that were already waiting",
 	)
-	for resident_id in correction_batch:
-		agent.fail("decision-%s" % resident_id)
+	# 槽位降到 2 后，fresh 重试排到等待居民之后，失败居民要等多轮才能耗尽
+	# 第二次机会。持续 pump-fail 直到安全连续性兜底触发。
+	var attempts := 0
+	while world.submissions.is_empty() and attempts < 20:
+		gateway.call("pump")
+		for decision_value in agent.callbacks.keys():
+			agent.fail(String(decision_value))
+		attempts += 1
 	_expect(
 		world.submissions.size() > 0,
 		"residents whose correction was exhausted receive safe continuity",

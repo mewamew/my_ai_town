@@ -45,6 +45,21 @@ func get_provider_descriptor() -> Dictionary:
 	return descriptor
 
 
+# 302.AI 网关（含 tokenrhythm.studio 等自定义 endpoint）背后的 DeepSeek 系
+# 模型不接受 reasoning_effort=none（实测网关报 UNSUPPORTED_FIELD：只支持
+# low/medium/high/xhigh/max），但支持 OpenAI 格式的思考开关：
+# {"thinking": {"type": "disabled"}}。居民结构化决策需要把全部输出预算留给
+# 最终 JSON，这里默认关闭服务端思考（实测 deepseek-v4-flash-0731 与
+# qwen3.8-max 生效，reasoning_content 归零；glm-5.2 忽略该字段、保持原行为）。
+# 显式 erase reasoning_effort：避免 Generic 的 disable_thinking=none 路径
+# 与 thinking 开关同时下发导致网关报错。
+func _build_request_body(model_request: Dictionary) -> Dictionary:
+	var body := super._build_request_body(model_request)
+	body.erase("reasoning_effort")
+	body["thinking"] = {"type": "disabled"}
+	return body
+
+
 func _model_catalog_result(response: Dictionary) -> Dictionary:
 	return _filter_town_model_catalog(super._model_catalog_result(response))
 

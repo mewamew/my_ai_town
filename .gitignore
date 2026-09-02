@@ -25,3 +25,18 @@ attack-perf-fixes-*.md
 /docs/design/*
 !/docs/design/手机端适配设计.md
 /docs/屎山消灭计划.md
+
+# 本地 3D 地图展示产物与运行日志，不进版本库
+/town_3d*.html
+/town_3d*.js
+/town_3d_shots/
+/town_map_*.png
+/town_map_preview.jpg
+/town_water_mask.jpg
+/logs/
+/run-game-log.ps1
+/run-test-log.ps1
+/tail-log.ps1
+/tail-log.bat
+town3d*.js
+backup_restore_intents/

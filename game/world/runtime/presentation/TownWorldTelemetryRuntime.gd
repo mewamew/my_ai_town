@@ -58,6 +58,18 @@ func finish_advance_profile(advance_started_usec: int) -> void:
 		Time.get_ticks_usec() - advance_started_usec
 	)
 	_last_advance_profile = advance_profile_scratch
+	# 慢 tick 诊断: 只在单次 advance 超过阈值时打印分步耗时(默认 20ms,
+	# 可用环境变量 AI_TOWN_ADVANCE_PROFILE_THRESHOLD 微调, 单位微秒)。
+	# 阈值以下不打印 → 零刷屏, 正好捕获"过几秒卡一下"的那一跳。
+	var total := int(advance_profile_scratch.get("totalUsec", 0))
+	var threshold_text := OS.get_environment("AI_TOWN_ADVANCE_PROFILE_THRESHOLD")
+	var threshold := int(threshold_text) if threshold_text.is_valid_int() else 20000
+	if total >= threshold:
+		var steps := ""
+		for key: Variant in advance_profile_scratch:
+			if String(key) != "totalUsec":
+				steps += " %s=%d" % [String(key), int(advance_profile_scratch[key])]
+		print("ADVANCE_PROFILE total=%dusec%s" % [total, steps])
 
 
 func set_advance_profile_enabled(enabled: bool) -> void:

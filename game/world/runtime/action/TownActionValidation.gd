@@ -15,6 +15,7 @@ const ACTION_FIELDS := {
 		"content",
 		"line",
 	],
+	"发布公告": ["action_id", "type", "text", "line"],
 	"待着": ["action_id", "type", "line"],
 	"搭话": ["action_id", "type", "target_resident_id", "say", "narration", "photos"],
 	"答话": [
@@ -39,6 +40,53 @@ const ACTION_FIELDS := {
 		"target_resident_id",
 		"attack_kind",
 		"cause_id",
+		"line",
+	],
+	"暗杀": [
+		"action_id",
+		"type",
+		"target_resident_id",
+		"line",
+	],
+	"制服": [
+		"action_id",
+		"type",
+		"target_resident_id",
+		"line",
+	],
+	"投票放逐": [
+		"action_id",
+		"type",
+		"target_resident_id",
+		"line",
+	],
+	"向警察汇报": [
+		"action_id",
+		"type",
+		"kind",
+		"line",
+	],
+	"结束审讯": [
+		"action_id",
+		"type",
+		"line",
+	],
+	"使用技能": [
+		"action_id",
+		"type",
+		"skill_id",
+		"target_resident_id",
+		"line",
+	],
+	"追踪": [
+		"action_id",
+		"type",
+		"target_resident_id",
+		"line",
+	],
+	"查案": [
+		"action_id",
+		"type",
 		"line",
 	],
 	"回应冲突": [
@@ -121,7 +169,53 @@ static func validate_action_shape(action: Dictionary) -> String:
 			if String(action.get("content", "")).length() > 240:
 				return "托人传话动作 content 最多 240 字"
 			return ""
+		"发布公告":
+			var announcement_error := require_action_texts(
+				action,
+				["text", "line"],
+				action_type,
+			)
+			if not announcement_error.is_empty():
+				return announcement_error
+			if String(action.get("text", "")).length() > 240:
+				return "发布公告动作 text 最多 240 字"
+			return ""
 		"待着":
+			return require_action_texts(action, ["line"], action_type)
+		"投票放逐":
+			# 方案A: 投票放逐作为即时动作(模型对动作遵守度高,附件 exile_vote 常被省略)。
+			# target_resident_id 用居民ID(与 vote_snapshot 候选名单一致,submit_vote 按ID校验)。
+			return require_action_texts(
+				action,
+				["target_resident_id", "line"],
+				action_type,
+			)
+		"向警察汇报":
+			# 审讯会汇报期即时动作: kind 用 目击/听到/怀疑/不汇报(与
+			# TownWerewolfRuntime.ASSEMBLY_REPORT_KINDS 一致), line 允许为空(不汇报)。
+			return require_action_texts(action, ["kind"], action_type)
+		"结束审讯":
+			# 审讯会审讯期即时动作(警察专用): 结束审讯进入投票期, 无必填文本。
+			return ""
+		"使用技能":
+			# 夜间技能即时动作: skill_id 用 skill 列表里的技能 id,
+			# target_resident_id 用居民ID(与 night_skill_snapshot 候选名单一致)。
+			return require_action_texts(
+				action,
+				["skill_id", "target_resident_id", "line"],
+				action_type,
+			)
+		"追踪":
+			# 警察侦查即时动作: 靠近目标装上追踪装置, 之后 1 天实时上报
+			# 目标的对话/行踪/重大行动(与目击者机制联动)。
+			return require_action_texts(
+				action,
+				["target_resident_id", "line"],
+				action_type,
+			)
+		"查案":
+			# 警察查案即时动作: 在镇公所查阅档案, 获取死亡案件与行踪疑点
+			# 线索(每天限 2 次)。只需要 line, 不需要目标。
 			return require_action_texts(action, ["line"], action_type)
 		"搭话":
 			var target_id_present := action.has("target_resident_id")
@@ -349,6 +443,14 @@ static func validate_decision_shape(
 		allowed_fields.append("announcement_reactions")
 	if decision.has("social_response"):
 		allowed_fields.append("social_response")
+	if decision.has("exile_vote"):
+		allowed_fields.append("exile_vote")
+		if not decision.get("exile_vote") is Dictionary:
+			return "exile_vote 必须是对象"
+	if decision.has("night_skill"):
+		allowed_fields.append("night_skill")
+		if not decision.get("night_skill") is Dictionary:
+			return "night_skill 必须是对象"
 	if decision.has("social_attention"):
 		allowed_fields.append("social_attention")
 	if decision.has("social_request"):

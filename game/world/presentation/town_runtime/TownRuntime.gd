@@ -283,7 +283,9 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		_touch_camera_gesture.reset()
 		_mobile_movement_input.clear()
-		set_background_paused(true)
+		# 本地改造: 默认关闭"失焦自动暂停",允许游戏在后台/无焦点时继续运行。
+		# 如需恢复原行为,将下一行取消注释即可。
+		# set_background_paused(true)
 	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
 		set_background_paused(false)
 
@@ -1888,6 +1890,11 @@ func _start_world() -> void:
 		return
 	_resolve_session_options(opening_result.get("config", {}) as Dictionary)
 	_world = WORLD.new()
+	# 支持通过环境变量 AI_TOWN_FORCED_WEATHER 强制固定天气
+	# (如 AI_TOWN_FORCED_WEATHER=晴天,游戏全程不变天)。
+	var forced_weather_env := OS.get_environment("AI_TOWN_FORCED_WEATHER").strip_edges()
+	if not forced_weather_env.is_empty() and _world.has_method("set_forced_weather"):
+		_world.set_forced_weather(forced_weather_env)
 	var start_mode := String(session_config.get("worldStartMode", "development"))
 	var restoring_formal_session := (
 		start_mode == "formal"
@@ -2060,7 +2067,10 @@ func _start_world() -> void:
 	_sync_audio_environment(_world.get_time(), String(_world.get_weather()))
 	var gateway_result := _initialize_agent_gateway()
 	if gateway_result.get("ok") != true:
-		_fail_start("Agent Gateway 初始化失败：%s" % "; ".join(gateway_result.get("errors", [])))
+		_fail_start("Agent Gateway 初始化失败：%s（code=%s）" % [
+			"; ".join(gateway_result.get("errors", []) as Array),
+			String(gateway_result.get("errorCode", "")),
+		])
 		return
 	if _agent_gateway != null:
 		_agent_gateway.pump_frame_budgeted(AGENT_DISPATCH_BUDGET_PER_FRAME,)

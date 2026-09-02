@@ -683,6 +683,18 @@ func _public_diagnostic(source: Dictionary) -> Dictionary:
 		var text := _public_string(source.get(key))
 		if not text.is_empty():
 			result[key] = text
+	# Provider 的真实失败原因(如"模型服务返回 HTTP 400: xxx" / "模型网络
+	# 请求失败: 连接超时")——此前被 _public_diagnostic 过滤掉, 行为流日志
+	# 只剩 Agent 层抹平的"模型调用失败", 排障时看不到 HTTP 状态码与原因。
+	# 这些错误消息由 Provider 构造, 不含请求体/凭据, 公开前截断长度。
+	var errors_value: Variant = source.get("errors")
+	if errors_value is Array:
+		var public_errors: Array[String] = []
+		for error_value: Variant in errors_value as Array:
+			if error_value is String:
+				public_errors.append((error_value as String).substr(0, 200))
+		if not public_errors.is_empty():
+			result["errors"] = public_errors
 	for key in ["status_code", "elapsed_ms"]:
 		var number := _public_nonnegative_integer(source.get(key))
 		if number >= 0:

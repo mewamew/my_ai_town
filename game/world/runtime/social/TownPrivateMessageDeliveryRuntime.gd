@@ -13,6 +13,9 @@ const POSTAL_MESSAGE_RUNTIME := preload(
 const ANNOUNCEMENT_COMMAND_RUNTIME := preload(
 	"res://world/runtime/social/TownAnnouncementCommandRuntime.gd"
 )
+const WEREWOLF_RUNTIME := preload(
+	"res://world/runtime/TownWerewolfRuntime.gd"
+)
 
 
 static func finish_sender_action(
@@ -66,6 +69,19 @@ static func complete_delivery(
 		return
 	var message_id := String(settlement.get("messageId", ""))
 	var message := settlement.get("message", {}) as Dictionary
+	# 线索已告知: 口信送达警察时, 给寄件人记一笔(终结"反复托人传话
+	# 告诉警察同一件事"的执念循环)。
+	if (
+		host.WEREWOLF_RUNTIME.feature_active(host)
+		and host.has_method("_resident_is_police")
+		and host._resident_is_police(recipient_id)
+	):
+		WEREWOLF_RUNTIME.record_police_lead(
+			host,
+			String(message.get("senderResidentId", "")),
+			"托人传话",
+			String(message.get("content", "")),
+		)
 	activate_follow_up(host, message_id, message, delivered_at)
 	compact_delivered(host)
 	ANNOUNCEMENT_COMMAND_RUNTIME.apply_delivered_notice(

@@ -1212,10 +1212,37 @@ static func _validate_runtime_route_replay(
 			_canonical_route_presentation(route),
 		)
 	):
-		errors.append(
-			"居民 %s 的运行时恢复路线无法由正式路线生产器重建"
-			% resident_id
-		)
+		# 移动中保存的路线,恢复时寻路重建可能与存档存在微小差异
+		# (polyline 节点数/途经点不同但起点终点一致)。这种差异不应
+		# 阻断恢复——恢复后角色会按存档路线继续,或重新规划路线。
+		# 只有重建完全失败、或起点/终点不一致时才视为损坏。
+		if not _runtime_route_endpoints_match(rebuilt, route):
+			errors.append(
+				"居民 %s 的运行时恢复路线无法由正式路线生产器重建"
+				% resident_id
+			)
+
+
+## 移动中保存的路线,恢复时只要求起点/终点一致(允许中间路径微小差异)。
+static func _runtime_route_endpoints_match(rebuilt: Dictionary, saved: Dictionary) -> bool:
+	if rebuilt.is_empty() or saved.is_empty():
+		return false
+	var rebuilt_from := String(rebuilt.get("fromPlaceName", ""))
+	var saved_from := String(saved.get("fromPlaceName", ""))
+	var rebuilt_to := String(rebuilt.get("toPlaceName", ""))
+	var saved_to := String(saved.get("toPlaceName", ""))
+	var rebuilt_start := String(rebuilt.get("startNodeId", ""))
+	var saved_start := String(saved.get("startNodeId", ""))
+	var rebuilt_arrival := String(rebuilt.get("arrivalNodeId", ""))
+	var saved_arrival := String(saved.get("arrivalNodeId", ""))
+	return (
+		not rebuilt_from.is_empty()
+		and rebuilt_from == saved_from
+		and not rebuilt_to.is_empty()
+		and rebuilt_to == saved_to
+		and rebuilt_start == saved_start
+		and rebuilt_arrival == saved_arrival
+	)
 
 
 static func _runtime_route_values_match(

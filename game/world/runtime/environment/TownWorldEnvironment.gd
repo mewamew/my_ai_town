@@ -35,6 +35,7 @@ var _errors: Array[String] = []
 var _day := 1
 var _minute_of_day := 0
 var _weather := "晴天"
+var _forced_weather := ""
 var _real_second_accumulator := 0.0
 var _event_sequence := 0
 var _next_natural_weather_check_absolute_minute := 0
@@ -154,6 +155,36 @@ func set_weather(weather: Variant) -> Dictionary:
 		"weather": _weather,
 		"event": _weather_event(),
 	}
+
+
+## 强制固定天气:传入合法天气后,小镇天气固定不变(自然天气不再随机变化);
+## 传入空字符串 "" 解除强制,恢复自然天气。
+func set_forced_weather(weather: Variant) -> Dictionary:
+	if not _errors.is_empty():
+		return {"ok": false, "errors": _errors.duplicate()}
+	var weather_value := String(weather).strip_edges()
+	if not weather_value.is_empty() and not _weather_types().has(weather_value):
+		return {"ok": false, "errors": ["天气不是合法值：%s" % [weather]]}
+	_forced_weather = weather_value
+	if not weather_value.is_empty() and _weather != weather_value:
+		_weather = weather_value
+		return {
+			"ok": true,
+			"changed": true,
+			"forced": weather_value,
+			"weather": _weather,
+			"event": _weather_event(),
+		}
+	return {
+		"ok": true,
+		"changed": false,
+		"forced": _forced_weather,
+		"weather": _weather,
+	}
+
+
+func get_forced_weather() -> String:
+	return _forced_weather
 
 
 func set_time(day: Variant, clock: Variant) -> Dictionary:
@@ -412,6 +443,9 @@ func period_for_minute(minute_of_day: int) -> String:
 
 
 func _apply_natural_weather() -> Dictionary:
+	# 强制固定天气模式下,自然天气不再变化。
+	if not _forced_weather.is_empty():
+		return {}
 	var transitions := (_config.get("weather", {}) as Dictionary).get("transitions", {}) as Dictionary
 	var row := transitions.get(_weather, {}) as Dictionary
 	var roll: float = float(_forced_weather_rolls.pop_front()) if not _forced_weather_rolls.is_empty() else _rng.randf()

@@ -110,7 +110,7 @@ func _test_release_detection_uses_contract_evidence() -> void:
 
 	var shared_contract := REGISTRY.detect_release(_release_evidence(
 		27,
-		"70dcd511461e5266174f3ddb5323d2adf4ecd5caf38cf25d7ba886ead3e3b818",
+		SCHEMA_REGISTRY.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK,
 		"hashed",
 	))
 	_expect_equal(
@@ -127,7 +127,7 @@ func _test_release_detection_uses_contract_evidence() -> void:
 
 	var beta5_evidence := _release_evidence(
 		27,
-		"70dcd511461e5266174f3ddb5323d2adf4ecd5caf38cf25d7ba886ead3e3b818",
+		SCHEMA_REGISTRY.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK,
 		"hashed",
 	)
 	beta5_evidence["recordedRelease"] = "beta5"
@@ -138,8 +138,37 @@ func _test_release_detection_uses_contract_evidence() -> void:
 	beta6_evidence["recordedRelease"] = "beta6"
 	_expect_equal(
 		REGISTRY.detect_release(beta6_evidence).get("supportStatus"),
-		"current",
-		"精确识别的 beta6 返回当前状态",
+		"supported",
+		"精确识别的 beta6 返回受支持状态(当前发行已推进)",
+	)
+	# fork 结构(28 键 + 本地警察职业指纹 bf242f42)识别为 beta7(current):
+	# 狼人杀化改造给 world state 增加 werewolfState 域, worldSectionCount 27→28。
+	var beta7_evidence := _release_evidence(
+		28,
+		"bf242f42dae623b44ec47902d4defea29314286de0be16a619683a5b61ad298f",
+		"hashed",
+	)
+	var beta7_detected := REGISTRY.detect_release(beta7_evidence)
+	_expect_equal(beta7_detected.get("release"), "beta7", "28 键 fork 档识别为 beta7")
+	_expect_equal(beta7_detected.get("supportStatus"), "current", "beta7 为当前发行版")
+	_expect_equal(beta7_detected.get("exact"), true, "28 键 fork 档精确识别")
+	# 升级场景: beta6 时代保存的 28 键档(recorded=beta6)仍按 beta7 识别。
+	var beta7_legacy_evidence := beta7_evidence.duplicate(true)
+	beta7_legacy_evidence["recordedRelease"] = "beta6"
+	var legacy_detected := REGISTRY.detect_release(beta7_legacy_evidence)
+	_expect_equal(legacy_detected.get("release"), "beta7", "recorded beta6 的 28 键档按 beta7 识别")
+	_expect_equal(legacy_detected.get("exact"), true, "升级场景仍精确识别")
+	# 官方 27 键 + 官方指纹不受 beta7 影响(仍为 beta3-6 共享契约)。
+	var official_beta6_evidence := _release_evidence(
+		27,
+		SCHEMA_REGISTRY.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK,
+		"hashed",
+	)
+	official_beta6_evidence["recordedRelease"] = "beta6"
+	_expect_equal(
+		REGISTRY.detect_release(official_beta6_evidence).get("release"),
+		"beta6",
+		"官方 27 键档仍识别为 beta6",
 	)
 
 
@@ -189,7 +218,7 @@ func _test_release_detection_distinguishes_failure_types() -> void:
 
 	var future_evidence := _release_evidence(
 		27,
-		"70dcd511461e5266174f3ddb5323d2adf4ecd5caf38cf25d7ba886ead3e3b818",
+		SCHEMA_REGISTRY.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK,
 		"hashed",
 	)
 	(future_evidence.get("versions") as Dictionary)["world"] = 3
@@ -203,7 +232,7 @@ func _test_release_detection_distinguishes_failure_types() -> void:
 	)
 	var future_module_evidence := _release_evidence(
 		27,
-		"70dcd511461e5266174f3ddb5323d2adf4ecd5caf38cf25d7ba886ead3e3b818",
+		SCHEMA_REGISTRY.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK,
 		"hashed",
 	)
 	(future_module_evidence.get("versions") as Dictionary)["futureModule"] = 1
@@ -220,10 +249,10 @@ func _test_release_detection_distinguishes_failure_types() -> void:
 	)
 	var future_release_evidence := _release_evidence(
 		27,
-		"70dcd511461e5266174f3ddb5323d2adf4ecd5caf38cf25d7ba886ead3e3b818",
+		SCHEMA_REGISTRY.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK,
 		"hashed",
 	)
-	future_release_evidence["recordedRelease"] = "beta7"
+	future_release_evidence["recordedRelease"] = "beta8"
 	var future_release := REGISTRY.detect_release(future_release_evidence)
 	_expect_equal(future_release.get("supportStatus"), "read_only", "未来发行版只读识别")
 	_expect_equal(
@@ -231,8 +260,8 @@ func _test_release_detection_distinguishes_failure_types() -> void:
 		"SAVE_VERSION_NEWER_THAN_SUPPORTED",
 		"未来发行版返回稳定错误码",
 	)
-	_expect_equal(REGISTRY.is_valid_release_marker("beta7"), true, "未来发行版标记可读取")
-	_expect_equal(REGISTRY.is_valid_release_marker(" beta7"), false, "非规范发行版标记拒绝")
+	_expect_equal(REGISTRY.is_valid_release_marker("beta8"), true, "未来发行版标记可读取")
+	_expect_equal(REGISTRY.is_valid_release_marker(" beta8"), false, "非规范发行版标记拒绝")
 	_expect_equal(
 		REGISTRY.restore_gate(future_release).get("errorCode"),
 		"SAVE_VERSION_NEWER_THAN_SUPPORTED",
@@ -318,7 +347,7 @@ func _test_release_detection_distinguishes_failure_types() -> void:
 
 	var no_provider := _release_evidence(
 		27,
-		"70dcd511461e5266174f3ddb5323d2adf4ecd5caf38cf25d7ba886ead3e3b818",
+		SCHEMA_REGISTRY.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK,
 		"hashed",
 	)
 	(no_provider.get("versions") as Dictionary).erase("provider")
@@ -343,6 +372,7 @@ func _test_migration_path_is_ordered_and_explicit() -> void:
 			"beta3-to-beta4",
 			"beta4-to-beta5",
 			"beta5-to-beta6",
+			"beta6-to-beta7",
 		],
 		"账本返回完整的相邻版本路径",
 	)
@@ -376,7 +406,7 @@ func _test_migration_path_is_ordered_and_explicit() -> void:
 			"无字段变化的发行边仍有明确声明",
 		)
 
-	var current := REGISTRY.migration_path("beta6")
+	var current := REGISTRY.migration_path(REGISTRY.current_release())
 	_expect_equal(current.get("edges"), [], "当前版本不产生迁移步骤")
 	_expect_equal(
 		current.get("currentMigrationIds"),

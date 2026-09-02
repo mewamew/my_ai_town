@@ -6326,7 +6326,7 @@ func _scenario_activity_catalog_contract() -> void:
 		return
 	_expect_equal(
 		CATALOG.occupation_templates(catalog).size(),
-		15,
+		16,
 		"catalog exposes the authored occupation candidates",
 	)
 	_expect_equal(
@@ -6639,7 +6639,9 @@ func _verify_default_social_state_coverage(catalog: Dictionary) -> void:
 			String((supported_value as Dictionary).get("occupationName", ""))
 		)
 	_expect("园艺师" in supported_names, "园艺师 has a formal activity chain")
-	_expect("小镇管理者" in supported_names, "小镇管理者 has a formal activity chain")
+	# 本地狼人杀化把闻叙的职业从"小镇管理者"改为"警察"(见 occupation_catalog
+	# default_social_police_town_hall 组合), 小镇管理者不再有默认居民。
+	_expect("警察" in supported_names, "警察 has a formal activity chain")
 	_expect("邮差" in supported_names, "邮差 has a formal activity chain")
 	_expect("渔夫" in supported_names, "渔夫默认渔港组合 is formally executable")
 

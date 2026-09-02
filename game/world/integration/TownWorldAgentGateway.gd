@@ -10,6 +10,7 @@ const RESULT_SHAPES := preload(
 	"res://world/contract/TownWorldResultShapes.gd"
 )
 const AGENT_SYSTEM := preload("res://agent/AgentSystem.gd")
+const TOWN_LOG := preload("res://world/runtime/TownLog.gd")
 const UNAVAILABLE_MODEL_PROVIDER := preload(
 	"res://agent/model/UnavailableModelProvider.gd"
 )
@@ -44,6 +45,24 @@ const MAX_CONCURRENT_LOCAL_MODEL_REQUESTS := 3
 const MAX_CONCURRENT_LOCAL_ORDINARY_REQUESTS := 2
 const LOCAL_MODEL_PROVIDER_IDS: Array[String] = ["ollama", "lm-studio"]
 const MAX_DECISION_ATTEMPTS := 2
+# refresh 阶段看门狗: 世界侧 wake 准备正常约 15-50 帧完成(conversation_services
+# 逐服务遍历, 最慢路径亦 <300 帧)。若队首条目无限 preparationPending 重排,
+# pump_frame_budgeted 会在 while 里每帧 return 1 而永远执行不到 pump(1),
+# 全部新请求被饿死(断点日志第 5-7 天大会候选恒 11 人无票可计即此形态)。
+# 停留超过此帧数判定卡死: 丢弃该条目并走 continuity fallback, 让世界侧
+# 结算 pending decision, 避免条目永久占住泵头。
+const REFRESH_PREPARATION_STALL_FRAMES := 300
+# 角色请求留档: 警察 + 3 卧底的全部模型请求(提示词 + 输出 JSON)成对写盘,
+# 便于复盘这些关键角色到底收到了什么、做了什么决策。落点在 DecisionExecution,
+# 由 configure_session 装配到 AgentSystem; 路径可用环境变量
+# AI_TOWN_ROLE_ARCHIVE_ROOT 覆盖(默认游戏仓库外的固定目录)。
+const ROLE_ARCHIVE_RESIDENT_IDS: Array[String] = [
+	"resident_wen_xu_01",  # 警察 闻叙
+	"resident_xie_mian_01",  # 卧底 谢眠
+	"resident_qiao_yiming_01",  # 卧底 乔一鸣
+	"resident_hanako_01",  # 卧底 花子
+]
+const ROLE_ARCHIVE_ROOT := "F:/my_ai_town_upstream/logs/requests/role"
 const MAX_ERROR_HISTORY := 128
 const BACKGROUND_DEPARTURE_INITIAL_DELAY_SECONDS := 20.0
 const BACKGROUND_DEPARTURE_RETRY_DELAY_SECONDS := 8.0
@@ -437,6 +456,16 @@ func configure_session(
 			"",
 			avatar_identity,
 		)
+	var role_archive_root := OS.get_environment("AI_TOWN_ROLE_ARCHIVE_ROOT")
+	if role_archive_root.is_empty():
+		role_archive_root = ROLE_ARCHIVE_ROOT
+	if _agent_system != null and _agent_system.has_method("configure_role_archive"):
+		_agent_system.call(
+			"configure_role_archive",
+			true,
+			ROLE_ARCHIVE_RESIDENT_IDS,
+			role_archive_root,
+		)
 	return {
 		"ok": true,
 		"errorCode": "",
@@ -629,16 +658,18 @@ func pump(
 	# 再做容量投影；旧请求随后仍可返回，但不再占用逻辑槽位。
 	_mark_superseded_inflight_for_pending_requests(requests)
 	var has_pending_avatar_conversation := false
+	var has_pending_vote := false
 	for request in requests:
-		if _wake_is_avatar_conversation_turn(
-			request.get("wakePacket", {}) as Dictionary
-		):
+		var request_wake := request.get("wakePacket", {}) as Dictionary
+		if _wake_is_avatar_conversation_turn(request_wake):
 			has_pending_avatar_conversation = true
-			break
+		if _wake_is_vote_request(request_wake):
+			has_pending_vote = true
 	var selection := _select_dispatchable_requests(
 		requests,
 		max_requests,
 		has_pending_avatar_conversation,
+		has_pending_vote,
 	)
 	requests = selection.get("selected", []) as Array[Dictionary]
 	var overflow := selection.get("overflow", []) as Array[Dictionary]
@@ -716,6 +747,7 @@ func _select_dispatchable_requests(
 	requests: Array[Dictionary],
 	max_requests: int,
 	has_pending_avatar_conversation: bool,
+	has_pending_vote: bool,
 ) -> Dictionary:
 	var selected: Array[Dictionary] = []
 	var overflow: Array[Dictionary] = []
@@ -737,6 +769,8 @@ func _select_dispatchable_requests(
 		projected_local_count += 1
 		if not _wake_is_avatar_conversation_turn(
 			inflight.get("wakePacket", {}) as Dictionary
+		) and not _wake_is_vote_request(
+			inflight.get("wakePacket", {}) as Dictionary
 		):
 			projected_local_ordinary_count += 1
 	var request_limit := requests.size()
@@ -754,9 +788,11 @@ func _select_dispatchable_requests(
 			overflow.append(request)
 			continue
 		var next_total := projected.size() + 1
-		var request_is_ordinary := not _wake_is_avatar_conversation_turn(
+		var request_is_avatar := _wake_is_avatar_conversation_turn(
 			wake_packet
 		)
+		var request_is_vote := _wake_is_vote_request(wake_packet)
+		var request_is_ordinary := not request_is_avatar and not request_is_vote
 		var next_ordinary_count := (
 			projected_ordinary_count
 			+ (1 if request_is_ordinary else 0)
@@ -785,6 +821,9 @@ func _select_dispatchable_requests(
 				> MAX_CONCURRENT_MODEL_REQUESTS
 				- RESERVED_AVATAR_CONVERSATION_REQUEST_SLOTS
 			)
+			# 投票快速通道: 有投票请求在等时, 普通生活请求一律让路(还回
+			# world pending), 在飞的自然完成后 3 个槽位全部让给投票。
+			or (has_pending_vote and request_is_ordinary)
 		):
 			overflow.append(request)
 			continue
@@ -2164,6 +2203,15 @@ func _queue_agent_preparation(request: Dictionary) -> void:
 	var resident_name := String(request.get("residentName", ""))
 	var wake := request.get("wakePacket", {}) as Dictionary
 	var decision_id := String(wake.get("decision_id", ""))
+	# 看门狗计时起点: 首次入队即开始计帧; 若该 decision 仍在队列中等待
+	# (重复 take 覆盖 _inflight 的场景), 保留已有起点, 否则重排会把计时
+	# 归零, 看门狗永远不触发(卡死条目无限刷新循环饿死全泵)。
+	var existing := _inflight.get(decision_id, {}) as Dictionary
+	var refresh_started_at_frame := (
+		int(existing.get("refreshStartedAtFrame", -1))
+		if _agent_preparation_queue.has(decision_id)
+		else Engine.get_process_frames()
+	)
 	_inflight[decision_id] = {
 		"residentId": resident_id,
 		"residentName": resident_name,
@@ -2173,6 +2221,9 @@ func _queue_agent_preparation(request: Dictionary) -> void:
 		"preparationStage": "refresh",
 		"readyAfterProcessFrame": Engine.get_process_frames() + 1,
 		"startedAtMsec": Time.get_ticks_msec(),
+		# refresh 看门狗计时起点: 世界侧准备首次入队即开始计帧, 重排不重置,
+		# 超过 REFRESH_PREPARATION_STALL_FRAMES 判定卡死(见 _advance_agent_preparation)。
+		"refreshStartedAtFrame": refresh_started_at_frame,
 	}
 	if not _agent_preparation_queue.has(decision_id):
 		if _wake_is_avatar_conversation_turn(wake):
@@ -2221,6 +2272,16 @@ func _advance_agent_preparation() -> bool:
 					"agentPrepareStage_%sUsec" % stage_key,
 					Time.get_ticks_usec() - probe_started_usec,
 				)
+			# refresh 看门狗: 世界侧准备停留超限即判定卡死。否则该条目会
+			# 无限重排回队尾, pump_frame_budgeted 每帧 return 1 永不执行
+			# pump(1), 全部新请求被饿死(断点局第 5-7 天大会候选恒 11 人)。
+			var refresh_elapsed_frames := (
+				Engine.get_process_frames()
+				- int(pending.get("refreshStartedAtFrame", 0))
+			)
+			if refresh_elapsed_frames > REFRESH_PREPARATION_STALL_FRAMES:
+				_abandon_stalled_preparation(decision_id, pending)
+				return true
 			pending["readyAfterProcessFrame"] = Engine.get_process_frames() + 1
 			_inflight[decision_id] = pending
 			_agent_preparation_queue.append(decision_id)
@@ -2246,6 +2307,65 @@ func _advance_agent_preparation() -> bool:
 	_inflight.erase(decision_id)
 	_redispatch(String(pending.get("residentId", "")), decision_id)
 	return true
+
+
+func _abandon_stalled_preparation(
+	decision_id: String,
+	pending: Dictionary,
+) -> void:
+	# refresh 看门狗出口: 世界侧准备卡死超限时调用。清除 Gateway 队列占位,
+	# 记录诊断日志(用户排查"没日志"问题的关键留档), 并提交 continuity
+	# fallback 让世界侧结算这块 pending decision——绝不能 redispatch 回队,
+	# 否则下次入队后再次卡死 300 帧, 无限循环占用泵头饿死全队。
+	var resident_id := String(pending.get("residentId", ""))
+	var resident_name := String(pending.get("residentName", ""))
+	var wake := (pending.get("wakePacket", {}) as Dictionary).duplicate(true)
+	var attempt := int(pending.get("attempt", 0))
+	_inflight.erase(decision_id)
+	TOWN_LOG.line(
+		"AGENT",
+		"准备卡死看门狗 | %s | decision=%s | stall>%d帧, 丢弃并走 continuity fallback" % [
+			resident_name,
+			decision_id,
+			REFRESH_PREPARATION_STALL_FRAMES,
+		],
+	)
+	var fallback_applied := _submit_continuity_fallback(
+		resident_id,
+		resident_name,
+		decision_id,
+		wake,
+		"AGENT_DECISION_PREPARATION_STALLED",
+	)
+	_record_error(
+		resident_id,
+		resident_name,
+		decision_id,
+		"AGENT_DECISION_PREPARATION_STALLED",
+		false,
+		{
+			"error_type": "preparation_stalled",
+			"attempt": attempt,
+			"stallFrameThreshold": REFRESH_PREPARATION_STALL_FRAMES,
+			"recoveredByFallback": fallback_applied,
+			"final": not fallback_applied,
+		},
+	)
+	if not debug_decision_completed.get_connections().is_empty():
+		debug_decision_completed.emit({
+			"residentId": resident_id,
+			"residentName": resident_name,
+			"decisionId": decision_id,
+			"ok": fallback_applied,
+			"ignored": fallback_applied,
+			"recovered": fallback_applied,
+			"wakePacket": wake.duplicate(true),
+			"agentResult": {
+				"ok": false,
+				"errorCode": "AGENT_DECISION_PREPARATION_STALLED",
+				"retryable": false,
+			},
+		})
 
 
 func _refresh_agent_decision_request(request: Dictionary) -> Dictionary:
@@ -2418,6 +2538,7 @@ func _dispatch_normal_agent_decision(
 			"attempt": attempt,
 			"recoveredByFallback": fallback_applied,
 			"final": not should_retry and not fallback_applied,
+			"accepted": accepted.duplicate(true),
 		},
 	)
 	if not debug_decision_completed.get_connections().is_empty():
@@ -2585,6 +2706,11 @@ func _on_agent_result(
 	_inflight.erase(decision_id)
 	if superseded or bool(result.get("stale", false)):
 		_decision_attempts.erase(decision_id)
+		# 被丢弃的响应必须回报世界对账: 若世界侧还挂着这个决策的
+		# pending(它已永远不会被消费), 居民会整场卡死(实锤: 花子从
+		# 23:51 起整场大会零决策——pending 无自愈通道)。
+		if _world != null and _world.has_method("reconcile_discarded_decision"):
+			_world.reconcile_discarded_decision(resident_id, decision_id)
 		if not debug_decision_completed.get_connections().is_empty():
 			debug_decision_completed.emit({
 				"residentId": resident_id,
@@ -2704,6 +2830,36 @@ func _on_agent_result(
 		])
 	var decision_consumed := _world_consumed_agent_decision(submission)
 	var decision_accepted := bool(submission.get("ok", false))
+	# 合同校验失败落盘: 保存居民收到的完整 wake 与 LLM 提交的决策(含被拒原因),
+	# 便于排查"AI 到底收到了什么、选了什么"。写 user://logs/requests/rejected/。
+	if not decision_accepted:
+		_persist_rejected_decision(
+			resident_id,
+			resident_name,
+			decision_id,
+			inflight.get("wakePacket", {}) as Dictionary,
+			decision,
+			submission,
+		)
+		# 世界层拒绝同步打控制台: 此前只落盘, 控制台看不到——大会投票
+		# 被"当前对话正在等待本居民提交答话动作"拒绝时, 日志里票凭空
+		# 消失, 排查只能靠猜(实锤: 乔一鸣/周既明的三次投票)。
+		var rejection_time_label := ""
+		if _world != null and _world.has_method("_time_label"):
+			rejection_time_label = String(_world._time_label())
+		TOWN_LOG.line(
+			"AGENT",
+			"%s | 世界拒绝 | %s | %s | %s" % [
+				rejection_time_label,
+				resident_name,
+				String((decision.get("action", {}) as Dictionary).get("type", "")),
+				"；".join(
+					(submission.get("errors", []) as Array).map(
+						func(e: Variant) -> String: return String(e)
+					)
+				),
+			],
+		)
 	# A consumed rejection has already queued an authoritative World result for
 	# this action. Keep the Agent-side pending intention until that result is
 	# ingested, otherwise the evidence layer cannot pair the rejection with the
@@ -2727,6 +2883,18 @@ func _on_agent_result(
 			String(social_response.get("matter_id", "")),
 			"request_cancelled",
 		)
+		if bool(submission.get("stale", false)) and _world != null:
+			# 决定已失效(唤醒风暴下旧决策过期被静默丢弃): 清掉旧 pending
+			# 后 force_fresh 重新调度一次, 让居民用最新快照重新提交。
+			# 否则投票等关键决策被丢弃后无人接管, 直接拉低参与率。
+			_world._schedule_decision(
+				resident_id,
+				false,
+				false,
+				false,
+				true,
+				false,
+			)
 	_last_submissions[resident_id] = submission.duplicate(true)
 	var recoverable_submission_rejection := (
 		_is_recoverable_submission_rejection(submission)
@@ -2946,16 +3114,21 @@ func _prioritize_conversation_requests(
 	if requests.size() <= 1:
 		return requests
 	var avatar_conversation_requests: Array[Dictionary] = []
+	var vote_requests: Array[Dictionary] = []
 	var conversation_requests: Array[Dictionary] = []
 	var ordinary_requests: Array[Dictionary] = []
 	for request in requests:
 		var wake := request.get("wakePacket", {}) as Dictionary
 		if _wake_is_avatar_conversation_turn(wake):
 			avatar_conversation_requests.append(request)
+		elif _wake_is_vote_request(wake):
+			vote_requests.append(request)
 		elif _wake_requires_conversation_turn(wake):
 			conversation_requests.append(request)
 		else:
 			ordinary_requests.append(request)
+	# 投票窗口时间紧(90 游戏分钟), 投票请求排在普通社交回合之前。
+	avatar_conversation_requests.append_array(vote_requests)
 	avatar_conversation_requests.append_array(conversation_requests)
 	avatar_conversation_requests.append_array(ordinary_requests)
 	return avatar_conversation_requests
@@ -2971,7 +3144,10 @@ func _ordinary_inflight_count() -> int:
 		var wake := (
 			(inflight_value as Dictionary).get("wakePacket", {}) as Dictionary
 		)
-		if not _wake_is_avatar_conversation_turn(wake):
+		if (
+			not _wake_is_avatar_conversation_turn(wake)
+			and not _wake_is_vote_request(wake)
+		):
 			count += 1
 	return count
 
@@ -3025,6 +3201,20 @@ func _wake_requires_conversation_turn(wake: Dictionary) -> bool:
 		]:
 			return true
 	return false
+
+
+## 投票快速通道(方案C): 11:00-12:30 投票窗口内 wake.snapshot.exile_vote 非空
+## 且 forced=true。此类请求跳过智能节流预算、不占普通居民 2 槽(可占满
+## MAX 槽)、排队靠前, 并在存在投票请求时暂停派发普通新请求, 保证每人必投。
+func _wake_is_vote_request(wake: Dictionary) -> bool:
+	var snapshot_value: Variant = wake.get("snapshot")
+	if not snapshot_value is Dictionary:
+		return false
+	var exile_vote := (snapshot_value as Dictionary).get(
+		"exile_vote",
+		{},
+	) as Dictionary
+	return not exile_vote.is_empty() and bool(exile_vote.get("forced", false))
 
 
 func _submit_continuity_fallback(
@@ -3094,6 +3284,18 @@ func _submit_continuity_fallback(
 			"photos": [],
 			"end": true,
 		}
+	elif _world != null and _world.has_method("assembly_continuity_decision"):
+		# 大会冻结期专用兜底: 汇报期未汇报者直接提交"不汇报"(退出参与者
+		# 集合, 不再烧请求); 待着不被允许的阶段改为继续当前动作。空字典
+		# 表示不适用, 落回默认"待着"兜底。详见
+		# TownWerewolfRuntime.continuity_fallback_decision。
+		var assembly_decision: Dictionary = _world.assembly_continuity_decision(
+			resident_id,
+			decision_id,
+			snapshot,
+		)
+		if not assembly_decision.is_empty():
+			decision = assembly_decision
 	else:
 		var current_action: Variant = (
 			snapshot.get("me", {}) as Dictionary
@@ -3195,6 +3397,10 @@ func _finish_social_candidates_from_wake(
 
 func _world_consumed_agent_decision(submission: Dictionary) -> bool:
 	if bool(submission.get("stale", false)):
+		# stale 决策通常未消费; 但夜间技能意图(stale+consumed=true)算已
+		# 消费——gateway 不再 discard/重投, 避免守诊被唤醒风暴反复打断。
+		if submission.get("consumed") is bool:
+			return bool(submission.get("consumed"))
 		return false
 	if submission.get("consumed") is bool:
 		return bool(submission.get("consumed"))
@@ -3202,6 +3408,58 @@ func _world_consumed_agent_decision(submission: Dictionary) -> bool:
 		"WORLD_NOT_RUNNING",
 		"WORLD_PAUSED",
 	]
+
+
+## 合同校验失败落盘: 保存居民收到的完整 wake 与 LLM 提交的决策(含被拒原因)。
+## 文件: user://logs/requests/rejected/<时间戳>_<居民id>_<决策id前段>.json
+func _persist_rejected_decision(
+	resident_id: String,
+	resident_name: String,
+	decision_id: String,
+	wake: Dictionary,
+	decision: Dictionary,
+	submission: Dictionary,
+) -> void:
+	var root := ProjectSettings.globalize_path(
+		"user://logs/requests/rejected"
+	)
+	var time_stamp := Time.get_datetime_string_from_system(
+		false,
+		true,
+	).replace(":", "-").replace("T", "_")
+	var file_name := "%s_%s_%s.json" % [
+		time_stamp,
+		resident_id,
+		decision_id.substr(0, 12),
+	]
+	var record := {
+		"resident_id": resident_id,
+		"resident_name": resident_name,
+		"decision_id": decision_id,
+		"recorded_at": time_stamp,
+		"wake": wake,
+		"decision": decision,
+		"rejection": submission,
+		"schema": "agent-decision-rejected",
+		"schema_version": 1,
+	}
+	var payload := JSON.stringify(record, "  ")
+	var dir_error := DirAccess.make_dir_recursive_absolute(root)
+	if dir_error != OK and dir_error != ERR_ALREADY_EXISTS:
+		push_warning("无法创建拒绝决策记录目录 %s: %s" % [root, error_string(dir_error)])
+		return
+	var file := FileAccess.open(
+		"%s/%s" % [root, file_name],
+		FileAccess.WRITE,
+	)
+	if file == null:
+		push_warning("无法写入拒绝决策记录 %s: %s" % [
+			file_name,
+			error_string(FileAccess.get_open_error()),
+		])
+		return
+	file.store_string(payload)
+	file.close()
 
 
 func _discard_unconfirmed_agent_decision(
@@ -3327,6 +3585,54 @@ func _record_error(
 	diagnostic: Dictionary = {},
 ) -> void:
 	_error_sequence += 1
+	# 行为流日志: 居民决策请求失败(排查卡住/fallback 循环用)。
+	# 详情优先用 Provider 的原始错误(diagnostic.errors 保存了真实 HTTP 状态/
+	# 网络/解析原因), 否则用 Agent 层错误——此前 Agent 层把 Provider 错误
+	# 统一抹平为"模型调用失败", 日志只显示 error_type=http 而看不到 HTTP
+	# 状态码与响应体(实锤: 用户只见"http 接到后面就没有了")。
+	var agent_errors_text := ""
+	var provider_errors_value: Variant = diagnostic.get("errors", [])
+	if provider_errors_value is Array and not (provider_errors_value as Array).is_empty():
+		var provider_error_parts: Array[String] = []
+		for error_value: Variant in provider_errors_value as Array:
+			if error_value is String:
+				provider_error_parts.append(error_value as String)
+			else:
+				provider_error_parts.append(str(error_value))
+		agent_errors_text = "、".join(provider_error_parts)
+	elif diagnostic.has("agent_errors"):
+		var agent_errors_value: Variant = diagnostic.get("agent_errors", [])
+		if agent_errors_value is Array:
+			var error_parts: Array[String] = []
+			for error_value: Variant in agent_errors_value as Array:
+				if error_value is String:
+					error_parts.append(error_value as String)
+				else:
+					error_parts.append(str(error_value))
+			agent_errors_text = "、".join(error_parts)
+	var submission_text := ""
+	var submission_value: Variant = diagnostic.get("submission", {})
+	if submission_value is Dictionary:
+		var submission_dict := submission_value as Dictionary
+		var submission_errors: Variant = submission_dict.get("errors", [])
+		if submission_errors is Array and not (submission_errors as Array).is_empty():
+			submission_text = "submit: " + str(submission_errors)
+	var accepted_text := ""
+	var accepted_value: Variant = diagnostic.get("accepted", {})
+	if accepted_value is Dictionary:
+		accepted_text = " | accepted=" + str(accepted_value as Dictionary)
+	TOWN_LOG.line(
+		"AGENT",
+		"请求失败 | %s | %s | retryable=%s | error_type=%s | 详情=%s%s%s" % [
+			resident_name,
+			error_code,
+			str(retryable),
+			String(diagnostic.get("error_type", "")),
+			agent_errors_text.substr(0, 120),
+			submission_text,
+			accepted_text.substr(0, 200),
+		],
+	)
 	_errors.append({
 		"errorSequence": _error_sequence,
 		"residentId": resident_id,

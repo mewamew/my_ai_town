@@ -25,6 +25,7 @@ const AGENT_WORLD_QUERY_RUNTIME := preload(
 const GO_ACTION_PREFETCH_RUNTIME := preload(
 	"res://world/runtime/movement/TownGoActionPrefetchRuntime.gd"
 )
+const TOWN_LOG := preload("res://world/runtime/TownLog.gd")
 
 
 static func wake_packet(
@@ -55,6 +56,27 @@ static func wake_packet(
 			"available_for_conversation": CONVERSATION_RUNTIME._active_conversation_for_person(host, other_name).is_empty(),
 		})
 	var public_events: Array[Dictionary] = AGENT_WORLD_QUERY_RUNTIME.fact_payloads(events)
+	# 行为流日志: LLM 本轮感知到附近的人
+	if not nearby.is_empty():
+		var actor_name_for_log: String = host.resident_display_name(resident_name)
+		if actor_name_for_log.is_empty():
+			actor_name_for_log = resident_name
+		var nearby_lines: Array[String] = []
+		for nearby_value: Variant in nearby:
+			var nearby_person := nearby_value as Dictionary
+			var person_name := String(nearby_person.get("name", ""))
+			var person_doing := String(nearby_person.get("doing", ""))
+			if person_doing.is_empty():
+				person_doing = "空闲"
+			nearby_lines.append("%s(%s)" % [person_name, person_doing])
+		TOWN_LOG.line(
+			"AGENT",
+			"%s | %s 感知到: %s" % [
+				host._time_label(),
+				actor_name_for_log,
+				"、".join(nearby_lines),
+			],
+		)
 	var public_results: Array[Dictionary] = AGENT_WORLD_QUERY_RUNTIME.fact_payloads(results)
 	var social_results := WAKE_PACKET_PROJECTION.public_social_results(
 		social_results_value if social_results_value is Array else (
@@ -101,6 +123,32 @@ static func wake_packet(
 	var conflict_snapshot: Dictionary = AGENT_WORLD_QUERY_RUNTIME.conflict_snapshot(
 		host, resident_name, resident, WAKE_PACKET_PROJECTION.resident_ids(nearby),
 	)
+	# 行为流日志: LLM 本轮收到的冲突/动作选项(含暗杀/攻击目标)
+	var tension_options := conflict_snapshot.get("conflict_tension_options", []) as Array
+	if not tension_options.is_empty():
+		var option_actor_name: String = host.resident_display_name(resident_name)
+		if option_actor_name.is_empty():
+			option_actor_name = resident_name
+		var option_lines: Array[String] = []
+		for option_value: Variant in tension_options:
+			var option := option_value as Dictionary
+			var kind := String(option.get("kind", ""))
+			var target_id := String(option.get("target_resident_id", ""))
+			var option_label := kind
+			if not target_id.is_empty():
+				var target_name: String = host.resident_display_name(target_id)
+				if target_name.is_empty():
+					target_name = target_id
+				option_label += "→%s" % target_name
+			option_lines.append(option_label)
+		TOWN_LOG.line(
+			"AGENT",
+			"%s | %s 收到选项: %s" % [
+				host._time_label(),
+				option_actor_name,
+				"、".join(option_lines),
+			],
+		)
 	var post_injury_reaction: Dictionary = host.WORLD_EVENT_DELIVERY_PROJECTION.post_injury_reaction_for_host(host,
 		resident_name,
 		events,
@@ -148,6 +196,24 @@ static func wake_packet(
 			),
 			"conflictSnapshot": conflict_snapshot,
 			"postInjuryReaction": post_injury_reaction,
+			"exileVote": host.WEREWOLF_RUNTIME.vote_snapshot(
+				host, resident_name,
+			),
+			"nightSkill": host.ROLE_SKILL_RUNTIME.night_skill_snapshot(
+				host, resident_name,
+			),
+			"undercoverKillQuotaExhausted": (
+				host._undercover_resident_ids().has(resident_name)
+				and host.WEREWOLF_RUNTIME.undercover_kill_quota_exhausted(
+					host,
+					int(host._environment.get_absolute_minute()),
+				)
+			),
+			"townDeathCases": host._police_death_cases(resident_name),
+			"policeIntel": _police_intel_context(host, resident_name),
+			"policeLeadLog": host.WEREWOLF_RUNTIME.police_lead_snapshot(
+				host, resident_name,
+			),
 		},
 		public_events,
 		public_results,
@@ -376,3 +442,59 @@ static func available_activities(
 		)
 	)
 	return result
+
+
+## 警察侦查装备上下文：仅警察注入（余量 + 可侦查目标名单=在世居民ID + 装置状态）。
+static func _police_intel_context(host, resident_name: String) -> Dictionary:
+	var is_police := bool(host._resident_is_police(resident_name))
+	# 诊断日志只对警察打印(每轮 1 行), 非警察的 false 行纯噪音刷屏。
+	if is_police:
+		TOWN_LOG.line(
+			"WEREWOLF",
+			"police-intel check: resident=%s is_police=true" % [resident_name],
+		)
+	if not is_police:
+		return {}
+	var targets: Array[String] = []
+	var player_id := String(host._player_avatar_id())
+	# 与制服/暗杀同判定: 只有感知范围内(同 spaceId+regionId, 户外距离≤感知范围)
+	# 的目标才列进"能对谁装", 避免模型对全镇居民发起远距安装被拒。
+	var actor_resident := host._residents.get(resident_name, {}) as Dictionary
+	for other_id: String in host._resident_order:
+		if other_id == resident_name or other_id == player_id:
+			continue
+		if not host._resident_is_alive(other_id):
+			continue
+		if not host._resident_within_perception(actor_resident, other_id):
+			continue
+		if not host._resident_display_name(other_id).is_empty():
+			targets.append(other_id)
+	# 装置状态: 正在监听谁 + 剩余分钟(让警察知道监听对象, 决策时心里有数)。
+	var devices := {}
+	var minute := int(host._authoritative_absolute_minute())
+	var tracker: Dictionary = host.WEREWOLF_RUNTIME.police_device_state(
+		host, host.WEREWOLF_RUNTIME.POLICE_DEVICE_TRACKER,
+	)
+	if not tracker.is_empty():
+		var tracker_target := String(tracker.get("targetId", ""))
+		devices["tracker"] = {
+			"targetId": tracker_target,
+			"targetName": host._resident_display_name(tracker_target),
+			"remainingMinutes": maxi(
+				0, int(tracker.get("expireMinute", -1)) - minute,
+			),
+		}
+	var in_town_hall := String(
+		actor_resident.get("currentPlace", ""),
+	).strip_edges() == "镇公所"
+	return {
+		"trackerCharges": host.ROLE_SKILL_RUNTIME.police_tracker_charges(
+			host
+		),
+		"targets": targets,
+		"devices": devices,
+		"inTownHall": in_town_hall,
+		"investigateRemaining": host.ROLE_SKILL_RUNTIME.police_investigate_remaining(
+			host
+		),
+	}

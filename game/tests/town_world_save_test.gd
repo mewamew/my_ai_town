@@ -1051,6 +1051,8 @@ func _build_participant_opening(data: Dictionary) -> Dictionary:
 				"home": home_name,
 				"job": "事务测试居民",
 				"workplace": "中心广场",
+				"money": 40,
+				"reputation": 30,
 			},
 			"worldState": _world_state_at_place(data, home_name, "在%s" % home_name),
 		})

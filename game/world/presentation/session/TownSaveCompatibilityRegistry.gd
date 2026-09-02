@@ -144,6 +144,11 @@ const RELEASES := [
 			SAVE_SCHEMA_REGISTRY
 			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK
 		),
+		# 34c2222 同步前该发行版的活动数据指纹为 PRE_SYNC(70dcd5)。
+		"legacyActivitySourceFingerprints": [
+			SAVE_SCHEMA_REGISTRY
+			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK_PRE_SYNC,
+		],
 		"residentPathLayout": "hashed",
 		"nextEdge": {
 			"id": "beta3-to-beta4",
@@ -160,6 +165,10 @@ const RELEASES := [
 			SAVE_SCHEMA_REGISTRY
 			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK
 		),
+		"legacyActivitySourceFingerprints": [
+			SAVE_SCHEMA_REGISTRY
+			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK_PRE_SYNC,
+		],
 		"residentPathLayout": "hashed",
 		"nextEdge": {
 			"id": "beta4-to-beta5",
@@ -176,6 +185,10 @@ const RELEASES := [
 			SAVE_SCHEMA_REGISTRY
 			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK
 		),
+		"legacyActivitySourceFingerprints": [
+			SAVE_SCHEMA_REGISTRY
+			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK_PRE_SYNC,
+		],
 		"residentPathLayout": "hashed",
 		"nextEdge": {
 			"id": "beta5-to-beta6",
@@ -190,13 +203,38 @@ const RELEASES := [
 		"worldSectionCount": 27,
 		"activitySourceFingerprint": (
 			SAVE_SCHEMA_REGISTRY
-			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_UNSTAFFED_PUBLIC_PLACE_ACCESS
+			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_LOCAL_POLICE_OCCUPATION
 		),
-		# beta6 样本在当前无人值守公共场所规则合入前生成；它已经带有
-		# beta6 写入标记，仍应按当前发行版识别，再由恢复流水线重写当前指纹。
+		# beta6 样本在无人值守公共场所规则合入前生成；fork 的警察职业数据使
+		# 当前指纹为本地节点（bf242f42），官方 beta6 指纹（44815398）与更早的
+		# beta6 指纹仍按当前发行版识别，再由恢复流水线重写当前指纹。
 		"legacyActivitySourceFingerprints": [
 			SAVE_SCHEMA_REGISTRY.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK,
+			SAVE_SCHEMA_REGISTRY.ACTIVITY_SOURCE_FINGERPRINT_AFTER_UNSTAFFED_PUBLIC_PLACE_ACCESS,
+			# 34c2222 同步前该发行版的活动数据指纹为 PRE_SYNC(70dcd5)。
+			SAVE_SCHEMA_REGISTRY
+			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK_PRE_SYNC,
 		],
+		"residentPathLayout": "hashed",
+		"nextEdge": {
+			"id": "beta6-to-beta7",
+			"kind": "no_change",
+			"modules": [],
+			"migrationIds": [],
+			"reason": "fork 登记: 狼人杀化改造给 world state 增加 werewolfState 域(worldSectionCount 27→28), 无迁移; 旧 beta6 记录档按同结构识别为 beta7 后重写发行标记。",
+		},
+	},
+	{
+		# fork 登记(2026-08-29): 狼人杀化改造(TownWerewolfRuntime)把狼人杀状态
+		# 挂到 world._werewolf_state 并随存档持久化(werewolfState 域), world
+		# state 键数 27→28。官方 beta6 存档(27 键 + 官方指纹)仍识别为 beta6;
+		# 本 fork 的存档(28 键 + 本地警察职业指纹 bf242f42)识别为 beta7。
+		"id": "beta7",
+		"worldSectionCount": 28,
+		"activitySourceFingerprint": (
+			SAVE_SCHEMA_REGISTRY
+			.ACTIVITY_SOURCE_FINGERPRINT_AFTER_LOCAL_POLICE_OCCUPATION
+		),
 		"residentPathLayout": "hashed",
 		"nextEdge": {},
 	},
@@ -396,12 +434,27 @@ static func detect_release(evidence: Dictionary) -> Dictionary:
 		)
 	if not recorded_release.is_empty():
 		if not candidates.has(recorded_release):
-			return _detection_error(
-				"unknown_combination",
-				STATUS_INVALID,
-				"recorded release conflicts with save evidence",
+			# fork 升级场景: 存档记录的 release 是候选 release 的前序(如旧档
+			# 记录 beta6, 但结构证据匹配 beta7——beta6 时代保存的 28 键档)。
+			# 视为同结构升级, 按候选 release 识别, 恢复后由升级器重写标记。
+			var recorded_index := _release_order().find(recorded_release)
+			var first_candidate_index := (
+				_release_order().find(String(candidates[0]))
+				if not candidates.is_empty()
+				else -1
 			)
-		candidates = [recorded_release]
+			if (
+				recorded_index < 0
+				or first_candidate_index < 0
+				or recorded_index >= first_candidate_index
+			):
+				return _detection_error(
+					"unknown_combination",
+					STATUS_INVALID,
+					"recorded release conflicts with save evidence",
+				)
+		else:
+			candidates = [recorded_release]
 	var exact := candidates.size() == 1
 	var release := candidates[0] if exact else ""
 	return {

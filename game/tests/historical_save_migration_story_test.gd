@@ -80,8 +80,8 @@ func _run() -> void:
 		_slot_id = requested_slot_id
 	if not requested_session_id.is_empty():
 		_session_id = requested_session_id
-	if _release_id == "beta6":
-		_expect_ok(_mark_fixture_as_current_release(), "beta6 样本写入当前发行标记")
+	if _release_id == COMPATIBILITY.current_release():
+		_expect_ok(_mark_fixture_as_current_release(), "%s 样本写入当前发行标记" % _release_id)
 	var store: RefCounted = STORE.new()
 	var catalog: RefCounted = STARTUP_CATALOG.new()
 	_expect_ok(
@@ -204,7 +204,7 @@ func _run() -> void:
 		catalog,
 	) as Dictionary
 	_expect_ok(upgraded, "%s 存档可通过正式继续入口恢复" % _release_id)
-	var is_current_release := _release_id == "beta6"
+	var is_current_release := _release_id == COMPATIBILITY.current_release()
 	_expect_equal(
 		upgraded.get("changed", false),
 		false if is_current_release else true,
@@ -309,15 +309,16 @@ func _run() -> void:
 	)
 
 	var saved_snapshot := _read_world_snapshot(store, _slot_id, _session_id, played_revision)
+	# 当前发行版 beta7: 狼人杀化在 beta6 的 27 个分区上新增 werewolfState 域。
 	_expect_equal(
 		(saved_snapshot.get("state", {}) as Dictionary).size(),
-		27,
-		"升级后存档只保留 beta6 的 27 个 World 分区",
+		28,
+		"升级后存档只保留 beta7 的 28 个 World 分区",
 	)
 	var saved_state := saved_snapshot.get("state", {}) as Dictionary
 	_expect_equal(
 		(saved_state.get("activityRuntime", {}) as Dictionary).get("sourceFingerprint"),
-		SCHEMA_REGISTRY.ACTIVITY_SOURCE_FINGERPRINT_AFTER_UNSTAFFED_PUBLIC_PLACE_ACCESS,
+		SCHEMA_REGISTRY.ACTIVITY_SOURCE_FINGERPRINT_AFTER_LOCAL_POLICE_OCCUPATION,
 		"升级后写入当前活动指纹",
 	)
 	_expect_equal(

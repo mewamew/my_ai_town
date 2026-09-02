@@ -316,6 +316,16 @@ func get_memory_debug_snapshot() -> Dictionary:
 	return _memory_system.get_debug_snapshot()
 
 
+func configure_role_archive(
+	enabled: bool,
+	resident_ids: Array,
+	root: String,
+) -> void:
+	if _decision_execution == null:
+		return
+	_decision_execution.configure_role_archive(enabled, resident_ids, root)
+
+
 func get_debug_snapshot() -> Dictionary:
 	var provider: Dictionary = {}
 	if _model_provider != null and _model_provider.has_method("get_debug_snapshot"):

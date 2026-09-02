@@ -131,31 +131,51 @@ static func publish(
 	var event_publisher_id := String(
 		announcement.get("publisher_id", publisher_id),
 	)
-	var announcement_event: Dictionary = host.WORLD_EVENT_DELIVERY_RUNTIME.materialize(host,
-		PUBLICATION_PROJECTION.event_spec(
-			announcement,
-			publisher_id,
-			RESIDENT_RUNTIME.publisher_name(host, event_publisher_id),
-			RESIDENT_RUNTIME.priority_for_publisher(host, publisher_id),
-			host.get_time(),
-		),
-		announcement_event_id,
-	)
-	for resident_value: Variant in broadcast_result.get(
-		"reaction_resident_ids",
-		[],
-	) as Array:
-		host.WORLD_EVENT_DELIVERY_RUNTIME.enqueue(host, String(resident_value), announcement_event)
+	var delivery_mode_param := String(announcement.get("delivery_mode", delivery_mode))
+	if delivery_mode_param.is_empty():
+		delivery_mode_param = "board"
+	# 方案A(2026-08-28): town_bell(钟声)模式不再 materialize"公告发布"事件——
+	# 钟声公告是唯一投递。否则同一公告生成两份事件(公告发布+钟声公告),
+	# 每个居民重复反应/评论两次、公告列表重复、请求量翻倍
+	# (实锤: 食堂备餐公告以主理人名义走 town_bell)。
+	var announcement_event: Dictionary = {}
+	if delivery_mode_param != "town_bell":
+		announcement_event = host.WORLD_EVENT_DELIVERY_RUNTIME.materialize(host,
+			PUBLICATION_PROJECTION.event_spec(
+				announcement,
+				publisher_id,
+				RESIDENT_RUNTIME.publisher_name(host, event_publisher_id),
+				RESIDENT_RUNTIME.priority_for_publisher(host, publisher_id),
+				host.get_time(),
+			),
+			announcement_event_id,
+		)
 	var broadcast_event_id := ""
-	match String(announcement.get("delivery_mode", "board")):
+	match delivery_mode_param:
 		"town_bell":
-			broadcast_event_id = deliver_town_bell(
+			# 钟声公告是唯一投递: 直接 enqueue 给反应名单(替代公告发布事件),
+			# 每个居民只收到一份、只反应一次。
+			var bell_event: Dictionary = deliver_town_bell(
 				host,
 				announcement,
-				String(announcement_event.get("event_id", "")),
+				announcement_event_id,
 			)
+			broadcast_event_id = String(bell_event.get("event_id", ""))
+			for resident_value: Variant in broadcast_result.get(
+				"reaction_resident_ids",
+				[],
+			) as Array:
+				host.WORLD_EVENT_DELIVERY_RUNTIME.enqueue(
+					host, String(resident_value), bell_event,
+				)
 		"postal_notice":
 			queue_postal_notices(host, announcement)
+		_:
+			for resident_value: Variant in broadcast_result.get(
+				"reaction_resident_ids",
+				[],
+			) as Array:
+				host.WORLD_EVENT_DELIVERY_RUNTIME.enqueue(host, String(resident_value), announcement_event)
 	host._bump_world_revision(false)
 	if host.resident_registry.records.has(publisher_id):
 		var capability_completion := PUBLICATION_PROJECTION.capability_completion(
@@ -356,7 +376,7 @@ static func deliver_town_bell(
 	host,
 	announcement: Dictionary,
 	publish_event_id: String,
-) -> String:
+) -> Dictionary:
 	var caused_by: Array[String] = (
 		[publish_event_id] as Array[String]
 		if not publish_event_id.is_empty()
@@ -372,7 +392,7 @@ static func deliver_town_bell(
 		"causedByEventIds": caused_by,
 		"storyRootEventIds": caused_by,
 	})
-	return String(bell_event.get("event_id", ""))
+	return bell_event
 
 
 static func queue_postal_notices(host, announcement: Dictionary) -> void:

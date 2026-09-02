@@ -92,6 +92,108 @@ static func _validate_announcement_reactions(
 			)
 
 
+static func _validate_exile_vote(
+	value: Dictionary,
+	wake_packet: Dictionary,
+	errors: Array[String],
+) -> void:
+	if value.is_empty():
+		return
+	AgentContractIdentity._validate_allowed_fields(
+		value,
+		AgentContract.EXILE_VOTE_FIELDS,
+		"exile_vote",
+		errors,
+	)
+	var target_id := AgentContract._require_non_empty_string(
+		value,
+		"target_resident_id",
+		"exile_vote.target_resident_id",
+		errors,
+	)
+	var line := AgentContract._require_non_empty_string(
+		value,
+		"line",
+		"exile_vote.line",
+		errors,
+	)
+	if line.contains("\n") or line.contains("\r") or line.contains("\t"):
+		errors.append("exile_vote.line 必须是单行文字")
+	if line.length() > AgentContract.EXILE_VOTE_TEXT_MAX_LENGTH:
+		errors.append(
+			"exile_vote.line 最多 %d 个字符"
+			% AgentContract.EXILE_VOTE_TEXT_MAX_LENGTH
+		)
+	var vote := (
+		(wake_packet.get("snapshot", {}) as Dictionary).get(
+			"exile_vote",
+			{},
+		) as Dictionary
+	)
+	if vote.is_empty():
+		errors.append("本轮没有进行中的镇民大会投票，不允许 exile_vote")
+		return
+	var candidate_ids: Array = vote.get("candidate_ids", [])
+	if not target_id.is_empty() and not candidate_ids.has(target_id):
+		errors.append("exile_vote.target_resident_id 必须来自本轮候选人名单")
+
+
+static func _validate_night_skill(
+	value: Dictionary,
+	wake_packet: Dictionary,
+	errors: Array[String],
+) -> void:
+	if value.is_empty():
+		return
+	AgentContractIdentity._validate_allowed_fields(
+		value,
+		AgentContract.NIGHT_SKILL_FIELDS,
+		"night_skill",
+		errors,
+	)
+	var skill_id := AgentContract._require_non_empty_string(
+		value,
+		"skill_id",
+		"night_skill.skill_id",
+		errors,
+	)
+	var target_id := AgentContract._require_non_empty_string(
+		value,
+		"target_resident_id",
+		"night_skill.target_resident_id",
+		errors,
+	)
+	var line := AgentContract._require_non_empty_string(
+		value,
+		"line",
+		"night_skill.line",
+		errors,
+	)
+	if line.contains("\n") or line.contains("\r") or line.contains("\t"):
+		errors.append("night_skill.line 必须是单行文字")
+	if line.length() > AgentContract.NIGHT_SKILL_TEXT_MAX_LENGTH:
+		errors.append(
+			"night_skill.line 最多 %d 个字符"
+			% AgentContract.NIGHT_SKILL_TEXT_MAX_LENGTH
+		)
+	var skill := (
+		(wake_packet.get("snapshot", {}) as Dictionary).get(
+			"night_skill",
+			{},
+		) as Dictionary
+	)
+	if skill.is_empty():
+		errors.append("本轮没有进行中的夜间技能阶段，不允许 night_skill")
+		return
+	if not skill_id.is_empty() and not (skill.get("skills", []) as Array).has(skill_id):
+		errors.append("night_skill.skill_id 不是当前可用的夜间技能")
+	if (
+		not target_id.is_empty()
+		and not (skill.get("candidate_ids", []) as Array).has(target_id)
+	):
+		errors.append("night_skill.target_resident_id 必须来自本轮候选名单")
+
+
 static func _validate_snapshot(snapshot: Dictionary, errors: Array[String]) -> void:
 	AgentContract.CONFLICT_CONTRACT.validate_snapshot(snapshot, errors)
 	var time := AgentContract._require_dictionary(snapshot, "time", "snapshot.time", errors)
@@ -203,6 +305,54 @@ static func _validate_snapshot(snapshot: Dictionary, errors: Array[String]) -> v
 			),
 			errors,
 		)
+	if snapshot.has("exile_vote"):
+		if typeof(snapshot.get("exile_vote")) != TYPE_DICTIONARY:
+			errors.append("snapshot.exile_vote 必须是对象")
+		elif not (snapshot.get("exile_vote", {}) as Dictionary).is_empty():
+			var vote := snapshot.get("exile_vote", {}) as Dictionary
+			if typeof(vote.get("round_day")) != TYPE_INT:
+				errors.append("snapshot.exile_vote.round_day 必须是整数")
+			if typeof(vote.get("settle_clock")) != TYPE_STRING:
+				errors.append("snapshot.exile_vote.settle_clock 必须是文本")
+			var candidate_values: Variant = vote.get("candidate_ids")
+			if candidate_values is not Array:
+				errors.append("snapshot.exile_vote.candidate_ids 必须是数组")
+			else:
+				for candidate_value: Variant in candidate_values as Array:
+					if typeof(candidate_value) != TYPE_STRING:
+						errors.append(
+							"snapshot.exile_vote.candidate_ids 必须全是文本"
+						)
+						break
+	if snapshot.has("night_skill"):
+		if typeof(snapshot.get("night_skill")) != TYPE_DICTIONARY:
+			errors.append("snapshot.night_skill 必须是对象")
+		elif not (snapshot.get("night_skill", {}) as Dictionary).is_empty():
+			var skill := snapshot.get("night_skill", {}) as Dictionary
+			if typeof(skill.get("round_day")) != TYPE_INT:
+				errors.append("snapshot.night_skill.round_day 必须是整数")
+			if typeof(skill.get("settle_clock")) != TYPE_STRING:
+				errors.append("snapshot.night_skill.settle_clock 必须是文本")
+			var skill_values: Variant = skill.get("skills")
+			if skill_values is not Array:
+				errors.append("snapshot.night_skill.skills 必须是数组")
+			else:
+				for skill_value: Variant in skill_values as Array:
+					if typeof(skill_value) != TYPE_STRING:
+						errors.append(
+							"snapshot.night_skill.skills 必须全是文本"
+						)
+						break
+			var candidate_values: Variant = skill.get("candidate_ids")
+			if candidate_values is not Array:
+				errors.append("snapshot.night_skill.candidate_ids 必须是数组")
+			else:
+				for candidate_value: Variant in candidate_values as Array:
+					if typeof(candidate_value) != TYPE_STRING:
+						errors.append(
+							"snapshot.night_skill.candidate_ids 必须全是文本"
+						)
+						break
 	if snapshot.has("known_announcements"):
 		AgentContractWorldFacts._validate_known_announcements(
 			AgentContract._require_array(

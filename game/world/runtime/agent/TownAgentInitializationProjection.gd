@@ -32,6 +32,11 @@ static func build(host, resident_id: String) -> Dictionary:
 			runtime.get("socialState", {}) as Dictionary
 		).duplicate(true),
 	}
+	if host._undercover_resident_ids().has(resident_id):
+		# 卧底身份结构化标记: AgentPromptCompiler._load_role_prompt 据此注入
+		# undercover.md(同伙/接头/暗杀纪律/投票协同)。此前生产链路无人设置,
+		# 卧底只拿到普通居民基线, 专属规则从未生效。
+		me["is_undercover"] = true
 	if not soul_profile.is_empty():
 		me["soul_profile"] = soul_profile
 	var others: Array[Dictionary] = []

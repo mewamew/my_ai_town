@@ -610,7 +610,10 @@ const URGENT_EVENT_TYPES := [
 ]
 const MAX_AUTONOMOUS_CONVERSATION_TURNS := 8
 const CONVERSATION_SNAPSHOT_TURN_LIMIT := 16
-const AUTONOMOUS_CONVERSATION_IDLE_TIMEOUT_SECONDS := 45.0
+# 居民对话挂起回收超时(真实秒)。模型限流/超时下答话请求可能 45s 内回不来,
+# 官方 45s 会把刚开头的对话直接掐断(实锤: 搭话后 target 无响应 45s 即
+# "无法继续/interrupted")。放宽到 120s 显著减少对话断裂, 同时仍能防死锁。
+const AUTONOMOUS_CONVERSATION_IDLE_TIMEOUT_SECONDS := 120.0
 const RESIDENT_CONVERSATION_PAIR_COOLDOWN_MINUTES := 30
 const MAX_ENDED_CONVERSATION_HISTORY := 64
 const MAX_ANNOUNCEMENT_HISTORY := 64
@@ -630,6 +633,7 @@ const PAUSE_REASONS := [
 const DEFAULT_PLAYER_AVATAR_ID := "person_7f3a91c2d8e4"
 const ALLOWED_SIMULATION_SPEEDS := [1, 2, 3]
 const PUBLIC_THOUGHT_MAX_LENGTH := 48
+const TRACKER_ARCHIVE_MAX_ENTRIES := 15
 const WAIT_ACTION_MAX_MINUTES := 60
 const CONTINUITY_WAIT_MAX_MINUTES := 5
 const ACTION_DECISION_PREFETCH_MINUTES := 5
@@ -659,6 +663,14 @@ const LIFE_RHYTHM_ANCHORS := [
 	{"minute": 870, "id": "afternoon_work"},
 	{"minute": 1140, "id": "evening_free"},
 	{"minute": 1380, "id": "night_rest"},
+]
+const WEREWOLF_RUNTIME := preload("res://world/runtime/TownWerewolfRuntime.gd")
+const ROLE_SKILL_RUNTIME := preload("res://world/runtime/TownRoleSkillRuntime.gd")
+const TOWN_LOG := preload("res://world/runtime/TownLog.gd")
+const UNDERCOVER_RESIDENT_IDS: Array[String] = [
+	"resident_xie_mian_01",
+	"resident_qiao_yiming_01",
+	"resident_hanako_01",
 ]
 
 var world_definition: TownWorldDefinitionState = WORLD_DEFINITION_STATE.new()
@@ -704,6 +716,8 @@ var _running := false
 var _pause_reasons: Array[String] = []
 var _runtime_generation := 0
 var _world_revision := 0
+var _werewolf_state: Dictionary = {}
+var _undercover_police_failed_declared := false
 var _simulation_speed := 1
 var _tick_weather_override := ""
 var _save_candidate_runtime: RefCounted = SAVE_CANDIDATE_RUNTIME.new()
@@ -857,10 +871,20 @@ func validate_new_game_resident_spawns(
 
 func _begin_world_run() -> void:
 	_running = true
+	if _werewolf_state.is_empty():
+		_werewolf_state = WEREWOLF_RUNTIME.default_state()
 	world_log_domain.capture_enabled = true
 	_connect_work_task_log_source()
 	_connect_production_task_schedule_source()
 	OCCUPATION_RESIDENT_CONTEXT_RUNTIME.sync_staffing_matters(self)
+	# 性能诊断: AI_TOWN_ADVANCE_PROFILE 开启 advance 分步计时(慢 tick
+	# 自动打印, 见 TownWorldTelemetryRuntime.finish_advance_profile)。
+	# 兼容 "1"/"true"/"yes" 等常见写法, 避免设成 True 却看不到记录。
+	var advance_profile_flag := OS.get_environment(
+		"AI_TOWN_ADVANCE_PROFILE",
+	).strip_edges().to_lower()
+	if advance_profile_flag in ["1", "true", "yes", "on"]:
+		telemetry.set_advance_profile_enabled(true)
 
 func _announce_world_lifecycle(speed_was_reset: bool) -> Dictionary:
 	var lifecycle := get_lifecycle_state()
@@ -1100,6 +1124,28 @@ func set_weather(weather: String) -> Dictionary:
 		environment_changed.emit(get_time(), get_weather())
 	return _decorate_command_result(result, "INVALID_WEATHER")
 
+
+func set_forced_weather(weather: String) -> Dictionary:
+	if not _running:
+		return _command_failure("WORLD_NOT_RUNNING", ["世界尚未运行"])
+	var result := _environment.set_forced_weather(weather) as Dictionary
+	if result.get("changed") == true:
+		_bump_world_revision(false)
+		WORLD_EVENT_DELIVERY_RUNTIME.broadcast(
+			self,
+			result.get("event", {}) as Dictionary,
+		)
+		ACTIVITY_AVAILABILITY_RUNTIME.interrupt_unsafe_weather(self)
+		_notify_world_revision()
+		environment_changed.emit(get_time(), get_weather())
+	return _decorate_command_result(result, "INVALID_WEATHER")
+
+
+func get_forced_weather() -> String:
+	if _environment == null:
+		return ""
+	return String(_environment.get_forced_weather())
+
 func cycle_time_period_for_test() -> Dictionary:
 	if not _running:
 		return _command_failure("WORLD_NOT_RUNNING", ["世界尚未运行"])
@@ -1297,6 +1343,8 @@ func confirm_resident_death(
 	reason: String,
 	expected_lifecycle_revision: int = -1,
 	expected_world_instance_token: String = "",
+	attacker_resident_id: String = "",
+	witness_resident_ids: Array = [],
 ) -> Dictionary:
 	return RESIDENT_DEATH_CONFIRMATION_RUNTIME.confirm(
 		self,
@@ -1304,6 +1352,8 @@ func confirm_resident_death(
 		reason,
 		expected_lifecycle_revision,
 		expected_world_instance_token,
+		attacker_resident_id,
+		witness_resident_ids,
 	)
 
 
@@ -1916,6 +1966,21 @@ func submit_agent_decision_by_id(
 		decision,
 	)
 
+
+## 大会冻结期给连续性兜底用的决策(空字典=不适用)。见
+## TownWerewolfRuntime.continuity_fallback_decision。
+func assembly_continuity_decision(
+	resident_id: String,
+	decision_id: String,
+	snapshot: Dictionary,
+) -> Dictionary:
+	return WEREWOLF_RUNTIME.continuity_fallback_decision(
+		self,
+		resident_id,
+		decision_id,
+		snapshot,
+	)
+
 func submit_agent_decision(resident_name: String, decision: Dictionary) -> Dictionary:
 	return AGENT_DECISION_SUBMISSION_RUNTIME.submit(self, resident_name, decision)
 
@@ -2375,6 +2440,29 @@ func broadcast_announcement(text: String) -> Dictionary:
 		"town_bell",
 	)
 
+
+## 无辜全灭 → 警察失败公告（本地改造语义，迁移自旧版 TWR）。
+## 由 TownUndercoverDeadlineRuntime.check_deadline 在无辜存活为 0 时调用；
+## 幂等：首次调用发公告并记日志，后续调用被 flag 拦截。
+func _undercover_declare_police_failed(day_index: int) -> void:
+	if _undercover_police_failed_declared:
+		return
+	_undercover_police_failed_declared = true
+	var text := "第%d天，镇上的无辜镇民已被杀光。警察闻叙没能守住小镇，彻底失败了。" % day_index
+	broadcast_announcement(text)
+	_append_public_event_log(
+		"undercover-outcome:%d" % day_index,
+		"undercover_outcome",
+		"",
+		"系统",
+		"镇公所",
+		{
+			"type": "卧底任务完成",
+			"outcome": "police_failed",
+			"dayIndex": day_index,
+		},
+	)
+
 func _private_message_delivery_task_for_talk(
 	postal_resident_id: String,
 	recipient_id: String,
@@ -2410,3 +2498,1559 @@ func _perception_membership_for_position(
 	position: Vector2,
 ) -> Dictionary:
 	return PERCEPTION_RUNTIME._membership(self, space_id, position)
+
+
+# ===================== 狼人杀桥接层（本地改造迁移） =====================
+# TownWerewolfRuntime / TownRoleSkillRuntime 依赖以下 world 接口；
+# 官方拆分架构下这些成员不存在，由本层桥接到官方对应子系统。
+
+func _undercover_resident_ids() -> Array[String]:
+	return UNDERCOVER_RESIDENT_IDS.duplicate()
+
+
+func _resident_is_police(resident_id: String) -> bool:
+	var social_state := resident_registry.records.get(
+		resident_id,
+		{},
+	).get("socialState", {}) as Dictionary
+	return String(social_state.get("job", "")).strip_edges() == "警察"
+
+
+func _death_announcement_text(event: Dictionary) -> String:
+	var death_time := event.get("time", {}) as Dictionary
+	var resident_name := String(
+		event.get("deceased_resident_name", "居民"),
+	).strip_edges()
+	var day := int(death_time.get("day", 0))
+	var clock := String(death_time.get("clock", "")).strip_edges()
+	var location := event.get("location", {}) as Dictionary
+	var place_name := String(location.get("placeName", "")).strip_edges()
+	var place_part := (
+		"在%s" % place_name
+		if not place_name.is_empty()
+		else ""
+	)
+	var time_part := ""
+	if day > 0 and not clock.is_empty():
+		time_part = "于第%d天%s" % [day, clock]
+	elif not clock.is_empty():
+		time_part = "于%s" % clock
+	elif not place_name.is_empty():
+		return "%s在%s死亡。" % [resident_name, place_name]
+	# 制服专案公告:reason 含"制服"说明是警察执法致死。
+	# 死者是卧底 → 公开揭露其身份(破案通告);普通居民 → 误伤/意外说辞,
+	# 避免全镇以为警察乱杀无辜。
+	var reason := String(event.get("reason", "")).strip_edges()
+	if reason.contains("制服"):
+		var deceased_id := String(
+			event.get("deceased_resident_id", ""),
+		).strip_edges()
+		var attacker_id := String(
+			event.get("attacker_resident_id", ""),
+		).strip_edges()
+		var attacker_name := _resident_display_name(attacker_id)
+		if attacker_name.is_empty():
+			attacker_name = "镇上的警察"
+		if _undercover_resident_ids().has(deceased_id):
+			return (
+				"%s%s%s被%s制服，查明竟是潜伏在镇上的卧底，已当场拿下。" % [
+					time_part, resident_name, place_part, attacker_name,
+				]
+			)
+		return (
+			"%s%s%s被%s制服时误伤，镇公所将公布进一步调查结果。" % [
+				time_part, resident_name, place_part, attacker_name,
+			]
+		)
+	if not time_part.is_empty():
+		return "%s%s%s死亡。" % [time_part, resident_name, place_part]
+	return "%s已经死亡。" % resident_name
+
+
+func _time_label() -> String:
+	var t := get_time() as Dictionary
+	return "第%d天 %s" % [
+		int(t.get("day", 0)),
+		String(t.get("clock", "")),
+	]
+
+
+func _append_public_event_log(
+	event_id: String,
+	kind: String,
+	resident_id: String,
+	resident_name: String,
+	place_name: String,
+	payload: Dictionary,
+) -> void:
+	world_log_domain.journal.append_public_event(
+		event_id,
+		kind,
+		get_time(),
+		_world_revision,
+		resident_id,
+		resident_name,
+		place_name,
+		payload,
+	)
+
+
+func _werewolf_pending_death_presentation(resident_id: String) -> Dictionary:
+	return WEREWOLF_RUNTIME.pending_death_presentation(self, resident_id)
+
+
+## 给居民投递一条世界事件(wake 时进 prompt)。桥接到官方事件投递链。
+func _append_pending_world_event(resident: Dictionary, event: Dictionary) -> void:
+	var resident_id := String(resident.get("residentId", "")).strip_edges()
+	if resident_id.is_empty():
+		return
+	WORLD_EVENT_DELIVERY_RUNTIME.queue(
+		self,
+		resident_id,
+		event,
+	)
+
+
+## 属性语法桥接：TownWerewolfRuntime 按本地 TWR 的字段名访问。
+## 必须用属性 getter 而非方法——GDScript 里无参方法名在链式访问
+## （.has/.get/[]/迭代）中会被当作 Callable，而不是调用后取值。
+var _residents: Dictionary:
+	get:
+		return resident_registry.records
+
+
+var _resident_order: Array:
+	get:
+		return resident_registry.order
+
+
+func _resident_is_sleeping(resident: Dictionary) -> bool:
+	# 与本地实现一致: 先按当前动作判定(测试/事件直接设置 currentAction 的
+	# 场景不走睡眠运行时), 再兜底查官方睡眠运行时。
+	var action := resident.get("currentAction", {}) as Dictionary
+	if (
+		String(action.get("type", "")) == "用道具"
+		and String(action.get("verb", "")) == "睡觉"
+	):
+		return true
+	var resident_id := String(resident.get("residentId", "")).strip_edges()
+	if resident_id.is_empty():
+		return false
+	return not (_resident_sleep.get_active_sleep(resident_id) as Dictionary).is_empty()
+
+
+# ===================== 狼人杀即时动作（本地改造迁移） =====================
+# 暗杀/制服/发布公告：即时结算动作，不走推进循环。
+# 由 TownAgentDecisionSubmissionRuntime 在 action_type 分流时调用。
+
+## 狼人杀特权冲突选项注入: 卧底暗杀/攻击 + 警察制服。
+## 自本地改造版 _decorate_conflict_tension_options 移植(适配官方
+## resident_registry/world_definition API)。由 TownAgentWorldQueryRuntime
+## .conflict_snapshot 在官方 decorate 之后调用,保证 wake 快照里特权选项
+## 真实可见;options 传 decorate 后的结果,这里只追加特权选项。
+func _decorate_conflict_tension_options(
+	resident_id: String,
+	resident: Dictionary,
+	options: Array,
+) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	# 卧底特权：杀人是本职，不是等冲突升级。给卧底对每个附近居民无条件
+	# 提供"致命攻击"选项，让人设驱动的杀意始终在对话选项里可见。
+	if _undercover_resident_ids().has(resident_id):
+		var kill_available := WEREWOLF_RUNTIME.undercover_kill_available(
+			self,
+			_authoritative_absolute_minute(),
+		)
+		# 只对"已有 attack 选项"的目标去重；challenge/质问不挡卧底杀人的选项，
+		# 否则对话产生质问后，卧底反而失去杀人选项，杀意无法落地。
+		var seen_targets := {}
+		for value: Variant in options:
+			if value is Dictionary:
+				if String((value as Dictionary).get("kind", "")) != "attack":
+					continue
+				var existing_target := String(
+					(value as Dictionary).get("target_resident_id", ""),
+				).strip_edges()
+				if not existing_target.is_empty():
+					seen_targets[existing_target] = true
+		# 卧底的目标 = 感知范围内所有在场的其他居民(同 spaceId+同 regionId+
+		# 距离≤感知范围,含睡觉者)。与 _prepare_assassination_action 的判定
+		# 保持一致,保证"选项里出现的目标 = 提交时能通过的目标"。睡觉者
+		# 正常参与感知计算(感知只查空间+距离,不排除睡觉者)。
+		var actor_space := String(resident.get("spaceId", "")).strip_edges()
+		var actor_region := String(resident.get("regionId", "")).strip_edges()
+		var actor_position := resident.get("position", Vector2.ZERO) as Vector2
+		var perception_range := float(world_definition.world_data.get("perceptionRange", 320.0))
+		# 同伙(其他卧底)不出现在暗杀/攻击候选里:卧底之间不互相残杀,
+		# 与 prompts/roles/undercover.md 的"不杀同伙"规则保持一致。
+		var undercover_ids := _undercover_resident_ids()
+		for other_id: String in _resident_order:
+			var candidate_id := _resident_key(other_id)
+			if (
+				candidate_id.is_empty()
+				or candidate_id == resident_id
+				or candidate_id == _player_avatar_id()
+				or not _resident_is_alive(candidate_id)
+				or undercover_ids.has(candidate_id)
+			):
+				continue
+			var other := _residents.get(candidate_id, {}) as Dictionary
+			var other_position := other.get("position", Vector2.ZERO) as Vector2
+			if (
+				not _resident_is_present(other)
+				or String(other.get("spaceId", "")).strip_edges() != actor_space
+				or String(other.get("regionId", "")).strip_edges() != actor_region
+			):
+				continue
+			# 室内(非小镇室外)同屋放行距离;户外必须靠近到感知范围内。
+			if (
+				actor_space == "town_outdoor"
+				and (
+					not actor_position.is_finite()
+					or not other_position.is_finite()
+					or actor_position.distance_to(other_position) > perception_range
+				)
+			):
+				continue
+			var target_name := _resident_display_name(candidate_id)
+			if target_name.is_empty():
+				continue
+			# 暗杀永远注入:卧底本职,不受"目标已有人设 attack 选项"影响——
+			# 否则卧底杀意人格(生成 profile-attack)反而让自己失去暗杀选项。
+			# 唯一例外:目标感知范围内有清醒警察(巡逻威慑)时,卧底不敢当着
+			# 警察的面动手,暗杀选项不注入(与 _prepare_assassination_action
+			# 的执行校验一致,保证"选项里出现的目标 = 提交时能通过的目标")。
+			var undercover_assassinate := {
+				"option_id": "assassinate:%s:%s" % [resident_id, candidate_id],
+				"kind": "assassinate",
+				"target_resident_id": candidate_id,
+				"target_resident_name": target_name,
+				"target_name": target_name,
+				"tension_id": "",
+				"source_event_ids": [],
+				"source_kind": "resident_profile_motive",
+				"source_summary": "卧底任务：清除镇上居民。",
+				"source_conversation_id": "",
+				"meaning": (
+					"这是卧底的本职行动。在无人注意的时机对目标下杀手是任务要求，"
+					+ "不需要对方先动手或先起冲突；动手时台词和动作描述仍要符合本人"
+					+ "表面身份与说话方式，不能当众暴露卧底身份。"
+				),
+			}
+			if kill_available and not _target_has_awake_police_nearby(candidate_id):
+				result.append(undercover_assassinate)
+			# attack 仅在目标还没有 attack 选项时注入(避免重复);
+			# seen_targets 里已有该目标说明 profile-attack 已存在。
+			if seen_targets.has(candidate_id):
+				continue
+			var undercover_attack := {
+				"option_id": "profile-attack:%s:%s" % [resident_id, candidate_id],
+				"kind": "attack",
+				"target_resident_id": candidate_id,
+				"target_resident_name": target_name,
+				"target_name": target_name,
+				"tension_id": "",
+				"source_event_ids": [],
+				"source_kind": "resident_profile_motive",
+				"source_summary": "卧底任务：清除镇上居民。",
+				"source_conversation_id": "",
+				"meaning": (
+					"这是卧底的本职行动。对目标下杀手是任务要求，不需要对方先动手"
+					+ "或先起冲突；动手时台词和动作描述仍要符合本人表面身份与说话方式，"
+					+ "不能当众暴露卧底身份。"
+				),
+			}
+			result.append(undercover_attack)
+			seen_targets[candidate_id] = true
+	# 警察特权:对感知范围内每个居民提供"制服"选项(效果等同暗杀,目标直接
+	# 出局)。警察确认凶手后直接制服带走,不走冲突升级链。与 _prepare_subdue_action
+	# 判定一致(同 spaceId+同 regionId+距离),保证选项出现=提交能通过。
+	elif _resident_is_police(resident_id) and ROLE_SKILL_RUNTIME.police_can_subdue(self):
+		var actor_space := String(resident.get("spaceId", "")).strip_edges()
+		var actor_region := String(resident.get("regionId", "")).strip_edges()
+		var actor_position := resident.get("position", Vector2.ZERO) as Vector2
+		var perception_range := float(world_definition.world_data.get("perceptionRange", 320.0))
+		for other_id: String in _resident_order:
+			var candidate_id := _resident_key(other_id)
+			if (
+				candidate_id.is_empty()
+				or candidate_id == resident_id
+				or candidate_id == _player_avatar_id()
+				or not _resident_is_alive(candidate_id)
+			):
+				continue
+			var other := _residents.get(candidate_id, {}) as Dictionary
+			var other_position := other.get("position", Vector2.ZERO) as Vector2
+			if (
+				not _resident_is_present(other)
+				or String(other.get("spaceId", "")).strip_edges() != actor_space
+				or String(other.get("regionId", "")).strip_edges() != actor_region
+			):
+				continue
+			if (
+				actor_space == "town_outdoor"
+				and (
+					not actor_position.is_finite()
+					or not other_position.is_finite()
+					or actor_position.distance_to(other_position) > perception_range
+				)
+			):
+				continue
+			var target_name := _resident_display_name(candidate_id)
+			if target_name.is_empty():
+				continue
+			var police_subdue := {
+				"option_id": "subdue:%s:%s" % [resident_id, candidate_id],
+				"kind": "subdue",
+				"target_resident_id": candidate_id,
+				"target_resident_name": target_name,
+				"target_name": target_name,
+				"tension_id": "",
+				"source_event_ids": [],
+				"source_kind": "police_duty",
+				"source_summary": "警察职责：制服嫌疑人。",
+				"source_conversation_id": "",
+				"meaning": (
+					"这是警察的本职行动。对确认或高度怀疑的凶手直接制服带走，"
+					+ "不需要对方先动手或先起冲突；动手时台词和动作描述要符合"
+					+ "警察身份，不能对无辜平民随意下手。"
+				),
+			}
+			result.append(police_subdue)
+	for value: Variant in options:
+		if value is Dictionary:
+			result.append((value as Dictionary).duplicate(true))
+	return result
+
+
+func _prepare_assassination_action(
+	resident_id: String,
+	resident: Dictionary,
+	action: Dictionary,
+) -> Dictionary:
+	# 卧底专属暗杀：绕开冲突张力状态机，提交即校验目标，
+	# 由 _activate_assassination_action 即时结算死亡。
+	if not _undercover_resident_ids().has(resident_id):
+		return {"ok": false, "errors": ["本人没有暗杀能力"]}
+	var kill_minute := _authoritative_absolute_minute()
+	if not WEREWOLF_RUNTIME.is_night(kill_minute):
+		return {
+			"ok": false,
+			"errors": ["暗杀只能在夜间（20:00-08:00）进行，白天不能动手"],
+		}
+	if not WEREWOLF_RUNTIME.undercover_kill_available(self, kill_minute):
+		return {
+			"ok": false,
+			"errors": ["今晚已经有卧底动过手，全队今晚不能再暗杀"],
+		}
+	var target_id := String(action.get("target_resident_id", "")).strip_edges()
+	if target_id.is_empty() or target_id == resident_id:
+		return {"ok": false, "errors": ["暗杀必须指定另一位真实居民作为目标"]}
+	if target_id == _player_avatar_id():
+		return {"ok": false, "errors": ["永远不能把玩家本人（化身）当作暗杀目标"]}
+	if not _residents.has(target_id) or not _resident_is_alive(target_id):
+		return {"ok": false, "errors": ["暗杀目标不存在或已经死亡"]}
+	if _undercover_resident_ids().has(target_id):
+		return {"ok": false, "errors": ["不能暗杀同伙：卧底之间不互相残杀"]}
+	var target := _residents[target_id] as Dictionary
+	if not _resident_is_present(target):
+		return {"ok": false, "errors": ["暗杀目标不在场"]}
+	# 巡逻威慑:目标感知范围内有清醒警察时不敢动手(有人看着不好下手)。
+	if _target_has_awake_police_nearby(target_id):
+		return {
+			"ok": false,
+			"errors": ["附近有警察，有人看着不好下手。等警察离开再说。"],
+		}
+	# 空间判定:必须同 spaceId + 同 regionId(同屋/同区域)。
+	var actor_space := String(resident.get("spaceId", "")).strip_edges()
+	var target_space := String(target.get("spaceId", "")).strip_edges()
+	var actor_region := String(resident.get("regionId", "")).strip_edges()
+	var target_region := String(target.get("regionId", "")).strip_edges()
+	if (
+		actor_space.is_empty()
+		or actor_space != target_space
+		or actor_region.is_empty()
+		or actor_region != target_region
+	):
+		return {"ok": false, "errors": ["暗杀目标不在同一个空间"]}
+	# 距离判定:室内(非小镇室外)同屋即视为够得着,不限制距离——住宅空间
+	# 里门到床可能超过感知范围,屋里放行才能暗杀床上的人;
+	# 户外才用感知距离(与居民"能感知到对方"一致),避免隔空杀人。
+	var actor_position := resident.get("position", Vector2.ZERO) as Vector2
+	var target_position := target.get("position", Vector2.ZERO) as Vector2
+	if actor_space != "town_outdoor":
+		pass  # 室内(住宅/店铺/公共场所)同屋放行
+	elif (
+		not actor_position.is_finite()
+		or not target_position.is_finite()
+		or actor_position.distance_to(target_position)
+			> float(world_definition.world_data.get("perceptionRange", 320.0))
+	):
+		return {"ok": false, "errors": ["目标太远了，需要靠近到能感知的距离才能暗杀"]}
+	var line := String(action.get("line", "")).strip_edges()
+	if line.is_empty():
+		return {"ok": false, "errors": ["暗杀动作必须包含非空 line"]}
+	var prepared := action.duplicate(true)
+	var now := int(_environment.get_absolute_minute())
+	prepared["startedAbsoluteMinute"] = now
+	prepared["completeAbsoluteMinute"] = now
+	prepared["target_resident_name"] = _resident_display_name(target_id)
+	prepared["spaceId"] = actor_space
+	prepared["placeId"] = String(resident.get("currentPlace", ""))
+	return {"ok": true, "action": prepared}
+
+
+func _prepare_subdue_action(
+	resident_id: String,
+	resident: Dictionary,
+	action: Dictionary,
+) -> Dictionary:
+	var social_state := resident.get("socialState", {}) as Dictionary
+	if String(social_state.get("job", "")).strip_edges() != "警察":
+		return {"ok": false, "errors": ["本人没有制服能力"]}
+	if not ROLE_SKILL_RUNTIME.police_can_subdue(self):
+		return {
+			"ok": false,
+			"errors": ["制服额度已经用尽，你已被停职，不能再制服任何人"],
+		}
+	var target_id := String(action.get("target_resident_id", "")).strip_edges()
+	if target_id.is_empty() or target_id == resident_id:
+		return {"ok": false, "errors": ["制服必须指定另一位真实居民作为目标"]}
+	if target_id == _player_avatar_id():
+		return {"ok": false, "errors": ["永远不能把玩家本人（化身）当作制服目标"]}
+	if not _residents.has(target_id) or not _resident_is_alive(target_id):
+		return {"ok": false, "errors": ["制服目标不存在或已经死亡"]}
+	var target := _residents[target_id] as Dictionary
+	if not _resident_is_present(target):
+		return {"ok": false, "errors": ["制服目标不在场"]}
+	var actor_space := String(resident.get("spaceId", "")).strip_edges()
+	var target_space := String(target.get("spaceId", "")).strip_edges()
+	var actor_region := String(resident.get("regionId", "")).strip_edges()
+	var target_region := String(target.get("regionId", "")).strip_edges()
+	if (
+		actor_space.is_empty()
+		or actor_space != target_space
+		or actor_region.is_empty()
+		or actor_region != target_region
+	):
+		return {"ok": false, "errors": ["制服目标不在同一个空间"]}
+	var actor_position := resident.get("position", Vector2.ZERO) as Vector2
+	var target_position := target.get("position", Vector2.ZERO) as Vector2
+	if actor_space != "town_outdoor":
+		pass  # 室内(住宅/店铺/公共场所)同屋放行
+	elif (
+		not actor_position.is_finite()
+		or not target_position.is_finite()
+		or actor_position.distance_to(target_position)
+			> float(world_definition.world_data.get("perceptionRange", 320.0))
+	):
+		return {"ok": false, "errors": ["目标太远了，需要靠近到能感知的距离才能制服"]}
+	var line := String(action.get("line", "")).strip_edges()
+	if line.is_empty():
+		return {"ok": false, "errors": ["制服动作必须包含非空 line"]}
+	var prepared := action.duplicate(true)
+	var now := int(_environment.get_absolute_minute())
+	prepared["startedAbsoluteMinute"] = now
+	prepared["completeAbsoluteMinute"] = now
+	prepared["target_resident_name"] = _resident_display_name(target_id)
+	prepared["spaceId"] = actor_space
+	prepared["placeId"] = String(resident.get("currentPlace", ""))
+	return {"ok": true, "action": prepared}
+
+
+func _prepare_announcement_action(
+	resident_id: String,
+	resident: Dictionary,
+	action: Dictionary,
+) -> Dictionary:
+	var place_name := String(resident.get("currentPlace", "")).strip_edges()
+	if place_name != CONTENT_CATALOG.PLACE_PLAZA:
+		return {
+			"ok": false,
+			"errors": ["发布公告需要站在中心广场"],
+		}
+	var text := String(action.get("text", "")).strip_edges()
+	if text.is_empty() or text.length() > 240:
+		return {
+			"ok": false,
+			"errors": ["公告内容必须是非空且不超过 240 字的真实文字"],
+		}
+	var line := String(action.get("line", "")).strip_edges()
+	if line.is_empty():
+		return {
+			"ok": false,
+			"errors": ["发布公告动作必须包含非空 line"],
+		}
+	var prepared := action.duplicate(true)
+	var now := int(_environment.get_absolute_minute())
+	prepared["startedAbsoluteMinute"] = now
+	prepared["completeAbsoluteMinute"] = now
+	prepared["placeId"] = place_name
+	return {"ok": true, "action": prepared}
+
+
+func _activate_assassination_action(
+	resident_id: String,
+	resident: Dictionary,
+	action: Dictionary,
+	preview: Dictionary,
+	conversation_end_reason: String,
+	active_conversation: Dictionary,
+) -> void:
+	# 卧底暗杀：即时结算，不写 currentAction、不进冲突运行时。
+	var old_action_value: Variant = resident.get("currentAction")
+	var old_action := (
+		old_action_value as Dictionary
+		if old_action_value is Dictionary
+		else {}
+	)
+	if not old_action.is_empty():
+		ACTION_SETTLEMENT_RUNTIME.interrupt(
+			self,
+			resident_id,
+			"居民决定立即执行暗杀",
+		)
+	if (
+		not conversation_end_reason.is_empty()
+		and not active_conversation.is_empty()
+	):
+		CONVERSATION_RUNTIME._end_conversation(
+			self,
+			_traveler_relationship_state,
+			String(active_conversation.get("conversationId", "")),
+			conversation_end_reason,
+			"interrupted",
+		)
+	var target_id := String(action.get("target_resident_id", "")).strip_edges()
+	var public_line := String(action.get("line", "")).strip_edges()
+	var target_name := _resident_display_name(target_id)
+	resident["doing"] = (
+		public_line if not public_line.is_empty() else "正在处理一件要紧的事"
+	)
+	if target_id.is_empty() or not _residents.has(target_id) or not _resident_is_alive(target_id):
+		_append_action_result_without_schedule(
+			resident_id,
+			String(action.get("action_id", "")),
+			"rejected",
+			"暗杀目标不存在或已经死亡",
+		)
+		_schedule_decision(resident_id, true)
+		_emit_resident_state_changed(resident_id)
+		return
+	var kill_minute := _authoritative_absolute_minute()
+	if not WEREWOLF_RUNTIME.undercover_kill_available(self, kill_minute):
+		_append_action_result_without_schedule(
+			resident_id,
+			String(action.get("action_id", "")),
+			"rejected",
+			"现在不能暗杀：白天不能动手，或今晚已经有卧底动过手。",
+		)
+		_schedule_decision(resident_id, true)
+		_emit_resident_state_changed(resident_id)
+		return
+	if ROLE_SKILL_RUNTIME.is_assassination_blocked(self, target_id):
+		# 被医生守下同样消耗全队今晚这一次机会，不能换目标继续杀。
+		WEREWOLF_RUNTIME.record_night_kill(self, kill_minute)
+		TOWN_LOG.line(
+			"CATMOUSE",
+			"%s | %s 暗杀 %s 未遂：目标受到夜间守护" % [
+				_time_label(),
+				_resident_display_name(resident_id),
+				target_name,
+			],
+		)
+		_append_action_result_without_schedule(
+			resident_id,
+			String(action.get("action_id", "")),
+			"completed",
+			"你试图对%s下手，但有人提前护住了他，暗杀没有得手。" % target_name,
+		)
+		_schedule_decision(resident_id, true)
+		_emit_resident_state_changed(resident_id)
+		return
+	# 警察警觉护盾:警察每局有一次警觉免死。暗杀警察被警觉挡下时,
+	# 消耗全队当晚配额(同医生守诊,不能换目标继续杀),卧底收到失败
+	# 反馈,警察收到"暗杀未遂"线索事件(可据此警惕身边人)。
+	if _resident_is_police(target_id) and WEREWOLF_RUNTIME.consume_police_alert(self):
+		WEREWOLF_RUNTIME.record_night_kill(self, kill_minute)
+		TOWN_LOG.line(
+			"CATMOUSE",
+			"%s | %s 暗杀 %s 未遂：警察警觉，护盾挡下" % [
+				_time_label(),
+				_resident_display_name(resident_id),
+				target_name,
+			],
+		)
+		var alert_event := {
+			"event_id": "police-alert:%d:%s" % [
+				int(_authoritative_absolute_minute()),
+				target_id,
+			],
+			"type": "暗杀未遂",
+			"time": get_time(),
+			"victim_resident_id": target_id,
+			"victim_name": target_name,
+			"summary": (
+				"昨夜有人试图对你不利——动手的人就潜伏在镇上，"
+				+ "注意身边接近你的人，尤其是夜里。"
+			),
+		}
+		var target_resident := _residents.get(target_id, {}) as Dictionary
+		_append_pending_world_event(target_resident, alert_event)
+		_append_action_result_without_schedule(
+			resident_id,
+			String(action.get("action_id", "")),
+			"completed",
+			"你试图对%s下手，但%s警觉了，暗杀没有得手。" % [
+				target_name,
+				target_name,
+			],
+		)
+		_schedule_decision(resident_id, true)
+		_emit_resident_state_changed(resident_id)
+		return
+	var death_reason := "被%s暗杀" % _resident_display_name(resident_id)
+	var witnesses: Array[String] = []
+	if _resident_is_alive(target_id):
+		witnesses = _collect_assassination_witnesses(
+			resident,
+			target_id,
+			resident_id,
+		)
+	var death_result := confirm_resident_death(
+		target_id,
+		death_reason,
+		-1,
+		"",
+		resident_id,
+		witnesses,
+	) as Dictionary
+	var ok := bool(death_result.get("ok", false))
+	if ok:
+		WEREWOLF_RUNTIME.record_night_kill(self, kill_minute)
+		# 警察死亡强线索:警察是全镇唯一执法者,遇害信息必须传开,
+		# 目击者在场与否都写入公共事件日志,给镇民盘问方向。
+		if _resident_is_police(target_id):
+			_append_public_event_log(
+				"police-death:%d:%s"
+				% [int(_authoritative_absolute_minute()), target_id],
+				"警察遇害",
+				target_id,
+				target_name,
+				String(action.get("placeId", "")),
+				{
+					"summary": (
+						"%s 遇害。%s"
+						% [
+							target_name,
+							(
+								"据传%s当时在附近，也许看到了什么。"
+								% _witness_names(witnesses)
+								if not witnesses.is_empty()
+								else "现场没有目击者，线索寥寥。"
+							),
+						]
+					),
+				},
+			)
+		var actor_log_name := _resident_display_name(resident_id)
+		var victim_log_name := _resident_display_name(target_id)
+		TOWN_LOG.line(
+			"CATMOUSE",
+			"%s | %s 暗杀 %s 成功%s" % [
+				_time_label(),
+				actor_log_name,
+				victim_log_name,
+				(
+					"，目击者：%s" % _witness_names(witnesses)
+					if not witnesses.is_empty()
+					else "，无人察觉"
+				),
+			],
+		)
+		# 追踪装置: 目标(暗杀执行者)被警察追踪时, 行动实时上报警察
+		# (与目击者机制联动: 有目击者则附带目击者线索引导盘问)。
+		_record_police_device_action_intel(
+			resident_id,
+			"暗杀",
+			"深夜对 %s 动手" % victim_log_name,
+			witnesses,
+		)
+	var feedback := "暗杀没有得手"
+	if ok:
+		feedback = "已按任务要求处置%s" % target_name
+		if witnesses.is_empty():
+			feedback += "，神不知鬼不觉，无人察觉"
+		else:
+			feedback += "，但%s看见了你的行动" % _witness_names(
+				witnesses
+			)
+		_dispatch_assassination_witness_events(
+			resident,
+			target_id,
+			resident_id,
+			witnesses,
+		)
+	_append_action_result_without_schedule(
+		resident_id,
+		String(action.get("action_id", "")),
+		"completed" if ok else "rejected",
+		feedback,
+	)
+	# 私密回执落日志: 暗杀结果此前只进动作结果通道(下一次 wake 才可见),
+	# 控制台/日志里没有任何"成功/失败"痕迹, 旁观排查时像凭空消失。
+	TOWN_LOG.line(
+		"CATMOUSE",
+		"%s | 私密回执→%s：%s" % [
+			_time_label(),
+			_resident_display_name(resident_id),
+			feedback,
+		],
+	)
+	_schedule_decision(resident_id, true)
+	_emit_resident_state_changed(resident_id)
+	if ok:
+		_bump_world_revision()
+
+
+func _activate_subdue_action(
+	resident_id: String,
+	resident: Dictionary,
+	action: Dictionary,
+	preview: Dictionary,
+	conversation_end_reason: String,
+	active_conversation: Dictionary,
+) -> void:
+	var old_action_value: Variant = resident.get("currentAction")
+	var old_action := (
+		old_action_value as Dictionary
+		if old_action_value is Dictionary
+		else {}
+	)
+	if not old_action.is_empty():
+		ACTION_SETTLEMENT_RUNTIME.interrupt(
+			self,
+			resident_id,
+			"居民决定立即制服目标",
+		)
+	if (
+		not conversation_end_reason.is_empty()
+		and not active_conversation.is_empty()
+	):
+		CONVERSATION_RUNTIME._end_conversation(
+			self,
+			_traveler_relationship_state,
+			String(active_conversation.get("conversationId", "")),
+			conversation_end_reason,
+			"interrupted",
+		)
+	var target_id := String(action.get("target_resident_id", "")).strip_edges()
+	var public_line := String(action.get("line", "")).strip_edges()
+	var target_name := _resident_display_name(target_id)
+	resident["doing"] = (
+		public_line if not public_line.is_empty() else "正在处理一件要紧的事"
+	)
+	if target_id.is_empty() or not _residents.has(target_id) or not _resident_is_alive(target_id):
+		_append_action_result_without_schedule(
+			resident_id,
+			String(action.get("action_id", "")),
+			"rejected",
+			"制服目标不存在或已经死亡",
+		)
+		_schedule_decision(resident_id, true)
+		_emit_resident_state_changed(resident_id)
+		return
+	var death_reason := "被%s制服" % _resident_display_name(resident_id)
+	var witnesses: Array[String] = []
+	if _resident_is_alive(target_id):
+		witnesses = _collect_assassination_witnesses(
+			resident,
+			target_id,
+			resident_id,
+		)
+	var target_is_undercover := false
+	var death_result := confirm_resident_death(
+		target_id,
+		death_reason,
+		-1,
+		"",
+		resident_id,
+		witnesses,
+	) as Dictionary
+	var ok := bool(death_result.get("ok", false))
+	if ok:
+		var actor_log_name := _resident_display_name(resident_id)
+		var victim_log_name := _resident_display_name(target_id)
+		TOWN_LOG.line(
+			"CATMOUSE",
+			"%s | %s 制服 %s 成功%s" % [
+				_time_label(),
+				actor_log_name,
+				victim_log_name,
+				(
+					"，目击者：%s" % _witness_names(witnesses)
+					if not witnesses.is_empty()
+					else "，无人察觉"
+				),
+			],
+		)
+		# 制服额度制：正确制服扣 1 次；错杀平民立即停职并公告。
+		target_is_undercover = _undercover_resident_ids().has(target_id)
+		ROLE_SKILL_RUNTIME.record_subdue_result(
+			self,
+			target_id,
+			target_is_undercover,
+		)
+		# 追踪装置: 目标(制服执行者)被警察追踪时, 行动实时上报安装者。
+		_record_police_device_action_intel(
+			resident_id,
+			"制服",
+			"当众制服 %s" % victim_log_name,
+			witnesses,
+		)
+		if not target_is_undercover:
+			broadcast_announcement(
+				"镇公所公告：闻叙误伤平民，即日起停止制服任务，"
+				+ "后续处置交由镇民大会裁量。",
+			)
+	var feedback := "制服没有得手"
+	if ok:
+		feedback = "已制服%s" % target_name
+		if target_is_undercover:
+			feedback += "，你确认他正是潜伏的卧底"
+		if witnesses.is_empty():
+			feedback += "，顺利带走，无人察觉"
+		else:
+			feedback += "，但%s看见了你的行动" % _witness_names(
+				witnesses
+			)
+		_dispatch_assassination_witness_events(
+			resident,
+			target_id,
+			resident_id,
+			witnesses,
+		)
+	_append_action_result_without_schedule(
+		resident_id,
+		String(action.get("action_id", "")),
+		"completed" if ok else "rejected",
+		feedback,
+	)
+	_schedule_decision(resident_id, true)
+	_emit_resident_state_changed(resident_id)
+	if ok:
+		_bump_world_revision()
+
+
+## 警察侦查即时动作：追踪装置——靠近目标偷偷装上, 之后 1 天实时上报
+## 目标的对话(原窃听)/行踪目的地(原定位)/重大行动(与目击者机制联动)。
+func _activate_police_tracker_action(
+	resident_id: String,
+	resident: Dictionary,
+	action: Dictionary,
+) -> Dictionary:
+	var target_id := String(action.get("target_resident_id", "")).strip_edges()
+	if not _resident_is_police(resident_id):
+		return {"ok": false, "errors": ["本人没有侦查能力：只有警察能使用追踪装置"]}
+	if target_id.is_empty():
+		return {"ok": false, "errors": ["追踪目标 target_resident_id 必须是非空居民ID"]}
+	if target_id == resident_id:
+		return {"ok": false, "errors": ["不能追踪自己"]}
+	if not _resident_is_alive(target_id):
+		return {"ok": false, "errors": ["追踪目标 %s 已不在镇上" % _resident_display_name(target_id)]}
+	if not _resident_within_perception(resident, target_id):
+		return {"ok": false, "errors": ["距离太远，必须靠近 %s（能感知到对方）才能偷偷装上追踪装置" % _resident_display_name(target_id)]}
+	if not ROLE_SKILL_RUNTIME.consume_police_tracker(self):
+		return {"ok": false, "errors": ["追踪装置次数已用完（每局 %d 次）" % ROLE_SKILL_RUNTIME.TRACKER_CHARGES_MAX]}
+	var minute := _authoritative_absolute_minute()
+	WEREWOLF_RUNTIME.install_police_device(
+		self, WEREWOLF_RUNTIME.POLICE_DEVICE_TRACKER, target_id, resident_id, minute,
+	)
+	var summary := "你偷偷在%s身上装了追踪装置，接下来 1 天她/他的对话、行踪和重要行动都会记入追踪档案，可去镇公所查案查阅" % _resident_display_name(target_id)
+	_append_action_result_without_schedule(
+		resident_id,
+		String(action.get("action_id", "")),
+		"completed",
+		summary,
+	)
+	TOWN_LOG.line(
+		"CATMOUSE",
+		"%s | %s 在 %s 身上装了追踪装置（第%d天 %02d:%02d 到期）" % [
+			_time_label(),
+			_resident_display_name(resident_id),
+			_resident_display_name(target_id),
+			(minute + WEREWOLF_RUNTIME.POLICE_DEVICE_DURATION_MINUTES) / 1440 + 1,
+			posmod(minute + WEREWOLF_RUNTIME.POLICE_DEVICE_DURATION_MINUTES, 1440) / 60,
+			posmod(minute + WEREWOLF_RUNTIME.POLICE_DEVICE_DURATION_MINUTES, 1440) % 60,
+		],
+	)
+	_schedule_decision(resident_id, true)
+	_emit_resident_state_changed(resident_id)
+	_bump_world_revision()
+	return {"ok": true, "summary": summary}
+
+
+## 警察查案即时动作(镇公所限定): 在镇公所翻阅档案, 获取死亡案件档案
+## 与夜间行踪疑点线索。每天限 INVESTIGATE_DAILY_LIMIT 次(跨天重置)。
+func _activate_police_investigate_action(
+	resident_id: String,
+	resident: Dictionary,
+	action: Dictionary,
+) -> Dictionary:
+	if not _resident_is_police(resident_id):
+		return {"ok": false, "errors": ["本人没有查案能力：只有警察能查阅档案"]}
+	var place_name := String(resident.get("currentPlace", "")).strip_edges()
+	if place_name != "镇公所":
+		var where_text := "（你现在在%s）" % place_name
+		if place_name.is_empty():
+			where_text = ""
+		return {
+			"ok": false,
+			"errors": ["查案需要回到镇公所翻阅档案%s" % where_text],
+		}
+	var line := String(action.get("line", "")).strip_edges()
+	if line.is_empty():
+		return {"ok": false, "errors": ["查案动作必须包含非空 line"]}
+	if not ROLE_SKILL_RUNTIME.consume_police_investigate(self):
+		# 额度耗尽要有系统日志(此前只有模型台词"查案次数没了", 玩家在
+		# 行为流看不到系统侧记录)。
+		TOWN_LOG.line(
+			"CATMOUSE",
+			"%s | %s 查案被拒：今日查案次数已用完（每天 %d 次）" % [
+				_time_label(),
+				_resident_display_name(resident_id),
+				ROLE_SKILL_RUNTIME.INVESTIGATE_DAILY_LIMIT,
+			],
+		)
+		return {
+			"ok": false,
+			"errors": [
+				"今天的查案次数已用完（每天 %d 次），先靠追踪装置和盘问，明天再来"
+				% ROLE_SKILL_RUNTIME.INVESTIGATE_DAILY_LIMIT,
+			],
+		}
+	# 线索包: 死亡案件档案(_police_death_cases, 暗杀死因已脱敏) + 夜间行踪疑点。
+	var parts: Array[String] = []
+	var cases := _police_death_cases(resident_id)
+	if cases.is_empty():
+		parts.append("档案室里暂时没有新的死亡案件记录。")
+	else:
+		for case: Dictionary in cases:
+			var clue := String(case.get("clue", ""))
+			var case_text := "第%d天 %s %s在%s%s。" % [
+				int(case.get("day", 0)),
+				String(case.get("clock", "")),
+				String(case.get("deceased_resident_name", "某人")),
+				String(case.get("place_name", "镇上")),
+				String(case.get("reason", "死亡")),
+			]
+			if not clue.is_empty():
+				case_text += " %s" % clue
+			parts.append(case_text)
+	var minute := _authoritative_absolute_minute()
+	if WEREWOLF_RUNTIME.is_night(minute):
+		var night_walkers: Array[String] = []
+		var away_from_home: Array[String] = []
+		for other_id: String in _resident_order:
+			var candidate_id := _resident_key(other_id)
+			if (
+				candidate_id.is_empty()
+				or candidate_id == resident_id
+				or candidate_id == _player_avatar_id()
+				or not _resident_is_alive(candidate_id)
+			):
+				continue
+			var other := _residents.get(candidate_id, {}) as Dictionary
+			if other.is_empty() or not _resident_is_present(other):
+				continue
+			if _resident_is_sleeping(other):
+				continue
+			var display := _resident_display_name(candidate_id)
+			if display.is_empty():
+				continue
+			if String(other.get("spaceId", "")).strip_edges() == "town_outdoor":
+				night_walkers.append(display)
+			var social_state := other.get("socialState", {}) as Dictionary
+			var home := String(social_state.get("home", "")).strip_edges()
+			var other_place := String(other.get("currentPlace", "")).strip_edges()
+			if not home.is_empty() and not other_place.is_empty() and other_place != home:
+				away_from_home.append("%s（在%s）" % [display, other_place])
+		if not night_walkers.is_empty():
+			parts.append("深夜还在外面游荡：%s。" % "、".join(night_walkers))
+		if not away_from_home.is_empty():
+			parts.append("深夜不在自己家：%s。" % "、".join(away_from_home))
+		if night_walkers.is_empty() and away_from_home.is_empty():
+			parts.append("深夜全镇都在安睡，没有异常。")
+	else:
+		parts.append(
+			"现在是白天，档案能查的就这些。晚上巡逻时留意深夜出门的人，或给可疑者装追踪装置。",
+		)
+	# 追踪装置档案: 装置监听期间记入的情报(含过期记录, 直到装新目标覆盖),
+	# 每条带游戏时间标注(第几天 HH:MM)。警察想了解跟踪内容只能来镇公所查案。
+	var tracker_log := WEREWOLF_RUNTIME.police_tracker_log(self)
+	if tracker_log.is_empty():
+		parts.append("追踪装置还没有记录到任何情报。")
+	else:
+		var skipped := 0
+		if tracker_log.size() > TRACKER_ARCHIVE_MAX_ENTRIES:
+			skipped = tracker_log.size() - TRACKER_ARCHIVE_MAX_ENTRIES
+			tracker_log = tracker_log.slice(
+				tracker_log.size() - TRACKER_ARCHIVE_MAX_ENTRIES,
+			)
+		var tracker_entries: Array[String] = []
+		for entry: Dictionary in tracker_log:
+			tracker_entries.append(
+				"%s %s" % [
+					_tracker_log_minute_label(int(entry.get("minute", 0))),
+					String(entry.get("text", "")),
+				],
+			)
+		var archive_text := "追踪装置档案：" + "；".join(tracker_entries)
+		if skipped > 0:
+			archive_text += "（另有 %d 条更早记录）" % skipped
+		parts.append(archive_text)
+	var summary := "镇公所档案：" + " ".join(parts)
+	var intel_event := {
+		"event_id": "police-investigate:%d" % minute,
+		"type": "查案线索",
+		"time": get_time(),
+		"target_resident_id": "",
+		"target_resident_name": "",
+		"summary": summary,
+	}
+	_append_pending_world_event(resident, intel_event)
+	_append_action_result_without_schedule(
+		resident_id,
+		String(action.get("action_id", "")),
+		"completed",
+		summary,
+	)
+	TOWN_LOG.line(
+		"CATMOUSE",
+		"%s | %s 查案：%s" % [
+			_time_label(), _resident_display_name(resident_id), summary,
+		],
+	)
+	_schedule_decision(resident_id, true)
+	_emit_resident_state_changed(resident_id)
+	_bump_world_revision()
+	return {"ok": true, "summary": summary}
+
+
+## 绝对分钟 → "第N天 HH:MM"(第 1 天从 0 分钟起), 供追踪档案条目时间标注。
+func _tracker_log_minute_label(absolute_minute: int) -> String:
+	return "第%d天 %02d:%02d" % [
+		absolute_minute / 1440 + 1,
+		posmod(absolute_minute, 1440) / 60,
+		posmod(absolute_minute, 1440) % 60,
+	]
+
+
+## 感知范围判定(与暗杀目标判定一致): 同 spaceId+regionId, 室内同屋放行, 户外距离≤感知范围。
+func _resident_within_perception(actor_resident: Dictionary, target_id: String) -> bool:
+	var actor_space := String(actor_resident.get("spaceId", "")).strip_edges()
+	var actor_region := String(actor_resident.get("regionId", "")).strip_edges()
+	var actor_position := actor_resident.get("position", Vector2.ZERO) as Vector2
+	var perception_range := float(world_definition.world_data.get("perceptionRange", 320.0))
+	var target := _residents.get(target_id, {}) as Dictionary
+	if target.is_empty() or not _resident_is_alive(target_id) or not _resident_is_present(target):
+		return false
+	if String(target.get("spaceId", "")).strip_edges() != actor_space:
+		return false
+	if String(target.get("regionId", "")).strip_edges() != actor_region:
+		return false
+	if actor_space == "town_outdoor":
+		var target_position := target.get("position", Vector2.ZERO) as Vector2
+		if (
+			not actor_position.is_finite()
+			or not target_position.is_finite()
+			or actor_position.distance_to(target_position) > perception_range
+		):
+			return false
+	return true
+
+
+## 巡逻威慑判定: 目标感知范围内是否有清醒的警察(在场、活着、没在睡觉)。
+## 卧底暗杀时目标身边有清醒警察则不敢动手——警察巡逻到哪家,哪家当晚
+## 安全; 也倒逼卧底挑警察不在的地方动手或先解决警察。睡觉的警察不算
+## (警察晚上在家睡觉时依然可被杀,所以 police.md 引导警察晚上巡逻不回家)。
+func _target_has_awake_police_nearby(target_id: String) -> bool:
+	if target_id.is_empty() or not _residents.has(target_id):
+		return false
+	if not _resident_is_alive(target_id):
+		return false
+	for other_id: String in _resident_order:
+		var police_id := _resident_key(other_id)
+		if police_id.is_empty() or police_id == target_id:
+			continue
+		if not _resident_is_police(police_id):
+			continue
+		var police_resident := _residents.get(police_id, {}) as Dictionary
+		if police_resident.is_empty() or not _resident_is_alive(police_id):
+			continue
+		if not _resident_is_present(police_resident):
+			continue
+		if _resident_is_sleeping(police_resident):
+			continue
+		if _resident_within_perception(police_resident, target_id):
+			return true
+	return false
+
+
+## 追踪装置对话钩子(ConversationRuntime 每轮对话产生时调用): 目标被追踪且未到期
+## 则把该轮对话记入追踪档案(不再实时投递事件给警察)。
+func _record_police_eavesdrop_turn(
+	target_name: String,
+	speaker_name: String,
+	say_text: String,
+	place_name: String,
+) -> bool:
+	if say_text.is_empty():
+		return false
+	var target_id := _resident_key(target_name)
+	if target_id.is_empty():
+		return false
+	var minute := _authoritative_absolute_minute()
+	var speaker_display := _resident_display_name(speaker_name)
+	if speaker_display.is_empty():
+		speaker_display = speaker_name
+	var place_display := place_name
+	if place_display.is_empty():
+		place_display = "镇上"
+	var text := "对话（%s）：%s：「%s」" % [
+		place_display, speaker_display, say_text,
+	]
+	var recorded := WEREWOLF_RUNTIME.append_police_tracker_log(
+		self, target_id, minute, text,
+	)
+	if recorded:
+		TOWN_LOG.line(
+			"CATMOUSE",
+			"%s | 追踪档案 | %s" % [_time_label(), text],
+		)
+	return recorded
+
+
+## 警察审讯会对话钩子(ConversationRuntime 对话开场时调用): 审讯期警察发起的
+## 对话登记一次审讯(计数+被审者标记, 幂等), 普通居民对话/非审讯期自动忽略。
+func _record_assembly_interrogation_started(
+	initiator_name: String,
+	target_name: String,
+) -> bool:
+	var initiator_id := _resident_key(initiator_name)
+	var target_id := _resident_key(target_name)
+	if initiator_id.is_empty() or target_id.is_empty():
+		return false
+	var registered := WEREWOLF_RUNTIME.begin_interrogation_target(
+		self, initiator_id, target_id,
+	)
+	if registered:
+		TOWN_LOG.line(
+			"CATMOUSE",
+			"%s | 审讯登记 | %s → %s" % [
+				_time_label(),
+				_resident_display_name(initiator_id),
+				_resident_display_name(target_id),
+			],
+		)
+	return registered
+
+
+## 线索已告知桥接(ConversationRuntime 对话轮次落库时调用): 听者必须是警察
+## 才记账(记录"说话者把线索当面告诉了警察"), 其余对话自动忽略。
+func _record_police_lead_told(
+	teller_name: String,
+	listener_name: String,
+	channel: String,
+	summary: String,
+) -> bool:
+	if summary.strip_edges().is_empty():
+		return false
+	var teller_id := _resident_key(teller_name)
+	var listener_id := _resident_key(listener_name)
+	if teller_id.is_empty() or listener_id.is_empty():
+		return false
+	if not WEREWOLF_RUNTIME.feature_active(self):
+		return false
+	if not _resident_is_police(listener_id):
+		return false
+	WEREWOLF_RUNTIME.record_police_lead(self, teller_id, channel, summary)
+	return true
+
+
+## 网关丢弃响应回调(superseded/stale): 若世界侧仍挂着该决策的 pending
+## (它永远不会被消费), 清掉并重新调度。没有这条对账, 最后一个在飞请求
+## 被丢弃后居民永久卡死(实锤: 花子从 23:51 起整场大会零决策零唤醒)。
+func reconcile_discarded_decision(resident_id: String, decision_id: String) -> void:
+	var resident := resident_registry.records.get(resident_id, {}) as Dictionary
+	if resident.is_empty():
+		return
+	if not bool(resident.get("decisionPending", false)):
+		return
+	if String(resident.get("validDecisionId", "")) != decision_id:
+		# 已被更新的决策接管(新请求在飞), 无需对账。
+		return
+	RESIDENT_EVENT_QUEUE_RUNTIME.restore_inflight_facts(resident)
+	resident["decisionPending"] = false
+	resident["validDecisionId"] = ""
+	resident["pendingWake"] = {}
+	resident["wakeDispatchQueued"] = false
+	resident["decisionPrefetch"] = false
+	resident["prefetchedDecision"] = {}
+	resident["decisionMayInterruptCurrent"] = false
+	resident["reRequestAfterResponse"] = false
+	resident["decisionPendingSinceMsec"] = 0
+	_schedule_decision(resident_id, false, false, false, true, false)
+
+
+## 警察审讯会逐字稿钩子(ConversationRuntime 每轮对话产生时调用):
+## 审讯期且双方为警察+居民时记入大会逐字稿(不实时广播, 散会时一次性注入投票 wake)。
+func _record_assembly_interrogation_turn(
+	speaker_name: String,
+	other_name: String,
+	say_text: String,
+) -> bool:
+	if say_text.strip_edges().is_empty():
+		return false
+	var speaker_id := _resident_key(speaker_name)
+	var other_id := _resident_key(other_name)
+	if speaker_id.is_empty() or other_id.is_empty():
+		return false
+	return WEREWOLF_RUNTIME.record_interrogation_turn(
+		self,
+		speaker_id,
+		other_id,
+		_authoritative_absolute_minute(),
+		say_text,
+	)
+
+
+## 追踪装置行踪钩子(居民"去"动作准备成功时调用): 目标被追踪且未到期
+## 则把目的地记入追踪档案(不再实时投递事件给警察)。
+func _record_police_tracker_visit(
+	target_id: String,
+	target_place: String,
+	minute: int,
+) -> bool:
+	if target_id.is_empty() or target_place.is_empty():
+		return false
+	var text := "准备前往 %s" % target_place
+	var recorded := WEREWOLF_RUNTIME.append_police_tracker_log(
+		self, target_id, minute, text,
+	)
+	if recorded:
+		TOWN_LOG.line(
+			"CATMOUSE",
+			"%s | 追踪档案 | %s" % [_time_label(), text],
+		)
+	return recorded
+
+
+## 追踪装置重大行动钩子: 被追踪目标执行暗杀/制服/夜间技能等行动时
+## 记入追踪档案(不再实时投递事件给警察)。与目击者机制联动: 该行动若
+## 有目击者(行动暴露), 情报附带目击者名单, 引导警察去找他们问话。
+func _record_police_device_action_intel(
+	target_id: String,
+	action_label: String,
+	detail: String,
+	witnesses: Array,
+) -> bool:
+	if target_id.is_empty() or not _residents.has(target_id):
+		return false
+	var minute := _authoritative_absolute_minute()
+	var target_display := _resident_display_name(target_id)
+	var witness_suffix := ""
+	if not (witnesses as Array).is_empty():
+		var typed_witnesses: Array[String] = []
+		for witness_ref: Variant in witnesses:
+			typed_witnesses.append(String(witness_ref))
+		witness_suffix = "。据说%s当时在附近，可找他们问话。" % _witness_names(
+			typed_witnesses
+		)
+	var text := "%s %s（%s）%s" % [
+		target_display, detail, action_label, witness_suffix,
+	]
+	var recorded := WEREWOLF_RUNTIME.append_police_tracker_log(
+		self, target_id, minute, text,
+	)
+	if recorded:
+		TOWN_LOG.line(
+			"CATMOUSE",
+			"%s | 追踪档案 | %s" % [_time_label(), text],
+		)
+	return recorded
+
+
+func _activate_announcement_action(
+	resident_id: String,
+	resident: Dictionary,
+	action: Dictionary,
+	preview: Dictionary,
+	conversation_end_reason: String,
+	active_conversation: Dictionary,
+) -> void:
+	var text := String(action.get("text", "")).strip_edges()
+	if (
+		not conversation_end_reason.is_empty()
+		and not active_conversation.is_empty()
+	):
+		CONVERSATION_RUNTIME._end_conversation(
+			self,
+			_traveler_relationship_state,
+			String(active_conversation.get("conversationId", "")),
+			conversation_end_reason,
+			"interrupted",
+		)
+	resident["doing"] = (
+		String(action.get("line", "")).strip_edges()
+		if not String(action.get("line", "")).strip_edges().is_empty()
+		else "正在公告栏张贴公告"
+	)
+	var publish_result := publish_resident_announcement(
+		resident_id,
+		text,
+	) as Dictionary
+	var ok := bool(publish_result.get("ok", false))
+	var publish_name := _resident_display_name(resident_id)
+	if publish_name.is_empty():
+		publish_name = resident_id
+	TOWN_LOG.line(
+		"CATMOUSE",
+		"%s | %s 发布公告：%s" % [
+			_time_label(),
+			publish_name,
+			text,
+		],
+	)
+	_append_action_result_without_schedule(
+		resident_id,
+		String(action.get("action_id", "")),
+		"completed" if ok else "rejected",
+		(
+			"公告已发布到全镇公告栏"
+			if ok
+			else "公告发布失败：%s" % String(
+				(publish_result.get("errors", ["未知原因"]) as Array)[0]
+			)
+		),
+	)
+	_schedule_decision(resident_id, true)
+	_emit_resident_state_changed(resident_id)
+	if ok:
+		_bump_world_revision()
+
+
+func _collect_assassination_witnesses(
+	actor: Dictionary,
+	target_id: String,
+	actor_id: String,
+) -> Array[String]:
+	var result: Array[String] = []
+	var actor_space := String(actor.get("spaceId", "")).strip_edges()
+	var actor_region := String(actor.get("regionId", "")).strip_edges()
+	var actor_position := actor.get("position", Vector2.ZERO) as Vector2
+	var perception_range := float(world_definition.world_data.get("perceptionRange", 320.0))
+	for other_id: String in _resident_order:
+		var candidate_id := _resident_key(other_id)
+		if (
+			candidate_id.is_empty()
+			or candidate_id == actor_id
+			or candidate_id == target_id
+			or candidate_id == _player_avatar_id()
+		):
+			continue
+		if not _resident_is_alive(candidate_id):
+			continue
+		var other := _residents.get(candidate_id, {}) as Dictionary
+		if other.is_empty() or not _resident_is_present(other):
+			continue
+		if _resident_is_sleeping(other):
+			continue  # 睡着的看不见
+		if (
+			String(other.get("spaceId", "")).strip_edges() != actor_space
+			or String(other.get("regionId", "")).strip_edges() != actor_region
+		):
+			continue
+		# 室内(非小镇室外)同屋即算目击;户外必须在感知范围内。
+		if actor_space != "town_outdoor":
+			result.append(candidate_id)
+			continue
+		var other_position := other.get("position", Vector2.ZERO) as Vector2
+		if (
+			actor_position.is_finite()
+			and other_position.is_finite()
+			and actor_position.distance_to(other_position) <= perception_range
+		):
+			result.append(candidate_id)
+	return result
+
+
+func _dispatch_assassination_witness_events(
+	actor: Dictionary,
+	target_id: String,
+	actor_id: String,
+	witness_ids: Array[String],
+) -> void:
+	if witness_ids.is_empty():
+		return
+	var attacker_name := _resident_display_name(actor_id)
+	var victim_name := _resident_display_name(target_id)
+	var sequence := 0
+	for witness_id: String in witness_ids:
+		var witness := _residents.get(witness_id, {}) as Dictionary
+		if witness.is_empty() or not _resident_is_alive(witness_id):
+			continue
+		sequence += 1
+		var event := {
+			"event_id": "witness-assassinate:%s:%s:%d" % [
+				actor_id,
+				target_id,
+				sequence,
+			],
+			"type": "目睹暗杀",
+			"time": get_time(),
+			"attacker_resident_id": actor_id,
+			"attacker_name": attacker_name,
+			"victim_resident_id": target_id,
+			"victim_name": victim_name,
+			"summary": "你亲眼看见%s对%s下了杀手。" % [
+				attacker_name,
+				victim_name,
+			],
+		}
+		_append_pending_world_event(witness, event)
+
+
+func _witness_names(witness_ids: Array[String]) -> String:
+	var names: Array[String] = []
+	for witness_id: String in witness_ids:
+		var name := _resident_display_name(witness_id)
+		if not name.is_empty():
+			names.append(name)
+	return "、".join(names)
+
+
+func _award_resident_work_income(
+	resident_id: String,
+	capability: String,
+	source_kind: String,
+	task_id: String,
+) -> void:
+	if not _residents.has(resident_id):
+		return
+	var resident := _residents[resident_id] as Dictionary
+	var social := (resident.get("socialState", {}) as Dictionary).duplicate(true)
+	var money := int(social.get("money", 40))
+	var reputation := int(social.get("reputation", 25))
+	# 按能力给报酬:生产/服务类 5~8,运输/行政/研究 4~6,其他 3。
+	var income := 3
+	if capability in [
+		"food.production", "food.service", "cafe.production",
+		"craft.production", "retail.sale", "grocer.sale",
+	]:
+		income = 8
+	elif capability in [
+		"inventory.release", "inventory.receive", "delivery.handoff",
+		"library.accession", "care.treatment",
+	]:
+		income = 6
+	elif capability in [
+		"research.handoff", "town.administration", "postal.delivery",
+	]:
+		income = 5
+	# 单笔报酬给 3~8;每次工作声望微涨(0~1,封顶 100)。
+	money = clampi(money + income, 0, 999)
+	reputation = clampi(reputation + (1 if income >= 6 else 0), 0, 100)
+	if (
+		int(social.get("money", -1)) != money
+		or int(social.get("reputation", -1)) != reputation
+	):
+		social["money"] = money
+		social["reputation"] = reputation
+		resident["socialState"] = social
+		_bump_world_revision(false)
+		_emit_resident_state_changed(resident_id)
+
+
+func _police_death_cases(resident_id: String) -> Array[Dictionary]:
+	var social_state := _residents.get(resident_id, {}).get(
+		"socialState",
+		{},
+	) as Dictionary
+	if String(social_state.get("job", "")).strip_edges() != "警察":
+		return []
+	var cases: Array[Dictionary] = []
+	for other_id: String in _resident_order:
+		var candidate_id := _resident_key(other_id)
+		if candidate_id.is_empty() or _resident_is_alive(candidate_id):
+			continue
+		var lifecycle_state := (
+			_resident_lifecycle.get_resident_state(candidate_id,) as Dictionary
+		)
+		var event := lifecycle_state.get("deathEvent", {}) as Dictionary
+		if event.is_empty():
+			continue
+		# 狼人杀化:夜间待公布死亡不进警察案件档案,避免警察隔着"天亮
+		# 公布"屏障提前拿到死因与凶手(目击事件仍单独走事件队列)。
+		if WEREWOLF_RUNTIME.death_announcement_pending(
+			self,
+			candidate_id,
+		):
+			continue
+		var death_time := event.get("time", {}) as Dictionary
+		var location := event.get("location", {}) as Dictionary
+		var raw_reason := String(event.get("reason", ""))
+		var case_reason := raw_reason
+		var case_attacker := String(event.get("attacker_resident_id", ""))
+		var clue := ""
+		if raw_reason.contains("暗杀"):
+			# 暗杀死因对警察脱敏：不直接给出凶手名字，逼警察靠目击/
+			# 盘问/查验破案；卧底嫁祸污染过的案件给出误导线索。
+			case_reason = "被暗杀"
+			case_attacker = ""
+			var framed_name := ROLE_SKILL_RUNTIME.frame_clue_for_event(
+				self,
+				String(event.get("event_id", "")),
+			)
+			if not framed_name.is_empty():
+				clue = "现场留下的痕迹似乎指向%s。" % framed_name
+		# 在场者线索: 死者死亡时有清醒目击者在场(不点明目击,只给调查
+		# 方向), 警察可据此盘问在场者。
+		var witness_ids_value: Variant = event.get(
+			"witness_resident_ids",
+			[],
+		)
+		if witness_ids_value is Array:
+			var witness_names: Array[String] = []
+			for wid_value: Variant in witness_ids_value as Array:
+				var witness_name := _resident_display_name(
+					String(wid_value),
+				)
+				if not witness_name.is_empty():
+					witness_names.append(witness_name)
+			if not witness_names.is_empty():
+				if not clue.is_empty():
+					clue += " "
+				clue += "据调查，%s死亡时%s在附近，可找他们问话。" % [
+					String(event.get("deceased_resident_name", "死者")),
+					"、".join(witness_names),
+				]
+		cases.append({
+			"deceased_resident_id": String(
+				event.get("deceased_resident_id", ""),
+			),
+			"deceased_resident_name": String(
+				event.get("deceased_resident_name", ""),
+			),
+			"day": int(death_time.get("day", 0)),
+			"clock": String(death_time.get("clock", "")),
+			"place_name": String(location.get("placeName", "")),
+			"reason": case_reason,
+			"attacker_resident_id": case_attacker,
+			"clue": clue,
+		})
+	cases.sort_custom(
+		func(a: Dictionary, b: Dictionary) -> bool:
+			return int(a.get("day", 0)) < int(b.get("day", 0))
+	)
+	return cases

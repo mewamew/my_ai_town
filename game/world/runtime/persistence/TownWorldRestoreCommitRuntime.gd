@@ -123,6 +123,12 @@ static func install_core(host, context: Dictionary) -> void:
 	)
 	host._resident_conditions = restored_resident_conditions
 	host._resident_sleep = restored_resident_sleep
+	var restored_werewolf_state := context.get("werewolfState", {}) as Dictionary
+	host._werewolf_state = (
+		restored_werewolf_state.duplicate(true)
+		if not restored_werewolf_state.is_empty()
+		else host.WEREWOLF_RUNTIME.default_state()
+	)
 	host._clinic_interviews = CLINIC_INTERVIEW_POLICY.new()
 	host.private_message_runtime.restore_prepared(
 		prepared.get("privateMessagesPrepared", {}) as Dictionary,

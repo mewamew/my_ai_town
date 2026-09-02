@@ -99,6 +99,37 @@ static func _start_conversation(
 	world.conversation_state.autonomous_idle_seconds[conversation_id] = 0.0
 	_hold_conversation_invitation_target(world, target_name)
 	_update_conversation_snapshots(world, traveler_relationship_state, conversation)
+	# 狼人杀: 警察窃听器监听——对话双方任一被监听则实时上报该轮对话。
+	if world.has_method("_record_police_eavesdrop_turn"):
+		var eavesdrop_say := String(turn.get("say", ""))
+		if not eavesdrop_say.is_empty():
+			for participant: Variant in [initiator_name, target_name]:
+				world._record_police_eavesdrop_turn(
+					String(participant),
+					String(turn.get("speaker", "")),
+					eavesdrop_say,
+					conversation_place,
+				)
+	# 警察审讯会: 警察发起搭话即登记一次审讯(计数+被审者标记, 幂等;
+	# 桥接层过滤非审讯期/非警察发起的普通对话)。
+	if world.has_method("_record_assembly_interrogation_started"):
+		world._record_assembly_interrogation_started(initiator_name, target_name)
+	# 线索已告知: 居民开场搭话警察且说了内容, 记入其"已告知账本"
+	# (桥接层校验听者是警察, 其余对话忽略)。
+	if world.has_method("_record_police_lead_told"):
+		world._record_police_lead_told(
+			initiator_name,
+			target_name,
+			"当面告知",
+			String(turn.get("say", "")),
+		)
+	# 警察审讯会: 审讯开场白进入逐字稿。
+	if world.has_method("_record_assembly_interrogation_turn"):
+		world._record_assembly_interrogation_turn(
+			String(turn.get("speaker", "")),
+			target_name,
+			String(turn.get("say", "")),
+		)
 	world.conversation_changed.emit(conversation_id, conversation.duplicate(true))
 	var action_story: Variant = world.event_journal.action_story_context(
 		String(action.get("action_id", ""))
@@ -176,6 +207,32 @@ static func _apply_conversation_reply(
 	world.conversation_state.autonomous_idle_seconds[conversation_id] = 0.0
 	_complete_conversation_action(world, other_name, "completed", "对方已经答话")
 	_queue_overhear_events(world, conversation, turn)
+	# 狼人杀: 警察窃听器监听——回复轮次同样实时上报。
+	if world.has_method("_record_police_eavesdrop_turn"):
+		var eavesdrop_say := String(turn.get("say", ""))
+		if not eavesdrop_say.is_empty():
+			for participant: Variant in [speaker_name, other_name]:
+				world._record_police_eavesdrop_turn(
+					String(participant),
+					String(turn.get("speaker", "")),
+					eavesdrop_say,
+					String(conversation.get("placeName", "")),
+				)
+	# 警察审讯会: 审讯会话的回复逐字稿(桥接层过滤非审讯会话)。
+	if world.has_method("_record_assembly_interrogation_turn"):
+		world._record_assembly_interrogation_turn(
+			String(turn.get("speaker", "")),
+			other_name,
+			String(turn.get("say", "")),
+		)
+	# 线索已告知: 说话者回复警察且说了内容, 记入其"已告知账本"。
+	if world.has_method("_record_police_lead_told"):
+		world._record_police_lead_told(
+			speaker_name,
+			other_name,
+			"当面告知",
+			String(turn.get("say", "")),
+		)
 	if bool(action.get("end", false)):
 		# Publish the final turn and ended state atomically. Exposing an active
 		# snapshot first briefly tells the UI that it is the other person's turn,

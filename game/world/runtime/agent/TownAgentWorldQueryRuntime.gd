@@ -62,6 +62,12 @@ static func conflict_snapshot(
 			resident_id,
 		).is_empty(),
 	)
+	# 狼人杀特权选项: 卧底暗杀/攻击 + 警察制服(本地版 _decorate_conflict_tension_options 移植)
+	snapshot["conflict_tension_options"] = host._decorate_conflict_tension_options(
+		String(resident.get("residentId", "")),
+		resident,
+		snapshot.get("conflict_tension_options", []) as Array,
+	)
 	if host._conflict_controller == null:
 		snapshot["medical_follow_up"] = {}
 		return snapshot

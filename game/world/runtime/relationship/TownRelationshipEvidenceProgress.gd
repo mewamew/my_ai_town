@@ -117,12 +117,12 @@ static func build(
 			+ shared_matter_count
 			+ conflict_evidence_count
 		)
-		var depth_level := mini(5, evidence_count)
+		var depth_level := mini(7, int(evidence_count))
 		item["evidenceCount"] = evidence_count
 		item["depth"] = {
 			"available": true,
 			"level": depth_level,
-			"segmentCount": 5,
+			"segmentCount": 7,
 			"label": _depth_label(depth_level),
 		}
 		item.erase("_evidenceIds")
@@ -332,7 +332,7 @@ static func _resident_id_for_ref(
 
 
 static func _depth_label(level: int) -> String:
-	match clampi(level, 0, 5):
+	match clampi(level, 0, 7):
 		0:
 			return "尚未形成共同经历"
 		1:
@@ -343,5 +343,9 @@ static func _depth_label(level: int) -> String:
 			return "已有来往"
 		4:
 			return "关系深厚"
+		5:
+			return "心意相通"
+		6:
+			return "亲密无间"
 		_:
-			return "共同经历丰富"
+			return "结为伴侣"

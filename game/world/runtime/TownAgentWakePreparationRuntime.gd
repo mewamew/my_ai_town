@@ -27,6 +27,7 @@ const GO_ACTION_PREFETCH_RUNTIME := preload(
 const AGENT_WAKE_CONTEXT_RUNTIME := preload(
 	"res://world/runtime/agent/TownAgentWakeContextRuntime.gd"
 )
+const TOWN_LOG := preload("res://world/runtime/TownLog.gd")
 
 var _preparations: Dictionary = {}
 var _visible_props_cache: Dictionary = {}
@@ -434,48 +435,129 @@ func _advance_preparation(
 			preparation["stage"] = "finalize"
 		"finalize":
 			var conflict_snapshot := preparation.get("conflictSnapshot", {}) as Dictionary
+			var wake_snapshot := {
+				"time": (preparation.get("time", {}) as Dictionary).duplicate(true),
+				"weather": String(preparation.get("weather", "")),
+				"weather_context": world._activity_runtime.weather_context(
+					String(preparation.get("weather", "")),
+					String(perception_resident.get("currentPlace", "")),
+				),
+				"me": {
+					"doing": String(perception_resident.get("doing", "")),
+					"current_action": ACTION_PRESENTATION._agent_current_action(
+						world,
+						perception_resident.get("currentAction", {}) as Dictionary,
+					),
+					"body": (perception_resident.get("body", {}) as Dictionary).duplicate(true),
+					"activityNeeds": (perception_resident.get("activityState", world.ACTIVITY_SCALARS.empty_activity_state()) as Dictionary).duplicate(true),
+					"conditions": world._resident_conditions.get_conditions(resident_id,) as Array,
+					"activeNeeds": world._resident_conditions.get_active_needs(resident_id,) as Array,
+				},
+				"nearby": preparation.get("nearby", []) as Array,
+				"place": preparation.get("placeSnapshot", {}) as Dictionary,
+				"rhythm": AGENT_WORLD_QUERY_RUNTIME.life_rhythm(world, resident),
+				"work_tasks": world.get_work_tasks_for_resident(resident_id),
+				"life_destination_options": preparation.get("lifeDestinationOptions", []) as Array,
+				"known_announcements": AGENT_WORLD_QUERY_RUNTIME.known_announcements(
+					world, resident_id,
+				),
+				"conversation": world.ACTIVITY_SCALARS.duplicate_optional_dictionary(resident.get("conversation")),
+				"conversation_follow_up_options": preparation.get("conversationFollowUpOptions", []) as Array,
+				"social_matters": preparation.get("socialMatters", []) as Array,
+				"social_exposures": preparation.get("socialExposures", []) as Array,
+				"conflicts": (conflict_snapshot.get("conflicts", []) as Array).duplicate(true),
+				"conflict_injuries": (conflict_snapshot.get("conflict_injuries", []) as Array).duplicate(true),
+				"conflict_tension_options": (conflict_snapshot.get("conflict_tension_options", []) as Array).duplicate(true),
+				"medical_follow_up": (conflict_snapshot.get("medical_follow_up", {}) as Dictionary).duplicate(true),
+				"post_injury_reaction": preparation.get("postInjuryReaction", {}) as Dictionary,
+				# 狼人杀附件(迁移注入, 与 TownAgentWakeContextRuntime.wake_packet 同源):
+				# 真实游戏 wake 由本模块 finalize 直接拼装, 不经过 wake_packet,
+				# 缺失这些键会导致投票/夜间技能/警察侦查装备在真实游戏里全部不注入。
+				"exile_vote": world.WEREWOLF_RUNTIME.vote_snapshot(
+					world, resident_id,
+				),
+				"night_skill": world.ROLE_SKILL_RUNTIME.night_skill_snapshot(
+					world, resident_id,
+				),
+				"undercover_kill_quota_exhausted": (
+					world._undercover_resident_ids().has(resident_id)
+					and world.WEREWOLF_RUNTIME.undercover_kill_quota_exhausted(
+						world,
+						int(preparation.get("absoluteMinute", 0)),
+					)
+				),
+				"town_death_cases": world._police_death_cases(
+					resident_id,
+				),
+				"police_intel": AGENT_WAKE_CONTEXT_RUNTIME._police_intel_context(
+					world, resident_id,
+				),
+				# 警察审讯会: 各阶段提示/汇报汇总/审讯记录(见 TownWerewolfRuntime)。
+				"assembly": world.WEREWOLF_RUNTIME.assembly_wake_snapshot(
+					world, resident_id,
+				),
+				# 线索已告知账本: 空账本为空字典(prompt 不渲染)。
+				"police_lead_log": world.WEREWOLF_RUNTIME.police_lead_snapshot(
+					world, resident_id,
+				),
+			}
+			# 审讯会: 大会进行期间裁剪日常选项, 实现"各阶段只有该阶段允许的选项"
+			# (汇报期只有汇报 / 审讯期警察只有询问与结束 / 投票期只有投票)。
+			if world.WEREWOLF_RUNTIME.assembly_active(world):
+				world.WEREWOLF_RUNTIME.constrain_wake(world, resident_id, wake_snapshot)
 			preparation["wakePacket"] = {
 				"decision_id": decision_id,
-				"snapshot": {
-					"time": (preparation.get("time", {}) as Dictionary).duplicate(true),
-					"weather": String(preparation.get("weather", "")),
-					"weather_context": world._activity_runtime.weather_context(
-						String(preparation.get("weather", "")),
-						String(perception_resident.get("currentPlace", "")),
-					),
-					"me": {
-						"doing": String(perception_resident.get("doing", "")),
-						"current_action": ACTION_PRESENTATION._agent_current_action(
-							world,
-							perception_resident.get("currentAction", {}) as Dictionary,
-						),
-						"body": (perception_resident.get("body", {}) as Dictionary).duplicate(true),
-						"activityNeeds": (perception_resident.get("activityState", world.ACTIVITY_SCALARS.empty_activity_state()) as Dictionary).duplicate(true),
-						"conditions": world._resident_conditions.get_conditions(resident_id,) as Array,
-						"activeNeeds": world._resident_conditions.get_active_needs(resident_id,) as Array,
-					},
-					"nearby": preparation.get("nearby", []) as Array,
-					"place": preparation.get("placeSnapshot", {}) as Dictionary,
-					"rhythm": AGENT_WORLD_QUERY_RUNTIME.life_rhythm(world, resident),
-					"work_tasks": world.get_work_tasks_for_resident(resident_id),
-					"life_destination_options": preparation.get("lifeDestinationOptions", []) as Array,
-					"known_announcements": AGENT_WORLD_QUERY_RUNTIME.known_announcements(
-						world, resident_id,
-					),
-					"conversation": world.ACTIVITY_SCALARS.duplicate_optional_dictionary(resident.get("conversation")),
-					"conversation_follow_up_options": preparation.get("conversationFollowUpOptions", []) as Array,
-					"social_matters": preparation.get("socialMatters", []) as Array,
-					"social_exposures": preparation.get("socialExposures", []) as Array,
-					"conflicts": (conflict_snapshot.get("conflicts", []) as Array).duplicate(true),
-					"conflict_injuries": (conflict_snapshot.get("conflict_injuries", []) as Array).duplicate(true),
-					"conflict_tension_options": (conflict_snapshot.get("conflict_tension_options", []) as Array).duplicate(true),
-					"medical_follow_up": (conflict_snapshot.get("medical_follow_up", {}) as Dictionary).duplicate(true),
-					"post_injury_reaction": preparation.get("postInjuryReaction", {}) as Dictionary,
-				},
+				"snapshot": wake_snapshot,
 				"events": preparation.get("publicEvents", []) as Array,
 				"action_results": preparation.get("publicResults", []) as Array,
 				"social_response_results": preparation.get("socialResults", []) as Array,
 			}
+			# 行为流日志(与 TownAgentWakeContextRuntime.wake_packet 同源):
+			# 真实游戏 wake 由本模块 finalize 拼装, 感知到/收到选项日志点补在这里,
+			# 否则真实链路永远看不到这两行(此前只有"可选:"轮询日志)。
+			var wake_actor_name: String = world._resident_display_name(resident_id)
+			if wake_actor_name.is_empty():
+				wake_actor_name = resident_id
+			var nearby_people := preparation.get("nearby", []) as Array
+			if not nearby_people.is_empty():
+				var nearby_lines: Array[String] = []
+				for nearby_value: Variant in nearby_people:
+					var nearby_person := nearby_value as Dictionary
+					var person_name := String(nearby_person.get("name", ""))
+					var person_doing := String(nearby_person.get("doing", ""))
+					if person_doing.is_empty():
+						person_doing = "空闲"
+					nearby_lines.append("%s(%s)" % [person_name, person_doing])
+				TOWN_LOG.line(
+					"AGENT",
+					"%s | %s 感知到: %s" % [
+						world._time_label(),
+						wake_actor_name,
+						"、".join(nearby_lines),
+					],
+				)
+			var tension_options := conflict_snapshot.get("conflict_tension_options", []) as Array
+			if not tension_options.is_empty():
+				var option_lines: Array[String] = []
+				for option_value: Variant in tension_options:
+					var option := option_value as Dictionary
+					var kind := String(option.get("kind", ""))
+					var target_id := String(option.get("target_resident_id", ""))
+					var option_label := kind
+					if not target_id.is_empty():
+						var target_name: String = world._resident_display_name(target_id)
+						if target_name.is_empty():
+							target_name = target_id
+						option_label += "→%s" % target_name
+					option_lines.append(option_label)
+				TOWN_LOG.line(
+					"AGENT",
+					"%s | %s 收到选项: %s" % [
+						world._time_label(),
+						wake_actor_name,
+						"、".join(option_lines),
+					],
+				)
 			return {"ready": true}
 		_:
 			preparation["stage"] = "nearby"

@@ -40,7 +40,7 @@ const ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_SLOT_REWORK := (
 	"584ba4b89019f92378131a56bc380e0c2dec5e460d977d7050484996a9c57a9f"
 )
 const ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK := (
-	"70dcd511461e5266174f3ddb5323d2adf4ecd5caf38cf25d7ba886ead3e3b818"
+	"bc3442e119eeccd05687f4f1bc73bb3f857c8747f651d5291b6f53cce09c3490"
 )
 const ACTIVITY_SOURCE_FINGERPRINT_AFTER_COMMUNAL_SIMPLE_MEAL := (
 	"744cc6609bd100be9ead3a35199155e5fe6206f7c34c245e230a9f449bb79b72"
@@ -50,6 +50,18 @@ const ACTIVITY_SOURCE_FINGERPRINT_AFTER_CLINIC_SELF_CARE := (
 )
 const ACTIVITY_SOURCE_FINGERPRINT_AFTER_UNSTAFFED_PUBLIC_PLACE_ACCESS := (
 	"44815398b66700e89ebd014692af12d17c754bac2746d026f6796b35872b0cfd"
+)
+# 本地 fork：world/data/town/source/occupation_catalog.json 新增 occupation_police（警察职业）
+# 后的世界数据聚合指纹（TownWorldDataBuild 重建产物）。
+const ACTIVITY_SOURCE_FINGERPRINT_AFTER_LOCAL_POLICE_OCCUPATION := (
+	"bf242f42dae623b44ec47902d4defea29314286de0be16a619683a5b61ad298f"
+)
+# 本地 fork：34c2222 同步官方活动数据之前，AFTER_PUBLIC_DINING_DAY_REWORK 常量的
+# 旧值。beta3~beta6 时代的构建与样本存档都携带此指纹，同步后常量变为 bc3442e1，
+# 兼容账本必须把它登记为对应发行版的 legacy 指纹，否则这批存档被判
+# unknown_combination(实证: beta3~beta6 历史样本)。
+const ACTIVITY_SOURCE_FINGERPRINT_AFTER_PUBLIC_DINING_DAY_REWORK_PRE_SYNC := (
+	"70dcd511461e5266174f3ddb5323d2adf4ecd5caf38cf25d7ba886ead3e3b818"
 )
 const ACTIVITY_SAVE_MIGRATIONS := [
 	{
@@ -146,6 +158,19 @@ const ACTIVITY_SAVE_MIGRATIONS := [
 			ACTIVITY_SOURCE_FINGERPRINT_AFTER_UNSTAFFED_PUBLIC_PLACE_ACCESS
 		),
 		# 只增加从静态地点配置推导的无人值守访问规则，不改写已保存活动引用。
+		"executionRewrites": [],
+		"placeServiceStateRewrites": [],
+	},
+	{
+		"id": "2026-08-27-local-police-occupation-catalog",
+		"fromSourceFingerprint": (
+			ACTIVITY_SOURCE_FINGERPRINT_AFTER_UNSTAFFED_PUBLIC_PLACE_ACCESS
+		),
+		"toSourceFingerprint": (
+			ACTIVITY_SOURCE_FINGERPRINT_AFTER_LOCAL_POLICE_OCCUPATION
+		),
+		# 本地 fork 在 occupation_catalog 增加警察职业，世界数据聚合指纹随之改变；
+		# 只推进指纹节点，不改写已保存活动执行引用。
 		"executionRewrites": [],
 		"placeServiceStateRewrites": [],
 	},

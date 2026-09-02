@@ -546,7 +546,7 @@ func _test_rapid_avatar_reopen_preempts_same_resident_stale_call() -> void:
 	)
 	gateway.set("_session_active", true)
 	var inflight := {}
-	for index in 6:
+	for index in 3:
 		var resident_id := "resident-a" if index == 0 else "resident-busy-%d" % index
 		var decision_id := "decision-old-%d" % index
 		var old_wake := _wake(decision_id)
@@ -1519,15 +1519,20 @@ func _test_failed_first_pair_cannot_starve_the_town() -> void:
 		5,
 		"the next bounded batch mixes correction attempts with waiting residents",
 	)
-	var correction_batch := agent.requested_resident_ids.slice(5)
+	var correction_batch := agent.requested_resident_ids.slice(2)
 	_expect(
-		correction_batch.has("resident-f")
-		and correction_batch.has("resident-g")
-		and correction_batch.has("resident-h"),
+		correction_batch.has("resident-c")
+		and correction_batch.has("resident-d"),
 		"a bad first group cannot starve residents that were already waiting",
 	)
-	for resident_id in correction_batch:
-		agent.fail("decision-%s" % resident_id)
+	# 槽位降到 2 后，fresh 重试排到等待居民之后，失败居民要等多轮才能耗尽
+	# 第二次机会。持续 pump-fail 直到安全连续性兜底触发。
+	var attempts := 0
+	while world.submissions.is_empty() and attempts < 20:
+		gateway.call("pump")
+		for decision_value in agent.callbacks.keys():
+			agent.fail(String(decision_value))
+		attempts += 1
 	_expect(
 		world.submissions.size() > 0,
 		"residents whose correction was exhausted receive safe continuity",
