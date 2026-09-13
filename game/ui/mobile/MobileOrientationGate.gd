@@ -4,6 +4,12 @@ extends CanvasLayer
 
 const MOBILE_UI_PROFILE := preload("res://ui/mobile/MobileUiProfile.gd")
 
+# 竖屏提示必须显式指定字体。默认主题字体不含 CJK 字形，桌面端尚可依靠系统字体回退，
+# Web 端没有系统字体可用，中文会被画成方框加码点。
+const MESSAGE_FONT := preload(
+	"res://assets/ui/startup/fonts/noto_sans_cjk_sc_medium/NotoSansCJKsc-Medium.otf"
+)
+
 var _shield: Control
 var _message: Label
 var _is_blocking := false
@@ -54,6 +60,7 @@ func _build_overlay() -> void:
 	_message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_message.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_message.add_theme_font_override("font", MESSAGE_FONT)
 	_message.add_theme_font_size_override("font_size", 32)
 	_message.add_theme_color_override("font_color", Color(0.96, 0.91, 0.78))
 	_message.add_theme_color_override("font_outline_color", Color(0.10, 0.07, 0.04))
