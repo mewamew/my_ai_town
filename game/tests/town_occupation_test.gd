@@ -75,6 +75,7 @@ func _initialize() -> void:
 
 
 func _run_all() -> void:
+	_scenario_cafe_delayed_decision_regression()
 	_scenario_occupation_service_work_chain_integration()
 	_scenario_dining_peak_regression()
 	_scenario_occupation_downstream_closure_integration()
@@ -84,6 +85,123 @@ func _run_all() -> void:
 	_scenario_staffing_runtime()
 	_scenario_staffing_arrangement_runtime()
 	_finish_suite("TOWN_OCCUPATION_PASS")
+
+
+func _scenario_cafe_delayed_decision_regression() -> void:
+	var data := _build_data()
+	var opening := _load_opening(data)
+	_prepare_residents(opening)
+	for value: Variant in opening.get("residents", []) as Array:
+		var resident := value as Dictionary
+		if String(resident.get("residentId", "")) in [CRAFT_ID, PATIENT_ID]:
+			(resident["worldState"] as Dictionary).merge({
+				"place": "花房咖啡馆", "spaceId": "indoor_flower_cafe",
+				"regionId": "region_portal_cafe_entry", "position": [464, 336],
+			}, true)
+	var world = WORLD.new()
+	var started := world.start(data, opening) as Dictionary
+	_expect_equal(started.get("ok"), true, "延迟咖啡场景启动：%s" % [started])
+	if started.get("ok") != true:
+		return
+	var requests: Array[Dictionary] = []
+	for customer_id: String in [CAFE_CUSTOMER_ID, PATIENT_ID]:
+		var result := world.create_occupation_service_request({
+			"kind": "cafe_order", "requesterResidentId": customer_id,
+			"itemId": "brewed_coffee",
+		}) as Dictionary
+		_expect_equal(result.get("ok"), true, "两个顾客分别下单")
+		requests.append(result.get("request", {}) as Dictionary)
+	var wake := _take_wake(world, "阿禾")
+	_expect(not wake.is_empty(), "店员具有待返回的决策")
+	_repeat_cafe_presence_checks(world, requests)
+	_expect_equal(
+		world.resident_registry.records[CAFE_ID].get("validDecisionId"),
+		wake.get("decision_id"), "重复催单不作废尚未返回的店员决策",
+	)
+	var brew_id := String(wake.get("decision_id", "")) + "-brew"
+	var brew := world.submit_agent_decision_by_id(CAFE_ID, {
+		"decision_id": wake.get("decision_id"), "handling": "replace_current",
+		"action": {
+			"action_id": brew_id, "type": "做活动",
+			"activity_id": "activity_cafe_brew_coffee", "line": "先完成第一笔订单",
+		},
+	}) as Dictionary
+	_expect_equal(brew.get("status"), "accepted", "延迟返回的冲泡决策被接受：%s" % [brew])
+	var active_record := world.resident_registry.records[CAFE_ID] as Dictionary
+	for _minute in 10:
+		if not (active_record.get("currentAction", {}) as Dictionary).is_empty():
+			break
+		world.advance(1.0)
+	var suspended_action_id := String((active_record.get("currentAction", {}) as Dictionary).get("action_id", ""))
+	_expect(not suspended_action_id.is_empty(), "搭话前冲泡动作已实际启动")
+	# A real conversation interrupts the old decision once; subsequent order polls
+	# must not invalidate the reply while a slow provider is generating it.
+	var talk_wake := _take_wake(world, "林岚")
+	var talk_result := world.submit_agent_decision_by_id(
+		CRAFT_ID, _talk(talk_wake, "阿禾", "我在柜台旁向店员打招呼"),
+	) as Dictionary
+	_expect_equal(talk_result.get("status"), "accepted", "居民向店员发起真实对话：%s" % [talk_result])
+	var reply_wake := _take_wake(world, "阿禾")
+	var conversation_value: Variant = reply_wake.get("snapshot", {}).get("conversation")
+	var conversation: Dictionary = conversation_value if conversation_value is Dictionary else {}
+	_expect(not conversation.is_empty(), "对话进入店员唤醒快照")
+	_repeat_cafe_presence_checks(world, requests)
+	var reply_id := String(reply_wake.get("decision_id", ""))
+	var reply_result := world.submit_agent_decision_by_id(CAFE_ID, {
+		"decision_id": reply_id, "handling": "replace_current",
+		"action": {
+			"action_id": reply_id + "-reply", "type": "答话",
+			"conversation_id": conversation.get("conversation_id", ""),
+			"say": "你好，我先把客人的咖啡做好，稍后再聊。",
+			"narration": "我点头回应", "photos": [], "end": true,
+		},
+	}) as Dictionary
+	_expect_equal(reply_result.get("status"), "accepted", "多次催单后延迟回复仍被接受：%s" % [reply_result])
+	_expect_equal(world.get_active_conversations().size(), 0, "回复后对话正常结束")
+	_expect_equal(
+		(active_record.get("currentAction", {}) as Dictionary).get("action_id"),
+		suspended_action_id, "答话后继续同一冲泡动作，不重启制作",
+	)
+	_expect_equal(active_record.get("actionSuspendedAbsoluteMinute"), -1, "答话后释放活动暂停状态")
+	# A later order must not create a new interrupting decision while the worker
+	# is completing the first bound task.
+	var active_decision_id := String(active_record.get("validDecisionId", ""))
+	_repeat_cafe_presence_checks(world, requests)
+	_expect_equal(active_record.get("validDecisionId"), active_decision_id,
+		"第二笔订单不能抢占正在执行的第一笔订单")
+	for _minute in 180:
+		if (active_record.get("currentAction", {}) as Dictionary).is_empty():
+			break
+		world.advance(1.0)
+	_expect((active_record.get("currentAction", {}) as Dictionary).is_empty(), "冲泡在有限时间内完成")
+	var handoff_wake := _take_wake(world, "阿禾")
+	_expect(not handoff_wake.is_empty(), "冲泡完成后产生交付决策")
+	_repeat_cafe_presence_checks(world, requests)
+	var handoff_id := String(handoff_wake.get("decision_id", ""))
+	var handoff := world.submit_agent_decision_by_id(CAFE_ID, {
+		"decision_id": handoff_id, "handling": "replace_current",
+		"action": {
+			"action_id": handoff_id + "-handoff", "type": "做活动",
+			"activity_id": "activity_cafe_receive_guests", "line": "把咖啡交给等候的客人",
+		},
+	}) as Dictionary
+	_expect_equal(handoff.get("status"), "accepted", "多次催单后延迟交付决策仍被接受：%s" % [handoff])
+	for _minute in 180:
+		if world.get_occupation_service_request(String(requests[0].get("requestId"))).get("state") == "completed":
+			break
+		world.advance(1.0)
+	_expect_equal(
+		world.get_occupation_service_request(String(requests[0].get("requestId"))).get("state"),
+		"completed", "不是仅完成冲泡：第一位顾客实际收到咖啡",
+	)
+
+
+func _repeat_cafe_presence_checks(world, requests: Array[Dictionary]) -> void:
+	# Deterministically simulate six presence-poll cycles before the provider
+	# callback. No wall-clock sleep or paid model request is needed.
+	for _poll in 6:
+		for request: Dictionary in requests:
+			world.OCCUPATION_SERVICE_PRESENCE_ADVANCEMENT_RUNTIME.schedule_worker(world, request)
 
 
 func _scenario_occupation_service_work_chain_integration() -> void:

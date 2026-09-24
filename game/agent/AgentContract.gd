@@ -346,6 +346,12 @@ static func validate_decision(
 		and not wake_allows_reply(wake_packet)
 	):
 		errors.append("只有当前唤醒包含匹配的搭话或对方答话事件时才能提交答话动作")
+	if not wake_requires_reply(wake_packet):
+		AgentContractAction._validate_required_work_action(
+			decision,
+			wake_packet,
+			errors,
+		)
 	if handling == "continue_current":
 		if decision.has("action"):
 			errors.append("continue_current 不允许 action")

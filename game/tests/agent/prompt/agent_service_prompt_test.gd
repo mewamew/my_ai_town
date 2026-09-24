@@ -2,6 +2,9 @@ extends "res://tests/agent/support/AgentPromptTestCase.gd"
 
 
 const AGENT_CONTRACT := preload("res://agent/AgentContract.gd")
+const ACTION_SUPPORT := preload(
+	"res://world/runtime/action/TownActionSupport.gd"
+)
 
 
 func _initialize() -> void:
@@ -9,6 +12,7 @@ func _initialize() -> void:
 	if compiler_script != null:
 		_test_medical_response_contract(compiler_script)
 		_test_service_request_and_world_destination_constraints(compiler_script)
+		_test_onsite_service_requires_task_advancing_action(compiler_script)
 		_test_traveler_relationship_context(compiler_script)
 	_finish_prompt_test("AGENT_SERVICE_PROMPT_PASS")
 
@@ -290,6 +294,129 @@ func _test_service_request_and_world_destination_constraints(
 		),
 		["中心广场", "图书馆"],
 		"travel constraints use the World allowlist exactly",
+	)
+
+
+func _test_onsite_service_requires_task_advancing_action(
+	compiler_script: Script,
+) -> void:
+	var wake := _wake_packet("cafe-service-priority-1", "晴天")
+	var task_id := "service-task:花房咖啡馆:occupation-service-000007:4"
+	var place_snapshot := {
+		"name": "花房咖啡馆",
+		"destinations": [],
+		"visible_props": [],
+		"props": [],
+		"activities": [{
+			"activity_id": "activity_cafe_brew_coffee",
+			"label": "冲咖啡",
+			"role": "worker",
+			"route_check_deferred": false,
+			"advances_current_work_task": true,
+			"work_task_ids": [task_id],
+			"work_task_capabilities": ["cafe.order"],
+			"interest_match": false,
+			"matched_interests": [],
+		}],
+		"service_control": {},
+		"message_recipients": [],
+	}
+	ACTION_SUPPORT.focus_agent_place_snapshot_on_service_task(
+		{"currentPlace": "花房咖啡馆"},
+		place_snapshot,
+		{
+			"task_id": task_id,
+			"place_id": "花房咖啡馆",
+		},
+	)
+	wake["snapshot"]["place"] = place_snapshot
+	_expect_equal(
+		String(place_snapshot.get("required_work_task_id", "")),
+		task_id,
+		"现场服务任务向 Agent 快照写入硬约束标记",
+	)
+	wake["snapshot"]["work_tasks"] = [{
+		"task_id": task_id,
+		"capability": "cafe.order",
+		"source_kind": "customer_order",
+		"source_ref": "occupation-service-000007",
+		"targets": [{
+			"kind": "service_request",
+			"ref": "occupation-service-000007",
+		}],
+		"expected_result": "order_handoff",
+		"state": "accepted",
+		"priority": 85,
+		"process_stage": "awaiting_brew",
+		"next_step": {
+			"instruction": "到服务地点处理这位顾客的真实请求",
+			"place_id": "花房咖啡馆",
+		},
+		"service_request": {
+			"request_id": "occupation-service-000007",
+			"kind": "cafe_order",
+			"requester_resident_id": "resident-tang-xiao-man",
+			"requester_name": "唐小满",
+			"requester_current_place": "花房咖啡馆",
+			"subject_ref": "",
+			"item_id": "brewed_coffee",
+			"place_id": "花房咖啡馆",
+			"state": "pending",
+			"wait_reason": "",
+		},
+	}]
+	_expect_equal(
+		AGENT_CONTRACT.validate_wake_packet(wake),
+		[],
+		"现场优先服务任务通过唤醒契约",
+	)
+	var compiler: RefCounted = compiler_script.new(_initialization())
+	var request := compiler.call("compile", wake, "") as Dictionary
+	var messages := request.get("messages", []) as Array
+	_expect(
+		messages.size() == 2
+		and String((messages[1] as Dictionary).get("content", "")).contains(
+			"必须立即推进职业任务",
+		),
+		"现场优先服务任务使用硬性执行提示",
+	)
+	var idle_decision := {
+		"decision_id": "cafe-service-priority-1",
+		"handling": "replace_current",
+		"action": {
+			"action_id": "cafe-service-priority-idle",
+			"type": "待着",
+			"line": "我继续坐着休息。",
+		},
+	}
+	_expect(
+		not AGENT_CONTRACT.validate_decision(
+			idle_decision,
+			_initialization(),
+			wake,
+			{},
+		).is_empty(),
+		"现场优先服务任务拒绝继续待着",
+	)
+	var work_decision := {
+		"decision_id": "cafe-service-priority-1",
+		"handling": "replace_current",
+		"action": {
+			"action_id": "cafe-service-priority-brew",
+			"type": "做活动",
+			"activity_id": "activity_cafe_brew_coffee",
+			"line": "顾客正在等，我先把这杯咖啡冲好。",
+		},
+	}
+	_expect_equal(
+		AGENT_CONTRACT.validate_decision(
+			work_decision,
+			_initialization(),
+			wake,
+			{},
+		),
+		[],
+		"现场优先服务任务允许执行匹配的工作活动",
 	)
 
 

@@ -30,6 +30,26 @@ func _initialize() -> void:
 			[],
 			"合法动作决定通过 JSON 契约",
 		)
+	var null_conversation_wake := wake.duplicate(true)
+	null_conversation_wake["snapshot"]["conversation"] = null
+	var stray_reply := _decision(null_conversation_wake["decision_id"], {
+		"action_id": "reply-without-conversation",
+		"type": "答话",
+		"conversation_id": "missing-conversation",
+		"say": "我听见了。",
+		"narration": "我回过头。",
+		"photos": [],
+		"end": false,
+	})
+	_expect(
+		not AgentContractScript.validate_decision(
+			stray_reply,
+			initialization,
+			null_conversation_wake,
+			{},
+		).is_empty(),
+		"conversation 为 null 时非法答话被安全拒绝而不是触发强制转换崩溃",
+	)
 	var reply_wake := _reply_wake(wake)
 	var reply := _decision(reply_wake["decision_id"], {
 		"action_id": "reply-1",

@@ -275,6 +275,13 @@ static func _validate_nearby(nearby: Array, errors: Array[String]) -> void:
 
 static func _validate_snapshot_place(place: Dictionary, errors: Array[String]) -> void:
 	AgentContract._require_non_empty_string(place, "name", "snapshot.place.name", errors)
+	if place.has("required_work_task_id"):
+		AgentContract._require_non_empty_string(
+			place,
+			"required_work_task_id",
+			"snapshot.place.required_work_task_id",
+			errors,
+		)
 	if place.has("message_recipients"):
 		var message_recipients := AgentContract._require_array(
 			place,

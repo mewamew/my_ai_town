@@ -36,9 +36,9 @@ const REQUIRED_PROVIDER_SERVICE_METHODS: Array[String] = [
 # for several model round trips after a synchronized action boundary. Keep the
 # burst bounded, but give a normal town enough lanes to keep living.
 const MAX_CONCURRENT_MODEL_REQUESTS := 6
-const RESERVED_AVATAR_CONVERSATION_REQUEST_SLOTS := 1
+const RESERVED_CONVERSATION_REQUEST_SLOTS := 1
 # 本地推理通常由一张显卡或一颗 CPU 串行处理。允许两个普通居民继续推进，
-# 再给玩家对话留一个独立位置；其余请求保留在 World 待处理队列中，
+# 再给必须答话的对话留一个独立位置；其余请求保留在 World 待处理队列中，
 # 不会因为排队而触发可见的连续性兜底。
 const MAX_CONCURRENT_LOCAL_MODEL_REQUESTS := 3
 const MAX_CONCURRENT_LOCAL_ORDINARY_REQUESTS := 2
@@ -588,7 +588,7 @@ func pump(
 	# that entry reaches dispatch, one following request may be admitted so the
 	# two stages form a bounded pipeline instead of leaving an idle frame between
 	# every resident. Pending work otherwise stays in the World queue, where a new
-	# player conversation can still be prioritized.
+	# conversation turn can still be prioritized.
 	if (
 		is_inside_tree()
 		and not allow_preparation_admission
@@ -624,21 +624,22 @@ func pump(
 		_frame_probe.record(Engine.get_process_frames(), "agentPendingCount", requests.size())
 		probe_lap_usec = now_usec
 	requests = _round_robin_requests(requests)
-	requests = _prioritize_conversation_requests(requests)
-	# 玩家或优先事件刚刚产生新的对话请求时，先让同居民旧请求失效，
-	# 再做容量投影；旧请求随后仍可返回，但不再占用逻辑槽位。
+	# 对话请求先让同居民旧请求失效，再按“释放该槽的替换请求、玩家
+	# 对话、居民对话、普通请求”排序，防止其他居民借用只为替换请求
+	# 释放的容量。
 	_mark_superseded_inflight_for_pending_requests(requests)
-	var has_pending_avatar_conversation := false
+	requests = _prioritize_conversation_requests(requests)
+	var has_pending_conversation := false
 	for request in requests:
-		if _wake_is_avatar_conversation_turn(
+		if _wake_requires_conversation_turn(
 			request.get("wakePacket", {}) as Dictionary
 		):
-			has_pending_avatar_conversation = true
+			has_pending_conversation = true
 			break
 	var selection := _select_dispatchable_requests(
 		requests,
 		max_requests,
-		has_pending_avatar_conversation,
+		has_pending_conversation,
 	)
 	requests = selection.get("selected", []) as Array[Dictionary]
 	var overflow := selection.get("overflow", []) as Array[Dictionary]
@@ -669,8 +670,8 @@ func pump(
 
 
 func prioritize_next_conversation_turn() -> void:
-	# TownRuntime calls this only after the World accepted a player conversation
-	# command. It avoids peeking into World state while keeping that request ahead
+	# TownRuntime calls this when an active conversation starts waiting for a
+	# resident. It avoids peeking into World state while keeping that request ahead
 	# of ordinary preparation already waiting in the bounded Gateway queue.
 	_conversation_priority_requested = true
 
@@ -715,7 +716,7 @@ func _probe_record_lap(key: String, lap_started_usec: int) -> int:
 func _select_dispatchable_requests(
 	requests: Array[Dictionary],
 	max_requests: int,
-	has_pending_avatar_conversation: bool,
+	has_pending_conversation: bool,
 ) -> Dictionary:
 	var selected: Array[Dictionary] = []
 	var overflow: Array[Dictionary] = []
@@ -723,7 +724,7 @@ func _select_dispatchable_requests(
 	var projected := {}
 	for inflight_decision_id: Variant in _inflight:
 		var inflight := _inflight.get(inflight_decision_id, {}) as Dictionary
-		if bool(inflight.get("superseded", false)):
+		if _inflight_capacity_released(inflight):
 			continue
 		projected[inflight_decision_id] = true
 	var projected_ordinary_count := _ordinary_inflight_count()
@@ -735,7 +736,7 @@ func _select_dispatchable_requests(
 		if not _resident_uses_local_model(inflight_resident_id):
 			continue
 		projected_local_count += 1
-		if not _wake_is_avatar_conversation_turn(
+		if not _wake_requires_conversation_turn(
 			inflight.get("wakePacket", {}) as Dictionary
 		):
 			projected_local_ordinary_count += 1
@@ -754,7 +755,7 @@ func _select_dispatchable_requests(
 			overflow.append(request)
 			continue
 		var next_total := projected.size() + 1
-		var request_is_ordinary := not _wake_is_avatar_conversation_turn(
+		var request_is_ordinary := not _wake_requires_conversation_turn(
 			wake_packet
 		)
 		var next_ordinary_count := (
@@ -780,10 +781,10 @@ func _select_dispatchable_requests(
 				> MAX_CONCURRENT_LOCAL_ORDINARY_REQUESTS
 			)
 			or (
-				not has_pending_avatar_conversation
+				not has_pending_conversation
 				and next_ordinary_count
 				> MAX_CONCURRENT_MODEL_REQUESTS
-				- RESERVED_AVATAR_CONVERSATION_REQUEST_SLOTS
+				- RESERVED_CONVERSATION_REQUEST_SLOTS
 			)
 		):
 			overflow.append(request)
@@ -828,12 +829,26 @@ func _mark_superseded_inflight_for_request(
 		):
 			var already_superseded := bool(inflight.get("superseded", false))
 			inflight["superseded"] = true
-			_inflight[inflight_decision_id] = inflight
 			if not already_superseded:
-				_cancel_resident_model_request(
-					resident_id,
-					inflight_decision_id,
+				# Preparation has not reached the provider and frees its slot at once.
+				# A dispatched request only frees capacity after Agent confirms
+				# cancellation; otherwise its late result is ignored but the real call
+				# still counts until its callback arrives.
+				inflight["capacityReleased"] = (
+					not String(inflight.get("preparationStage", "")).is_empty()
+					or _cancel_resident_model_request(
+						resident_id,
+						inflight_decision_id,
+					)
 				)
+			_inflight[inflight_decision_id] = inflight
+
+
+func _inflight_capacity_released(inflight: Dictionary) -> bool:
+	return (
+		bool(inflight.get("superseded", false))
+		and bool(inflight.get("capacityReleased", false))
+	)
 
 
 func _mark_superseded_inflight_for_pending_requests(
@@ -841,7 +856,7 @@ func _mark_superseded_inflight_for_pending_requests(
 ) -> void:
 	for request in requests:
 		var wake := request.get("wakePacket", {}) as Dictionary
-		if not _wake_is_avatar_conversation_turn(wake):
+		if not _wake_requires_conversation_turn(wake):
 			continue
 		_mark_superseded_inflight_for_request(request)
 
@@ -2175,7 +2190,7 @@ func _queue_agent_preparation(request: Dictionary) -> void:
 		"startedAtMsec": Time.get_ticks_msec(),
 	}
 	if not _agent_preparation_queue.has(decision_id):
-		if _wake_is_avatar_conversation_turn(wake):
+		if _wake_requires_conversation_turn(wake):
 			_agent_preparation_queue.push_front(decision_id)
 		else:
 			_agent_preparation_queue.append(decision_id)
@@ -2945,20 +2960,48 @@ func _prioritize_conversation_requests(
 ) -> Array[Dictionary]:
 	if requests.size() <= 1:
 		return requests
+	var replacement_conversation_requests: Array[Dictionary] = []
 	var avatar_conversation_requests: Array[Dictionary] = []
 	var conversation_requests: Array[Dictionary] = []
 	var ordinary_requests: Array[Dictionary] = []
 	for request in requests:
 		var wake := request.get("wakePacket", {}) as Dictionary
-		if _wake_is_avatar_conversation_turn(wake):
+		if (
+			_wake_requires_conversation_turn(wake)
+			and _request_replaces_released_inflight(request)
+		):
+			replacement_conversation_requests.append(request)
+		elif _wake_is_avatar_conversation_turn(wake):
 			avatar_conversation_requests.append(request)
 		elif _wake_requires_conversation_turn(wake):
 			conversation_requests.append(request)
 		else:
 			ordinary_requests.append(request)
-	avatar_conversation_requests.append_array(conversation_requests)
-	avatar_conversation_requests.append_array(ordinary_requests)
-	return avatar_conversation_requests
+	replacement_conversation_requests.append_array(avatar_conversation_requests)
+	replacement_conversation_requests.append_array(conversation_requests)
+	replacement_conversation_requests.append_array(ordinary_requests)
+	return replacement_conversation_requests
+
+
+func _request_replaces_released_inflight(request: Dictionary) -> bool:
+	var resident_id := String(request.get("residentId", ""))
+	var decision_id := String(
+		(request.get("wakePacket", {}) as Dictionary).get("decision_id", "")
+	)
+	if resident_id.is_empty() or decision_id.is_empty():
+		return false
+	for inflight_decision_value: Variant in _inflight.keys():
+		var inflight_decision_id := String(inflight_decision_value)
+		var inflight := (
+			_inflight.get(inflight_decision_id, {}) as Dictionary
+		)
+		if (
+			inflight_decision_id != decision_id
+			and String(inflight.get("residentId", "")) == resident_id
+			and _inflight_capacity_released(inflight)
+		):
+			return true
+	return false
 
 
 func _ordinary_inflight_count() -> int:
@@ -2966,12 +3009,12 @@ func _ordinary_inflight_count() -> int:
 	for inflight_value: Variant in _inflight.values():
 		if not inflight_value is Dictionary:
 			continue
-		if bool((inflight_value as Dictionary).get("superseded", false)):
+		if _inflight_capacity_released(inflight_value as Dictionary):
 			continue
 		var wake := (
 			(inflight_value as Dictionary).get("wakePacket", {}) as Dictionary
 		)
-		if not _wake_is_avatar_conversation_turn(wake):
+		if not _wake_requires_conversation_turn(wake):
 			count += 1
 	return count
 

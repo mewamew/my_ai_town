@@ -787,7 +787,28 @@ func _render_snapshot(wake_packet: Dictionary) -> String:
 				),
 			],
 		)
-	if has_work_task_activity:
+	var required_work_task_id := String(
+		place.get("required_work_task_id", ""),
+	).strip_edges()
+	if not required_work_task_id.is_empty():
+		if has_work_task_activity:
+			lines.append(
+				(
+					"当前有现场顾客等待，必须立即推进职业任务（任务%s）。"
+					+ "除非本轮必须答复正在进行的对话，否则只能选择上面标出的工作活动；"
+					+ "不能待着、闲聊或改做无关活动。"
+				)
+				% _safe(required_work_task_id),
+			)
+		elif not destinations.is_empty():
+			lines.append(
+				(
+					"当前有顾客等待，必须立即前往任务服务地点推进职业任务（任务%s）。"
+					+ "除非本轮必须答复正在进行的对话，否则不能待着、闲聊或前往无关地点。"
+				)
+				% _safe(required_work_task_id),
+			)
+	elif has_work_task_activity:
 		lines.append(
 			(
 				"当前已有能推进真实职业任务的活动，应优先处理。"

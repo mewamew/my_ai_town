@@ -104,6 +104,7 @@ static func focus_agent_place_snapshot_on_service_task(
 	place_snapshot["props"] = []
 	place_snapshot["service_control"] = {}
 	place_snapshot["message_recipients"] = []
+	place_snapshot["required_work_task_id"] = task_id
 
 static func inflight_allows_conversation_reply(
 	events: Array,

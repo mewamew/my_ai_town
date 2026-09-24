@@ -201,16 +201,95 @@ static func _validate_action(
 		)
 
 
+static func _validate_required_work_action(
+	decision: Dictionary,
+	wake_packet: Dictionary,
+	errors: Array[String],
+) -> void:
+	var snapshot := wake_packet.get("snapshot", {}) as Dictionary
+	var place := snapshot.get("place", {}) as Dictionary
+	var task_id := String(place.get("required_work_task_id", "")).strip_edges()
+	if task_id.is_empty():
+		return
+	var matching_activity_ids: Array[String] = []
+	for activity_value: Variant in place.get("activities", []) as Array:
+		if not activity_value is Dictionary:
+			continue
+		var activity := activity_value as Dictionary
+		if not (activity.get("work_task_ids", []) as Array).has(task_id):
+			continue
+		var activity_id := String(activity.get("activity_id", "")).strip_edges()
+		if not activity_id.is_empty():
+			matching_activity_ids.append(activity_id)
+	var required_place := ""
+	for task_value: Variant in snapshot.get("work_tasks", []) as Array:
+		if not task_value is Dictionary:
+			continue
+		var task := task_value as Dictionary
+		if String(task.get("task_id", "")) != task_id:
+			continue
+		required_place = String(
+			(task.get("next_step", {}) as Dictionary).get("place_id", ""),
+		).strip_edges()
+		if required_place.is_empty():
+			required_place = String(
+				(task.get("service_request", {}) as Dictionary).get(
+					"place_id",
+					"",
+				),
+			).strip_edges()
+		break
+	var handling := String(decision.get("handling", ""))
+	var action := (
+		decision.get("action", {}) as Dictionary
+		if decision.get("action") is Dictionary
+		else {}
+	)
+	if not matching_activity_ids.is_empty():
+		if (
+			handling != "replace_current"
+			or String(action.get("type", "")) != "做活动"
+			or not matching_activity_ids.has(
+				String(action.get("activity_id", "")),
+			)
+		):
+			errors.append(
+				"当前有现场顾客等待，必须立即选择能推进任务 %s 的工作活动"
+				% task_id,
+			)
+		return
+	var destinations := place.get("destinations", []) as Array
+	if not required_place.is_empty() and destinations.has(required_place):
+		if (
+			handling != "replace_current"
+			or String(action.get("type", "")) != "去"
+			or String(action.get("place", "")) != required_place
+		):
+			errors.append(
+				"当前有现场顾客等待，必须立即前往%s推进任务 %s"
+				% [required_place, task_id],
+			)
+
+
 static func _validate_traveler_relationship_beat(
 	action: Dictionary,
 	wake_packet: Dictionary,
 	errors: Array[String],
 ) -> void:
-	var conversation := (
-		(wake_packet.get("snapshot", {}) as Dictionary).get("conversation", {})
-		as Dictionary
-	)
-	var relationship := conversation.get("traveler_relationship", {}) as Dictionary
+	var snapshot_value: Variant = wake_packet.get("snapshot", {})
+	if not snapshot_value is Dictionary:
+		return
+	var conversation_value: Variant = (
+		snapshot_value as Dictionary
+	).get("conversation")
+	if not conversation_value is Dictionary:
+		return
+	var relationship_value: Variant = (
+		conversation_value as Dictionary
+	).get("traveler_relationship")
+	if not relationship_value is Dictionary:
+		return
+	var relationship := relationship_value as Dictionary
 	var affinity := int(relationship.get("affinity", 50))
 	if relationship.is_empty() or affinity < 53:
 		return

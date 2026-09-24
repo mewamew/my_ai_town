@@ -3269,6 +3269,26 @@ func _on_runtime_world_restored(_summary: Dictionary) -> void:
 	# or agent decision event.
 	_sync_environment_space_occupancy()
 	_sync_building_resident_markers()
+	_prioritize_restored_resident_conversation()
+
+
+func _prioritize_restored_resident_conversation() -> void:
+	if _world == null or _agent_gateway == null:
+		return
+	var avatar_state := _world.get_player_avatar_state() as Dictionary
+	for conversation_value: Variant in _world.get_active_conversations() as Array:
+		if (
+			conversation_value is Dictionary
+			and _conversation_waits_for_resident(
+				conversation_value as Dictionary,
+				avatar_state,
+			)
+		):
+			# A save can contain the suspended action and unanswered conversation
+			# created before this scheduling fix. Re-open the priority lane on restore
+			# so that existing saves recover without waiting behind ordinary work.
+			_agent_gateway.prioritize_next_conversation_turn()
+			return
 
 
 func _on_runtime_player_avatar_place_changed(_change: Dictionary) -> void:
@@ -3311,7 +3331,31 @@ func _on_runtime_conversation_changed(conversation_id: String, state: Dictionary
 		if not cue.is_empty():
 			_play_audio_cue(cue)
 		_conversation_audio_turn_counts[conversation_id] = turns.size()
+	if (
+		_agent_gateway != null
+		and String(state.get("status", "")) == "active"
+		and _conversation_waits_for_resident(state, avatar_state)
+	):
+		# conversation_changed is emitted immediately before World queues the
+		# resident's reply event. Keep the admission flag set for the next frame so
+		# a resident-to-resident conversation can bypass ordinary preparation just
+		# like a player conversation instead of suspending the target indefinitely.
+		_agent_gateway.prioritize_next_conversation_turn()
 	_update_player_conversation_panel()
+
+
+static func _conversation_waits_for_resident(
+	state: Dictionary,
+	avatar_state: Dictionary,
+) -> bool:
+	var waiting_for := String(state.get("waitingFor", "")).strip_edges()
+	if waiting_for.is_empty():
+		return false
+	var avatar_name := String(avatar_state.get("name", "旅行者")).strip_edges()
+	var avatar_id := String(avatar_state.get("residentId", "")).strip_edges()
+	return waiting_for != avatar_name and (
+		avatar_id.is_empty() or waiting_for != avatar_id
+	)
 
 
 func _conversation_includes_avatar(

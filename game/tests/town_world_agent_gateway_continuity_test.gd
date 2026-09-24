@@ -442,6 +442,7 @@ func _initialize() -> void:
 	_test_null_conversation_snapshot_is_not_an_avatar_turn()
 	_test_light_conversation_envelope_uses_event_identity()
 	_test_rapid_avatar_reopen_preempts_same_resident_stale_call()
+	_test_resident_invitation_preempts_same_resident_ordinary_call()
 	_test_duplicate_display_names_route_by_id()
 	_test_runtime_resident_bindings_can_be_replaced_atomically()
 	_test_inner_observation_accepts_newer_read_only_world_revision()
@@ -457,6 +458,7 @@ func _initialize() -> void:
 	_test_local_model_queue_preserves_town_and_avatar_lane()
 	_test_conversation_turn_preempts_ordinary_life_requests()
 	_test_conversation_lane_stays_available_during_ordinary_work()
+	_test_resident_conversation_lane_stays_available_during_ordinary_work()
 	_test_immediate_agent_rejection_cannot_loop_forever()
 	_test_recovered_admission_rejection_is_not_final()
 	_test_provider_failure_stays_final_when_continuity_keeps_life_moving()
@@ -617,6 +619,103 @@ func _test_rapid_avatar_reopen_preempts_same_resident_stale_call() -> void:
 			"requestId": "decision-old-0",
 		}],
 		"the superseded player conversation asks Agent to cancel the real request",
+	)
+	gateway.free()
+
+
+func _test_resident_invitation_preempts_same_resident_ordinary_call() -> void:
+	var agent := CancellableDelayedAgent.new()
+	var world := EnvelopePendingWorld.new()
+	var gateway: Node = GATEWAY.new()
+	gateway.set("_agent_system", agent)
+	gateway.set("_provider_service", ProviderServiceStub.new())
+	gateway.set("_world", world)
+	gateway.set("_avatar_person_id", "player_avatar")
+	var connected_resident_ids: Array[String] = [
+		"resident-new",
+		"resident-hanako",
+		"resident-miya",
+		"resident-busy-1",
+		"resident-busy-2",
+		"resident-busy-3",
+		"resident-busy-4",
+		"resident-busy-5",
+	]
+	gateway.set("_connected_resident_ids", connected_resident_ids)
+	gateway.set("_session_active", true)
+	var inflight := {}
+	for index in 6:
+		var resident_id := (
+			"resident-hanako" if index == 0 else "resident-busy-%d" % index
+		)
+		var decision_id := "decision-ordinary-%d" % index
+		inflight[decision_id] = {
+			"residentId": resident_id,
+			"residentName": resident_id,
+			"wakePacket": _wake(decision_id),
+		}
+	gateway.set("_inflight", inflight)
+	var unrelated_wake := _wake("decision-unrelated-conversation")
+	unrelated_wake.erase("snapshot")
+	unrelated_wake["events"] = [{
+		"event_id": "unrelated-conversation-turn",
+		"type": "搭话",
+		"conversation_id": "conversation-unrelated",
+		"participant_resident_ids": ["resident-miya", "resident-new"],
+	}]
+	world.add_request({
+		"residentId": "resident-new",
+		"residentName": "新居民",
+		"wakePacket": unrelated_wake,
+	})
+	var reply_wake := _wake("decision-resident-reply")
+	reply_wake.erase("snapshot")
+	reply_wake["events"] = [{
+		"event_id": "resident-conversation-turn",
+		"type": "搭话",
+		"conversation_id": "conversation-resident",
+		"participant_resident_ids": ["resident-miya", "resident-hanako"],
+		"turn": {"speaker_resident_id": "resident-miya"},
+	}]
+	world.add_request({
+		"residentId": "resident-hanako",
+		"residentName": "花子",
+		"wakePacket": reply_wake,
+	})
+	_expect_equal(
+		gateway.call("pump"),
+		1,
+		"a resident invitation displaces the target's stale ordinary request",
+	)
+	inflight = gateway.get("_inflight") as Dictionary
+	_expect(
+		inflight.has("decision-resident-reply"),
+		"the resident reply owns the newly available logical slot",
+	)
+	_expect(
+		not inflight.has("decision-unrelated-conversation"),
+		"another resident cannot borrow capacity released for the replacement",
+	)
+	_expect(
+		world.redispatched.has("decision-unrelated-conversation"),
+		"the unrelated conversation remains queued for a real free slot",
+	)
+	_expect(
+		bool(
+			(inflight.get("decision-ordinary-0", {}) as Dictionary).get(
+				"superseded",
+				false,
+			)
+		),
+		"the interrupted resident's ordinary request is superseded before selection",
+	)
+	_expect_equal(
+		agent.cancelled_requests,
+		[{
+			"residentId": "resident-hanako",
+			"requestId": "decision-ordinary-0",
+		}],
+		"the resident conversation cancels the stale provider call",
 	)
 	gateway.free()
 
@@ -1681,6 +1780,68 @@ func _test_conversation_lane_stays_available_during_ordinary_work() -> void:
 		agent.requested_resident_ids.back(),
 		"resident-f",
 		"reserved lane dispatches the waiting avatar conversation",
+	)
+	gateway.free()
+
+
+func _test_resident_conversation_lane_stays_available_during_ordinary_work() -> void:
+	var agent := DelayedFailingAgent.new()
+	var world := PendingWorld.new()
+	var resident_ids: Array[String] = [
+		"resident-a",
+		"resident-b",
+		"resident-c",
+		"resident-d",
+		"resident-e",
+		"resident-hanako",
+	]
+	for resident_id in resident_ids.slice(0, 5):
+		world.add_request(_request(resident_id, "decision-%s" % resident_id))
+	var gateway: Node = GATEWAY.new()
+	gateway.set("_agent_system", agent)
+	gateway.set("_provider_service", ProviderServiceStub.new())
+	gateway.set("_world", world)
+	gateway.set("_connected_resident_ids", resident_ids)
+	gateway.set("_session_active", true)
+
+	_expect_equal(
+		gateway.call("pump"),
+		5,
+		"five ordinary requests leave one lane available for any conversation",
+	)
+	var urgent := _request("resident-hanako", "decision-resident-reply")
+	var wake := urgent.get("wakePacket", {}) as Dictionary
+	wake["snapshot"]["conversation"] = {
+		"conversation_id": "conversation-resident",
+		"with_resident_id": "resident-miya",
+		"with": "米芽",
+		"turns": [],
+	}
+	wake["events"] = [{
+		"event_id": "conversation-resident-turn",
+		"time": {"day": 1, "clock": "18:12", "period": "傍晚"},
+		"type": "搭话",
+		"conversation_id": "conversation-resident",
+		"participant_resident_ids": ["resident-miya", "resident-hanako"],
+		"turn": {
+			"turn_id": 1,
+			"speaker_resident_id": "resident-miya",
+			"speaker": "米芽",
+			"say": "忙完一起吃饭吗？",
+			"narration": "",
+			"photos": [],
+		},
+	}]
+	world.add_request(urgent)
+	_expect_equal(
+		gateway.call("pump"),
+		1,
+		"resident reply starts while all ordinary lanes remain occupied",
+	)
+	_expect_equal(
+		agent.requested_resident_ids.back(),
+		"resident-hanako",
+		"the reserved lane dispatches the waiting resident conversation",
 	)
 	gateway.free()
 

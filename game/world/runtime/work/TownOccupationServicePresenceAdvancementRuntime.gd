@@ -21,18 +21,10 @@ static func schedule_worker(host, request: Dictionary) -> void:
 		request,
 		host.PRIORITY_INTERRUPT_THRESHOLD,
 	)
-	var task_id := String(context.get("taskId", ""))
 	var can_interrupt := bool(context.get("canInterrupt", false))
 	var assigned_resident_id := String(context.get("assignedResidentId", ""))
 	if not assigned_resident_id.is_empty():
-		if host.WORK_TASK_PUBLIC_RUNTIME.resident_is_actively_processing(host,
-			assigned_resident_id,
-			task_id,
-		):
-			return
-		host._schedule_decision(
-			assigned_resident_id, can_interrupt, false, can_interrupt,
-		)
+		_schedule_available_worker(host, assigned_resident_id, can_interrupt)
 		return
 	var definition := OCCUPATION_SERVICE_DEFINITION.definition(
 		String(request.get("kind", "")),
@@ -46,9 +38,27 @@ static func schedule_worker(host, request: Dictionary) -> void:
 			String(definition.get("capability", "")),
 		)
 	):
-		host._schedule_decision(
-			resident_id, can_interrupt, false, can_interrupt,
+		_schedule_available_worker(host, resident_id, can_interrupt)
+
+
+static func _schedule_available_worker(host, resident_id: String, can_interrupt: bool) -> void:
+	var resident := host.resident_registry.records.get(resident_id, {}) as Dictionary
+	# Presence polling is a reminder, not a new event. Replacing an in-flight
+	# reply or handoff every world minute starves any slower model response.
+	if resident.is_empty() or bool(resident.get("decisionPending", false)):
+		return
+	var current_action_id := String(
+		(resident.get("currentAction", {}) as Dictionary).get("action_id", ""),
+	)
+	if not current_action_id.is_empty():
+		var bound_task_id: String = host.activity_work_task_bindings.task_id_for_key(
+			host.ACTIVITY_WORK_TASK_BINDING_RUNTIME.binding_key(resident_id, current_action_id),
 		)
+		# Later customers must not interrupt the worker's already-bound order.
+		# Completion, cancellation and real urgent events retain their own wakes.
+		if not bound_task_id.is_empty():
+			return
+	host._schedule_decision(resident_id, false, false, can_interrupt)
 
 
 static func sync(host, absolute_minute: int) -> void:
