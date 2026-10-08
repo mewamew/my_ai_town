@@ -13,6 +13,7 @@ game/addons/
 game/AI资源库/
 game/romestead_weather_free/
 __pycache__/
+game/test_bridge/artifacts/
 
 # 本地发布产物与临时分析文档，不进版本库
 release/

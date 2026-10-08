@@ -792,6 +792,42 @@ static func nearest_safe_position(
 	return resolved
 
 
+static func safe_position(
+	world_data_value: Variant,
+	space_id_value: Variant,
+	position_value: Variant,
+) -> Dictionary:
+	var world_data := _dictionary_or_empty(world_data_value)
+	var space_id := _canonical_text(space_id_value)
+	var position := _movement_point(position_value)
+	if world_data.is_empty() or space_id.is_empty() or not _finite(position):
+		return {}
+	if (
+		space_id == OUTDOOR_SPACE_ID
+		and not OUTDOOR_MOVEMENT_CLEARANCE.BODY_ORIGIN_BOUNDS.has_point(position)
+	):
+		return {}
+	var resolved := (
+		_safe_outdoor_position_record(
+			world_data,
+			position,
+			_cached_outdoor_navigation_polygons(),
+			_cached_outdoor_collision_records(),
+		)
+		if space_id == OUTDOOR_SPACE_ID
+		else _safe_indoor_position_record(
+			world_data,
+			space_id,
+			position,
+			_navigation_for_space(world_data, space_id),
+		)
+	)
+	if resolved.is_empty():
+		return {}
+	resolved["spaceId"] = space_id
+	return resolved
+
+
 static func _nearest_safe_outdoor_position(
 	world_data: Dictionary,
 	preferred_position: Vector2,

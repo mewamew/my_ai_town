@@ -1,0 +1,2 @@
+# Load-smoke version validated with Python 3.11.16 in the gametest-phase2 Conda environment.
+locust==2.34.0

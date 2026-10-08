@@ -1,0 +1,16 @@
+# Updated: 2026-09-18 19:22:50 +08:00 (Asia/Shanghai)
+name: gametest-phase2
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11.16
+  - pip=26.2.1
+  - openjdk=21.0.10
+  - pip:
+      - airtest==1.4.3
+      - jsonschema==4.16.0
+      - locust==2.34.0
+      - pylint==2.14.5
+      - pytest==8.3.4
+      - requests==2.34.2

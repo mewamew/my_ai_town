@@ -924,6 +924,9 @@ func is_paused() -> bool:
 func get_world_revision() -> int:
 	return _world_revision
 
+func get_runtime_generation() -> int:
+	return _runtime_generation
+
 func get_simulation_speed() -> int:
 	return _simulation_speed
 

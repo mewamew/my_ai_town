@@ -1,6 +1,8 @@
 class_name AgentResidentMemorySystem
 extends RefCounted
 
+const TEST_FILE_SYSTEM := preload("res://agent/AgentFileSystem.gd")
+
 
 const MAX_RESIDENT_STORAGE_SEGMENT_LENGTH := 48
 const RESIDENT_STORAGE_KEY_LENGTH := 24
@@ -967,20 +969,17 @@ func seed_debug_memory(memory: Variant) -> Dictionary:
 		return replacement
 	var queue_initialization := _evidence_queue.call("initialize_empty") as Dictionary
 	if not bool(queue_initialization.get("ok", false)):
-		_clear_resident_storage()
-		return queue_initialization
+		return _failure_with_retained_cleanup(queue_initialization)
 	var archive_initialization := _memory_entry_store.call(
 		"initialize_empty",
 	) as Dictionary
 	if not bool(archive_initialization.get("ok", false)):
-		_clear_resident_storage()
-		return archive_initialization
+		return _failure_with_retained_cleanup(archive_initialization)
 	var intervention_initialization := _memory_intervention_store.call(
 		"initialize_empty",
 	) as Dictionary
 	if not bool(intervention_initialization.get("ok", false)):
-		_clear_resident_storage()
-		return intervention_initialization
+		return _failure_with_retained_cleanup(intervention_initialization)
 	_memory = (replacement["memory"] as Dictionary).duplicate(true)
 	_storage_initialized = true
 	_last_update = {
@@ -1120,22 +1119,19 @@ func apply_persistent_state(value: Variant) -> Dictionary:
 		state["evidence_queue"],
 	) as Dictionary
 	if not bool(queue_application.get("ok", false)):
-		_clear_resident_storage()
-		return queue_application
+		return _failure_with_retained_cleanup(queue_application)
 	var archive_application := _memory_entry_store.call(
 		"replace",
 		state["formal_memory_archive"],
 	) as Dictionary
 	if not bool(archive_application.get("ok", false)):
-		_clear_resident_storage()
-		return archive_application
+		return _failure_with_retained_cleanup(archive_application)
 	var intervention_application := _memory_intervention_store.call(
 		"replace",
 		state["memory_interventions"],
 	) as Dictionary
 	if not bool(intervention_application.get("ok", false)):
-		_clear_resident_storage()
-		return intervention_application
+		return _failure_with_retained_cleanup(intervention_application)
 	_pending_actions.clear()
 	for pending_value: Variant in state["pending_actions"]:
 		var pending := pending_value as Dictionary
@@ -1364,21 +1360,18 @@ func _load_current_state(initialize_missing: bool = false) -> Dictionary:
 				"initialize_empty",
 			) as Dictionary
 			if not bool(queue_initialization.get("ok", false)):
-				_clear_resident_storage()
-				return queue_initialization
+				return _failure_with_retained_cleanup(queue_initialization)
 	if initialize_missing and not archive_exists:
 		var archive_initialization := _memory_entry_store.call(
 			"initialize_empty",
 		) as Dictionary
 		if not bool(archive_initialization.get("ok", false)):
-			_clear_resident_storage()
-			return archive_initialization
+			return _failure_with_retained_cleanup(archive_initialization)
 		var intervention_initialization := _memory_intervention_store.call(
 			"initialize_empty",
 		) as Dictionary
 		if not bool(intervention_initialization.get("ok", false)):
-			_clear_resident_storage()
-			return intervention_initialization
+			return _failure_with_retained_cleanup(intervention_initialization)
 	_memory = (memory_result["memory"] as Dictionary).duplicate(true)
 	if initialize_missing or memory_exists:
 		_storage_initialized = true
@@ -2175,13 +2168,29 @@ func _organization_failure(result: Dictionary, safe_to_continue: bool) -> Dictio
 	return failure
 
 
-func _clear_resident_storage() -> void:
+func _clear_resident_storage() -> Dictionary:
 	for path: String in [_memory_path, "%s.tmp" % _memory_path, "%s.bak" % _memory_path]:
-		if FileAccess.file_exists(path):
+		if TEST_FILE_SYSTEM.test_retention_enabled():
+			var error := TEST_FILE_SYSTEM.retain_for_test(path)
+			if error != OK:
+				return {"ok": false, "errorCode": "AGENT_TEST_RETENTION_FAILED",
+					"errors": ["测试记忆文件保留失败：%s" % error_string(error)]}
+		elif FileAccess.file_exists(path):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
-	_evidence_queue.call("erase_storage")
-	_memory_entry_store.call("erase_storage")
-	_memory_intervention_store.call("erase_storage")
+	for store: RefCounted in [_evidence_queue, _memory_entry_store, _memory_intervention_store]:
+		var result: Dictionary = store.call("erase_storage")
+		if result.get("ok") != true:
+			return result
+	return {"ok": true}
+
+
+func _failure_with_retained_cleanup(original: Dictionary) -> Dictionary:
+	var cleanup := _clear_resident_storage()
+	if cleanup.get("ok") == true:
+		return original
+	var result := _combined_failure(original, [cleanup])
+	result["cleanupErrorCode"] = cleanup.get("errorCode", "AGENT_TEST_RETENTION_FAILED")
+	return result
 
 
 func _has_exact_fields(value: Dictionary, fields: Array) -> bool:

@@ -1,6 +1,8 @@
 class_name AgentResidentMemoryInterventionStore
 extends RefCounted
 
+const TEST_FILE_SYSTEM := preload("res://agent/AgentFileSystem.gd")
+
 
 const AgentJsonScript := preload("res://agent/AgentJson.gd")
 const STATE_VERSION := 1
@@ -39,9 +41,11 @@ func initialize_empty() -> Dictionary:
 	return replace(empty_log())
 
 
-func erase_storage() -> void:
+func erase_storage() -> Dictionary:
 	for path: String in [_path, "%s.tmp" % _path, "%s.bak" % _path]:
-		_remove_file(path)
+		if _remove_file(path) != OK:
+			return _test_retention_failure()
+	return {"ok": true}
 
 
 func replace(value: Variant) -> Dictionary:
@@ -56,7 +60,8 @@ func replace(value: Variant) -> Dictionary:
 		return _failure("无法创建居民记忆介入目录：%s" % error_string(directory_error))
 	var temporary_path := "%s.tmp" % _path
 	var backup_path := "%s.bak" % _path
-	_remove_file(temporary_path)
+	if _remove_file(temporary_path) != OK:
+		return _test_retention_failure()
 	var file := FileAccess.open(temporary_path, FileAccess.WRITE)
 	if file == null:
 		return _failure("无法写入居民记忆介入临时文件：%s" % temporary_path)
@@ -65,20 +70,24 @@ func replace(value: Variant) -> Dictionary:
 	var write_error := file.get_error()
 	file = null
 	if write_error != OK:
-		_remove_file(temporary_path)
+		if _remove_file(temporary_path) != OK:
+			return _test_retention_failure()
 		return _failure("无法写入居民记忆介入记录：%s" % error_string(write_error))
 	var verification := _read_path(temporary_path)
 	if not bool(verification.get("ok", false)):
-		_remove_file(temporary_path)
+		if _remove_file(temporary_path) != OK:
+			return _test_retention_failure()
 		return verification
-	_remove_file(backup_path)
+	if _remove_file(backup_path) != OK:
+		return _test_retention_failure()
 	if FileAccess.file_exists(_path):
 		var backup_error := DirAccess.rename_absolute(
 			ProjectSettings.globalize_path(_path),
 			ProjectSettings.globalize_path(backup_path),
 		)
 		if backup_error != OK:
-			_remove_file(temporary_path)
+			if _remove_file(temporary_path) != OK:
+				return _test_retention_failure()
 			return _failure("无法准备居民记忆介入原子替换：%s" % error_string(backup_error))
 	var replace_error := DirAccess.rename_absolute(
 		ProjectSettings.globalize_path(temporary_path),
@@ -90,9 +99,11 @@ func replace(value: Variant) -> Dictionary:
 				ProjectSettings.globalize_path(backup_path),
 				ProjectSettings.globalize_path(_path),
 			)
-		_remove_file(temporary_path)
+		if _remove_file(temporary_path) != OK:
+			return _test_retention_failure()
 		return _failure("无法提交居民记忆介入记录：%s" % error_string(replace_error))
-	_remove_file(backup_path)
+	if _remove_file(backup_path) != OK:
+		return _test_retention_failure()
 	return {"ok": true, "log": log.duplicate(true)}
 
 
@@ -261,11 +272,13 @@ func _read_path(path: String) -> Dictionary:
 
 func _recover_backup() -> Dictionary:
 	var backup_path := "%s.bak" % _path
-	_remove_file("%s.tmp" % _path)
+	if _remove_file("%s.tmp" % _path) != OK:
+		return _test_retention_failure()
 	if not FileAccess.file_exists(backup_path):
 		return {"ok": true}
 	if FileAccess.file_exists(_path):
-		_remove_file(backup_path)
+		if _remove_file(backup_path) != OK:
+			return _test_retention_failure()
 		return {"ok": true}
 	var error := DirAccess.rename_absolute(
 		ProjectSettings.globalize_path(backup_path),
@@ -283,9 +296,17 @@ func _has_exact_fields(value: Dictionary, fields: Array) -> bool:
 	return true
 
 
-func _remove_file(path: String) -> void:
+func _remove_file(path: String) -> Error:
+	if TEST_FILE_SYSTEM.test_retention_enabled():
+		return TEST_FILE_SYSTEM.retain_for_test(path)
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	return OK
+
+
+func _test_retention_failure() -> Dictionary:
+	return {"ok": false, "errorCode": "AGENT_TEST_RETENTION_FAILED", "retryable": false,
+		"errors": ["测试记忆文件保留失败"]}
 
 
 func _failure(message: String) -> Dictionary:

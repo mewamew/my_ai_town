@@ -1,0 +1,116 @@
+# Updated: 2026-10-02 12:05:00 +08:00 (Asia/Shanghai)
+name: phase2-validation
+
+on:
+  push:
+    branches: [main, 'phase2/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase2-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bridge-regression:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Enable long Git paths before checkout
+        shell: pwsh
+        run: git config --global core.longpaths true
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.9'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+
+      - name: Install pinned Phase 2 tools
+        shell: pwsh
+        run: |
+          python -m pip install --requirement game/test_bridge/requirements-phase2-core.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm install --global newman@6.2.2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run isolated Phase 2 regressions and import evidence
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'godot-4.7.2.zip'
+          $toolDir = Join-Path $env:RUNNER_TEMP 'godot-4.7.2'
+          Invoke-WebRequest `
+            -Uri 'https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_win64.exe.zip' `
+            -OutFile $archive
+          Expand-Archive -LiteralPath $archive -DestinationPath $toolDir
+          $godot = Get-ChildItem -LiteralPath $toolDir -Filter '*console.exe' | Select-Object -First 1
+          if (-not $godot) { throw 'Godot console executable not found' }
+          & $godot.FullName --headless --path game --import --log-file (Join-Path $toolDir 'import.log') -- --gametest-isolated-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $artifacts = Join-Path $PWD 'game/test_bridge/artifacts'
+          New-Item -ItemType Directory -Path $artifacts -Force | Out-Null
+          & game/test_bridge/run_phase2_ci.ps1 `
+            -Stage all `
+            -RunId 'actions-${{ github.run_id }}-${{ github.run_attempt }}' `
+            -BuildNumber '${{ github.run_number }}' `
+            -ArtifactsRoot $artifacts `
+            -PythonPath (Get-Command python).Source `
+            -GodotPath $godot.FullName `
+            -NewmanPath (Get-Command newman.cmd).Source `
+            -ExecutionMode github-actions
+          exit $LASTEXITCODE
+
+      - name: Preserve reports even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: game/test_bridge/artifacts/
+          if-no-files-found: warn
+          retention-days: 7
+
+  locust-static:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Enable long Git paths before checkout
+        shell: pwsh
+        run: git config --global core.longpaths true
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.9'
+
+      - name: Install core and load-test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --requirement game/test_bridge/requirements-phase2-core.txt --requirement game/test_bridge/requirements-phase2-load.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Check Locust scenario syntax and imports
+        shell: pwsh
+        run: |
+          python -m compileall -q game/test_bridge/locust
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pylint game/test_bridge/locust/locustfile.py 2>&1 |
+            Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'locust-static.log')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Preserve Locust static report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-locust-static-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/locust-static.log
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GameTest Bridge response v0.1",
+  "description": "Updated 2026-10-05. Read snapshots, opt-in commands, formal session save/load, WebSocket semantic events and a read-only emitted-event cursor (not a delivery acknowledgement). Request and event contracts are under #/$defs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocolVersion", "requestId", "ok", "data", "error"],
+  "properties": {
+    "protocolVersion": {"const": "0.1"},
+    "requestId": {"type": "string", "minLength": 1},
+    "ok": {"type": "boolean"},
+    "data": {},
+    "error": {}
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "ok": {"const": true},
+        "error": {"type": "null"},
+        "data": {"oneOf": [{"$ref": "#/$defs/health"}, {"$ref": "#/$defs/world"}, {"$ref": "#/$defs/residentSnapshot"}, {"$ref": "#/$defs/commandReceipt"}, {"$ref": "#/$defs/moveReceipt"}, {"$ref": "#/$defs/sessionReceipt"}, {"$ref": "#/$defs/eventCursor"}]}
+      }
+    },
+    {
+      "properties": {
+        "ok": {"const": false},
+        "data": {"type": "null"},
+        "error": {
+          "type": "object", "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {"code": {"type": "string", "minLength": 1}, "message": {"type": "string"}}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9_:-]+$"},
+    "setSpeedRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["commandId", "idempotencyKey", "expectedSessionId", "expectedWorldGeneration", "expectedStateVersion", "timeoutMs", "speed"],
+      "properties": {
+        "commandId": {"$ref": "#/$defs/identifier"},
+        "idempotencyKey": {"$ref": "#/$defs/identifier"},
+        "expectedSessionId": {"$ref": "#/$defs/identifier"},
+        "expectedWorldGeneration": {"$ref": "#/$defs/identifier"},
+        "expectedStateVersion": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        "timeoutMs": {"type": "integer", "minimum": 1, "maximum": 3000},
+        "speed": {"type": "integer", "enum": [1, 2, 3]}
+      }
+    },
+    "movePlayerRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["commandId", "idempotencyKey", "expectedSessionId", "expectedWorldGeneration", "expectedStateVersion", "timeoutMs", "spaceId", "targetPosition", "tolerance"],
+      "properties": {
+        "commandId": {"$ref": "#/$defs/identifier"},
+        "idempotencyKey": {"$ref": "#/$defs/identifier"},
+        "expectedSessionId": {"$ref": "#/$defs/identifier"},
+        "expectedWorldGeneration": {"$ref": "#/$defs/identifier"},
+        "expectedStateVersion": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        "timeoutMs": {"type": "integer", "minimum": 1, "maximum": 30000},
+        "spaceId": {"$ref": "#/$defs/identifier"},
+        "targetPosition": {"$ref": "#/$defs/coordinate"},
+        "tolerance": {"type": "number", "minimum": 2, "maximum": 64}
+      }
+    },
+    "sessionCommandRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["commandId", "idempotencyKey", "expectedSessionId", "expectedWorldGeneration", "expectedStateVersion", "timeoutMs"],
+      "properties": {
+        "commandId": {"$ref": "#/$defs/identifier"},
+        "idempotencyKey": {"$ref": "#/$defs/identifier"},
+        "expectedSessionId": {"$ref": "#/$defs/identifier"},
+        "expectedWorldGeneration": {"$ref": "#/$defs/identifier"},
+        "expectedStateVersion": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        "timeoutMs": {"type": "integer", "minimum": 1, "maximum": 120000}
+      }
+    },
+    "commandReceipt": {
+      "allOf": [{"$ref": "#/$defs/metadata"}],
+      "type": "object", "unevaluatedProperties": false,
+      "required": ["accepted", "commandId", "status", "result"],
+      "properties": {
+        "accepted": {"const": true},
+        "commandId": {"$ref": "#/$defs/identifier"},
+        "status": {"const": "completed"},
+        "result": {
+          "type": "object", "additionalProperties": false,
+          "required": ["simulationSpeed", "changed"],
+          "properties": {"simulationSpeed": {"type": "integer", "enum": [1, 2, 3]}, "changed": {"type": "boolean"}}
+        }
+      }
+    },
+    "moveReceipt": {
+      "allOf": [{"$ref": "#/$defs/metadata"}],
+      "type": "object", "unevaluatedProperties": false,
+      "required": ["accepted", "commandId", "commandType", "status", "result", "failure", "progress"],
+      "properties": {
+        "accepted": {"const": true},
+        "commandId": {"$ref": "#/$defs/identifier"},
+        "commandType": {"const": "move-player"},
+        "status": {"enum": ["running", "completed", "failed"]},
+        "result": {
+          "type": ["object", "null"],
+          "properties": {
+            "spaceId": {"type": "string"}, "position": {"$ref": "#/$defs/coordinate"},
+            "targetPosition": {"$ref": "#/$defs/coordinate"}, "tolerance": {"type": "number"},
+            "changed": {"type": "boolean"}
+          },
+          "required": ["spaceId", "position", "targetPosition", "tolerance", "changed"],
+          "additionalProperties": false
+        },
+        "failure": {
+          "type": ["object", "null"],
+          "properties": {"code": {"type": "string", "minLength": 1}, "message": {"type": "string"}},
+          "required": ["code", "message"], "additionalProperties": false
+        },
+        "progress": {
+          "type": "object", "additionalProperties": false,
+          "required": ["spaceId", "startPosition", "currentPosition", "targetPosition", "distance"],
+          "properties": {
+            "spaceId": {"type": "string"}, "startPosition": {"$ref": "#/$defs/coordinate"},
+            "currentPosition": {"$ref": "#/$defs/coordinate"}, "targetPosition": {"$ref": "#/$defs/coordinate"},
+            "distance": {"type": "number", "minimum": 0}
+          }
+        }
+      }
+    },
+    "sessionReceipt": {
+      "allOf": [{"$ref": "#/$defs/metadata"}],
+      "type": "object", "unevaluatedProperties": false,
+      "required": ["accepted", "commandId", "commandType", "status", "result", "failure"],
+      "properties": {
+        "accepted": {"const": true},
+        "commandId": {"$ref": "#/$defs/identifier"},
+        "commandType": {"enum": ["save", "load"]},
+        "status": {"enum": ["running", "completed", "failed"]},
+        "result": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["slotId", "sessionId", "saveRevision"],
+          "properties": {
+            "slotId": {"type": "string"}, "sessionId": {"type": "string"},
+            "saveRevision": {"type": "integer", "minimum": 1},
+            "worldGeneration": {"type": "string", "minLength": 1}
+          }
+        },
+        "failure": {
+          "type": ["object", "null"],
+          "properties": {"code": {"type": "string", "minLength": 1}, "message": {"type": "string"}},
+          "required": ["code", "message"], "additionalProperties": false
+        }
+      }
+    },
+    "event": {
+      "oneOf": [
+        {"$ref": "#/$defs/commandEvent"},
+        {"$ref": "#/$defs/stateVersionEvent"}
+      ]
+    },
+    "eventBase": {
+      "type": "object",
+      "required": ["protocolVersion", "eventId", "eventSequence", "eventType", "sessionId", "worldGeneration", "stateVersion", "capturedAt"],
+      "properties": {
+        "protocolVersion": {"const": "0.1"},
+        "eventId": {"type": "string", "minLength": 1},
+        "eventSequence": {"type": "integer", "minimum": 1},
+        "eventType": {"type": "string"},
+        "sessionId": {"type": "string"},
+        "worldGeneration": {"type": "string", "minLength": 1},
+        "stateVersion": {"type": "integer", "minimum": 0},
+        "capturedAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "commandEvent": {
+      "allOf": [{"$ref": "#/$defs/eventBase"}],
+      "type": "object", "unevaluatedProperties": false,
+      "required": ["commandId", "commandType", "result", "failure"],
+      "properties": {
+        "eventType": {"enum": ["command-completed", "command-failed"]},
+        "commandId": {"$ref": "#/$defs/identifier"},
+        "commandType": {"enum": ["set-speed", "move-player", "save", "load"]},
+        "result": {}, "failure": {}
+      }
+    },
+    "stateVersionEvent": {
+      "allOf": [{"$ref": "#/$defs/eventBase"}],
+      "type": "object", "unevaluatedProperties": false,
+      "required": ["previousWorldGeneration", "previousStateVersion"],
+      "properties": {
+        "eventType": {"const": "state-version-changed"},
+        "previousWorldGeneration": {"type": "string", "minLength": 1},
+        "previousStateVersion": {"type": "integer", "minimum": 0}
+      }
+    },
+    "health": {
+      "type": "object", "additionalProperties": false,
+      "required": ["bridgeReady", "worldReady", "readOnly"],
+      "properties": {"bridgeReady": {"const": true}, "worldReady": {"type": "boolean"}, "readOnly": {"type": "boolean"}}
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["sessionId", "worldGeneration", "stateVersion", "capturedAt"],
+      "properties": {
+        "sessionId": {"type": "string"},
+        "worldGeneration": {"type": "string", "minLength": 1},
+        "stateVersion": {"type": "integer", "minimum": 0},
+        "capturedAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "eventCursor": {
+      "allOf": [{"$ref": "#/$defs/metadata"}],
+      "type": "object", "unevaluatedProperties": false,
+      "required": ["streamId", "lastEmittedEventSequence"],
+      "properties": {
+        "streamId": {"type": "string", "pattern": "^[a-f0-9]{24}$"},
+        "lastEmittedEventSequence": {"type": "integer", "minimum": 0, "maximum": 9007199254740991}
+      }
+    },
+    "coordinate": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number"}},
+    "playerAvatar": {
+      "type": "object", "additionalProperties": false,
+      "required": ["residentId", "name", "currentPlace", "spaceId", "position", "doing", "present"],
+      "properties": {
+        "residentId": {"type": "string", "minLength": 1}, "name": {"type": "string"},
+        "currentPlace": {"type": "string"}, "spaceId": {"type": "string"},
+        "position": {"$ref": "#/$defs/coordinate"}, "doing": {"type": "string"}, "present": {"type": "boolean"}
+      }
+    },
+    "world": {
+      "allOf": [{"$ref": "#/$defs/metadata"}],
+      "type": "object", "unevaluatedProperties": false,
+      "required": ["time", "lifecycle", "simulationSpeed", "residents", "residentCount", "playerAvatar"],
+      "properties": {
+        "time": {"type": "object"},
+        "lifecycle": {"type": "object"},
+        "simulationSpeed": {"enum": [1, 2, 3]},
+        "residentCount": {"type": "integer", "minimum": 0},
+        "playerAvatar": {"$ref": "#/$defs/playerAvatar"},
+        "residents": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["residentId", "name"],
+            "properties": {"residentId": {"type": "string", "minLength": 1}, "name": {"type": "string"}}
+          }
+        }
+      }
+    },
+    "residentSnapshot": {
+      "allOf": [{"$ref": "#/$defs/metadata"}],
+      "type": "object", "unevaluatedProperties": false,
+      "required": ["resident"],
+      "properties": {
+        "resident": {
+          "type": "object", "additionalProperties": false,
+          "required": ["residentId", "name", "currentPlace", "spaceId", "position", "doing", "isPresent"],
+          "properties": {
+            "residentId": {"type": "string", "minLength": 1},
+            "name": {"type": "string"},
+            "currentPlace": {"type": "string"},
+            "spaceId": {"type": "string"},
+            "doing": {"type": "string"},
+            "isPresent": {"type": "boolean"},
+            "position": {"$ref": "#/$defs/coordinate"}
+          }
+        }
+      }
+    }
+  }
+}

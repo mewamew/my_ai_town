@@ -1,6 +1,8 @@
 class_name AgentResidentEvidenceQueue
 extends RefCounted
 
+const TEST_FILE_SYSTEM := preload("res://agent/AgentFileSystem.gd")
+
 
 const AgentContractScript := preload("res://agent/AgentContract.gd")
 const AgentJsonScript := preload("res://agent/AgentJson.gd")
@@ -257,12 +259,16 @@ func validate_state(value: Variant) -> Dictionary:
 	}
 
 
-func erase_storage() -> void:
-	_remove_file(_path)
-	_remove_file("%s.tmp" % _path)
-	_remove_file("%s.bak" % _path)
+func erase_storage() -> Dictionary:
+	if _remove_file(_path) != OK:
+		return _test_retention_failure()
+	if _remove_file("%s.tmp" % _path) != OK:
+		return _test_retention_failure()
+	if _remove_file("%s.bak" % _path) != OK:
+		return _test_retention_failure()
 	_file_expected = false
 	_synced_file_sha256 = ""
+	return {"ok": true}
 
 
 func _ensure_loaded() -> Dictionary:
@@ -424,7 +430,8 @@ func _replace_file(items: Array[Dictionary]) -> Dictionary:
 		return _failure("无法创建居民证据目录：%s" % error_string(directory_error))
 	var temporary_path := "%s.tmp" % _path
 	var backup_path := "%s.bak" % _path
-	_remove_file(temporary_path)
+	if _remove_file(temporary_path) != OK:
+		return _test_retention_failure()
 	var file := FileAccess.open(temporary_path, FileAccess.WRITE)
 	if file == null and _directory_ready:
 		# 运行期间若父目录被外部移除，恢复原先每次写入都会重建目录的行为。
@@ -444,7 +451,8 @@ func _replace_file(items: Array[Dictionary]) -> Dictionary:
 	var write_error := file.get_error()
 	file = null
 	if write_error != OK:
-		_remove_file(temporary_path)
+		if _remove_file(temporary_path) != OK:
+			return _test_retention_failure()
 		return _failure("无法写入居民证据：%s" % error_string(write_error))
 	var used_backup_fallback := false
 	var replace_error := DirAccess.rename_absolute(
@@ -454,14 +462,16 @@ func _replace_file(items: Array[Dictionary]) -> Dictionary:
 	if replace_error != OK and FileAccess.file_exists(_path):
 		# POSIX/Android 可以直接原子覆盖旧文件；不支持覆盖的平台继续使用
 		# 原有的备份、替换和回滚流程，保留相同的恢复保证。
-		_remove_file(backup_path)
+		if _remove_file(backup_path) != OK:
+			return _test_retention_failure()
 		used_backup_fallback = true
 		var backup_error := DirAccess.rename_absolute(
 			ProjectSettings.globalize_path(_path),
 			ProjectSettings.globalize_path(backup_path),
 		)
 		if backup_error != OK:
-			_remove_file(temporary_path)
+			if _remove_file(temporary_path) != OK:
+				return _test_retention_failure()
 			return _failure("无法准备居民证据原子替换")
 		replace_error = DirAccess.rename_absolute(
 			ProjectSettings.globalize_path(temporary_path),
@@ -473,10 +483,12 @@ func _replace_file(items: Array[Dictionary]) -> Dictionary:
 				ProjectSettings.globalize_path(backup_path),
 				ProjectSettings.globalize_path(_path),
 			)
-		_remove_file(temporary_path)
+		if _remove_file(temporary_path) != OK:
+			return _test_retention_failure()
 		return _failure("无法提交居民证据队列")
 	if used_backup_fallback:
-		_remove_file(backup_path)
+		if _remove_file(backup_path) != OK:
+			return _test_retention_failure()
 	# serialized 正是刚刚提交的字节序列。直接保存其摘要，避免提交成功后
 	# 立刻重新打开并扫描整份历史文件。
 	_synced_file_sha256 = serialized_sha256
@@ -625,11 +637,13 @@ func _content_hash(value: Variant) -> String:
 
 func _recover_backup() -> Dictionary:
 	var backup_path := "%s.bak" % _path
-	_remove_file("%s.tmp" % _path)
+	if _remove_file("%s.tmp" % _path) != OK:
+		return _test_retention_failure()
 	if not FileAccess.file_exists(backup_path):
 		return {"ok": true}
 	if FileAccess.file_exists(_path):
-		_remove_file(backup_path)
+		if _remove_file(backup_path) != OK:
+			return _test_retention_failure()
 		return {"ok": true}
 	var error := DirAccess.rename_absolute(
 		ProjectSettings.globalize_path(backup_path),
@@ -649,9 +663,17 @@ func _has_exact_fields(value: Dictionary, fields: Array) -> bool:
 	return true
 
 
-func _remove_file(path: String) -> void:
+func _remove_file(path: String) -> Error:
+	if TEST_FILE_SYSTEM.test_retention_enabled():
+		return TEST_FILE_SYSTEM.retain_for_test(path)
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	return OK
+
+
+func _test_retention_failure() -> Dictionary:
+	return {"ok": false, "errorCode": "AGENT_TEST_RETENTION_FAILED", "retryable": false,
+		"errors": ["测试记忆文件保留失败"]}
 
 
 func _failure(message: String) -> Dictionary:

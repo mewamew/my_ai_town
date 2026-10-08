@@ -9,6 +9,7 @@ const MANIFEST := preload(
 	"res://world/presentation/session/TownSessionSaveManifest.gd"
 )
 const DEFAULT_ROOT := "user://town_session_saves"
+const TEST_FILE_SYSTEM := preload("res://agent/AgentFileSystem.gd")
 const TEST_ROOT := "user://tests/town_session_saves"
 const MAX_SAFE_INTEGER := 9007199254740991
 const MAX_SAFE_INTEGER_PADDED := "00009007199254740991"
@@ -390,7 +391,7 @@ func clear_slot_archive_pending(lease_token_value: Variant) -> Dictionary:
 	)
 	if not DirAccess.dir_exists_absolute(_absolute(pending_path)):
 		return _success()
-	var remove_error := DirAccess.remove_absolute(_absolute(pending_path))
+	var remove_error := _remove_entry(pending_path)
 	return (
 		_success()
 		if remove_error == OK
@@ -452,7 +453,9 @@ func reserve_revision(
 			"%020d.json" % next_revision,
 		)
 		if FileAccess.file_exists(allocation_path):
-			DirAccess.remove_absolute(_absolute(claim_path))
+			var cleanup_error := _remove_entry(claim_path)
+			if TEST_FILE_SYSTEM.test_retention_enabled() and cleanup_error != OK:
+				return _failure("SESSION_SAVE_STORE_CLEANUP_FAILED", true)
 			next_revision = _next_revision_candidate(allocation_root)
 			if next_revision < 0:
 				return _failure("SESSION_SAVE_REVISION_EXHAUSTED", false)
@@ -464,7 +467,9 @@ func reserve_revision(
 		})
 		if written.get("ok") != true:
 			return written
-		DirAccess.remove_absolute(_absolute(claim_path))
+		var cleanup_error := _remove_entry(claim_path)
+		if TEST_FILE_SYSTEM.test_retention_enabled() and cleanup_error != OK:
+			return _failure("SESSION_SAVE_STORE_CLEANUP_FAILED", true)
 		return {
 			"ok": true,
 			"errorCode": "",
@@ -498,9 +503,7 @@ func discard_unpublished_revision(context_value: Variant) -> Dictionary:
 		if remove_error != OK:
 			return _failure("SESSION_SAVE_STORE_WRITE_FAILED", true)
 	if FileAccess.file_exists(allocation_path):
-		var allocation_error := DirAccess.remove_absolute(
-			_absolute(allocation_path),
-		)
+		var allocation_error := _remove_entry(allocation_path)
 		if allocation_error != OK:
 			return _failure("SESSION_SAVE_STORE_WRITE_FAILED", true)
 	return _success()
@@ -780,7 +783,9 @@ func begin_intent(context_value: Variant, kind_value: Variant) -> Dictionary:
 			intent_id,
 		)
 		if DirAccess.dir_exists_absolute(_absolute(intent_root)):
-			DirAccess.remove_absolute(_absolute(claim_path))
+			var cleanup_error := _remove_entry(claim_path)
+			if TEST_FILE_SYSTEM.test_retention_enabled() and cleanup_error != OK:
+				return _failure("SESSION_SAVE_STORE_CLEANUP_FAILED", true)
 			var existing_refreshed := _next_restore_attempt_candidate(
 				normalized,
 			)
@@ -1850,10 +1855,10 @@ func _atomic_create_json(path: String, value: Dictionary) -> Dictionary:
 	var write_error := file.get_error()
 	file = null
 	if write_error != OK:
-		DirAccess.remove_absolute(_absolute(temporary))
-		return _release_owned_claim_and_return(
+		return _cleanup_temporary_and_release(
 			claim_path,
 			claim_owner,
+			temporary,
 			_failure("SESSION_SAVE_STORE_WRITE_FAILED", true),
 		)
 	var verified := _read_json(temporary)
@@ -1861,18 +1866,18 @@ func _atomic_create_json(path: String, value: Dictionary) -> Dictionary:
 		verified.get("ok") != true
 		or not _json_values_equal_exact(verified.get("value"), expected)
 	):
-		DirAccess.remove_absolute(_absolute(temporary))
-		return _release_owned_claim_and_return(
+		return _cleanup_temporary_and_release(
 			claim_path,
 			claim_owner,
+			temporary,
 			_failure("SESSION_SAVE_STORE_WRITE_FAILED", true),
 		)
 	var temporary_sha256 := _sha256_file(temporary)
 	if temporary_sha256.is_empty():
-		DirAccess.remove_absolute(_absolute(temporary))
-		return _release_owned_claim_and_return(
+		return _cleanup_temporary_and_release(
 			claim_path,
 			claim_owner,
+			temporary,
 			_failure("SESSION_SAVE_STORE_WRITE_FAILED", true),
 		)
 	var rename_error := DirAccess.rename_absolute(
@@ -1880,10 +1885,10 @@ func _atomic_create_json(path: String, value: Dictionary) -> Dictionary:
 		_absolute(path),
 	)
 	if rename_error != OK:
-		DirAccess.remove_absolute(_absolute(temporary))
-		return _release_owned_claim_and_return(
+		return _cleanup_temporary_and_release(
 			claim_path,
 			claim_owner,
+			temporary,
 			_failure("SESSION_SAVE_STORE_WRITE_FAILED", true),
 		)
 	return _release_owned_claim_and_return(claim_path, claim_owner, {
@@ -2014,13 +2019,11 @@ func _acquire_recoverable_directory_claim(
 		owner,
 	)
 	if owner_write.get("ok") != true:
-		_remove_tree(candidate_path)
-		return owner_write
+		return _cleanup_claim_candidate(candidate_path, owner_write)
 	for retry in range(resolved_retry_limit):
 		if not existing_path.is_empty() and FileAccess.file_exists(existing_path):
 			var existing := _compare_existing_json(existing_path, expected)
-			_remove_tree(candidate_path)
-			return existing
+			return _cleanup_claim_candidate(candidate_path, existing)
 		if not DirAccess.dir_exists_absolute(_absolute(claim_path)):
 			var publish_error := DirAccess.rename_absolute(
 				_absolute(candidate_path),
@@ -2041,8 +2044,7 @@ func _acquire_recoverable_directory_claim(
 		):
 			continue
 		if current_owner.get("ok") != true:
-			_remove_tree(candidate_path)
-			return current_owner
+			return _cleanup_claim_candidate(candidate_path, current_owner)
 		var current_owner_record := (
 			current_owner.get("claimOwner", {}) as Dictionary
 		)
@@ -2051,8 +2053,7 @@ func _acquire_recoverable_directory_claim(
 			if confirmed_owner.get("claimReadTransient") == true:
 				continue
 			if confirmed_owner.get("ok") != true:
-				_remove_tree(candidate_path)
-				return confirmed_owner
+				return _cleanup_claim_candidate(candidate_path, confirmed_owner)
 			if not _json_values_equal_exact(
 				confirmed_owner.get("claimOwner"),
 				current_owner_record,
@@ -2078,11 +2079,10 @@ func _acquire_recoverable_directory_claim(
 						current_owner_record,
 					)
 				):
-					_remove_tree(candidate_path)
-					return _failure(
+					return _cleanup_claim_candidate(candidate_path, _failure(
 						"SESSION_SAVE_STORE_WRITE_FAILED",
 						false,
-					)
+					))
 				# Keep the retired generation as a tombstone. A contender that
 				# observed this dead owner before the rename must not be able
 				# to rename and delete a newer owner published at claim_path.
@@ -2090,8 +2090,14 @@ func _acquire_recoverable_directory_claim(
 		if retry + 1 >= resolved_retry_limit:
 			break
 		OS.delay_usec(CREATE_CLAIM_RETRY_DELAY_USEC)
-	_remove_tree(candidate_path)
-	return _failure("SESSION_SAVE_STORE_WRITE_FAILED", true)
+	return _cleanup_claim_candidate(candidate_path, _failure("SESSION_SAVE_STORE_WRITE_FAILED", true))
+
+
+func _cleanup_claim_candidate(path: String, result: Dictionary) -> Dictionary:
+	var error := _remove_tree(path)
+	if TEST_FILE_SYSTEM.test_retention_enabled() and error != OK:
+		return _failure("SESSION_SAVE_STORE_CLEANUP_FAILED", true)
+	return result
 
 
 func _ephemeral_claim_owner_is_alive(owner: Dictionary) -> bool:
@@ -2400,6 +2406,11 @@ func _release_owned_directory_claim(
 	claim_path: String,
 	expected_owner: Dictionary,
 ) -> Dictionary:
+	if (
+		TEST_FILE_SYSTEM.test_retention_enabled()
+		and not TEST_FILE_SYSTEM.test_retention_path_allowed(claim_path)
+	):
+		return _failure("SESSION_SAVE_STORE_CLEANUP_FAILED", false)
 	var loaded := _read_owned_claim_owner(claim_path)
 	if (
 		loaded.get("ok") != true
@@ -2409,6 +2420,14 @@ func _release_owned_directory_claim(
 		)
 	):
 		return _failure("SESSION_SAVE_STORE_WRITE_FAILED", true)
+	if TEST_FILE_SYSTEM.test_retention_enabled():
+		# Retire the owned claim with the same real namespace move as release,
+		# but do it once. On failure its original name/ownership remains retryable.
+		var retention_error := TEST_FILE_SYSTEM.retain_for_test(_absolute(claim_path))
+		return (
+			_success() if retention_error == OK
+			else _failure("SESSION_SAVE_STORE_CLEANUP_FAILED", true)
+		)
 	var released_path := "%s.released-%s" % [
 		claim_path,
 		_claim_path_token(expected_owner),
@@ -2620,7 +2639,26 @@ func _sha256_file(path: String) -> String:
 	return hashing.finish().hex_encode()
 
 
+func _cleanup_temporary_and_release(
+	claim_path: String, owner: Dictionary, temporary: String, result: Dictionary,
+) -> Dictionary:
+	var error := _remove_entry(temporary)
+	if TEST_FILE_SYSTEM.test_retention_enabled() and error != OK:
+		return _release_owned_claim_and_return(
+			claim_path, owner, _failure("SESSION_SAVE_STORE_CLEANUP_FAILED", true),
+		)
+	return _release_owned_claim_and_return(claim_path, owner, result)
+
+
+func _remove_entry(path: String) -> Error:
+	if TEST_FILE_SYSTEM.test_retention_enabled():
+		return TEST_FILE_SYSTEM.retain_for_test(_absolute(path))
+	return DirAccess.remove_absolute(_absolute(path))
+
+
 func _remove_tree(path: String) -> Error:
+	if TEST_FILE_SYSTEM.test_retention_enabled():
+		return TEST_FILE_SYSTEM.retain_for_test(_absolute(path))
 	var absolute := _absolute(path)
 	if not DirAccess.dir_exists_absolute(absolute):
 		return OK

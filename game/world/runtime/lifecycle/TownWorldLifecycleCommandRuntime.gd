@@ -52,6 +52,7 @@ static func set_speed(host, speed: int) -> Dictionary:
 			"simulationSpeed": host._simulation_speed,
 		})
 	host._simulation_speed = speed
+	host._bump_world_revision()
 	host.simulation_speed_changed.emit(
 		host._simulation_speed,
 		host._world_revision,

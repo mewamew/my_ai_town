@@ -82,8 +82,9 @@ func start_new_game(context: Variant) -> Dictionary:
 	var result: Dictionary = _save_store.call("validate_new_game", context)
 	if not bool(result.get("ok", false)):
 		return result
-	_discard_pending_restore()
-	_discard_pending_new_game()
+	var cleanup_error := _discard_pending_transactions(true)
+	if cleanup_error != OK:
+		return _cleanup_failure(cleanup_error)
 	_pending_new_game = {
 		"context": (result["context"] as Dictionary).duplicate(true),
 		"residents": {},
@@ -113,8 +114,12 @@ func finish_new_game() -> Dictionary:
 	if not bool(result.get("ok", false)):
 		return result
 	var transaction := _pending_new_game
+	if not AgentFileSystemScript.test_retention_enabled():
+		_pending_new_game = {}
+	var cleanup_error := _invalidate_session()
+	if cleanup_error != OK:
+		return _cleanup_failure(cleanup_error)
 	_pending_new_game = {}
-	_invalidate_session()
 	_activate_session(
 		result["context"] as Dictionary,
 		String(transaction["memory_root"]),
@@ -133,7 +138,9 @@ func finish_new_game() -> Dictionary:
 
 
 func cancel_new_game() -> Dictionary:
-	_discard_pending_new_game()
+	var cleanup_error := _discard_pending_new_game()
+	if cleanup_error != OK:
+		return _cleanup_failure(cleanup_error)
 	return {"ok": true}
 
 
@@ -152,12 +159,11 @@ func restore_game(context: Variant) -> Dictionary:
 		"memory_root": _allocate_runtime_memory_root("restore"),
 		"memory_root_owned": true,
 	}
+	var cleanup_error := _discard_pending_transactions()
+	if cleanup_error != OK:
+		return _cleanup_failure(cleanup_error)
 	if payloads.is_empty():
-		_discard_pending_new_game()
-		_discard_pending_restore()
 		return _commit_restore_transaction(transaction)
-	_discard_pending_new_game()
-	_discard_pending_restore()
 	_pending_restore = transaction
 	var resident_ids: Array = payloads.keys()
 	resident_ids.sort()
@@ -367,9 +373,11 @@ func accept_published_save_context(
 
 
 func close_game() -> Dictionary:
-	_discard_pending_new_game()
-	_discard_pending_restore()
-	_invalidate_session()
+	var cleanup_error := _discard_pending_transactions()
+	if cleanup_error == OK:
+		cleanup_error = _invalidate_session()
+	if cleanup_error != OK:
+		return _cleanup_failure(cleanup_error)
 	return {"ok": true}
 
 
@@ -379,12 +387,15 @@ func delete_game(context: Variant) -> Dictionary:
 		return result
 	if typeof(context) == TYPE_DICTIONARY:
 		var deleted_context := context as Dictionary
+		var cleanup_error := OK
 		if _pending_new_game_targets_slot(deleted_context):
-			_discard_pending_new_game()
-		if _pending_restore_targets_slot(deleted_context):
-			_discard_pending_restore()
-		if _is_active_slot(deleted_context):
-			_invalidate_session()
+			cleanup_error = _discard_pending_new_game()
+		if cleanup_error == OK and _pending_restore_targets_slot(deleted_context):
+			cleanup_error = _discard_pending_restore()
+		if cleanup_error == OK and _is_active_slot(deleted_context):
+			cleanup_error = _invalidate_session()
+		if cleanup_error != OK:
+			return _cleanup_failure(cleanup_error)
 	return result
 
 
@@ -615,12 +626,18 @@ func finish_restore() -> Dictionary:
 			["读档仍缺少居民 hydration：%s" % ", ".join(missing_residents)],
 		)
 	var transaction := _pending_restore
-	_pending_restore = {}
-	return _commit_restore_transaction(transaction)
+	if not AgentFileSystemScript.test_retention_enabled():
+		_pending_restore = {}
+	var result := _commit_restore_transaction(transaction)
+	if result.get("ok") == true:
+		_pending_restore = {}
+	return result
 
 
 func cancel_restore() -> Dictionary:
-	_discard_pending_restore()
+	var cleanup_error := _discard_pending_restore()
+	if cleanup_error != OK:
+		return _cleanup_failure(cleanup_error)
 	return {"ok": true}
 
 
@@ -1190,7 +1207,13 @@ func _finish_departure_operation(departure_id: String) -> void:
 			(callback_value as Callable).call(result.duplicate(true))
 
 
-func _invalidate_session() -> void:
+func _invalidate_session() -> Error:
+	# In retention tests, an unsuccessful move must not invalidate the old epoch
+	# or forget the active world/transaction. The production order stays unchanged.
+	if AgentFileSystemScript.test_retention_enabled() and _memory_root_owned:
+		var cleanup_error := _remove_runtime_memory_root(_memory_root)
+		if cleanup_error != OK:
+			return cleanup_error
 	if _session_epoch != null:
 		_session_epoch.call("invalidate")
 	cancel_all_resident_model_requests()
@@ -1203,10 +1226,11 @@ func _invalidate_session() -> void:
 	_event_memory_claim_roots.clear()
 	_save_context.clear()
 	_session_open = false
-	if _memory_root_owned:
+	if _memory_root_owned and not AgentFileSystemScript.test_retention_enabled():
 		_remove_runtime_memory_root(_memory_root)
 	_memory_root = ""
 	_memory_root_owned = false
+	return OK
 
 
 func _activate_session(
@@ -1298,7 +1322,9 @@ func _commit_restore_transaction(transaction: Dictionary) -> Dictionary:
 	var hydrated_runtimes := transaction["hydrated_runtimes"] as Dictionary
 	var restored_memory_root := String(transaction["memory_root"])
 	var restored_memory_root_owned := bool(transaction.get("memory_root_owned", false))
-	_invalidate_session()
+	var cleanup_error := _invalidate_session()
+	if cleanup_error != OK:
+		return _cleanup_failure(cleanup_error)
 	_activate_session(
 		restored_context,
 		restored_memory_root,
@@ -1316,7 +1342,11 @@ func _commit_restore_transaction(transaction: Dictionary) -> Dictionary:
 
 
 func _abort_pending_restore(errors: Array) -> Dictionary:
-	_discard_pending_restore()
+	var cleanup_error := _discard_pending_restore()
+	if cleanup_error != OK:
+		var result := _cleanup_failure(cleanup_error)
+		result["errors"] = errors.duplicate(true) + result["errors"]
+		return result
 	return {"ok": false, "errors": errors.duplicate(true)}
 
 
@@ -1340,20 +1370,39 @@ func _pending_new_game_targets_slot(context: Dictionary) -> bool:
 	return context.get("slot_id") == pending_context.get("slot_id")
 
 
-func _discard_pending_new_game() -> void:
+func _discard_pending_new_game() -> Error:
 	if _pending_new_game.is_empty():
-		return
+		return OK
 	if bool(_pending_new_game.get("memory_root_owned", false)):
-		_remove_runtime_memory_root(String(_pending_new_game.get("memory_root", "")))
+		var error := _remove_runtime_memory_root(String(_pending_new_game.get("memory_root", "")))
+		if error != OK:
+			return error
 	_pending_new_game.clear()
+	return OK
 
 
-func _discard_pending_restore() -> void:
+func _discard_pending_restore() -> Error:
 	if _pending_restore.is_empty():
-		return
+		return OK
 	if bool(_pending_restore.get("memory_root_owned", false)):
-		_remove_runtime_memory_root(String(_pending_restore.get("memory_root", "")))
+		var error := _remove_runtime_memory_root(String(_pending_restore.get("memory_root", "")))
+		if error != OK:
+			return error
 	_pending_restore.clear()
+	return OK
+
+
+func _discard_pending_transactions(restore_first := false) -> Error:
+	if restore_first:
+		var error := _discard_pending_restore()
+		return _discard_pending_new_game() if error == OK else error
+	var error := _discard_pending_new_game()
+	return _discard_pending_restore() if error == OK else error
+
+
+func _cleanup_failure(error: Error) -> Dictionary:
+	return {"ok": false, "errorCode": "AGENT_TEST_RETENTION_FAILED", "retryable": false,
+		"errors": ["测试证据保留失败：%s" % error_string(error)]}
 
 
 func _configure_tool_runtime_storage(
@@ -1374,7 +1423,9 @@ func _configure_tool_runtime_storage(
 	if validation.get("ok") != true:
 		return validation
 	if _memory_root_owned:
-		_remove_runtime_memory_root(_memory_root)
+		var cleanup_error := _remove_runtime_memory_root(_memory_root)
+		if cleanup_error != OK:
+			return _cleanup_failure(cleanup_error)
 	_runtime_memory_root_base = String(validation["root"])
 	_memory_root = String(validation["root"])
 	_memory_root_owned = false
@@ -1418,15 +1469,16 @@ func _allocate_runtime_memory_root(purpose: String) -> String:
 	return ""
 
 
-func _remove_runtime_memory_root(path: String) -> void:
+func _remove_runtime_memory_root(path: String) -> Error:
 	if (
 		_runtime_memory_root_base.is_empty()
 		or not path.begins_with("%s/" % _runtime_memory_root_base)
 		or path.contains("..")
 	):
-		return
+		return ERR_INVALID_PARAMETER if AgentFileSystemScript.test_retention_enabled() else OK
 	var remove_error := AgentFileSystemScript.remove_tree(path)
 	if remove_error != OK:
 		push_error("清理 Agent 运行时记忆目录失败：%s" % error_string(remove_error))
-		return
+		return remove_error if AgentFileSystemScript.test_retention_enabled() else OK
 	AgentFileSystemScript.remove_empty_directory(_runtime_memory_root_base)
+	return OK

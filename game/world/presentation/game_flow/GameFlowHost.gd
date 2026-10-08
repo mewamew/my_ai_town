@@ -308,9 +308,15 @@ var _daily_auto_save_inflight := false
 var _daily_auto_save_pending_day := -1
 var _daily_auto_save_last_request_msec := 0.0
 var _daily_auto_save_last_total_msec := 0.0
+var _gametest_load_operation: Dictionary = {}
 
 
 func _ready() -> void:
+	_start_gametest_bridge()
+	# Offline bridge tests must not boot UI services or call a configured model.
+	if OS.get_cmdline_user_args().has("--gametest-isolated-test"):
+		set_process(false)
+		return
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	get_tree().auto_accept_quit = false
 	set_process(true)
@@ -335,6 +341,150 @@ func _ready() -> void:
 		FORMAL_RUNTIME_AUDIT_ENV
 	).strip_edges().is_empty()
 	_bind_current_scene.call_deferred()
+
+
+func _start_gametest_bridge() -> void:
+	var args := OS.get_cmdline_user_args()
+	if not args.has("--gametest-bridge"):
+		return
+	var port := 18765
+	for arg in args:
+		if arg.begins_with("--gametest-port="):
+			var port_text := arg.trim_prefix("--gametest-port=")
+			if not port_text.is_valid_int():
+				push_error("GAMETEST_BRIDGE INVALID_BRIDGE_CONFIG")
+				return
+			port = int(port_text)
+	var bridge := load("res://test_bridge/GameTestBridge.gd").new() as Node
+	bridge.name = "GameTestBridge"
+	add_child(bridge)
+	var commands_enabled := args.has("--gametest-commands")
+	var result: Dictionary = bridge.start(_gametest_context, port, commands_enabled)
+	if not bool(result.get("ok", false)):
+		push_error("GAMETEST_BRIDGE %s" % result)
+		bridge.queue_free()
+	else:
+		print("GAMETEST_BRIDGE http://127.0.0.1:%d (%s)" % [port, "commands-enabled" if commands_enabled else "read-only"])
+
+
+func _gametest_context() -> Dictionary:
+	if not is_instance_valid(_town_runtime):
+		return {"flowHost": self}
+	return {
+		"world": _town_runtime.get_world_runtime(),
+		"runtime": _town_runtime,
+		"sessionId": _town_runtime.get_session_summary().get("sessionId", ""),
+		"flowHost": self,
+	}
+
+
+func gametest_begin_save() -> Dictionary:
+	if (
+		_session_ui_service == null
+		or not is_instance_valid(_session_ui_service)
+		or not _session_ui_service.has_method("begin_create_save_async")
+	):
+		return _failure("SESSION_SAVE_SERVICE_NOT_READY", true)
+	if _in_session_load_pending or String(_gametest_load_operation.get("status", "")) == "running":
+		return _failure("SESSION_SAVE_BUSY", true)
+	return _session_ui_service.begin_create_save_async({
+		"reason": "gametest_bridge",
+	}) as Dictionary
+
+
+func gametest_poll_save() -> Dictionary:
+	if (
+		_session_ui_service == null
+		or not is_instance_valid(_session_ui_service)
+		or not _session_ui_service.has_method("poll_create_save_async")
+	):
+		return _failure("SESSION_SAVE_SERVICE_NOT_READY", true)
+	return _session_ui_service.poll_create_save_async() as Dictionary
+
+
+func gametest_begin_load(operation_id: String) -> Dictionary:
+	if String(_gametest_load_operation.get("status", "")) == "running" or _in_session_load_pending:
+		return _failure("SESSION_LOAD_BUSY", true)
+	if (
+		not is_instance_valid(_town_runtime)
+		or _session_ui_service == null
+		or not is_instance_valid(_session_ui_service)
+	):
+		return _failure("SESSION_LOAD_SERVICE_NOT_READY", true)
+	if _daily_auto_save_inflight or bool(_session_ui_service.has_active_create_save_async()):
+		return _failure("SESSION_SAVE_BUSY", true)
+	var slot_id := String(_active_session_config.get("slotId", "")).strip_edges()
+	var session_id := String(_active_session_config.get("sessionId", "")).strip_edges()
+	if slot_id.is_empty() or session_id.is_empty():
+		return _failure("SESSION_SAVE_CONTEXT_INVALID", false)
+	var discovery := _discover_startup_slot(slot_id)
+	if not bool(discovery.get("ok", false)):
+		return discovery
+	if (
+		String(discovery.get("slotState", "")) != "healthy"
+		or bool(discovery.get("requiresRecoveryConfirmation", false))
+	):
+		return _failure("SESSION_LOAD_RECOVERY_REQUIRED", false)
+	var summary := discovery.get("summary", {}) as Dictionary
+	if String(summary.get("sessionId", "")) != session_id:
+		return _failure("SESSION_LOAD_SESSION_CONFLICT", false)
+	_gametest_load_operation = {
+		"operationId": operation_id,
+		"status": "running",
+		"slotId": slot_id,
+		"sessionId": session_id,
+		"saveRevision": int(summary.get("saveRevision", 0)),
+		"previousRuntimeInstanceId": _town_runtime.get_instance_id(),
+		"failure": null,
+	}
+	call_deferred("_gametest_dispatch_load", operation_id, slot_id)
+	return {
+		"ok": true,
+		"pending": true,
+		"slotId": slot_id,
+		"sessionId": session_id,
+		"saveRevision": int(summary.get("saveRevision", 0)),
+	}
+
+
+func gametest_poll_load(operation_id: String) -> Dictionary:
+	if String(_gametest_load_operation.get("operationId", "")) != operation_id:
+		return _failure("SESSION_LOAD_OPERATION_NOT_FOUND", false)
+	if String(_gametest_load_operation.get("status", "")) == "running":
+		var previous_id := int(_gametest_load_operation.get("previousRuntimeInstanceId", 0))
+		if (
+			is_instance_valid(_town_runtime)
+			and _town_runtime.get_instance_id() != previous_id
+			and String(_town_runtime.get_session_summary().get("sessionId", ""))
+			== String(_gametest_load_operation.get("sessionId", ""))
+		):
+			var world: Object = _town_runtime.get_world_runtime()
+			if is_instance_valid(world) and bool(world.is_running()):
+				_gametest_load_operation["status"] = "completed"
+	return {
+		"ok": true,
+		"pending": String(_gametest_load_operation.get("status", "")) == "running",
+		"operation": _gametest_load_operation.duplicate(true),
+	}
+
+
+func _gametest_dispatch_load(operation_id: String, slot_id: String) -> void:
+	if (
+		String(_gametest_load_operation.get("operationId", "")) != operation_id
+		or String(_gametest_load_operation.get("status", "")) != "running"
+	):
+		return
+	_complete_in_session_load_game({"slotId": slot_id}, false)
+
+
+func _fail_gametest_load(result: Dictionary) -> void:
+	if bool(result.get("ok", false)) or String(_gametest_load_operation.get("status", "")) != "running":
+		return
+	_gametest_load_operation["status"] = "failed"
+	_gametest_load_operation["failure"] = {
+		"code": String(result.get("errorCode", "SESSION_LOAD_FAILED")),
+		"message": String(result.get("errorCode", "SESSION_LOAD_FAILED")),
+	}
 
 
 func _mount_mobile_input_services() -> void:
@@ -6543,6 +6693,7 @@ func _complete_in_session_load_game(
 
 
 func _present_in_session_load_failure(result: Dictionary) -> void:
+	_fail_gametest_load(result)
 	_in_session_load_pending = false
 	_last_result = result.duplicate(true)
 	if is_instance_valid(_pause_host):
@@ -7585,6 +7736,7 @@ func _record_startup_resident_message_receipt(payload: Dictionary) -> void:
 
 
 func _publish_startup_result(result: Dictionary) -> void:
+	_fail_gametest_load(result)
 	_last_result = result.duplicate(true)
 	var loading_owner := _town_entry_loading_owner
 	var loading_context := _town_entry_loading_context.duplicate(true)

@@ -1,0 +1,196 @@
+{
+  "info": {
+    "_postman_id": "7d0b7463-d453-4bc3-9d7f-6a51f75d7c74",
+    "name": "GameTestBridge Phase 2 Read API",
+    "description": "Read-only contract regression for the isolated 15-resident GameTestBridge fixture. It does not save, load, move, or change speed.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health is ready and read-only",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{bridgeUrl}}/health",
+          "host": ["{{bridgeUrl}}"],
+          "path": ["health"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('protocol envelope', () => {",
+              "  pm.expect(body.protocolVersion).to.eql('0.1');",
+              "  pm.expect(body.ok).to.eql(true);",
+              "  pm.expect(body.error).to.eql(null);",
+              "  pm.expect(body.requestId).to.be.a('string').and.not.empty;",
+              "});",
+              "pm.test('bridge is ready and read-only', () => {",
+              "  pm.expect(body.data.bridgeReady).to.eql(true);",
+              "  pm.expect(body.data.worldReady).to.eql(true);",
+              "  pm.expect(body.data.readOnly).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "World contains exactly 15 unique residents",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{bridgeUrl}}/world/state",
+          "host": ["{{bridgeUrl}}"],
+          "path": ["world", "state"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "const residents = body.data.residents;",
+              "const ids = residents.map((resident) => resident.residentId);",
+              "pm.test('15 residents and count matches', () => {",
+              "  pm.expect(body.data.residentCount).to.eql(15);",
+              "  pm.expect(residents.length).to.eql(body.data.residentCount);",
+              "});",
+              "pm.test('resident IDs are unique', () => pm.expect(new Set(ids).size).to.eql(ids.length));",
+              "pm.test('state metadata exists', () => {",
+              "  pm.expect(body.data.sessionId).to.be.a('string');",
+              "  pm.expect(body.data.worldGeneration).to.be.a('string').and.not.empty;",
+              "  pm.expect(body.data.stateVersion).to.be.a('number');",
+              "});",
+              "pm.environment.set('residentId', ids[0]);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Resident detail exposes only public fields",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{bridgeUrl}}/residents/{{residentId}}",
+          "host": ["{{bridgeUrl}}"],
+          "path": ["residents", "{{residentId}}"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "const resident = pm.response.json().data.resident;",
+              "const expected = ['currentPlace', 'doing', 'isPresent', 'name', 'position', 'residentId', 'spaceId'];",
+              "pm.test('public field allowlist', () => pm.expect(Object.keys(resident).sort()).to.eql(expected));",
+              "pm.test('private fields are absent', () => {",
+              "  pm.expect(resident).not.to.have.property('memory');",
+              "  pm.expect(resident).not.to.have.property('model');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Unknown resident has a distinct error",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{bridgeUrl}}/residents/resident_missing_01",
+          "host": ["{{bridgeUrl}}"],
+          "path": ["residents", "resident_missing_01"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+              "const body = pm.response.json();",
+              "pm.test('RESIDENT_NOT_FOUND', () => {",
+              "  pm.expect(body.ok).to.eql(false);",
+              "  pm.expect(body.data).to.eql(null);",
+              "  pm.expect(body.error.code).to.eql('RESIDENT_NOT_FOUND');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Query string is rejected by the strict path contract",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{bridgeUrl}}/world/state?unexpected=true",
+          "host": ["{{bridgeUrl}}"],
+          "path": ["world", "state"],
+          "query": [
+            {
+              "key": "unexpected",
+              "value": "true"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+              "pm.test('INVALID_PATH', () => pm.expect(pm.response.json().error.code).to.eql('INVALID_PATH'));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
