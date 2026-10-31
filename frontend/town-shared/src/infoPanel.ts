@@ -1,5 +1,5 @@
-// 右侧只读村民信息栏：地点 / 行为 / 在途进度 / 想法 / 计划 / 需求条 / 生理状态 / 随身物品 / 最近变化 / 模型设置。
-// 只读纪律：本栏没有任何输入框、密钥或保存按钮。
+// 选中村民：地图上点人，脚下冒出一排动作钮（info/focus.ts）；点「资料」打开右栏的角色卡。
+// 角色卡只读：像素小人和想法、住处、正在做的事、身体状态、口袋，原因和记录收在「更多细节」里。
 // 跨级反馈：记录每项需求的上一个 band，变化时状态条一次性强调 + 追加本地事件。
 
 import {
@@ -14,15 +14,14 @@ import type { WaitLine } from './modelWait'
 import type { GameMap, ResidentEntry } from './gameMap'
 import type { RosterFrame } from './shell/panel'
 import type { EventsHandle } from './events'
-import { $, el, query } from './dom'
+import { $, query } from './dom'
 import { displayClock, playerText } from './format'
-import { portraitFor, portraitKey, residentPortrait } from './portraits'
+import { portraitKey } from './portraits'
 import { agentStateLabels } from './labels'
+import { lineLabel } from './game/icons'
 
 interface InfoPanelDeps {
   map: GameMap
-  /** 游戏界面 */
-  game: boolean
   events: EventsHandle
   localeName: (id: string) => string
   onPossess: (id: string) => void
@@ -30,58 +29,55 @@ interface InfoPanelDeps {
   onOpenDiary: () => void
   onOpenMemory: () => void
   onSelectResident: (id: string) => void
-  /** 选中的村民换了人（2D 右栏里的聊天记录页要退回村民信息） */
+  /** 选中的村民换了人（右栏里的聊天记录页要退回角色卡） */
   onSelectionChange: () => void
   /** 化身控制中：右栏收起、不选中村民 */
   avatarActive: () => boolean
-  /** 这个世界开放了化身控制（游戏界面据此决定「控制」钮能不能用） */
+  /** 这个世界开放了化身控制 */
   avatarAvailable: () => boolean
   onOpenItem: (id: string) => void
-  /** 清掉居民的暂停原因让他继续：等于在顶栏点一次开始 */
+  /** 清掉居民的暂停原因让他们接着行动：世界在运行时按原速度再选一次 */
   onResumeAgents: () => void
-  /** 在等模型时右栏第一行写什么、按钮做什么（modelWait.ts） */
+  /** 在等模型时卡片顶上写什么、按钮做什么（modelWait.ts） */
   waitLine: (m: RosterMember) => WaitLine | null
-  /** 「和 X 说话」：进入化身、走过去搭话 */
+  /** 「说话」：进入化身、走过去搭话 */
   onTalk: (id: string) => void
 }
 
 import { installPanelWidth } from './info/width'
 import { createBodyView } from './info/body'
+import { createFocus } from './info/focus'
 import { createInventoryView } from './info/inventory'
-import { iconLabel } from './game/icons'
-import { createNeedsView } from './info/needs'
+import { createNeedsView, needWord, worstNeed } from './info/needs'
 import { createThoughtView } from './info/thought'
 import { createPlanView } from './info/plan'
-import { createRecentView } from './info/recent'
 import { createAgentView } from './info/agent'
-
-/** 窄于 1024：右栏不再是地图旁边的一栏，而是盖在地图上（style.css 的响应式部分） */
-const narrowLayout = matchMedia('(max-width: 1023px)')
+import { createStage } from './info/stage'
+import './info/card.css'
 
 export function initInfoPanel(deps: InfoPanelDeps) {
-  const game = deps.game
   const panel = $('info-panel')
+  // 角色卡用深色那套颜色，像游戏里的状态窗；聊天记录页也在这一栏里，跟着一起
+  panel.dataset.tier = 'night'
   const resizer = $('info-resizer')
   const obsMain = $('obs-main')
   const followBtn = $('info-follow')
+  const talkBtn = query<HTMLButtonElement>(panel, '#info-talk')
   const possessBtn = query<HTMLButtonElement>(panel, '#info-possess')
+  lineLabel(talkBtn, 'chat', '说话')
+  lineLabel(followBtn, 'eye', '跟随')
+  lineLabel(possessBtn, 'person', '附身')
+  lineLabel($('info-memory'), 'memory', '回忆')
+  lineLabel($('info-diary'), 'clock', '经历')
+  lineLabel($('info-chat'), 'chat', '聊过的')
+  lineLabel($('info-edit'), 'pen', '设定')
+  lineLabel($('info-collapse'), 'close', '收起')
   possessBtn.onclick = () => {
     if (selectedId) deps.onPossess(selectedId)
   }
   possessBtn.hidden = !deps.map.avatarSupported
-  // 游戏界面：小卡是摘要，点「详情」展开成居中大窗
-  const expandBtn = game ? $('info-expand') : null
-  if (expandBtn)
-    expandBtn.onclick = () => {
-      const on = panel.classList.toggle('info-expanded')
-      expandBtn.textContent = on ? '收起' : '详情'
-    }
-  /** 收起右栏，保留选中；游戏界面同时退出展开的详情窗 */
-  function collapse() {
-    setCollapsed(true)
-    if (!expandBtn) return
-    panel.classList.remove('info-expanded')
-    expandBtn.textContent = '详情'
+  talkBtn.onclick = () => {
+    if (selectedId) deps.onTalk(selectedId)
   }
 
   const residentSelect = query<HTMLSelectElement>(panel, '#resident-select')
@@ -91,54 +87,79 @@ export function initInfoPanel(deps: InfoPanelDeps) {
   residentSelect.onchange = () => select(residentSelect.value)
 
   let selectedId: string | null = null
+  /** 已经替玩家选过第一位：之后点空地取消选中，下一份名册不再自动选回来 */
+  let picked = false
   let physiology: PhysiologySwitches | undefined
   let following = false
   let registrations = new Map<string, ResidentRegistration>()
+  /** 选中的人最近一份名册：地图上的动作钮按它决定能不能说话、附身 */
+  let current: RosterMember | undefined
   const panelWidth = installPanelWidth(panel, resizer, obsMain)
-  const inventory = createInventoryView(
-    query<HTMLDetailsElement>(panel, '#info-inventory'),
-    deps.onOpenItem,
-    game
-  )
-  // 2D 右栏头部的像素头像；生理视图的两个折叠项放在「随身物品」之后
-  const plainPortrait = game ? null : query<HTMLElement>(panel, '.info-portrait')
-  const body = createBodyView(
-    $('info-physiology'),
-    game ? undefined : query<HTMLElement>(panel, '.info-body-folds')
-  )
-  const needs = createNeedsView(
-    $('info-needs'),
-    '',
-    (text, warning) => deps.events.pushLocal(text, warning),
-    game
+  const inventory = createInventoryView($('info-inventory'), deps.onOpenItem)
+  const body = createBodyView($('info-physiology'), query<HTMLElement>(panel, '.info-body-folds'))
+  const needs = createNeedsView($('info-needs'), '', (text, warning) =>
+    deps.events.pushLocal(text, warning)
   )
   const thought = createThoughtView($('info-thought'))
-  const plan = createPlanView($('info-plan'), game)
+  const plan = createPlanView($('info-plan'))
   const agent = createAgentView($('info-agent'))
-  const recent = createRecentView($('info-recent'), deps.events.recent)
+  const stage = createStage(query<HTMLCanvasElement>(panel, '.card-sprite'))
+  const focus = createFocus(deps.map, $('map'), {
+    talk: () => {
+      if (selectedId) deps.onTalk(selectedId)
+    },
+    follow: () => setFollowing(!following),
+    possess: () => {
+      if (selectedId) deps.onPossess(selectedId)
+    },
+    card: () => (panel.hidden ? setCollapsed(false) : collapse()),
+  })
 
   function setCollapsed(collapsed: boolean) {
     panel.hidden = collapsed
     resizer.hidden = collapsed
     panel.classList.toggle('collapsed', collapsed)
+    syncFocus()
+  }
+  /** 收起角色卡，保留选中：地图上的动作钮还在 */
+  function collapse() {
+    setCollapsed(true)
   }
 
-  /** 2D 顶部的像素头像，和村民页用同一张 */
-  function renderPortrait() {
-    if (!plainPortrait) return
-    const r = selectedId ? registrations.get(selectedId) : undefined
-    const url = r ? portraitFor(portraitKey(r)) : undefined
-    if (!url) {
-      plainPortrait.replaceChildren()
-      return
-    }
-    const img = el('img')
-    img.src = url
-    img.alt = ''
-    plainPortrait.replaceChildren(img)
+  /** 能不能和他说话：化身开放、对方能回应、没被人附身 */
+  function canTalk(m: RosterMember) {
+    return (
+      !!deps.map.avatarSupported &&
+      deps.avatarAvailable() &&
+      m.kind === 'resident' &&
+      !!m.body?.can_decide &&
+      m.resident_agent?.state !== 'manual'
+    )
+  }
+  function canPossess(m: RosterMember) {
+    return (
+      !!deps.map.avatarSupported &&
+      deps.avatarAvailable() &&
+      !!m.body?.can_decide &&
+      !!m.body?.can_move
+    )
   }
 
-  function select(id: string | null, expand = true) {
+  /** 地图上的动作钮跟着名册和右栏开合更新 */
+  function syncFocus() {
+    const m = current
+    const alert = m?.kind === 'resident' ? worstNeed(m.needs ?? []) : undefined
+    focus.sync({
+      canTalk: !!m && canTalk(m),
+      canPossess: !!m && canPossess(m),
+      following,
+      cardOpen: !panel.hidden,
+      alert: alert ? { kind: alert.kind, text: `${m?.name}${needWord(alert)}` } : null,
+    })
+  }
+
+  /** 选中谁：地图描出来、脚下冒动作钮；不自动打开角色卡，卡片开着时跟着换人 */
+  function select(id: string | null) {
     if (selectedId !== id) {
       deps.onSelectionChange()
       needs.clear()
@@ -147,46 +168,37 @@ export function initInfoPanel(deps: InfoPanelDeps) {
       plan.clear()
       thought.clear()
       agent.clear()
+      stage.clear()
+      current = undefined
     }
     selectedId = id
-    const oldPortrait = document.querySelector('#info-head .resident-portrait')
-    oldPortrait?.remove()
-    if (game && id) {
-      $('info-head').prepend(residentPortrait(id, '居民'))
-      const r = registrations.get(id)
-    }
-    renderPortrait()
     residentSelect.value = id ?? ''
     if (id) deps.onSelectResident(id)
     deps.map.setSelected(id)
-    if (id && expand) setCollapsed(false)
+    focus.show(id)
     possessBtn.disabled = !id
     if (!id) {
+      if (following) setFollowing(false)
+      setCollapsed(true)
       $('info-name').textContent = '未选中村民'
       $('info-place').textContent = '点击地图上的村民查看信息'
       $('info-activity').textContent = ''
       $('info-transit').textContent = ''
       $('info-home').textContent = ''
-      needs.clear()
-      body.clear()
-      inventory.clear()
-      plan.clear()
-      thought.clear()
-      agent.clear()
     }
+    syncFocus()
   }
 
   function renderHome() {
     const r = selectedId ? registrations.get(selectedId) : undefined
     $('info-home').textContent = r
-      ? `住宅：${r.home_name} · ${r.joined_clock ? `${displayClock(r.joined_clock)} 入村` : '原有居民'}`
+      ? `${r.home ? `住在${r.home_name}` : '还没有家'} · ${r.joined_clock ? `${displayClock(r.joined_clock)} 入村` : '原有居民'}`
       : ''
-    // 游戏界面的详情卡：名字正下方的「住 X」副标题
-    if (game) $('info-sub').textContent = r ? `住 ${r.home_name}` : ''
   }
 
-  /** Agent 停下了或者在等模型：卡片顶上写明原因，给一个能马上处理的按钮（原因原本只在最底下的折叠项里） */
-  function renderStop(m: RosterMember) {
+  /** Agent 停下了或者在等模型：卡片顶上写明原因。按钮只放能马上处理、又只关乎村民的事；
+   *  世界暂停时不放「继续行动」——开始运行是顶栏和地图提示的事，不在一个人的卡片上 */
+  function renderStop(m: RosterMember, speed: number) {
     const box = $('info-stop')
     const agent = m.resident_agent
     const wait = deps.waitLine(m)
@@ -198,7 +210,7 @@ export function initInfoPanel(deps: InfoPanelDeps) {
       ? wait.label
         ? { label: wait.label, run: wait.run }
         : null
-      : agent.state === 'budget' || agent.state === 'unconfigured'
+      : agent.state === 'budget' || agent.state === 'unconfigured' || speed === 0
         ? null
         : { label: '继续行动', run: deps.onResumeAgents }
     query<HTMLElement>(box, 'span').textContent = wait ? wait.text : `${m.name}停下了：${reason}`
@@ -210,33 +222,16 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     }
   }
 
-  /** 「和 X 说话」：化身开放、对方能回应时才有 */
-  const talkBtn = query<HTMLButtonElement>(panel, '#info-talk')
-  talkBtn.onclick = () => {
-    if (selectedId) deps.onTalk(selectedId)
-  }
-  function renderTalk(m: RosterMember) {
-    const row = $('info-talk-row')
-    row.hidden =
-      !deps.map.avatarSupported ||
-      !deps.avatarAvailable() ||
-      m.kind !== 'resident' ||
-      !m.body?.can_decide ||
-      m.resident_agent?.state === 'manual'
-    if (row.hidden) return
-    talkBtn.textContent = `和${m.name}说话`
-    $('info-talk-hint').textContent = `你的化身会走过去，${m.name}会停下来等你`
-  }
-
   function setFollowing(on: boolean) {
     following = on
-    if (game && on && selectedId) {
-      const p = deps.map.getMemberPos(selectedId)
-      if (p) deps.map.panTo(p[0], p[1])
-    }
     followBtn.classList.toggle('on', following)
-    if (game) iconLabel(followBtn, 'eye', following ? '跟随中' : '跟随')
-    else followBtn.textContent = following ? '跟随中' : '跟随'
+    followBtn.setAttribute('aria-pressed', String(following))
+    lineLabel(followBtn, 'eye', following ? '跟随中' : '跟随')
+    if (on && selectedId) {
+      const pos = deps.map.getMemberPos(selectedId)
+      if (pos) deps.map.panTo(pos[0], pos[1])
+    }
+    syncFocus()
   }
   followBtn.onclick = () => setFollowing(!following)
   $('info-edit').onclick = () => deps.onEditResident()
@@ -245,7 +240,7 @@ export function initInfoPanel(deps: InfoPanelDeps) {
   $('info-collapse').onclick = collapse
 
   /** roster 驱动：信息刷新 + 跨级检测 + 跟随 */
-  function render(entries: ResidentEntry[], minutes: number) {
+  function render(entries: ResidentEntry[], minutes: number, speed: number) {
     const choices = entries.map((e) => ({ id: e.member.id, name: e.member.name }))
     order = choices.map((c) => c.id)
     const choiceKey = JSON.stringify(choices)
@@ -255,7 +250,6 @@ export function initInfoPanel(deps: InfoPanelDeps) {
       residentSelect.hidden = choices.length < 2
       residentSelect.value = selectedId ?? ''
     }
-    recent.render()
     if (!entries.length && !selectedId) {
       $('info-name').textContent = '还没有村民'
       $('info-place').textContent = '点顶栏的「邀请村民」请几位住进来'
@@ -263,47 +257,42 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     const me = selectedId ? entries.find((e) => e.member.id === selectedId) : undefined
     if (!me) return
     const m = me.member
+    current = m
     possessBtn.hidden = !deps.map.avatarSupported
-    const unavailableGameAvatar = game && !deps.avatarAvailable()
-    possessBtn.disabled = !m.body?.can_decide || !m.body?.can_move || unavailableGameAvatar
+    possessBtn.disabled = !canPossess(m)
     possessBtn.title = possessBtn.disabled
-      ? unavailableGameAvatar
+      ? !deps.avatarAvailable()
         ? '当前世界尚未开放角色控制'
         : (m.body?.limitation ?? '村民状态尚未就绪')
       : '直接接管这名村民；AI 暂停决策'
+    talkBtn.hidden = !canTalk(m)
+    talkBtn.title = `你的化身会走过去，${m.name}会停下来等你`
 
     needs.setResidentName(m.name)
-    if (game) $('info-edit').textContent = `编辑${m.name}`
-    else $('info-edit').title = `编辑${m.name}的设定`
+    $('info-edit').title = `编辑${m.name}的设定`
     $('info-name').textContent = m.name
     const at = m.at
     $('info-place').textContent = deps.localeName(me.locale)
     $('info-activity').textContent = m.chat
       ? `正在交谈 · ${m.chat.participants.join('、')}`
-      : !game || m.activity !== 'placeholder'
-        ? m.verb
-        : m.resident_agent
-          ? `${agentStateLabels[m.resident_agent.state]}${m.resident_agent.reason ? ' · ' + playerText(m.resident_agent.reason) : ''}`
-          : '当前没有进行中的动作，尚未收到决策状态'
-    renderStop(m)
-    renderTalk(m)
+      : m.verb
+    renderStop(m, speed)
+    // 只在路上时多写一行进度
     $('info-transit').textContent =
       at.kind === 'transit'
         ? `在路上，去${deps.localeName(at.toward)}（还要约 ${Math.max(1, Math.round(at.total - at.elapsed))} 分钟）`
-        : at.kind === 'station'
-          ? `落脚点 ${deps.localeName(at.station)}`
-          : at.kind === 'free'
-            ? '在当前地点内'
-            : '不在场'
-    // 2D 顶部只在路上时多写一行进度
-    $('info-transit').hidden = !game && at.kind !== 'transit'
+        : ''
+    $('info-transit').hidden = at.kind !== 'transit'
     renderHome()
+    const r = registrations.get(m.id)
+    stage.set(r ? portraitKey(r) : m.id, at.kind === 'transit')
     if (m.kind === 'resident') needs.render(m.needs ?? [])
     body.render(m.body, physiology)
     inventory.render(m.inventory)
     thought.render(m.thought, minutes)
     agent.render(m.resident_agent)
-    plan.render(m.plan, m.body, m.resident_agent, m.activity)
+    plan.render(m.plan, m.body)
+    syncFocus()
     // 跟随：每次 roster 更新，村民在视野外（带边距）才平移
     if (following) {
       const pos = deps.map.getMemberPos(m.id)
@@ -313,8 +302,14 @@ export function initInfoPanel(deps: InfoPanelDeps) {
 
   return {
     select,
+    /** 选中并打开角色卡 */
+    open(id: string) {
+      select(id)
+      setCollapsed(false)
+    },
     dispose() {
       panelWidth.dispose()
+      focus.show(null)
     },
     follow: setFollowing,
     setCollapsed,
@@ -336,15 +331,15 @@ export function initInfoPanel(deps: InfoPanelDeps) {
       plan.reset()
       thought.reset()
       agent.reset()
-      recent.reset()
       select(null)
+      picked = false
     },
     /** 世界生理开关：下一帧名册按它补画关掉的项 */
     onPhysiology(value: PhysiologySwitches) {
       physiology = value
       needs.setSwitches(value)
     },
-    /** agent_config 到达后重画分界刻度 */
+    /** agent_config 到达后补上分界线的说明 */
     onTuning(t: NeedsTuning, healthMarks: number[]) {
       needs.tune(t, healthMarks)
     },
@@ -352,20 +347,18 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     onPopulation(view: PopulationView) {
       registrations = new Map(view.residents.map((r) => [r.id, r]))
       renderHome()
-      renderPortrait()
     },
     /** 名册：先定选中谁，再刷新信息、跨级检测与跟随 */
     roster({ residents, msg }: RosterFrame) {
-      // 首次名册自动选中第一位并展开右栏（游戏界面不自动选）；空村时右栏给出邀请提示。
-      // 窄于 1024 时村民卡是盖在地图上的抽屉或浮层，只选中不展开，等玩家点人
+      // 第一份名册选中第一位：镜头对准他，脚下的动作钮告诉玩家能做什么；角色卡等玩家点「资料」再开
       if (deps.avatarActive()) {
         setCollapsed(true)
         if (selectedId !== null) select(null)
-      } else if (selectedId === null && residents.length && !game)
-        select(residents[0].member.id, !narrowLayout.matches)
+      } else if (selectedId === null && residents.length && !picked) select(residents[0].member.id)
       else if (selectedId !== null && !residents.some((e) => e.member.id === selectedId))
         select(null)
-      render(residents, msg.sim_minutes)
+      if (residents.length) picked = true
+      render(residents, msg.sim_minutes, msg.speed)
     },
   }
 }

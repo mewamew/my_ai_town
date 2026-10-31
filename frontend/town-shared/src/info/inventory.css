@@ -1,38 +1,48 @@
-#info-inventory {
-  margin: 12px 0;
-  border-top: 1px solid var(--line);
-  padding-top: 10px;
-}
-#info-inventory summary {
-  cursor: pointer;
-  font-weight: 600;
-  padding: 4px 0;
-}
-#info-inventory > div {
+/* 角色卡的口袋：每行 6 格，像素图按原大小（26 像素）放，不糊 */
+.bag-grid {
   display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
-  margin-top: 8px;
-  min-width: 0;
 }
-.inventory-item {
+.bag-slot {
+  position: relative;
   display: grid;
-  text-align: left;
-  gap: 3px;
-  width: 100%;
+  place-items: center;
+  aspect-ratio: 1;
   min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
+  min-height: 0;
+  padding: 0;
+  border: 1.5px solid var(--line);
   border-radius: var(--r-s);
   background: var(--surface-sunken);
-  color: inherit;
+  color: var(--text-2);
   cursor: pointer;
-  overflow-wrap: anywhere;
 }
-.inventory-item span {
-  font-size: 12px;
-  opacity: 0.75;
+button.bag-slot:hover {
+  border-color: var(--accent);
 }
-.inventory-item:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+.bag-slot.empty {
+  border-style: dashed;
+  background: none;
+  cursor: default;
+}
+.bag-slot .game-prop-picture {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+}
+.bag-slot .game-prop-picture img {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+.bag-slot small {
+  position: absolute;
+  right: 3px;
+  bottom: 1px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }

@@ -404,7 +404,6 @@ html[data-empty-town] .mobile-dock [data-dock='residents'] {
     width: 100%;
     height: 45%;
     max-height: none;
-    padding: 0 16px 16px;
     border-top: 0;
     border-radius: var(--r-m) var(--r-m) 0 0;
     box-shadow: 0 -6px 24px rgb(20 24 22 / 0.16);
@@ -414,14 +413,14 @@ html[data-empty-town] .mobile-dock [data-dock='residents'] {
   #info-panel.dragging {
     transition: none;
   }
+  /* 把手和台子同色，看起来是台子的上沿 */
   .m-sheet-handle {
     display: block;
     position: sticky;
     top: 0;
     z-index: 3;
     height: 22px;
-    margin: 0 -16px;
-    background: var(--card);
+    background: var(--accent-soft);
     cursor: grab;
     touch-action: none;
   }
@@ -436,24 +435,38 @@ html[data-empty-town] .mobile-dock [data-dock='residents'] {
     border-radius: 2px;
     background: var(--line);
   }
-  /* 按钮行排成整齐的三列两行，不再折出半行压着下面的字 */
-  #info-actions {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-  }
-  #info-actions > button {
-    width: 100%;
-    margin: 0;
-    padding-inline: 4px;
-  }
+  /* 头部也能拖：台子矮一点，露头档里装得下小人、想法和名字 */
   #info-head {
-    position: sticky;
-    top: 22px;
-    z-index: 2;
-    padding-bottom: 8px;
-    background: var(--card);
     touch-action: none;
+  }
+  .card-stage {
+    min-height: 118px;
+  }
+  .card-stage::before {
+    left: 22px;
+    bottom: 8px;
+    width: 66px;
+    height: 10px;
+  }
+  .card-sprite {
+    left: 18px;
+    bottom: 12px;
+    width: 75px;
+    height: 102px;
+  }
+  .card-stage:has(#info-thought[hidden]) .card-sprite {
+    left: calc(50% - 37px);
+  }
+  .card-stage:has(#info-thought[hidden])::before {
+    left: calc(50% - 33px);
+  }
+  #info-thought {
+    margin: 2px 12px 12px 106px;
+  }
+  .card-tools {
+    position: static;
+    justify-content: flex-end;
+    padding: 0 8px 6px;
   }
 
   /* ---------- 地图上的浮层 ---------- */

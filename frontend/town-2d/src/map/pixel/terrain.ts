@@ -43,7 +43,7 @@ export const TERRAIN_SEED = 20260923
  * base 是地面、区域材质、水面、海岸和浪花的像素，不含植被和房间（paintGround 再画上去）；
  * wet 标出外圈和水面像素（废土里外圈是干海床，也算在内），open 标出能种树的空地，
  * path 标出土路（2 是路中间的实土），立体场景在上面积水坑；depth 是水面离岸、陆地离水的像素数；
- * docks 是栈桥（地图坐标），船停在旁边
+ * shore 标出海边的地物，立体场景按它画浪（见 shoreOf）；docks 是栈桥（地图坐标），船停在旁边
  */
 export interface Ground {
   atlas: Atlas
@@ -57,6 +57,7 @@ export interface Ground {
   open: Uint8Array
   path: Uint8Array
   depth: Uint8Array
+  shore: Uint8Array
   docks: Dock[]
 }
 
@@ -100,7 +101,22 @@ export function groundOf(atlas: Atlas, theme: MapTheme, seed = TERRAIN_SEED): Gr
     length: d.length * PIXEL,
   }))
   const open = openGround(atlas, layers)
-  return { atlas, theme, seed, decor, width: pw, height: ph, base, wet, open, path, depth, docks }
+  const shore = shoreOf(layers)
+  return {
+    atlas,
+    theme,
+    seed,
+    decor,
+    width: pw,
+    height: ph,
+    base,
+    wet,
+    open,
+    path,
+    depth,
+    shore,
+    docks,
+  }
 }
 
 /** 画出地面：trees 为 false 时不画树和灌木，由立体场景把它们立起来 */
@@ -433,6 +449,37 @@ function paintShoreline(L: Layers, px: Uint32Array) {
       } else if (n > 0 && !piers[i] && !rocks[i] && !beach(L, i))
         px[i] = L.kindAt(i) === 'harbor' ? u('#3e2f24') : mix(px[i], SHADOW, 0.35)
     }
+}
+
+/** 海边的地物：1 是和外海连着的水（港口的水也算，池塘不算），2 是外海边的沙滩，3 是外海边的岩石岸和礁石。
+ *  立体场景只在外海上起浪，浪冲上沙滩、拍在岩石上 */
+function shoreOf(L: Layers) {
+  const { pw, ph, wet, rocks } = L
+  const out = new Uint8Array(pw * ph)
+  // 从地图四边的水往里灌，灌得到的就是外海
+  const stack: number[] = []
+  const push = (i: number) => {
+    if (!wet[i] || out[i]) return
+    out[i] = 1
+    stack.push(i)
+  }
+  for (let x = 0; x < pw; x++) (push(x), push((ph - 1) * pw + x))
+  for (let y = 0; y < ph; y++) (push(y * pw), push(y * pw + pw - 1))
+  while (stack.length) {
+    const i = stack.pop()!
+    const x = i % pw
+    if (x > 0) push(i - 1)
+    if (x < pw - 1) push(i + 1)
+    if (i >= pw) push(i - pw)
+    if (i < pw * (ph - 1)) push(i + pw)
+  }
+  for (let i = 0; i < pw * ph; i++) {
+    if (wet[i]) continue
+    const kind = shoreKind(L, i)
+    if (rocks[i] || kind === 1) out[i] = 3
+    else if (kind === 2 || kind === 3) out[i] = 2
+  }
+  return out
 }
 
 /** 能种东西的空地，立体场景按它撒树、放微粒 */

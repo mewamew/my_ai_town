@@ -3,7 +3,8 @@ import type { ThoughtView } from '../protocol'
 export function createThoughtView(box: HTMLElement) {
   let lastThoughtKey: string | null = ''
   let thoughtAgeEl: HTMLElement | null = null
-  // ---- 想法块：只放想法原文和「N 分钟前」；新想法到达强调一次，年龄按模拟时钟 ----
+  // ---- 想法泡：角色卡小人旁边，只放想法原文和「N 分钟前」；没有想法就不显示。
+  // 新想法到达强调一次，年龄按模拟时钟 ----
   function ageText(thoughtMinutes: number, nowMinutes: number): string {
     const a = Math.floor(thoughtMinutes),
       b = Math.floor(nowMinutes)
@@ -24,11 +25,8 @@ export function createThoughtView(box: HTMLElement) {
     lastThoughtKey = key
     box.replaceChildren()
     thoughtAgeEl = null
-    if (!t) {
-      box.className = 'dim'
-      box.textContent = '这次没有留下想法'
-      return
-    }
+    box.hidden = !t
+    if (!t) return
     box.className = 'thought-box'
 
     const text = document.createElement('div')
@@ -52,8 +50,8 @@ export function createThoughtView(box: HTMLElement) {
       thoughtAgeEl = null
     },
     clear() {
-      box.textContent = '这次没有留下想法'
-      box.className = 'dim'
+      box.replaceChildren()
+      box.hidden = true
       lastThoughtKey = ''
       thoughtAgeEl = null
     },

@@ -91,7 +91,6 @@ export function createPanels(input: ShellInputs) {
   }
   const infoPanel = initInfoPanel({
     map,
-    game,
     events,
     localeName,
     onPossess: (id) => void avatar.possess(id),

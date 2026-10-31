@@ -3,6 +3,7 @@
 //   台词按「交谈编号#第几句」、想法按「模拟分钟|全文」判断是否新的；台词只在交谈进行中算。
 // - 寿命按阅读时间：1.5 秒加每字 0.1 秒，夹在 3–6 真实秒；模拟速度 ×0 时冻结。
 // - 全图最多两个，超出先撤最早冒出的、非选中的。
+// - 选中的人一直挂着最近的想法：不扣寿命，没有气泡时把最近一句补上，直到换成别人。
 // 这里只管什么时候冒、留多久、撤谁，画法由地图自己定。
 import type { RosterMember } from './protocol'
 
@@ -49,9 +50,10 @@ export class BubbleTracker {
     }
     const previous = this.seen.get(member.id)
     this.seen.set(member.id, keys)
-    if (!previous) return
-    if (speech && keys.speech !== previous.speech) this.spawn(member.id, speech.line || speech.text)
-    else if (thought?.line && keys.thought !== previous.thought) this.spawn(member.id, thought.line)
+    const fresh = (key: 'speech' | 'thought') => !!previous && keys[key] !== previous[key]
+    const held = member.id === this.selected && !this.live.has(member.id)
+    if (speech && fresh('speech')) this.spawn(member.id, speech.line || speech.text)
+    else if (thought?.line && (fresh('thought') || held)) this.spawn(member.id, thought.line)
   }
 
   sync(members: Iterable<RosterMember>) {
@@ -65,6 +67,7 @@ export class BubbleTracker {
     this.lastTick = now
     if (this.speed <= 0) return
     for (const [id, bubble] of [...this.live]) {
+      if (id === this.selected) continue
       bubble.remainingMs -= dt
       if (bubble.remainingMs <= 0) this.drop(id)
     }

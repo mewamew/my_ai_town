@@ -15,7 +15,7 @@ type TipId = 'gesture' | 'waiting' | 'tap' | 'events'
 const TEXT: Record<TipId, string> = {
   gesture: '单指拖动地图，两指缩放，两指一起上下拖动调俯角。按住物品可以看名字。',
   waiting: '名字旁边出现三个小点，是居民在等模型回复，通常几秒后就会行动。',
-  tap: '点一个人，看看此刻在想什么、打算做什么。',
+  tap: '点一个人，看看此刻在想什么；脚下的按钮能说话、跟随，点「资料」看详情。',
   events: '错过的对话和想法，都在下面的「动态」里。',
 }
 const DESK_TEXT: Partial<Record<TipId, string>> = {
@@ -185,7 +185,7 @@ export function createTips(map: GameMap) {
     if (current) frame = requestAnimationFrame(loop)
   }
 
-  // 做了提示里的事：拖过地图、点开过村民卡、展开过事件列表
+  // 做了提示里的事：拖过地图、展开过事件列表；点选村民由外壳告诉这里（picked）
   let dragFrom: [number, number] | null = null
   document.getElementById('map')?.addEventListener('pointerdown', (e) => {
     dragFrom = [e.clientX, e.clientY]
@@ -208,7 +208,6 @@ export function createTips(map: GameMap) {
         attributeFilter: ['hidden'],
       })
   }
-  watch('info-panel', 'tap')
   watch('event-full', 'events')
 
   const panel: ShellPanel = {
@@ -225,6 +224,8 @@ export function createTips(map: GameMap) {
     panel,
     /** 进了地图：先讲手势 */
     start: () => want('gesture'),
+    /** 玩家在地图上点了一个人：「点一个人」那条算做过了。开局替玩家选中的第一位不算 */
+    picked: () => done('tap'),
     /** 「更多」或「帮助」里重新显示 */
     reset() {
       seen.clear()

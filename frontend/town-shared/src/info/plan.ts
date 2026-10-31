@@ -1,21 +1,11 @@
-import type { PlanView, BodyView, ResidentAgentView } from '../protocol'
-import { agentStateLabels } from '../labels'
+import type { PlanView, BodyView } from '../protocol'
 import { playerText } from '../format'
 
-export function createPlanView(
-  box: HTMLElement,
-  /** 游戏界面 */
-  game: boolean
-) {
+/** 角色卡「正在」一栏：此刻在做的事，下面是接下来的几件；只读，不伪装成可勾选的清单 */
+export function createPlanView(box: HTMLElement) {
   let lastPlanKey: string | null = ''
-  function renderPlan(
-    plan?: PlanView,
-    body?: BodyView,
-    agent?: ResidentAgentView,
-    activity?: string
-  ) {
-    const waiting = game && activity === 'placeholder'
-    const key = JSON.stringify([plan, body?.can_decide, waiting, agent?.state, agent?.reason])
+  function renderPlan(plan?: PlanView, body?: BodyView) {
+    const key = JSON.stringify([plan, body?.can_decide])
     if (key === lastPlanKey) return
     lastPlanKey = key
     box.replaceChildren()
@@ -29,30 +19,14 @@ export function createPlanView(
 
     const current = document.createElement('div')
     current.className = 'plan-current'
-    const marker = document.createElement('span')
-    marker.className = 'plan-current-marker'
-    marker.setAttribute('aria-hidden', 'true')
-    const currentBody = document.createElement('div')
-    const currentLabel = document.createElement('div')
-    currentLabel.className = 'plan-caption'
-    currentLabel.textContent = waiting || (body && !body.can_decide) ? '当前状态' : '正在执行'
-    const currentText = document.createElement('div')
-    currentText.className = 'plan-current-text'
-    currentText.textContent = playerText(
-      waiting && agent
-        ? `${agentStateLabels[agent.state]}${agent.reason ? ' · ' + agent.reason : ''}`
-        : plan.current
-    )
-    currentBody.append(currentLabel, currentText)
-    current.append(marker, currentBody)
+    current.textContent = playerText(plan.current)
     box.appendChild(current)
 
-    const nextHead = document.createElement('div')
-    nextHead.className = 'plan-next-head'
-    nextHead.textContent = `接下来 · ${plan.upcoming.length} 项`
-    box.appendChild(nextHead)
-
-    if (plan.upcoming.length > 0) {
+    const next = document.createElement('div')
+    next.className = 'plan-next-head'
+    next.textContent = plan.upcoming.length ? '接下来' : '接下来 · 还没想好'
+    box.appendChild(next)
+    if (plan.upcoming.length) {
       const list = document.createElement('ol')
       list.className = 'plan-list'
       for (const text of plan.upcoming) {
@@ -61,11 +35,6 @@ export function createPlanView(
         list.appendChild(item)
       }
       box.appendChild(list)
-    } else {
-      const empty = document.createElement('div')
-      empty.className = 'plan-empty'
-      empty.textContent = '暂无后续计划'
-      box.appendChild(empty)
     }
 
     if (body && !body.can_decide) {
@@ -83,6 +52,7 @@ export function createPlanView(
     },
     clear() {
       lastPlanKey = ''
+      box.className = 'dim'
       box.textContent = '计划数据暂不可用'
     },
   }

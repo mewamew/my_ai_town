@@ -19,10 +19,12 @@ body:not(.game-theme).reduce-ui-motion :not(#map, #map *)::after {
   }
 }
 
-/* 文字大小「较大」：2D 的右栏、事件栏和各整页面板整体放大；3D 的规则在 game/panels.css */
+/* 文字大小「较大」：2D 的角色卡、事件栏和各整页面板整体放大；3D 的规则在 game/panels.css */
 body:not(.game-theme)[data-ui-text='较大']
   :is(
+    #info-who,
     #info-body,
+    #info-actions,
     #event-latest,
     #event-list,
     #settings-page,

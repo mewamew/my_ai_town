@@ -208,12 +208,12 @@ export function installMobileChrome(d: ChromeDeps) {
   const sheet = bottomSheet({
     panel,
     head,
-    // 露头档露到想法为止；底部按钮一行吸底盖在内容上，也要算进去，不然想法正好被它挡住
+    // 露头档露到名字和住处为止；底部按钮吸底盖在内容上，也要算进去，不然名字正好被它挡住
     peekHeight: () => {
-      const thought = document.getElementById('info-thought')
+      const who = document.getElementById('info-who')
       const actions = document.getElementById('info-actions')
       const top = panel.getBoundingClientRect().top
-      const bottom = thought?.getBoundingClientRect().bottom ?? top + 140
+      const bottom = who?.getBoundingClientRect().bottom ?? top + 140
       const bar = actions?.offsetHeight ?? 0
       const most = Math.max(200, $('obs-main').clientHeight * 0.55)
       // 抽屉滚动过时，想法在内容里的位置要加回滚动距离
@@ -243,7 +243,7 @@ export function installMobileChrome(d: ChromeDeps) {
     }
     wasHidden = panel.hidden
   }).observe(panel, { attributes: true, attributeFilter: ['hidden', 'class'] })
-  // 住址、想法晚一步填上或换了长短：露头档跟着重新量，免得把一行字切成两半
+  // 住处、想法晚一步填上或换了长短：露头档跟着重新量，免得把一行字切成两半
   let remeasure = 0
   new MutationObserver(() => {
     if (remeasure || panel.hidden || sheet.snap() !== 'peek') return

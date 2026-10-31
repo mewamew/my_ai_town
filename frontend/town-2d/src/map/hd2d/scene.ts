@@ -42,7 +42,7 @@ import {
 import { OVERHANG, chimneySpot, gableGeometry, roofHeight, roofParts } from './roofs'
 import { gradeShader, SceneDepthPass, TILT_FOCUS, tiltShader } from './post'
 import { landmarkSprites } from './landmarks'
-import { outerMaterial } from './sea'
+import { coastTexture, outerMaterial, surfOnLand } from './sea'
 import { Horizon } from './horizon'
 import { ChimneySmoke } from './smoke'
 import { interior, interiorTop, keepInside } from './interior'
@@ -187,6 +187,8 @@ export class HdScene {
   private readonly selfLit: THREE.MeshLambertMaterial[] = []
   /** 海面动画的时间（秒） */
   private readonly seaTime: { value: number }
+  /** 海面闪光的多少：晴天白天多，夜里和阴天少 */
+  private readonly seaSparkle: { value: number }
   private readonly horizon: Horizon
   private readonly observers: { disconnect(): void }[] = []
   private readonly reduceMotion = matchMedia('(prefers-reduced-motion: reduce)')
@@ -233,7 +235,9 @@ export class HdScene {
     this.upright.push((t) => this.horizon.setTilt(t))
     this.scene.add(this.smoke.group)
     this.upright.push((t) => this.smoke.setTilt(t))
-    this.seaTime = this.addGround(ground)
+    const sea = this.addGround(ground)
+    this.seaTime = sea.time
+    this.seaSparkle = sea.sparkle
     this.houses = atlas.spaces.filter((s) => s.id !== OUTDOOR_SPACE).map((s) => houseOf(s, theme))
     const glowMap = new THREE.CanvasTexture(glowCanvas())
     glowMap.colorSpace = THREE.SRGBColorSpace
@@ -625,7 +629,8 @@ export class HdScene {
     )
   }
 
-  /** 地面贴图挖掉水的像素，下面垫一整块海（废土是干海床），一直铺到地图外很远；返回海面动画的时间 */
+  /** 地面贴图挖掉水的像素，下面垫一整块海（废土是干海床），一直铺到地图外很远；
+   *  外圈是海时浪还会冲上沙滩。返回海面动画的时间和闪光的多少 */
   private addGround(terrain: Ground) {
     const { width: pw, height: ph, wet } = terrain
     const w = pw * PIXEL,
@@ -636,20 +641,24 @@ export class HdScene {
     const img = ctx.getImageData(0, 0, pw, ph)
     for (let i = 0; i < pw * ph; i++) if (wet[i]) img.data[i * 4 + 3] = 0
     ctx.putImageData(img, 0, 0)
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(w, h),
-      this.wettable(new THREE.MeshPhongMaterial({ map: texture(land), alphaTest: 0.5 }))
+    const landMaterial = this.wettable(
+      new THREE.MeshPhongMaterial({ map: texture(land), alphaTest: 0.5 })
     )
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(w, h), landMaterial)
     ground.rotation.x = -Math.PI / 2
     ground.position.set(-MARGIN + w / 2, 0, -MARGIN + h / 2)
     ground.receiveShadow = true
-    const { material, time } = outerMaterial(terrain.depth, pw, ph, this.horizon.haze, this.theme)
+    const coast = coastTexture(terrain.depth, terrain.shore, pw, ph)
+    const { material, time, sparkle } = outerMaterial(coast, this.horizon.haze, this.theme)
+    // 海面也有云影，风和雨从天气里来
+    this.weather.shade(material, { snow: 0, wet: 0 })
+    if (this.theme.outer === 'sea') surfOnLand(landMaterial, coast, time, this.theme)
     const sea = new THREE.Mesh(new THREE.PlaneGeometry(w * 6, h * 6), material)
     sea.rotation.x = -Math.PI / 2
     sea.position.set(ground.position.x, -1, ground.position.z)
     sea.receiveShadow = true
     this.flat.add(ground, sea)
-    return time
+    return { time, sparkle }
   }
 
   private addHouse(house: House, door?: [number, number], points: [number, number][] = []) {
@@ -1254,6 +1263,7 @@ export class HdScene {
     for (const m of this.glowing) (m as THREE.MeshLambertMaterial).emissiveIntensity = night * 0.9
     for (const m of this.moonlit) m.emissiveIntensity = night * ROOF_NIGHT_GLOW
     for (const m of this.selfLit) m.emissiveIntensity = lerp(0.3, 0.55, night)
+    this.seaSparkle.value = lerp(0.3, 1, day) * (1 - cloud * 0.9)
     for (const g of this.glows) g.material.opacity = night * 0.3
     for (const l of this.lampLights) l.intensity = night * 220
     for (const b of this.beams) (b.material as THREE.MeshBasicMaterial).opacity = night * 0.45

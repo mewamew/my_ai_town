@@ -142,7 +142,8 @@ impl Runtime {
         ServerMsg::WorldSettings { state }
     }
 
-    /// 名册：内核投影加上 Agent 状态与外观；世界没开始运行时，空等的人写明在等什么。
+    /// 名册：内核投影加上 Agent 状态与外观；世界没开始运行时，空等的人写明还没决定下一步
+    /// （只说这个人，世界暂停由页面的暂停提示和顶栏说明）。
     pub(crate) fn roster(&self) -> ServerMsg {
         let mut msg = self.driver.roster(&self.world, self.speed);
         if let ServerMsg::Roster { pace, holds, .. } = &mut msg {
@@ -187,7 +188,7 @@ impl Runtime {
                             .as_ref()
                             .is_some_and(|a| a.state == AgentState::Undecided)
                     {
-                        member.plan.current = "已暂停，点「开始」后决定下一步".into();
+                        member.plan.current = "还没决定下一步".into();
                     }
                 }
             }

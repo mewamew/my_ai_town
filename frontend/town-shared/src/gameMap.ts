@@ -81,6 +81,8 @@ export interface GameMap {
   /** 画面加载完（2D 的立体场景建好或退回平面图）；之前只有底色和地名 */
   ready?: Promise<void>
   onVillagerClick: ((id: string) => void) | null
+  /** 没在摆道具时点了空地（控制化身时 onAvatarWalkTo 同时收到走过去的目标） */
+  onGroundClick?: (() => void) | null
   onPropClick: ((id: string) => void) | null
   setProps(props: PropView[]): void
   locateProp(id: string, locale: string): void

@@ -20,23 +20,34 @@ const NEED_NAMES: Record<NeedKind, string> = {
   water: '水分',
   health: '健康',
 }
-/** 游戏界面需求名前的图标 */
-const NEED_ICONS: Record<NeedKind, string> = {
+export const NEED_ICONS: Record<NeedKind, string> = {
   fullness: 'food',
   energy: 'energy',
   water: 'water',
   health: 'heart',
 }
+/** 一条分成几格：只看大概还剩多少，确切数字在悬停提示里 */
+const PIPS = 10
+
+/** 这一项的状态文字：后端给的优先，平稳时不写 */
+export function needWord(n: NeedStateView) {
+  if (n.band === 'steady') return ''
+  return n.text || BAND_LABEL[n.band] || n.band
+}
+
+/** 最该担心的一项：很饿、很渴这一级及以上才算；都还好返回 undefined */
+export function worstNeed(list: NeedStateView[]): NeedStateView | undefined {
+  const severity = (n: NeedStateView) => BAND_SEVERITY[n.band] ?? 0
+  return list.filter((n) => severity(n) >= 2).sort((a, b) => severity(b) - severity(a))[0]
+}
 
 interface NeedEls {
   root: HTMLElement
-  /** 数值条：读屏按 meter 读 */
+  /** 格子条：读屏按 meter 读 */
   track: HTMLElement
-  fill: HTMLElement
-  value: HTMLElement
+  pips: HTMLElement[]
   state: HTMLElement
   kind: NeedKind
-  ticks: HTMLElement[]
   /** 分界线的说明，放进整行的悬停提示 */
   marks: string
 }
@@ -44,9 +55,7 @@ interface NeedEls {
 export function createNeedsView(
   container: HTMLElement,
   residentName: string,
-  onChange: (text: string, warning: boolean) => void,
-  /** 游戏界面 */
-  game: boolean
+  onChange: (text: string, warning: boolean) => void
 ) {
   let tuning: NeedsTuning | null = null
   /** 健康的分界不随人调整，随村民设定一起由后端给出 */
@@ -55,55 +64,41 @@ export function createNeedsView(
   const lastText = new Map<NeedKind, string>()
   const lastBand = new Map<NeedKind, string>()
   const needEls = new Map<NeedKind, NeedEls>()
-  // 2D 在四条需求下面写一句总结：都正常，或列出不正常的状态文字
-  const note = game ? null : document.createElement('p')
-  if (note) note.className = 'needs-note'
-  // ---- 需求状态条（分界线来自 agent_config.tuning，不写死默认值） ----
+  // ---- 一行一项：图标、名字、格子条，不平稳时末尾写状态 ----
   function buildNeed(n: NeedStateView): NeedEls {
     const root = document.createElement('div')
     root.className = 'need'
-    root.dataset.need = n.kind // 游戏皮肤按需求分色（原型 c1-c4）
-    const head = document.createElement('div')
-    head.className = 'need-head'
+    root.dataset.need = n.kind
+    const icon = document.createElement('span')
+    icon.className = 'need-icon'
+    icon.append(gameIcon(NEED_ICONS[n.kind], true))
     const label = document.createElement('span')
     label.className = 'need-label'
     label.textContent = n.need
-    if (game) label.prepend(gameIcon(NEED_ICONS[n.kind]))
-    const value = document.createElement('span')
-    value.className = 'need-value'
-    const state = document.createElement('span')
-    state.className = 'need-state'
-    head.append(label, value, state)
     const track = document.createElement('div')
     track.className = 'need-track'
-    const fill = document.createElement('div')
-    fill.className = 'need-fill'
-    track.appendChild(fill)
-    const ticks: HTMLElement[] = []
-    for (let i = 0; i < 3; i++) {
-      const tick = document.createElement('div')
-      tick.className = 'need-tick'
-      tick.style.display = 'none' // tuning 未到前不显示，避免堆在 0%
-      track.appendChild(tick)
-      ticks.push(tick)
+    const pips: HTMLElement[] = []
+    for (let i = 0; i < PIPS; i++) {
+      const pip = document.createElement('span')
+      pip.className = 'need-pip'
+      track.appendChild(pip)
+      pips.push(pip)
     }
-    root.append(head, track)
+    const state = document.createElement('span')
+    state.className = 'need-state'
+    root.append(icon, label, track, state)
     container.appendChild(root)
     root.addEventListener('animationend', () => root.classList.remove('flash'))
-    const els: NeedEls = { kind: n.kind, root, track, fill, value, state, ticks, marks: '' }
-    placeTicks(els)
+    const els: NeedEls = { kind: n.kind, root, track, pips, state, marks: '' }
+    describeMarks(els)
     return els
   }
 
-  function placeTicks(els: NeedEls) {
+  function describeMarks(els: NeedEls) {
     if (!tuning) return
     // 三个分界：撑不住(collapse) / 重新考虑(ring) / 出现不适(voiced)
     const marks =
       els.kind === 'health' ? healthMarks : [tuning.collapse, tuning.ring, tuning.voiced]
-    els.ticks.forEach((t, i) => {
-      t.style.left = `${marks[i]}%`
-      t.style.display = ''
-    })
     els.marks = `分界线：${marks.join(' / ')}`
   }
 
@@ -125,7 +120,7 @@ export function createNeedsView(
     const name = NEED_NAMES[kind]
     const els = row({ kind, need: name, value: 0, band: 'steady', text: '' })
     els.root.className = 'need need-off'
-    els.value.textContent = '—'
+    for (const pip of els.pips) pip.classList.remove('on')
     els.state.textContent = '已关闭'
     els.root.title = `${name}已在世界设定中关闭，数值保留，不参与生活与决策`
     els.track.removeAttribute('aria-valuenow')
@@ -136,32 +131,27 @@ export function createNeedsView(
   /** 一次名册更新：开着的项按后端数值画，关掉的项画灰条 */
   function renderAll(list: NeedStateView[]) {
     for (const n of list) renderNeed(n)
-    if (switches) {
-      const sent = new Set(list.map((n) => n.kind))
-      for (const kind of NEED_ORDER) if (!switches[kind] && !sent.has(kind)) renderOff(kind)
-    }
-    if (!note || !list.length) return
-    const off = list.filter((n) => n.band !== 'steady')
-    note.classList.toggle('needs-note-warn', off.length > 0)
-    note.textContent = off.length
-      ? off.map((n) => n.text || BAND_LABEL[n.band] || n.band).join(' · ')
-      : '都正常'
-    container.appendChild(note)
+    if (!switches) return
+    const sent = new Set(list.map((n) => n.kind))
+    for (const kind of NEED_ORDER) if (!switches[kind] && !sent.has(kind)) renderOff(kind)
   }
 
   function renderNeed(n: NeedStateView) {
     const els = row(n)
     const cls = BAND_CLASS[n.band] ?? 'steady'
+    const value = Math.round(Math.min(Math.max(n.value, 0), 100))
     els.root.className = `need band-${cls}`
-    els.fill.style.width = `${Math.min(Math.max(n.value, 0), 100)}%`
-    els.value.textContent = String(Math.round(n.value))
-    els.root.title = `${n.need} · ${Math.round(n.value)} · ${n.text || BAND_LABEL[n.band] || n.band}${els.marks ? '\n' + els.marks : ''}`
+    // 还剩一点就留一格，免得看着像已经空了
+    const on = value > 0 ? Math.max(1, Math.round((value / 100) * PIPS)) : 0
+    els.pips.forEach((pip, i) => pip.classList.toggle('on', i < on))
+    const word = needWord(n)
+    els.state.textContent = word
+    els.root.title = `${n.need} · ${value} · ${n.text || BAND_LABEL[n.band] || n.band}${els.marks ? '\n' + els.marks : ''}`
     els.track.setAttribute('role', 'meter')
-    els.track.setAttribute('aria-label', n.need)
+    els.track.setAttribute('aria-label', word ? `${n.need}，${word}` : n.need)
     els.track.setAttribute('aria-valuemin', '0')
     els.track.setAttribute('aria-valuemax', '100')
-    els.track.setAttribute('aria-valuenow', String(Math.round(n.value)))
-    els.state.textContent = n.text || BAND_LABEL[n.band] || n.band
+    els.track.setAttribute('aria-valuenow', String(value))
 
     // 跨级检测：首次出现只记录，不强调
     const prev = lastBand.get(n.kind)
@@ -171,7 +161,7 @@ export function createNeedsView(
       els.root.classList.add('flash')
       const worse = (BAND_SEVERITY[n.band] ?? 0) > (BAND_SEVERITY[prev] ?? 0)
       onChange(
-        `${residentName}${n.need} ${Math.round(n.value)}：${lastText.get(n.kind) ?? prev} → ${n.text || BAND_LABEL[n.band] || n.band}`,
+        `${residentName}${n.need} ${value}：${lastText.get(n.kind) ?? prev} → ${n.text || BAND_LABEL[n.band] || n.band}`,
         worse
       )
     }
@@ -190,7 +180,7 @@ export function createNeedsView(
     tune(value: NeedsTuning, health: number[]) {
       tuning = value
       healthMarks = health
-      for (const els of needEls.values()) placeTicks(els)
+      for (const els of needEls.values()) describeMarks(els)
     },
     reset() {
       lastBand.clear()

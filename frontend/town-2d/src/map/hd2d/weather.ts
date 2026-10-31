@@ -170,6 +170,8 @@ export class Weather3D {
     uSnow: { value: 0 },
     uCloudShadow: { value: 0 },
     uCloudOffset: { value: new THREE.Vector2() },
+    /** 雨下得多大（0～1），海面画雨点用 */
+    uRain: { value: 0 },
   }
   private readonly particles: THREE.ShaderMaterial[] = []
   private readonly rain: THREE.LineSegments
@@ -355,7 +357,10 @@ export class Weather3D {
   }
 
   /** 给材质补天气着色：积雪、湿润、云影，树再加随风摇摆 */
-  shade(material: THREE.MeshLambertMaterial | THREE.MeshPhongMaterial, surface: SurfaceWeather) {
+  shade(
+    material: THREE.MeshLambertMaterial | THREE.MeshPhongMaterial | THREE.MeshStandardMaterial,
+    surface: SurfaceWeather
+  ) {
     if (material instanceof THREE.MeshPhongMaterial && surface.wet > 0.5)
       this.wetMaterials.push(material)
     const shared = this.shared
@@ -449,6 +454,7 @@ export class Weather3D {
     s.uWind.value = this.now.wind * (moving ? 1 + 0.25 * Math.sin(time * 0.3) : 1)
     s.uWet.value = this.wet
     s.uSnow.value = this.snowCover
+    s.uRain.value = effects && moving ? this.now.rain : 0
     s.uCloudShadow.value =
       effects && this.prefs.quality !== 'low' ? this.now.shadows * day * 0.35 : 0
     if (moving) s.uCloudOffset.value.x += dt * PIXEL * 4 * (0.4 + this.now.wind)

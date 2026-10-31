@@ -58,57 +58,64 @@
     </button>
   </div></template
 >
-<!-- 右栏：头部一行头像、名字、「地点 · 动作」和换人；下面依次是想法、计划、身体，
-     其余收进折叠项，按钮行放最后。 -->
+<!-- 右栏是角色卡：在地图上选中村民后点「资料」打开。顶上是像素小人和想法，名字和住处跟在下面；
+     正文依次是正在做的事、身体状态、口袋，原因和记录收进「更多细节」；按钮吸底。 -->
 <template data-slot="info-panel"
   ><div id="info-head">
-    <span class="info-portrait"></span>
+    <div class="card-stage">
+      <canvas class="card-sprite" width="25" height="34" aria-hidden="true" hidden></canvas>
+      <div id="info-thought" hidden></div>
+      <div class="card-tools">
+        <label class="info-switch"
+          >换人 ▾<select aria-label="选择村民" id="resident-select" hidden></select></label
+        ><button id="info-collapse" class="card-tool" type="button">收起</button>
+      </div>
+    </div>
     <div id="info-who">
       <span id="info-name">未选中村民</span>
       <!-- 地点与动作之间不能有空白：「 · 」由样式加在动作前面 -->
       <!-- prettier-ignore -->
-      <div id="info-where"><div id="info-place" class="dim">点击地图上的村民查看信息</div><div id="info-activity"></div></div>
+      <div id="info-where"><div id="info-place">点击地图上的村民查看信息</div><div id="info-activity"></div></div>
       <div id="info-transit"></div>
+      <div id="info-home"></div>
     </div>
-    <label class="info-switch"
-      >换人 ▾<select aria-label="选择村民" id="resident-select" hidden></select></label
-    ><button id="info-collapse">收起</button>
   </div>
   <div id="info-body">
     <p id="info-stop" class="info-stop" role="status" hidden>
       <span></span><button type="button" class="link"></button>
     </p>
-    <div id="info-home" class="dim"></div>
-    <!-- 和这个人说话：进入化身、走过去搭话（化身没开放时不显示） -->
-    <div id="info-talk-row" class="info-talk" hidden>
-      <button id="info-talk" class="primary" type="button">和村民说话</button>
-      <small id="info-talk-hint"></small>
-    </div>
-    <h3 id="info-thought-caption" class="section-caption">想法</h3>
-    <div id="info-thought" class="dim">这次没有留下想法</div>
-    <h3 class="section-caption">计划</h3>
-    <div id="info-plan" class="dim" aria-live="polite">计划数据暂不可用</div>
-    <h3 class="section-caption">身体</h3>
-    <div id="info-needs"></div>
-    <section id="info-physiology"></section>
-    <div id="info-folds">
-      <details id="info-inventory"></details>
-      <details class="info-fold">
-        <summary>最近变化</summary>
-        <div id="info-recent" class="dim">—</div>
-      </details>
+    <section class="card-section">
+      <h3 class="card-caption">正在</h3>
+      <div id="info-plan" aria-live="polite">计划数据暂不可用</div>
+    </section>
+    <section class="card-section">
+      <h3 class="card-caption">状态</h3>
+      <div id="info-needs"></div>
+      <section id="info-physiology"></section>
+    </section>
+    <section id="info-inventory" class="card-section"></section>
+    <details class="card-more">
+      <summary>更多细节</summary>
       <div class="info-body-folds"></div>
-      <details class="info-fold">
+      <details>
         <summary>目标与记忆</summary>
         <div id="info-agent"></div>
       </details>
+    </details>
+  </div>
+  <div id="info-actions">
+    <div class="card-verbs">
+      <button id="info-talk" class="card-verb primary" type="button">说话</button>
+      <button id="info-follow" class="card-verb" type="button">跟随</button>
+      <button id="info-possess" class="card-verb" type="button">附身</button>
     </div>
-    <div class="row" id="info-actions">
-      <button id="info-follow">跟随</button><button id="info-possess" type="button">附身</button>
-      <button id="info-diary" title="按天看他具体做了什么、想了什么">日志</button>
-      <button id="info-chat" title="查看参与过的聊天及完整台词">聊天记录</button>
-      <button id="info-memory" title="查看他整理的经历、认识、目标，以及它们的来源">记忆</button>
-      <button id="info-edit">编辑</button>
+    <div class="card-links">
+      <button id="info-memory" type="button" title="整理过的经历、认识和目标，以及它们的来源">
+        回忆
+      </button>
+      <button id="info-diary" type="button" title="按天看做了什么、想了什么">经历</button>
+      <button id="info-chat" type="button" title="参与过的聊天和完整台词">聊过的</button>
+      <button id="info-edit" type="button">设定</button>
     </div>
   </div></template
 >

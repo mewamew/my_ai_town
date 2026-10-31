@@ -1,9 +1,13 @@
 import { isCompact } from 'town-shared/platform'
 import { PIXEL } from './grid'
 
-/** 一个地图像素占几个设备像素。放大后只停整数倍，像素边缘清楚；
- *  看全貌的整图档和再缩小一档按容器算，见 levels() */
+/** 一个地图像素占几个设备像素。按钮、双击和捏合停下后只停整数倍，像素边缘清楚；
+ *  看全貌的整图档和再缩小一档按容器算，见 levels()。鼠标滚轮按固定比例连续缩放，不落档 */
 const STEPS = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16]
+/** 鼠标滚轮一格放大的倍数 */
+const WHEEL_RATIO = 1.1
+/** 滚轮缩放追目标的快慢：每过这么久，离目标的差剩 1/e，约三倍时长到位 */
+const WHEEL_EASE_MS = 70
 /** 打开地图时的近景：一个地图像素约占 3 个屏幕像素，与立体像素演示页的镜头距离相同；
  *  手机竖屏只有桌面三分之一宽，同样的距离只看得见广场一角，退到一半 */
 const closeUpPixels = () => (isCompact() ? 1.5 : 3)
@@ -319,10 +323,14 @@ export class MapCamera {
   /** 进行中的缩放动画和它要去的倍数；拖动、捏合一开始就停掉它 */
   private zoomAnimation = 0
   private zoomTarget: number | undefined
+  /** 滚轮缩放正在追的倍数、不动点（视图坐标 + 屏幕坐标）和上一帧的时间 */
+  private wheel: { target: number; anchor: [number, number, number, number]; last: number } | null =
+    null
   private stopZoomAnimation() {
     cancelAnimationFrame(this.zoomAnimation)
     this.zoomAnimation = 0
     this.zoomTarget = undefined
+    this.wheel = null
   }
 
   /**
@@ -370,6 +378,45 @@ export class MapCamera {
   private zoomAt(steps: number, cx: number, cy: number) {
     const [wx, wy] = this.clientToView(cx, cy)
     this.animateZoom(this.stepped(steps), { anchor: [wx, wy, cx, cy] })
+  }
+
+  /**
+   * 鼠标滚轮转了 notches 格（正数放大），保持屏幕点 (cx, cy) 下的地方不动。每格的倍数一样，目标连乘；
+   * 画面每帧按指数追向目标，连着滚只是把目标往前推，动画不重新起步，停在哪就是哪。
+   */
+  private wheelZoom(notches: number, cx: number, cy: number) {
+    const levels = this.levels()
+    const base = this.wheel?.target ?? this.zoomTarget ?? this.scale
+    const target = Math.max(
+      levels[this.clampIndex(0)],
+      Math.min(levels.at(-1)!, base * WHEEL_RATIO ** notches)
+    )
+    const anchor: [number, number, number, number] = [...this.clientToView(cx, cy), cx, cy]
+    if (reducedMotion()) {
+      this.stopZoomAnimation()
+      this.scaleAround(target, ...anchor)
+      return
+    }
+    this.zoomTarget = target
+    if (this.wheel) {
+      this.wheel.target = target
+      this.wheel.anchor = anchor
+      return
+    }
+    cancelAnimationFrame(this.zoomAnimation)
+    this.wheel = { target, anchor, last: performance.now() }
+    const tick = (now: number) => {
+      const w = this.wheel
+      if (!w) return
+      const gap = Math.log(w.target / this.scale)
+      const done = Math.abs(gap) < 0.002
+      const k = 1 - Math.exp(-Math.max(0, now - w.last) / WHEEL_EASE_MS)
+      w.last = now
+      this.scaleAround(done ? w.target : this.scale * Math.exp(gap * k), ...w.anchor)
+      if (done) this.stopZoomAnimation()
+      else this.zoomAnimation = requestAnimationFrame(tick)
+    }
+    this.zoomAnimation = requestAnimationFrame(tick)
   }
 
   /** 换 steps 档，并把世界点 (wx, wy) 移到画面中心（双击） */
@@ -471,7 +518,7 @@ export class MapCamera {
   }
 
   /**
-   * 滚轮和触控板，都以指针处为不动点：鼠标滚轮一格（数值大，或按行、按页滚）直接缓动到下一档；
+   * 滚轮和触控板，都以指针处为不动点：鼠标滚轮（见 wheelNotches）每格放大同样倍数，平滑追过去，不落档；
    * 触控板捏合和双指滑动（数值小、一串连着来）跟着手连续缩放，停下来再缓动到一档整倍数（像素边缘清楚）。
    * 原来攒够一格滚动才跳一档，触控板捏合时张开半天没反应、然后突然大一截。
    * 双击：以点击处为画面中心放大两档。
@@ -507,9 +554,9 @@ export class MapCamera {
       (ev) => {
         ev.preventDefault()
         if (pinching) return
-        const notch = !ev.ctrlKey && (ev.deltaMode !== 0 || Math.abs(ev.deltaY) >= 40)
-        if (notch && !gesture) {
-          if (ev.deltaY) this.zoomAt(ev.deltaY < 0 ? 1 : -1, ev.clientX, ev.clientY)
+        const notches = wheelNotches(ev)
+        if (notches !== undefined && !gesture) {
+          if (notches) this.wheelZoom(notches, ev.clientX, ev.clientY)
           return
         }
         begin(ev.clientX, ev.clientY)
@@ -773,6 +820,20 @@ export class MapCamera {
     mapEl.addEventListener('pointerup', release, { signal })
     mapEl.addEventListener('pointercancel', release, { signal })
   }
+}
+
+/**
+ * 鼠标滚轮这一下往上滚了几格（往下为负）；触控板和捏合返回 undefined。按行、按页滚，或一次数值够大，算滚轮。
+ * mac 上的 Chrome 给滚轮加速，慢慢滚一格 deltaY 只有 4，和触控板一样小；被当成触控板时一格只缩不到 1%，
+ * 停下后又弹回原档。它的旧属性 wheelDeltaY 在滚轮上总是按格数给 120 的整数倍（触控板是 deltaY 的 -3 倍，
+ * 能凑成 120 倍时 deltaY 已过 40），凭这个认出来，也按它数格：滚得快时一下有两三格。
+ */
+function wheelNotches(ev: WheelEvent): number | undefined {
+  if (ev.ctrlKey) return undefined
+  const legacy = (ev as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY ?? 0
+  const counted = legacy !== 0 && legacy % 120 === 0
+  if (!counted && ev.deltaMode === 0 && Math.abs(ev.deltaY) < 40) return undefined
+  return -Math.sign(ev.deltaY) * (counted ? Math.min(3, Math.abs(legacy) / 120) : 1)
 }
 
 /** 事件目标向上找带某属性的祖先，返回属性值 */

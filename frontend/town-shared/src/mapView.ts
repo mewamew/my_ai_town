@@ -14,7 +14,7 @@ export const PANELS =
   '#info-panel, #event-bar, #event-full, .avatar-panel, .avatar-hud, .avatar-touch'
 /** 地图上的小按钮和提示：不切掉范围，只让气泡尽量躲开 */
 const CONTROLS =
-  '.map-zoom, .map-fabs > *, .map-props-button, .pause-hint, .town-notices > *, .avatar-toast, .avatar-return'
+  '.map-zoom, .map-fabs > *, .map-props-button, .pause-hint, .town-notices > *, .avatar-toast, .avatar-return, .focus-verbs, .focus-emote'
 /** 离地图边多近算贴边（宽屏的右侧面板留着 12px 边距） */
 const EDGE = 32
 

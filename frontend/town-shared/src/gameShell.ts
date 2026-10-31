@@ -102,11 +102,11 @@ export function startGameShell(
     panels.props.placing?.watch ?? null,
     listeners.signal
   )
-  wireMap(map, panels)
-  systemBars('paper')
-  // 开局向导：第一次进新世界时代替首次对话框，手机和电脑一样；手机在「更多」、电脑在顶栏「帮助」里重新打开
   const tips = createTips(map)
   panels.registry.add(tips.panel)
+  wireMap(map, panels, tips.picked)
+  systemBars('paper')
+  // 开局向导：第一次进新世界时代替首次对话框，手机和电脑一样；手机在「更多」、电脑在顶栏「帮助」里重新打开
   const guide = createGuide({
     send: connection.send,
     save: connection.save,
@@ -250,15 +250,23 @@ function installBack(panels: Panels) {
   }
 }
 
-/** 地图上点了村民或道具：控制化身时走过去互动，否则打开信息栏或道具页 */
-function wireMap(map: GameMap, panels: Panels) {
+/** 地图上点了村民、空地或道具：控制化身时走过去互动，否则选中村民或打开道具页 */
+function wireMap(map: GameMap, panels: Panels, picked: () => void) {
   $('info-chat').onclick = () => {
     const id = panels.infoPanel.selected()
     if (id) panels.chatHistory.open(id)
   }
+  // 点人选中，脚下冒出动作钮；再点一次已选中的人直接打开角色卡
   map.onVillagerClick = (id) => {
     panels.props.closeCard()
-    if (!panels.avatar.select('chat', id)) panels.infoPanel.select(id)
+    if (panels.avatar.select('chat', id)) return
+    picked()
+    if (panels.infoPanel.selected() === id) panels.infoPanel.open(id)
+    else panels.infoPanel.select(id)
+  }
+  // 点空地取消选中，角色卡一起收起；控制化身时点空地是走过去，不管选中
+  map.onGroundClick = () => {
+    if (!panels.avatar.active()) panels.infoPanel.select(null)
   }
   // 摆道具时点空地打开道具浮窗，点道具弹出移除和再放的菜单
   map.onPlaceClick = (client) => panels.props.placing?.clickAt(client)

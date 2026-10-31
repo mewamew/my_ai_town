@@ -122,6 +122,7 @@ export class TownMap {
   onPromptClick: ((id: string) => void) | null = null
   onAvatarWalkTo: ((target: WalkTarget) => void) | null = null
   onPlaceClick: ((client: [number, number]) => void) | null = null
+  onGroundClick: (() => void) | null = null
   private readonly destination = el('g', { class: 'avatar-destination' })
   private destinationAt: WalkTarget | null = null
   /** 摆道具：模式开关、描边的地点、点过的位置 */
@@ -269,8 +270,11 @@ export class TownMap {
       (id) => this.onVillagerClick?.(id),
       (id) => this.onPropClick?.(id),
       (id) => this.onPromptClick?.(id),
-      (point, client) =>
-        this.placing ? this.onPlaceClick?.(client) : this.onAvatarWalkTo?.(this.walkTarget(point)),
+      (point, client) => {
+        if (this.placing) return this.onPlaceClick?.(client)
+        this.onAvatarWalkTo?.(this.walkTarget(point))
+        this.onGroundClick?.()
+      },
       (key, client) => this.residents.openGroup(key, client),
       // 双指上下拖调俯角：和右键拖动同样每像素 0.2 度
       (dy) => {

@@ -116,7 +116,7 @@ export function createDisplayPage(map: GameMap | undefined, game: boolean): Sett
     }
   )
   textChoice.set(textSize)
-  rows.append(settingRow('文字大小', '右栏、事件栏和各页面的字号', textChoice.el))
+  rows.append(settingRow('文字大小', '角色卡、事件栏和各页面的字号', textChoice.el))
 
   // 地图俯角只有 2D 立体场景有；地图没实现这两个方法时整行不显示
   const PITCHES = [30, 50, 70]
