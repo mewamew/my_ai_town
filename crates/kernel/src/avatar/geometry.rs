@@ -112,6 +112,7 @@ impl WalkMap {
             .find(|s| s.locale == locale)
             .map_or(&self.outdoor_space, |s| &s.space)
     }
+    /// 人物在行走地图上的位置。站在房间到达点上的人算在门内，见 `inside_door`。
     pub fn station_locus(&self, locus: &Locus) -> Option<Spot> {
         match &locus.at {
             At::Free {
@@ -121,9 +122,25 @@ impl WalkMap {
                 space: space.clone(),
                 position: *position,
             }),
-            At::Station { station } => self.stations.get(station).cloned(),
+            At::Station { station } => self.stations.get(station).map(|s| self.inside_door(s)),
             _ => None,
         }
+    }
+    /// 房间的到达点画在门外的空间里，处所却是房间。站在那里的人换到这扇门的门内一侧：
+    /// 玩家进屋才和他同处一地、够得着说话；附身后的自由位置也落在自己的处所里。
+    /// 站点本身不改，接续行走和放东西仍按门外的点算。
+    fn inside_door(&self, s: &Spot) -> Spot {
+        let home = self.space_of(&s.locale);
+        if s.space == home {
+            return s.clone();
+        }
+        self.portals
+            .iter()
+            .filter(|p| p.from.space == s.space && p.to.locale == s.locale && p.to.space == home)
+            .map(|p| (distance(p.from.position, s.position), p))
+            .filter(|(d, _)| *d <= REACH)
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map_or_else(|| s.clone(), |(_, p)| p.to.clone())
     }
     /// 读档校验：自由位置必须落在所在处所的可走区域里。
     pub(crate) fn check_free_locus(

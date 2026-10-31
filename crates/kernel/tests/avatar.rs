@@ -517,3 +517,44 @@ fn avatar_rejects_people_and_props_beyond_reach_or_behind_a_wall() {
             .unwrap();
     }
 }
+
+/// 房间的到达点在门外：站点画在外面的空间，处所却是房间。站在那里的人算在屋里，
+/// 化身进门就能和他说话；附身他时从门内开始，存档读得回来。
+#[test]
+fn resident_on_the_doorstep_counts_as_inside() {
+    let doorstep = |w: &mut World| {
+        Arc::make_mut(w.walk_map.as_mut().unwrap()).stations.insert(
+            "st_b".into(),
+            Spot {
+                locale: "loc_b".into(),
+                space: "loc_a".into(),
+                position: [5., 2.],
+            },
+        );
+    };
+    let mut w = world();
+    doorstep(&mut w);
+    enter(&mut w);
+    for _ in 0..2 {
+        w.avatar_move([1., 0.], 0.1).unwrap();
+    }
+    w.avatar_portal("door").unwrap();
+    let revision = w.avatar().unwrap().actions.revision;
+    w.avatar_interact(
+        "doorstep-talk",
+        revision,
+        &Chat::Offer {
+            partner_id: "b".into(),
+            interaction: InteractionKind::Talk,
+            message: "聊聊？".into(),
+        },
+    )
+    .unwrap();
+
+    let mut w = world();
+    doorstep(&mut w);
+    w.possess("b").unwrap();
+    assert_eq!(snapshot(&w)["actors"]["b"]["locus"]["at"]["space"], "loc_b");
+    let saved = w.snapshot();
+    w.restore_snapshot(saved).unwrap();
+}
