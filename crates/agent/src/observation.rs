@@ -90,17 +90,22 @@ fn people_here(world: &World, actor: &str, locale: &str) -> Vec<Value> {
             if other.locus.locale != locale {
                 return None;
             }
+            let mut body = json!({
+                "life": if other.needs.body.dead { "dead" } else { "alive" },
+                "conditions": other.needs.active_conditions().iter().map(|c| c.kind).collect::<Vec<_>>(),
+                "limitation": other.needs.limitation()
+            });
+            // 遇害的尸体看得见伤口，看不见凶手。
+            if let Some(k) = &other.needs.body.killed {
+                body["wound"] = json!(k.wound);
+            }
             Some(json!({
                 "id": id,
                 "name": other.name,
                 "activity": other.current.verb,
                 "available": world.actor(&id).is_some_and(|a| a.interaction_available()),
                 "can_talk": world.talk_available(&id),
-                "body": {
-                    "life": if other.needs.body.dead { "dead" } else { "alive" },
-                    "conditions": other.needs.active_conditions().iter().map(|c| c.kind).collect::<Vec<_>>(),
-                    "limitation": other.needs.limitation()
-                }
+                "body": body
             }))
         })
         .collect()

@@ -8,6 +8,8 @@ export type InstantEffect =
   | { kind: 'apply_condition'; condition: ConditionKind; severity: number }
   | { kind: 'cure_condition'; condition: ConditionKind }
   | { kind: 'revive'; values: [number, number, number, number]; clear_conditions: boolean }
+  /** 伤人：立即扣对方健康，扣到 0 就是遇害；wound 是留在身上的伤 */
+  | { kind: 'harm'; amount: number; wound: string }
   | { kind: 'give_item'; item: Definition; count: number }
   | { kind: 'place_prop'; prop: Definition }
   | { kind: 'chance'; percent: number; effects: InstantEffect[]; miss?: string }

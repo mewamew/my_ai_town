@@ -132,6 +132,22 @@ fn body() -> BodyView {
             source: "摔了一跤".into(),
             text: "出现受伤".into(),
         }],
+        wound: None,
+    }
+}
+
+/// 遇害的死者：名册上带伤口。
+fn killed_body() -> BodyView {
+    BodyView {
+        life: Life::Dead,
+        conditions: vec![],
+        can_decide: false,
+        can_move: false,
+        can_labor: false,
+        limitation: "已死亡".into(),
+        causes: vec![],
+        wound: Some("胸口一处刀伤".into()),
+        ..body()
     }
 }
 
@@ -543,6 +559,16 @@ pub fn server_samples() -> Vec<ServerMsg> {
                         ActivityKind::Placeholder,
                     ),
                     member("resident_c", At::Offstage, ActivityKind::Placeholder),
+                    RosterMember {
+                        body: Some(killed_body()),
+                        ..member(
+                            "resident_d",
+                            At::Station {
+                                station: "place_arrival_cafe".into(),
+                            },
+                            ActivityKind::Placeholder,
+                        )
+                    },
                 ],
             }],
         },
@@ -618,6 +644,23 @@ pub fn server_samples() -> Vec<ServerMsg> {
                         alert: Some(Alert::Death(DeathCause {
                             shortages: vec![Need::Fullness],
                             conditions: vec![BodyConditionKind::Poison],
+                            killed: None,
+                        })),
+                    },
+                    ReceiptView {
+                        sim_minutes: 460.0,
+                        clock: "D1 07:40".into(),
+                        text: "遇害身亡，胸口一处刀伤。原因：阿明使用菜刀／持刀袭击".into(),
+                        alert: Some(Alert::Death(DeathCause {
+                            shortages: vec![],
+                            conditions: vec![],
+                            killed: Some(Killing {
+                                by: EventActor {
+                                    id: "resident_aming".into(),
+                                    name: "阿明".into(),
+                                },
+                                wound: "胸口一处刀伤".into(),
+                            }),
                         })),
                     },
                 ],

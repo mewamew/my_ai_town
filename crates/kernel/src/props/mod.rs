@@ -144,6 +144,12 @@ pub enum InstantEffect {
         values: [f64; 4],
         clear_conditions: bool,
     },
+    /// 伤人：立即扣掉对方这么多健康，扣到 0 就是遇害身亡。只用在对他人施用的动作上；
+    /// `wound` 是留在身上的伤，别人发现尸体时看得见。
+    Harm {
+        amount: f64,
+        wound: String,
+    },
     /// 得到可携带物品，放进本人背包（捡木头、采叶子、做工具）。
     GiveItem {
         item: Box<Definition>,
@@ -434,13 +440,28 @@ impl Action {
                 "产出物品、放置道具、定时事件和离开只作用于本人，不能对他人施用或领取单份"
             )
         );
+        ensure!(
+            self.recipient || !self.harms(),
+            KernelError::props("伤人只能用在对他人施用的动作上")
+        );
         for e in &self.on_complete {
             e.validate(depth, false)?;
         }
         Ok(())
     }
+    /// 完成时会伤人（包括按概率伤人）：只能对同处所的别人用。
+    pub(crate) fn harms(&self) -> bool {
+        self.on_complete.iter().any(InstantEffect::harms)
+    }
 }
 impl InstantEffect {
+    fn harms(&self) -> bool {
+        match self {
+            Self::Harm { .. } => true,
+            Self::Chance { effects, .. } => effects.iter().any(Self::harms),
+            _ => false,
+        }
+    }
     /// 产出物品、放置道具、定时事件或离开：改的是世界，不是接受者的身体。
     fn changes_world(&self) -> bool {
         match self {
@@ -472,6 +493,13 @@ impl InstantEffect {
                 KernelError::props("复活后四项数值须为 1–100，且不能按概率发生")
             ),
             Self::CureCondition { .. } => {}
+            Self::Harm { amount, wound } => ensure!(
+                amount.is_finite()
+                    && (1.0..=100.0).contains(amount)
+                    && !wound.trim().is_empty()
+                    && wound.chars().count() <= 40,
+                KernelError::props("伤人须扣 1–100 点健康，伤口写 1–40 字")
+            ),
             Self::GiveItem { item, count } => {
                 ensure!(
                     item.portable && (1..=MAX_STACK).contains(count),

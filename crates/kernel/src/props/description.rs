@@ -48,10 +48,18 @@ fn instant_text(e: &InstantEffect, s: PhysiologySwitches) -> Option<String> {
     let on = |need| enabled(s, need);
     Some(match e {
         InstantEffect::Restore { need, .. } if !on(*need) => return None,
-        InstantEffect::ApplyCondition { .. } | InstantEffect::CureCondition { .. }
+        InstantEffect::ApplyCondition { .. }
+        | InstantEffect::CureCondition { .. }
+        | InstantEffect::Harm { .. }
             if !on(Need::Health) =>
         {
             return None
+        }
+        InstantEffect::Harm { amount, wound } if *amount >= 100.0 => {
+            format!("完成时杀死对方，身上留下{wound}")
+        }
+        InstantEffect::Harm { amount, wound } => {
+            format!("完成时对方健康减少 {amount} 点，身上留下{wound}；健康扣到 0 就会死")
         }
         InstantEffect::Restore { need, amount } => {
             format!("完成时{}恢复 {amount} 点", need.label())
@@ -119,6 +127,8 @@ fn condition_texts(a: &Action) -> Vec<String> {
         .any(|e| matches!(e, InstantEffect::Revive { .. }))
     {
         conditions.push("由存活者对同一地点的死者施用".into());
+    } else if a.harms() {
+        conditions.push("只能对同一地点活着的别人施用".into());
     } else if a.recipient {
         conditions.push("可对自己或同一地点的存活者施用".into());
     }

@@ -246,7 +246,13 @@ export class ResidentLayer {
     v.g.classList.toggle('vdead', dead)
     v.g.classList.toggle('vincapacitated', incapacitated && !dead)
     const conditions = member.body?.conditions.map((c) => conditionLabels[c.kind]).join(' / ')
-    const special = dead ? '已死亡' : incapacitated ? '需要救助' : conditions
+    const special = dead
+      ? member.body?.wound
+        ? '遇害'
+        : '已死亡'
+      : incapacitated
+        ? '需要救助'
+        : conditions
     const status = special || member.verb
     // 停留不写在名字下面，只在多人名单里写
     v.verb.textContent = special

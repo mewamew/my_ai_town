@@ -7,7 +7,8 @@ use crate::{
     World,
 };
 use protocol::{
-    Alert, BodyConditionKind as C, BodyEventKind, DeathCause, NeedsTuning, PhysiologySwitches,
+    Alert, BodyConditionKind as C, BodyEventKind, DeathCause, EventActor, Killing, NeedsTuning,
+    PhysiologySwitches,
 };
 
 impl World {
@@ -126,11 +127,19 @@ impl World {
         let now_minutes = self.minutes;
         let n = &mut self.actor_mut(id).needs;
         let died = n.settle_death();
+        if died {
+            n.body.killed = cause.killed.clone();
+        }
         let now = n.abilities();
         let reason = n.limitation().to_string();
         if !died && now == was {
             return;
         }
+        let text = match &cause.killed {
+            _ if !died => reason.clone(),
+            Some(k) => format!("遇害身亡，{}。原因：{source}", k.wound),
+            None => format!("健康耗尽，死亡。原因：{source}"),
+        };
         let alert = if died {
             Some(Alert::Death(cause))
         } else {
@@ -162,11 +171,7 @@ impl World {
                 BodyEventKind::Ability
             },
             source,
-            if died {
-                format!("健康耗尽，死亡。原因：{source}")
-            } else {
-                reason
-            },
+            text,
             alert,
         );
     }
@@ -258,6 +263,12 @@ impl World {
             .ok_or_else(|| KernelError::NoSuchActor(id.into()))?
             .needs
             .revive(values, clear_conditions)?;
+        // 活过来就不再是见过的尸体：以后再死，别人要重新发现。
+        for a in self.actors.values_mut() {
+            if let Some(seen) = &mut a.bodies_seen {
+                seen.remove(id);
+            }
+        }
         self.interrupt_actions(id, "复活后重新观察");
         let now = self.minutes;
         self.actor_mut(id).reset_idle(now, false);
@@ -316,7 +327,30 @@ impl World {
         if action.consumes_item {
             self.consume_carried_prop(&spot.prop);
         }
-        self.reconcile_body(&target, was, &source, DeathCause::default());
+        // 这次真的伤了人（概率效果已掷定）：死了就是遇害，记下凶手和伤口。
+        let killed = effects.iter().find_map(|e| match e {
+            InstantEffect::Harm { wound, .. } => Some(Killing {
+                by: EventActor {
+                    id: id.into(),
+                    name: self.actors[id].name.clone(),
+                },
+                wound: wound.clone(),
+            }),
+            _ => None,
+        });
+        let attacked = killed.is_some();
+        self.reconcile_body(
+            &target,
+            was,
+            &source,
+            DeathCause {
+                killed,
+                ..DeathCause::default()
+            },
+        );
+        if attacked && self.actors[&target].needs.body.dead {
+            changes.push(crate::outcome::killed(&self.actors[&target].name));
+        }
         self.body_event(
             &target,
             BodyEventKind::Prop,
@@ -325,7 +359,11 @@ impl World {
             None,
         );
         if target != id {
-            self.notify(&target, format!("接受{source}：{}", changes.join("；")));
+            let received = if action.harms() { "遭到" } else { "接受" };
+            self.notify(
+                &target,
+                format!("{received}{source}：{}", changes.join("；")),
+            );
             let text = format!(
                 "对{}施用完成：{}",
                 self.actors[&target].name,
@@ -367,6 +405,15 @@ impl World {
                 InstantEffect::CureCondition { condition } => {
                     self.cure_condition(target, *condition, source)?;
                     changes.push(crate::outcome::condition_cured(condition.label()));
+                }
+                // 只扣健康；死没死、是不是遇害，由 finish_body_use 随后统一结算。
+                InstantEffect::Harm { amount, wound } => {
+                    let lost = self.actor_mut(target).needs.lose_health(*amount);
+                    changes.push(crate::outcome::harmed(
+                        &self.actors[target].name,
+                        wound,
+                        lost,
+                    ));
                 }
                 InstantEffect::Revive {
                     values,

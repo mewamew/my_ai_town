@@ -62,6 +62,16 @@ pub struct Physiology {
     #[serde(default)]
     pub wet: f64,
     pub history: Vec<BodyEvent>,
+    /// 遇害身亡时记下凶手和伤口；其他死因没有，复活时清掉。旧存档没有这一项。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub killed: Option<Killing>,
+}
+/// 遇害：谁下的手、留下什么伤。村民发现尸体时看得见伤口，看不见凶手。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Killing {
+    pub by: crate::EventActor,
+    pub wound: String,
 }
 /// 世界级生理开关：关掉的一项数值冻结，不限制活动，不进入村民观察。
 /// `weather` 是天气影响身体：露天淋雨雪额外消耗精力，淋久了生病。旧存档没有这一项，按关闭读入。
@@ -104,4 +114,7 @@ pub struct BodyView {
     pub causes: Vec<String>,
     pub exposure: [f64; 3],
     pub history: Vec<BodyEvent>,
+    /// 遇害者身上的伤口；活人和其他死因没有。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wound: Option<String>,
 }

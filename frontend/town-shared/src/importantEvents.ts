@@ -13,7 +13,7 @@ export interface ImportantEvent {
   actor: string
   /** 相关村民的名字 */
   name: string
-  /** 提示卡标题，如「林溪去世了」 */
+  /** 提示卡标题，如「林溪去世了」「林溪遇害了」 */
   title: string
   /** 一句话说明，如「健康耗尽，去世了。饥饿和缺水持续太久」 */
   summary: string
@@ -55,8 +55,12 @@ function plainCause(alert: Extract<Alert, { kind: 'death' }>): string {
   return parts.join('，')
 }
 
-/** 死亡记录 → 平实的一句与原文 */
+/** 死亡记录 → 平实的一句与原文；遇害的写伤口，凶手留在原文（详情）里 */
 export function describeDeath(alert: Extract<Alert, { kind: 'death' }>, text: string) {
+  if (alert.killed) {
+    const { wound } = alert.killed
+    return { summary: `遇害身亡，${wound}`, reason: wound, detail: text }
+  }
   const cause = plainCause(alert)
   return {
     summary: cause ? `健康耗尽，去世了。${cause}` : '健康耗尽，去世了',
@@ -89,7 +93,7 @@ export function importantEvent(alert: Alert, actor: EventActor, text: string): I
         kind: 'death',
         actor: id,
         name,
-        title: `${name}去世了`,
+        title: alert.killed ? `${name}遇害了` : `${name}去世了`,
         ...describeDeath(alert, text),
       }
     case 'condition': {

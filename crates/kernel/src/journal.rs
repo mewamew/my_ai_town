@@ -131,6 +131,23 @@ impl Journal {
         self.today.push(Receipt { at, text, alert });
     }
 
+    /// 记一条亲眼看到的事实，带上涉及的人和地点（recall 按对象查得到），同时进今天的流水。
+    pub(crate) fn record_seen(&mut self, at: f64, text: String, objects: Vec<String>) {
+        self.fact(
+            at,
+            protocol::FactKind::Observation,
+            text.clone(),
+            objects,
+            None,
+            None,
+        );
+        self.today.push(Receipt {
+            at,
+            text,
+            alert: None,
+        });
+    }
+
     pub fn cursor(&self) -> u64 {
         self.events.last().map_or(0, |event| event.event_id)
     }

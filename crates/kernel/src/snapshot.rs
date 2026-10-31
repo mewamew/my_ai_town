@@ -131,6 +131,16 @@ impl World {
         snapshot.validate(&candidate)?;
         candidate.minutes = snapshot.minutes;
         candidate.actors = snapshot.actors;
+        // 旧存档没有已见尸体名单：当时已有的尸体算作人人都见过，读档后不补发一串发现。
+        let dead: std::collections::BTreeSet<String> = candidate
+            .actors
+            .values()
+            .filter(|a| a.needs.body.dead)
+            .map(|a| a.id.clone())
+            .collect();
+        for a in candidate.actors.values_mut() {
+            a.bodies_seen.get_or_insert_with(|| dead.clone());
+        }
         candidate.interactions = crate::interactions::Interactions::restore(snapshot.interactions);
         candidate.contents = snapshot.contents;
         candidate.happenings = snapshot.happenings;

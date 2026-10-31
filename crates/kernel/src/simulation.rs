@@ -58,6 +58,7 @@ impl World {
                 }
             }
             self.fire_happenings();
+            self.notice_bodies();
             self.day_boundary(t0, &ids);
             self.expire_interactions();
         }

@@ -46,6 +46,14 @@ pub(crate) fn condition_cured(label: &str) -> String {
 
 pub(crate) const REVIVED: &str = "接受者复活";
 
+pub(crate) fn harmed(name: &str, wound: &str, lost: f64) -> String {
+    format!("{name}受伤：{wound}，健康减少 {lost:.2} 点")
+}
+
+pub(crate) fn killed(name: &str) -> String {
+    format!("{name}遇害身亡")
+}
+
 pub(crate) fn finished_reading(content: &crate::content::Text, prop_id: &str) -> String {
     format!(
         "读完《{}》版本 {}，作者 {}，实例 {prop_id}；可用 read_content 查看本次正文，是否记忆自行决定",

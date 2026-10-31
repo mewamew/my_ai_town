@@ -63,8 +63,8 @@ pub use observation::{
     TriggerInfo, TriggerKind,
 };
 pub use physiology::{
-    BodyCondition, BodyConditionKind, BodyEvent, BodyEventKind, BodyView, Life, Physiology,
-    PhysiologySwitches,
+    BodyCondition, BodyConditionKind, BodyEvent, BodyEventKind, BodyView, Killing, Life,
+    Physiology, PhysiologySwitches,
 };
 pub use population::{
     is_hex_color, Appearance, BeardStyle, FaceGear, HairStyle, Headwear, HeldItem, HomeView,

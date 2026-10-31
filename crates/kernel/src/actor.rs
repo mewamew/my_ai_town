@@ -1,7 +1,7 @@
 //! 人物活动与计划的组合更新只在此处维护。
 use crate::{activity::Activity, journal::Journal, needs::Needs};
 use protocol::{BodyEvent, BodyEventKind};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 /// 全部人物，按编号索引。
 pub(crate) type Actors = BTreeMap<String, Actor>;
@@ -35,6 +35,10 @@ pub struct Actor {
     pub home: Option<String>,
     /// 身体需求（逻辑在 needs.rs 与 physiology，此处只接线）
     pub needs: Needs,
+    /// 已经发现过的尸体（死者编号），每具只记一次发现（discovery.rs）。旧存档没有这一项：
+    /// 读档时把当时已有的尸体都算作见过，不补发一串发现。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bodies_seen: Option<BTreeSet<String>>,
 }
 
 impl Actor {
@@ -57,6 +61,7 @@ impl Actor {
             journal: Journal::default(),
             home: None,
             needs: Needs::initial(),
+            bodies_seen: Some(BTreeSet::new()),
         }
     }
 

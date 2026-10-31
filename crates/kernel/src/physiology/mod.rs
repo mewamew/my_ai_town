@@ -281,6 +281,7 @@ impl Needs {
             } else {
                 Vec::new()
             },
+            killed: None,
         }
     }
 
@@ -402,10 +403,19 @@ impl Needs {
             t.rang = false;
         }
         self.body.exposure = [0.0; 3];
+        self.body.killed = None;
         if clear_conditions {
             self.body.conditions.clear();
         }
         Ok(())
+    }
+
+    /// 受伤：立即扣掉健康，返回实际扣掉的量。死没死由 `settle_death` 结算。
+    pub(crate) fn lose_health(&mut self, amount: f64) -> f64 {
+        let t = self.track_mut(Need::Health);
+        let old = t.value;
+        t.value = (old - amount).max(EMPTY);
+        old - t.value
     }
 
     /// 即时恢复一项需求，返回实际恢复量。
@@ -596,10 +606,23 @@ pub(crate) fn check_body_use(
         KernelError::physiology("该动作不支持对他人施用")
     );
     let target = recipient.unwrap_or(id);
+    let harms = action.harms();
+    ensure!(
+        !harms || target != id,
+        KernelError::physiology("伤人的动作只能对同一地点的别人用，要填 recipient")
+    );
     let a = w
         .actors
         .get(target)
         .ok_or_else(|| KernelError::physiology("接受者不存在"))?;
+    ensure!(
+        !harms || (!a.is_avatar() && a.needs.on(Need::Health)),
+        KernelError::physiology(if a.is_avatar() {
+            "化身没有身体，不会受伤"
+        } else {
+            "这个世界关掉了健康，伤人的动作不起作用"
+        })
+    );
     let object = w.props.item(&w.topo, prop)?;
     ensure!(
         w.inventory.at_hand(&w.props, id, object, locale) && w.topo.is_dwell(locale),
@@ -620,7 +643,11 @@ pub(crate) fn check_body_use(
     );
     ensure!(
         revive || !a.needs.body.dead,
-        KernelError::physiology("普通进食和治疗不能作用于死者")
+        KernelError::physiology(if harms {
+            "对方已经死了"
+        } else {
+            "普通进食和治疗不能作用于死者"
+        })
     );
     ensure!(
         w.props

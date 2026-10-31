@@ -23,11 +23,13 @@ pub struct EventActor {
 }
 
 /// 死亡时正在造成损害的来源：持续低值的需求与身体状况。只有随时间推进的损害有，
-/// 直接设数值、道具效果、改生理开关导致的死亡两项都为空。
+/// 直接设数值、道具效果、改生理开关导致的死亡两项都为空。遇害时另记凶手和伤口。
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeathCause {
     pub shortages: Vec<Need>,
     pub conditions: Vec<BodyConditionKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub killed: Option<crate::Killing>,
 }
 
 /// 需要提示卡的事件；前端按种类写标题和说明，不解析正文。

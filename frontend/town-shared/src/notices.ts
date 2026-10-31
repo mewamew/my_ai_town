@@ -124,6 +124,9 @@ export function createNotices(
     }
   }
 
+  /** 标题去掉名字剩下的部分：遇害和去世、受伤和中毒说法不同，不合成一张 */
+  const what = (e: ImportantEvent) => e.title.slice(e.name.length)
+
   return {
     show(clock: string, important: ImportantEvent) {
       // 暂停卡按原因合并，不论时间；同一个人再暂停一次不重复列名字
@@ -131,7 +134,10 @@ export function createNotices(
       const same = [...shown, ...queue].find((n) =>
         key
           ? n.items[0].hold?.key === key
-          : n.clock === clock && n.items[0].kind === important.kind && !n.items[0].hold
+          : n.clock === clock &&
+            n.items[0].kind === important.kind &&
+            what(n.items[0]) === what(important) &&
+            !n.items[0].hold
       )
       if (same) {
         if (!key || !same.items.some((e) => e.actor === important.actor)) same.items.push(important)

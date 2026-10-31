@@ -303,6 +303,7 @@ impl Needs {
                 }
             }),
             history: self.body.history.clone(),
+            wound: self.body.killed.as_ref().map(|k| k.wound.clone()),
         }
     }
     pub fn validate(&self, now: f64, rules: &NeedRules) -> Result<()> {
@@ -315,6 +316,12 @@ impl Needs {
         ensure!(
             self.body.dead == (self.health.value == EMPTY),
             KernelError::snapshot("生命状态与健康值不一致")
+        );
+        ensure!(
+            self.body.killed.as_ref().is_none_or(|k| self.body.dead
+                && !k.wound.trim().is_empty()
+                && k.wound.chars().count() <= 40),
+            KernelError::snapshot("遇害记录只能在死者身上，伤口须为 1–40 字")
         );
         self.tuning.validate(rules).map_err(KernelError::snapshot)?;
         ensure!(

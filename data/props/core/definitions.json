@@ -2687,5 +2687,28 @@
         ]
       }
     ]
+  },
+  {
+    "id": "core:kitchen_knife",
+    "version": 1,
+    "name": "菜刀",
+    "description": "一把厚背菜刀，刀口很利。",
+    "portable": true,
+    "actions": [
+      {
+        "id": "stab",
+        "label": "持刀袭击",
+        "duration_minutes": 3,
+        "completion": "activity",
+        "on_complete": [
+          {
+            "kind": "harm",
+            "amount": 100,
+            "wound": "胸口一处刀伤"
+          }
+        ],
+        "recipient": true
+      }
+    ]
   }
 ]

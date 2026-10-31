@@ -67,8 +67,9 @@ interface ReceiptView {
 type ConditionKind = 'injury' | 'illness' | 'poison'
 /** 需要提示卡的事件：前端按种类写标题和说明，不解析正文 */
 export type Alert =
-  /** 健康耗尽死亡；shortages、conditions 是当时正在造成损害的来源，其他死因时为空 */
-  | { kind: 'death'; shortages: NeedKind[]; conditions: ConditionKind[] }
+  /** 健康耗尽死亡；shortages、conditions 是当时正在造成损害的来源，其他死因时为空；
+   *  killed 是遇害时的凶手和伤口 */
+  | { kind: 'death'; shortages: NeedKind[]; conditions: ConditionKind[]; killed?: Killing }
   | { kind: 'condition'; condition: ConditionKind }
   | { kind: 'critical' }
   | { kind: 'hold'; pause: PauseKind; reason: string; cause?: HoldCause; provider?: string }
@@ -78,6 +79,11 @@ export type EventKind = 'world' | 'movement' | 'model'
 export interface EventActor {
   id: string
   name: string
+}
+/** 遇害：谁下的手、留下什么伤 */
+export interface Killing {
+  by: EventActor
+  wound: string
 }
 
 /// 日志里的一天：世界的执行记录、当天的想法、他次日写的「昨天」
@@ -906,6 +912,8 @@ export interface BodyView {
   causes: string[]
   exposure: number[]
   history: { at: number; kind: BodyEventKind; source: string; text: string }[]
+  /** 遇害者身上的伤口；活人和其他死因没有 */
+  wound?: string
 }
 export type ContentCommand =
   | { operation: 'detail'; id: string }

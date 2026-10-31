@@ -63,6 +63,7 @@ fn conditions_coexist_cure_is_specific_and_revival_explicit() {
     let death = Alert::Death(DeathCause {
         shortages: vec![],
         conditions: vec![C::Injury, C::Illness],
+        killed: None,
     });
     assert_eq!(alerts(w.step(10.0)), [death.clone()]);
     assert!(w

@@ -20,7 +20,12 @@ export function createBodyView(container: HTMLElement, foldHost: HTMLElement = c
     const summary = document.createElement('p')
     summary.className =
       body.life === 'dead' ? 'body-danger' : !body.can_decide ? 'body-warning' : 'body-life'
-    summary.textContent = body.life === 'dead' ? body.limitation : `存活 · ${body.limitation}`
+    summary.textContent =
+      body.life !== 'dead'
+        ? `存活 · ${body.limitation}`
+        : body.wound
+          ? `遇害 · ${body.wound}`
+          : body.limitation
     const conditions = document.createElement('div')
     conditions.className = 'body-conditions'
     if (switches && !switches.health)
