@@ -61,8 +61,19 @@ pub(crate) fn finished_reading(content: &crate::content::Text, prop_id: &str) ->
     )
 }
 
-pub(crate) fn finished_writing(author: &str, title: &str, book: &str, place: &str) -> String {
-    format!("{author}完成《{title}》；书籍 {book} 已放在{place}")
+/// 写完的回执。`beside_writer`：地上没有空位了，书放在了作者写作的地方。
+pub(crate) fn finished_writing(
+    author: &str,
+    title: &str,
+    book: &str,
+    place: &str,
+    beside_writer: bool,
+) -> String {
+    if beside_writer {
+        format!("{author}完成《{title}》；{place}地上没有空位了，书籍 {book} 放在写作的地方")
+    } else {
+        format!("{author}完成《{title}》；书籍 {book} 已放在{place}")
+    }
 }
 
 pub(crate) struct Receipt {

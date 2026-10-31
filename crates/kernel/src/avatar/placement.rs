@@ -98,7 +98,15 @@ impl World {
                 .props
                 .placed
                 .keys()
-                .any(|id| !self.props.walk_positions.contains_key(id) && !self.props.is_removed(id))
+                .any(|id| self.lacks_walk_position(id))
+    }
+
+    /// 自己立在地上、还没有二维位置的运行时道具。放在落脚点、带在身上或存进容器的东西跟着所在处走，
+    /// 不要二维位置；也不能补给它们，否则地点里没有空位时读档就失败了。
+    fn lacks_walk_position(&self, id: &str) -> bool {
+        !self.props.walk_positions.contains_key(id)
+            && !self.props.is_removed(id)
+            && self.inventory.location(id).is_none()
     }
 
     /// host 在恢复完成后传入旧 prop-layout；内核不读取文件，也不接受客户端坐标。
@@ -108,7 +116,7 @@ impl World {
         }
         let mut positions = self.props.walk_positions.clone();
         for (id, placement) in &self.props.placed {
-            if positions.contains_key(id) || self.props.is_removed(id) {
+            if !self.lacks_walk_position(id) {
                 continue;
             }
             let spot = legacy

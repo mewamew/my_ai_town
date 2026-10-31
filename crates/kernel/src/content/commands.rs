@@ -1,8 +1,8 @@
 //! 作品的世界入口：玩家侧的创建、修订与撤下，以及活动里的阅读与写作接线。
 use super::*;
 use crate::error::{KernelError, Result};
-use crate::World;
-use protocol::ContentDetail;
+use crate::{inventory::Location, props::Placement, World};
+use protocol::{At, ContentDetail};
 
 impl World {
     pub fn content_detail(&self, id: &str) -> Result<ContentDetail> {
@@ -85,21 +85,56 @@ impl World {
                 let t = placement
                     .definition
                     .readable
-                    .as_ref()
+                    .clone()
                     .ok_or_else(|| KernelError::content("写作草稿缺少作品"))?;
-                let receipt = crate::outcome::Receipt {
+                let book = placement.instance.id.clone();
+                let place = self.topo.locale_name(&placement.instance.locale);
+                let beside_writer = self.shelve_book(actor, *placement)?;
+                Ok(Some(crate::outcome::Receipt {
                     text: crate::outcome::finished_writing(
                         &t.author,
                         &t.title,
-                        &placement.instance.id,
-                        &self.topo.locale_name(&placement.instance.locale),
+                        &book,
+                        &place,
+                        beside_writer,
                     ),
                     readable: None,
-                };
-                self.place_prop(*placement)?;
-                Ok(Some(receipt))
+                }))
             }
         }
+    }
+
+    /// 写好的书放进世界：先在当地找空位摆上；地上摆不下了（家具和通道占满），就像放下随身物品
+    /// 那样放在作者站着的落脚点上——不占新的地面、不铺新的通道，谁来都能读，也能拿走。
+    /// 不然两个小时白写，书也没了，村民只会一遍遍重写。返回书是否放在了作者身边。
+    /// 两种放法都推进背包修订号，host 据此重发道具列表，页面上马上看得到这本书。
+    fn shelve_book(&mut self, actor: &str, placement: Placement) -> Result<bool> {
+        let no_room = match self.place_prop(placement.clone()) {
+            Ok(()) => {
+                self.inventory.bump();
+                return Ok(false);
+            }
+            Err(e @ KernelError::Navigation(_)) => e,
+            Err(e) => return Err(e),
+        };
+        let locale = placement.instance.locale.clone();
+        let station = match &self.actors[actor].locus.at {
+            At::Station { station } if self.topo.station_in(station, &locale) => station.clone(),
+            _ => return Err(no_room),
+        };
+        crate::props::check_room(self.topo.props().len(), 1)?;
+        let prop = self.props.validate_placement(&self.topo, &placement)?;
+        let id = prop.id.clone();
+        self.contents.capture(&prop);
+        self.props.insert(&mut self.topo, placement, prop);
+        self.inventory.set_location(
+            &mut self.topo,
+            &mut self.props,
+            &id,
+            Location::Ground { locale, station },
+        );
+        self.refresh_inventory();
+        Ok(true)
     }
 
     pub(crate) fn record_completed_reading(&mut self, actor: &str, event_id: u64) {

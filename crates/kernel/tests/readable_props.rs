@@ -1,8 +1,12 @@
 //! 真实动作、版本与实例；正文、客观事实和长期记忆互不混淆。
 use crate::common;
-use kernel::World;
-use protocol::ActionStatus;
+use kernel::{
+    avatar::{Area, Spot, Surface, WalkMap},
+    World,
+};
+use protocol::{ActionStatus, ItemLocation};
 use serde_json::{json, Value};
+use std::sync::Arc;
 fn world() -> World {
     let topo = common::two_places(json!([
         {"id":"board","definition":"test:bulletin_board@1","locale":"loc_a"},
@@ -177,5 +181,74 @@ fn writing_draft_restart_interrupt_and_retry_do_not_create_extra_books() {
             .content
             .text,
         "只有读完的人能看到这段原创正文。"
+    );
+}
+
+/// 二维行走地图上的甲地只有一小块地：有人站着，就再没有能摆新道具的空位。
+fn cramped() -> World {
+    let mut w = world();
+    let spot = |locale: &str, at: f64| Spot {
+        locale: locale.into(),
+        space: locale.into(),
+        position: [at, at],
+    };
+    w.walk_map = Some(Arc::new(WalkMap {
+        version: 1,
+        svg_units_per_metre: 12.,
+        metres_per_minute: 12.,
+        surfaces: [("loc_a", 1.5), ("loc_b", 20.)]
+            .into_iter()
+            .map(|(id, size)| Surface {
+                locale: id.into(),
+                space: id.into(),
+                area: Area::Rect {
+                    min: [0., 0.],
+                    max: [size, size],
+                },
+            })
+            .collect(),
+        stations: [
+            ("st_a".into(), spot("loc_a", 0.75)),
+            ("st_b".into(), spot("loc_b", 2.)),
+        ]
+        .into(),
+        ..Default::default()
+    }));
+    w
+}
+
+/// 地上没有空位时，写完的书放在作者写作的地方：两个小时不白写，存档读得回来，别人照样能读。
+#[test]
+fn a_book_finished_where_no_room_is_left_stays_beside_its_writer() {
+    let mut w = cramped();
+    run(&mut w, "a", "write", write());
+    let done = common::finish(&mut w, "a", "write");
+    assert_eq!(done.status, ActionStatus::Succeeded, "{done:?}");
+    let book = w
+        .topo
+        .props()
+        .iter()
+        .find(|p| p.id.starts_with("written:"))
+        .unwrap()
+        .id
+        .clone();
+    let beside = ItemLocation::Ground {
+        locale: "loc_a".into(),
+        station: "st_a".into(),
+    };
+    assert_eq!(w.inventory().location(&book), Some(&beside));
+    let mut w = common::restore(&w, cramped());
+    // host 读档后给缺二维位置的道具补位置；落在落脚点上的书不占位置，地方满了也不能让读档失败
+    w.restore_walk_props(Default::default()).unwrap();
+    assert_eq!(w.inventory().location(&book), Some(&beside));
+    run(&mut w, "b", "reader", read(&book));
+    let reading = common::finish(&mut w, "b", "reader");
+    assert_eq!(
+        w.contents()
+            .reading_result("b", reading.event_ids[0])
+            .unwrap()
+            .content
+            .title,
+        "我的短篇"
     );
 }
