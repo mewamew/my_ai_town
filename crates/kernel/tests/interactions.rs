@@ -226,6 +226,51 @@ fn three_people_join_speak_leave_and_only_hear_their_own_interval() {
     restore(&w);
 }
 
+/// 编号靠前的人被搭话（玩家的编号排在所有村民前面）：说完一轮的最后一句，该对方回话，
+/// 不会又轮到自己，让对方干等。
+#[test]
+fn whoever_ends_a_round_does_not_get_the_next_turn() {
+    let mut w = world();
+    command(
+        &mut w,
+        "r2",
+        "chat",
+        Command::Offer {
+            partner_id: "r1".into(),
+            interaction: Kind::Talk,
+            message: "你刚才在哪儿？".into(),
+        },
+    )
+    .unwrap();
+    command(
+        &mut w,
+        "r1",
+        "reply",
+        Command::Reply {
+            interaction_id: "chat".into(),
+            accept: true,
+            message: "好。".into(),
+        },
+    )
+    .unwrap();
+    for (speaker, line) in [("r2", "我一直在院里。"), ("r1", "我知道是你。")] {
+        assert!(w.chat_turn(speaker));
+        command(
+            &mut w,
+            speaker,
+            "say",
+            Command::Say {
+                interaction_id: "chat".into(),
+                message: line.into(),
+                to: None,
+            },
+        )
+        .unwrap();
+    }
+    assert!(w.chat_turn("r2"), "该被指认的人回话");
+    assert!(!w.chat_turn("r1"));
+}
+
 #[test]
 fn service_uses_one_prop_and_only_diners_gain_fullness() {
     let mut w = world();

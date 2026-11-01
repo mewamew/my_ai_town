@@ -17,6 +17,18 @@ pub(super) fn chat_of_mut(item: &mut Interaction) -> &mut ChatState {
     item.chat.as_mut().expect("交谈互动带聊天状态")
 }
 
+/// 开始新的一轮：每位成员各有一次机会，刚拿过发言权的人排在最后。成员集合按编号排序，
+/// 照抄的话，编号靠前的人说完一轮的最后一句会立刻又轮到自己，对方插不上话——
+/// 玩家的编号排在村民前面，被村民搭话时，说完第一句就会又显示「轮到你了」。
+fn new_round(c: &mut ChatState, last: Option<&str>) {
+    let (rest, last): (Vec<_>, Vec<_>) = c
+        .members
+        .iter()
+        .cloned()
+        .partition(|m| Some(m.as_str()) != last);
+    c.turn_queue = rest.into_iter().chain(last).collect();
+}
+
 /// 聊天记录里的一条：谁、哪一类、说了什么、谁听见。
 pub(crate) struct ChatLine<'a> {
     pub speaker: &'a str,
@@ -290,9 +302,9 @@ impl Interactions {
         pass: bool,
     ) {
         let c = chat_of_mut(self.get_mut(id));
-        c.turn_queue.remove(0);
+        let done = c.turn_queue.remove(0);
         if c.turn_queue.is_empty() {
-            c.turn_queue = c.members.iter().cloned().collect();
+            new_round(c, Some(&done));
         }
         // 一轮内尚未回应的被提问者优先，不剥夺其他人的本轮机会。
         if let Some(index) = to.and_then(|to| c.turn_queue.iter().position(|a| a == to)) {
@@ -341,7 +353,14 @@ impl Interactions {
         c.turn_queue.retain(|v| v != actor);
         c.passes = 0;
         if c.turn_queue.is_empty() {
-            c.turn_queue = c.members.iter().cloned().collect();
+            // 走的人是这一轮最后一个：其他人这一轮都轮过了，最后开口的人排到新一轮末尾。
+            let last = c
+                .entries
+                .iter()
+                .rev()
+                .find(|e| e.kind == ChatEntryKind::Speech && c.members.contains(&e.actor))
+                .map(|e| e.actor.clone());
+            new_round(c, last.as_deref());
         }
         let remaining = c.members.len();
         actors
