@@ -240,6 +240,9 @@
   position: absolute;
   right: 12px;
   top: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 5px 12px;
   border: 1px solid var(--accent);
   border-radius: var(--r-pill);
@@ -904,6 +907,20 @@
 }
 .avatar-mode .vwait {
   display: none;
+}
+/* 玩家邀请了、还在想怎么回的人：名字旁的「…」照常显示 */
+.avatar-mode .awaited .vwait:not([display='none']) {
+  display: inline;
+}
+/* 控制化身：点地图就是走过去；指着附近都走不到的地方显示禁止，拖动时照常是抓手 */
+#map > svg.avatar-mode {
+  cursor: pointer;
+}
+#map > svg.avatar-mode.walk-blocked {
+  cursor: not-allowed;
+}
+#map.drag > svg.avatar-mode {
+  cursor: grabbing;
 }
 .scaled-labels .rg {
   font-size: calc(88px * var(--marker-scale, 1));

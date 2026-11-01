@@ -59,7 +59,7 @@ pub(super) fn invitation_preserves_work_until_acceptance() {
     );
     offer(&mut w, "accept").unwrap();
     // 邀请后走远，接受失败不能先中断受邀者的工作。
-    w.avatar_move([1., 0.], 0.5).unwrap();
+    w.avatar_move([1., 0.], false, 0.2).unwrap();
     let reply = Chat::Reply {
         interaction_id: "accept".into(),
         accept: true,
@@ -77,7 +77,7 @@ pub(super) fn invitation_preserves_work_until_acceptance() {
         w.action_group("a", "work").unwrap().status,
         GroupStatus::Running
     );
-    w.avatar_move([-1., 0.], 0.5).unwrap();
+    w.avatar_move([-1., 0.], false, 0.2).unwrap();
     w.interact("a", "yes", w.actor("a").unwrap().actions.revision, &reply)
         .unwrap();
     let results = &w.action_group("a", "work").unwrap().results;

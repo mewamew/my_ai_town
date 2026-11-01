@@ -61,8 +61,21 @@ function movementSound(
 }
 
 const mapVisible = () => !document.getElementById('obs-view')?.hidden
+/** 焦点在输入框里或开着对话框：按键是在打字 */
+const typing = () => {
+  const e = document.activeElement
+  return (
+    !!document.querySelector('dialog[open]') ||
+    (e instanceof HTMLElement &&
+      (e.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName)))
+  )
+}
 /** 刚进入化身时镜头拉近到的宽度（地图单位）：看得清自己和身边几步内的人 */
 const CLOSE_UP_WIDTH = 1400
+/** 镜头对准人头上方一点，名字和提示标签不贴着画面上沿 */
+const CAMERA_RISE = 30
+/** 一帧里人挪了这么远（地图单位）算瞬移（进门、出门），镜头直接切过去 */
+const CAMERA_JUMP = 400
 
 export function createAvatar(deps: AvatarDeps) {
   const avatar = new AvatarController(deps)
@@ -128,8 +141,13 @@ class AvatarController {
   private tab: AvatarTab | null = null
   /** 面板上次重绘时的内容签名 */
   private signature = ''
-  /** 镜头跟着化身；拖动地图或转镜头后脱离，「回到化身」重新跟上 */
+  /** 镜头跟着化身；拖动地图后脱离，开始走、按 C 或点「回到化身」重新跟上 */
   private following = true
+  /** 跟随镜头的逐帧循环（控制中才转）、上一帧人画在哪 */
+  private cameraFrame = 0
+  private cameraLast: { t: number; p: [number, number] } | null = null
+  /** 下一帧开始把人挪回画面中间（按 C、点「回到化身」） */
+  private recentre = false
   private bagSelection: string | null = null
   /** Tab 换到的当前对象（提示编号） */
   private focusedTarget: string | null = null
@@ -146,13 +164,28 @@ class AvatarController {
     const actions = this.createActions()
     const ui = createAvatarUI(mapEl, signal, actions, deps.map.avatarLooks?.() ?? null, deps.game)
     this.ui = ui
-    // 拖动地图即脱离跟随；「回到化身」重新跟上
+    // 拖动地图即脱离跟随；开始走、按 C 或点「回到化身」重新跟上
     guardPointer(ui, mapEl, signal, () => {
       if (this.following && this.owned()) {
         this.following = false
         this.render()
       }
     })
+    // 跟随时滚轮围着化身缩放，人不会被缩到画面一边
+    deps.map.setZoomAnchor?.(() => {
+      const id = this.state?.actor?.id
+      return id && this.owned() && this.following ? this.map.getScreenPos?.(id) : undefined
+    })
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.code !== 'KeyC' || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return
+        if (!this.owned() || !mapVisible() || typing()) return
+        e.preventDefault()
+        this.resumeFollowing()
+      },
+      { signal }
+    )
     this.lease = resumeLease(
       () => this.world,
       (command) => this.execute(command)
@@ -214,14 +247,8 @@ class AvatarController {
         if (this.state?.actor) this.deps.openHistory(this.state.actor.id)
       },
       speak: () => this.speak(),
-      follow: () => {
-        this.following = true
-        this.render()
-      },
-      resetCamera: () => {
-        this.following = true
-        this.render()
-      },
+      follow: () => this.resumeFollowing(),
+      resetCamera: () => this.resumeFollowing(),
       targets: () => this.targets(),
       bulletin: () => this.bulletinTargets(),
       render: (force) => this.render(force),
@@ -247,7 +274,18 @@ class AvatarController {
       toggleBag: () => this.toggleTab('bag'),
       showToast: this.ui.showToast,
       onDirection: (direction) => this.footsteps.update(direction[0] !== 0 || direction[1] !== 0),
+      onWalk: () => this.resumeFollowing(false),
     })
+  }
+
+  /** 镜头重新跟上化身。按 C、点「回到化身」：把人慢慢挪回画面中间；
+   *  拖开地图后一开始走（centre 为 false）：只是重新跟着，人走出取景框才挪，离得太远才挪回中间 */
+  private resumeFollowing(centre = true) {
+    if (!this.owned() || (this.following && !centre)) return
+    this.following = true
+    if (centre) this.recentre = true
+    this.render()
+    this.map.requestFrame?.()
   }
 
   owned() {
@@ -302,7 +340,15 @@ class AvatarController {
       (id) => {
         this.bagSelection = id
       },
-      { id: this.focusedTarget, where: map.walkTargetOf?.bind(map) },
+      {
+        id: this.focusedTarget,
+        where: map.walkTargetOf?.bind(map),
+        // 还够不着的人：对准他，走过去，够得着就搭话
+        approach: (id) => {
+          this.focusedTarget = `person:${id}`
+          this.navigation.reachFor('person', id)
+        },
+      },
       this.bulletinTargets()
     )
   }
@@ -463,21 +509,66 @@ class AvatarController {
     }
   }
 
-  /** 镜头跟着化身：平移到化身上方一点，标签才不会贴着画面上沿被裁掉。
-   *  刚进入时拉近一次，看得清自己和身边的人；本来就够近时不动 */
+  /** 镜头跟着化身：控制中每帧跑一次 followFrame——地图逐帧画时由它在每次画之前调（人物、名字、镜头
+   *  同一帧到位），不然自己逐帧跑。刚进入时先拉近一次，看得清自己和身边的人；本来就够近时不动。
+   *  地图不会平滑跟随时，退回人快出画面才挪过去 */
   private followCamera(controlling: boolean) {
     const { map } = this
     const a = this.state?.actor
-    if (controlling && a) {
-      const p = map.getMemberPos(a.id)
-      if (p && this.closeUp) {
-        this.closeUp = false
-        const view = map.getViewBox()
-        const width = Math.min(view[2], CLOSE_UP_WIDTH)
-        const height = (width * view[3]) / view[2]
-        map.setViewBox([p[0] - width / 2, p[1] - 30 - height / 2, width, height])
-      } else if (p && this.following) map.panTo(p[0], p[1] - 30)
+    if (!controlling || !a) {
+      cancelAnimationFrame(this.cameraFrame)
+      this.cameraFrame = 0
+      this.cameraLast = null
+      map.setFrameHook?.(null)
+      return
     }
+    const p = map.getMemberPos(a.id)
+    if (p && this.closeUp) {
+      this.closeUp = false
+      const view = map.getViewBox()
+      const width = Math.min(view[2], CLOSE_UP_WIDTH)
+      const height = (width * view[3]) / view[2]
+      map.setViewBox([p[0] - width / 2, p[1] - CAMERA_RISE - height / 2, width, height])
+    }
+    if (!map.followTo) {
+      if (p && this.following) map.panTo(p[0], p[1] - CAMERA_RISE)
+      return
+    }
+    if (map.setFrameHook?.(this.frameHook)) {
+      cancelAnimationFrame(this.cameraFrame)
+      this.cameraFrame = 0
+      return
+    }
+    if (!this.cameraFrame) {
+      const loop = (now: number) => {
+        this.cameraFrame = requestAnimationFrame(loop)
+        this.followFrame(now)
+      }
+      this.cameraFrame = requestAnimationFrame(loop)
+    }
+  }
+
+  private readonly frameHook = (t: number) => this.followFrame(t)
+
+  /** 一帧的跟随：人在画面中间的取景框里走动时镜头不动，顶出框才跟上（见 MapCamera.follow）；
+   *  人一下子挪很远（进门、出门）就直接切过去。拖开地图后只记位置不动镜头。返回这一帧挪了镜头 */
+  private followFrame(now: number): boolean {
+    const { map, state } = this
+    const a = state?.actor
+    if (!a || !this.owned() || !mapVisible() || document.hidden) {
+      this.cameraLast = null
+      return false
+    }
+    const p = map.getDrawnPos?.(a.id) ?? map.getMemberPos(a.id)
+    if (!p) return false
+    const last = this.cameraLast
+    this.cameraLast = { t: now, p }
+    if (!this.following) return false
+    const dt = last ? Math.min(100, Math.max(0, now - last.t)) : 0
+    const jumped = !!last && Math.hypot(p[0] - last.p[0], p[1] - last.p[1]) > CAMERA_JUMP
+    const how = jumped ? 'snap' : this.recentre ? 'centre' : 'window'
+    this.recentre = false
+    return map.followTo?.(p[0], p[1] - CAMERA_RISE, dt, how) ?? false
   }
 
   private render(force = false) {
@@ -667,6 +758,9 @@ class AvatarController {
     this.footsteps.update(false)
     this.listeners.abort()
     clearInterval(this.timer)
+    cancelAnimationFrame(this.cameraFrame)
+    this.map.setFrameHook?.(null)
+    this.map.setZoomAnchor?.(null)
     this.ui.root.remove()
     this.bulletin.dispose()
     document.documentElement.classList.remove('avatar-controlling')

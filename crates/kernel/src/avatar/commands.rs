@@ -2,13 +2,14 @@ use super::*;
 use protocol::{ActionDraft, Interaction, InteractionCommand, InventoryAction};
 
 impl World {
-    pub fn avatar_move(&mut self, direction: Point, dt: f64) -> Result<()> {
+    /// 按方向走 dt 模拟分钟；run 是按住了奔跑键。步速见 WALK_PACE、RUN_PACE。
+    pub fn avatar_move(&mut self, direction: Point, run: bool, dt: f64) -> Result<()> {
         let actor_id = self.player_id().to_owned();
         let actor = actor_id.as_str();
         ensure!(
             direction.iter().all(|x| x.is_finite() && x.abs() <= 1.)
                 && dt.is_finite()
-                && (0.0..=10.0).contains(&dt), // 每拍 0.1 秒 × 正常速度（模拟分钟 / 秒）
+                && (0.0..=10.0).contains(&dt), // 这一段的秒数 × 正常速度（模拟分钟 / 秒）
             KernelError::navigation("方向或移动步长无效")
         );
         let a = self
@@ -26,7 +27,8 @@ impl World {
             .actor_spot(actor)
             .ok_or_else(|| KernelError::navigation("化身位置无效"))?;
         let n = direction[0].hypot(direction[1]).max(1.);
-        let d = direction.map(|v| v / n * map.metres_per_minute * dt);
+        let pace = if run { RUN_PACE } else { WALK_PACE };
+        let d = direction.map(|v| v / n * map.metres_per_minute * pace * dt);
         let next = map.advance(&start, d, &self.avatar_obstacles());
         let a = self.actor_mut(actor);
         a.locus = next.locus();

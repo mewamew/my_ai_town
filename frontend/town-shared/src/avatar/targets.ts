@@ -8,10 +8,12 @@ import { postsHere } from './bulletin'
 
 type Actor = NonNullable<AvatarState['actor']>
 
-/** 当前对象：Tab 换到的提示编号；where 给出人和道具的米制位置，用来把近的排在前面 */
+/** 当前对象：Tab 换到的提示编号；where 给出人和道具的米制位置，用来把近的排在前面；
+ *  approach 是走到够不着的人身边再搭话 */
 interface TargetFocus {
   id: string | null
   where?: (kind: 'person' | 'prop', id: string) => WalkTarget | undefined
+  approach?: (id: string) => void
 }
 
 /** Derive interaction prompts from the latest authoritative avatar state. */
@@ -89,6 +91,11 @@ export function avatarTargets(
       if (talking.has(n.id)) continue
       const invitation = pendingTalk(state, n.id)
       const available = (n.can_talk ?? n.available) && !invitation
+      // 在和别人聊、够得着那一圈人：可以加入（没在聊天时）
+      const joinable = !available && !invitation && !talk
+      const chat = joinable
+        ? state.nearby_chats?.find((c) => c.members.includes(n.id) && !c.members.includes(a.id))
+        : undefined
       list.push({
         prompt: {
           id: `person:${n.id}`,
@@ -100,8 +107,10 @@ export function avatarTargets(
               : `${n.name}邀请你交谈`
             : available
               ? `和${n.name}交谈`
-              : `${n.name} · 暂时无法交谈`,
-          muted: !available,
+              : chat
+                ? `加入${n.name}的交谈`
+                : `${n.name} · ${n.busy ?? '暂时无法交谈'}`,
+          muted: !available && !chat,
         },
         run: () => {
           if (invitation) openTab('chat')
@@ -115,6 +124,12 @@ export function avatarTargets(
                 interaction: { kind: 'talk' },
                 message: '你好，方便聊一会儿吗？',
               },
+            })
+          else if (chat)
+            void execute({
+              kind: 'interact',
+              revision: a.revision,
+              command: { operation: 'join', interaction_id: chat.id, message: '我也来聊聊。' },
             })
         },
       })
@@ -136,6 +151,21 @@ export function avatarTargets(
             selectBag(`prop:${p.id}`)
             openTab('bag')
           }),
+      })
+    }
+    // 附近还够不着的人排在最后：按 E 或点标签就走过去，到了自动搭话
+    for (const n of state.approach ?? []) {
+      if (talking.has(n.id) || !focus.approach) continue
+      const approach = focus.approach
+      list.push({
+        approach: true,
+        prompt: {
+          id: `person:${n.id}`,
+          kind: 'person',
+          target: n.id,
+          label: n.blocked ? `隔着东西，绕过去和${n.name}说话` : `走过去和${n.name}说话`,
+        },
+        run: () => approach(n.id),
       })
     }
     const current =

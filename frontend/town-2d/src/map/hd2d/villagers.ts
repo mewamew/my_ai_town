@@ -15,6 +15,8 @@ import {
 // 之间匀速走过去：每份名册记作比上一份晚一拍，播放按真实时间走；每来一份按缓冲多少把播放稍微调快
 // 或调慢，一份之内速度不变，名册早到晚到、主线程卡一下都不会让人忽快忽慢。
 // 按这一段路的方向选朝向、按走过的距离换走路帧。
+// 玩家正在操控的人不缓冲：位置由本地预测给出（见 ../avatarMotion.ts），每帧照着发出去的方向和步速走，
+// 按下去马上就动，不比别人晚两拍，也不随名册早到晚到一顿一顿。
 
 /** 走过多少地图单位换一帧 */
 const STRIDE = 3.2 * PIXEL
@@ -40,9 +42,23 @@ export interface VillagerPlacement {
   visible: boolean
   /** 死亡的人变灰，失去行动能力的人压暗 */
   condition: 'normal' | 'incapacitated' | 'dead'
+  /** 玩家正在操控的人：不缓冲，按本地预测画（见 LiveMotion） */
+  live?: boolean
+  /** 站着时转身朝向这一点（被玩家邀请、正和玩家聊天的人朝向玩家） */
+  faceToward?: [number, number]
 }
 
 const TINT = { normal: '#ffffff', incapacitated: '#a8a0a0', dead: '#6f6f78' }
+
+/** 玩家正在操控的人画在哪：本地预测（见 ../avatarMotion.ts），每帧问一次 */
+export interface LiveMotion {
+  /** 此刻的位置（地图单位）；还不知道时为空，先按名册画 */
+  at(now: number): [number, number] | undefined
+  /** 还在动（在走，或还在和服务端校正）：要每帧画 */
+  active(): boolean
+  /** 在走：走路帧要动 */
+  walking(): boolean
+}
 
 /** 名册时间轴上的一个位置 */
 interface Sample {
@@ -64,6 +80,10 @@ interface Villager {
   offset: [number, number]
   walked: number
   moving: boolean
+  /** 玩家正在操控的人：位置按 LiveMotion 画 */
+  live?: boolean
+  /** 站着时朝向的点 */
+  faceToward?: [number, number]
 }
 
 export class Villagers {
@@ -77,6 +97,11 @@ export class Villagers {
   private rate = 1
   /** 上一次 step 的时刻 */
   private last = performance.now()
+  /** 玩家正在操控的人的本地预测；没有在操控时为空 */
+  private motion: LiveMotion | null = null
+  setLiveMotion(motion: LiveMotion | null) {
+    this.motion = motion
+  }
 
   constructor(
     private scene: THREE.Scene,
@@ -128,6 +153,20 @@ export class Villagers {
       const tint = color.getHex()
       color.set(TINT[p.condition])
       if (color.getHex() !== tint) changed = true
+      if (v.faceToward?.[0] !== p.faceToward?.[0] || v.faceToward?.[1] !== p.faceToward?.[1])
+        changed = true
+      v.faceToward = p.faceToward
+      if (p.live) {
+        // 时间轴上只留名册的最新位置：名字、心声泡按它和立牌的差跟着立牌（见 lag）
+        v.live = true
+        v.path = [{ t: this.latest, x: p.x, y: p.y }]
+        continue
+      }
+      // 不再操控（交还、退出）：从现在的位置接回名册的时间轴
+      if (v.live) {
+        v.live = undefined
+        v.path = [{ t: this.latest, x: v.at[0], y: v.at[1] }]
+      }
       const end = v.path[v.path.length - 1]
       if (end.x === p.x && end.y === p.y) continue
       if (!p.visible || Math.hypot(p.x - end.x, p.y - end.y) > JUMP) {
@@ -149,10 +188,40 @@ export class Villagers {
     return changed
   }
 
+  /** 操控中的人：画到本地预测的位置，按走过的距离换走路帧；还不知道预测位置时按名册 */
+  private stepLive(v: Villager, now: number) {
+    const end = v.path[v.path.length - 1]
+    const [x, y] = this.motion?.at(now) ?? [end.x, end.y]
+    const dx = x - v.at[0],
+      dy = y - v.at[1]
+    const d = Math.hypot(dx, dy)
+    v.moving = !!this.motion?.walking()
+    if (v.moving && d > 0.01) v.facing = [dx, dy]
+    if (!v.moving) this.turnToward(v)
+    let changed = this.face(v)
+    if (d > 0.01) {
+      if (v.moving) v.walked += d
+      this.moveTo(v, x, y)
+      changed = true
+    }
+    return changed
+  }
+
+  /** 玩家操控的人还在动（在走，或在和服务端校正）：场景要每帧都画，不等节拍 */
+  liveActive() {
+    if (!this.motion?.active()) return false
+    for (const v of this.all.values()) if (v.live) return true
+    return false
+  }
+
   /** 还有人没走到最新位置：定时器据此决定要不要再画一帧 */
   active() {
     for (const v of this.all.values()) {
       const end = v.path[v.path.length - 1]
+      if (v.live) {
+        if (this.motion?.active() || v.moving) return true
+        continue
+      }
       if (v.path.length > 1 || v.at[0] !== end.x || v.at[1] !== end.y) return true
     }
     return false
@@ -177,6 +246,11 @@ export class Villagers {
     this.play = Math.min(this.latest, this.play + dt * this.rate)
     let changed = false
     for (const v of this.all.values()) {
+      if (v.live) {
+        if (this.stepLive(v, now)) changed = true
+        if (this.frame(v)) changed = true
+        continue
+      }
       while (v.path.length > 1 && v.path[1].t <= this.play) v.path.shift()
       const [a, b] = v.path
       const k = b ? Math.max(0, (this.play - a.t) / (b.t - a.t)) : 0
@@ -188,6 +262,7 @@ export class Villagers {
         sy = b ? b.y - a.y : 0
       v.moving = Math.hypot(sx, sy) > 0.01
       if (v.moving) v.facing = [sx, sy]
+      else this.turnToward(v)
       const directionChanged = this.face(v)
       if (directionChanged) changed = true
       if (d > 0) {
@@ -195,15 +270,27 @@ export class Villagers {
         this.moveTo(v, x, y)
         changed = true
       }
-      const frame = v.moving ? Math.floor(v.walked / STRIDE) % 4 : 0
-      const fx = frame / 4,
-        fy = 1 - (DIRECTIONS.indexOf(v.dir) + 1) / 4
-      if (v.map.offset.x !== fx || v.map.offset.y !== fy) {
-        v.map.offset.set(fx, fy)
-        changed = true
-      }
+      if (this.frame(v)) changed = true
     }
     return changed
+  }
+
+  /** 站着的人转身朝向要看的人 */
+  private turnToward(v: Villager) {
+    if (!v.faceToward) return
+    const dx = v.faceToward[0] - v.at[0],
+      dy = v.faceToward[1] - v.at[1]
+    if (Math.hypot(dx, dy) > 1) v.facing = [dx, dy]
+  }
+
+  /** 按朝向和走过的距离选走路帧；换了帧返回 true */
+  private frame(v: Villager) {
+    const frame = v.moving ? Math.floor(v.walked / STRIDE) % 4 : 0
+    const fx = frame / 4,
+      fy = 1 - (DIRECTIONS.indexOf(v.dir) + 1) / 4
+    if (v.map.offset.x === fx && v.map.offset.y === fy) return false
+    v.map.offset.set(fx, fy)
+    return true
   }
 
   private create(p: VillagerPlacement): Villager {

@@ -287,8 +287,8 @@ fn serve(mut runtime: Runtime, args: &Args, map_hash: String) -> Result<(), Host
             };
             runtime.network_command(command, &clients);
         }
-        for (id, input) in network::take_inputs(&clients) {
-            runtime.avatar_input(id, input);
+        for (id, at, input) in network::take_inputs(&clients) {
+            runtime.avatar_input(id, input, at);
         }
         runtime.tick(&clients);
         if let Some(rest) = tick.checked_sub(start.elapsed()) {

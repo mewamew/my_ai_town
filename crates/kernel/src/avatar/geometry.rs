@@ -97,6 +97,23 @@ pub struct WalkMap {
 pub fn distance(a: Point, b: Point) -> f64 {
     (a[0] - b[0]).hypot(a[1] - b[1])
 }
+/// 折线上按长度比例 t（0–1）取的点。
+fn along(points: &[Point], t: f64) -> Point {
+    let length: f64 = points.windows(2).map(|s| distance(s[0], s[1])).sum();
+    let mut left = t.clamp(0., 1.) * length;
+    for s in points.windows(2) {
+        let d = distance(s[0], s[1]);
+        if left <= d && d > 0. {
+            let k = left / d;
+            return [
+                s[0][0] + (s[1][0] - s[0][0]) * k,
+                s[0][1] + (s[1][1] - s[0][1]) * k,
+            ];
+        }
+        left -= d;
+    }
+    points[points.len() - 1]
+}
 pub fn segment_distance(p: Point, a: Point, b: Point) -> f64 {
     let d = [b[0] - a[0], b[1] - a[1]];
     let t = (((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1])
@@ -225,6 +242,65 @@ impl WalkMap {
                 q[axis] += 0.2;
                 t.height(q[0], q[1])
                     .is_some_and(|n| (n - h).abs() <= 0.2 * 0.8)
+            })
+    }
+    /// 走在路段上的人（一维进度）此刻在行走地图上的位置：按进度比例在这条路的中线上取点，
+    /// 和前端画他的位置一样（town-shared/spatial.ts 的 position）。不在路段上、地图上没有这条路时为空。
+    pub fn transit_spot(&self, locus: &Locus) -> Option<Spot> {
+        let At::Transit { elapsed, total, .. } = &locus.at else {
+            return None;
+        };
+        self.surfaces.iter().find_map(|s| match &s.area {
+            Area::Corridor { points, .. } if s.locale == locus.locale && !points.is_empty() => {
+                Some(Spot {
+                    locale: locus.locale.clone(),
+                    space: s.space.clone(),
+                    position: along(points, if *total > 0. { elapsed / total } else { 0. }),
+                })
+            }
+            _ => None,
+        })
+    }
+    /// 玩家和人说话够不够得着：同一空间、距离不超过 limit、中间没有遮挡。
+    /// 不管是不是同一个处所：处所之间的分界在画面上看不出来。
+    pub(crate) fn within_talk<'o>(
+        &self,
+        from: &Spot,
+        to: &Spot,
+        limit: f64,
+        obstacles: impl FnOnce() -> &'o [Obstacle],
+    ) -> bool {
+        from.space == to.space
+            && distance(from.position, to.position) <= limit
+            && self.visible_except(from, to, obstacles(), None)
+    }
+    /// 从 from 往 toward（对方的位置）走，第一个落在处所 locale 里、站得下的点：玩家和隔着处所分界的人
+    /// 说上话时，往前挪这一步站进对方的处所，两人才在同一个地方。本来就在里面时就是原地；找不到为空。
+    pub(crate) fn step_into(
+        &self,
+        locale: &str,
+        from: &Spot,
+        toward: Point,
+        obstacles: &[Obstacle],
+    ) -> Option<Spot> {
+        let inside = |p: Point| {
+            self.locale_at(&from.space, p, locale) == Some(locale)
+                && self.clear(&from.space, p, obstacles, RADIUS)
+        };
+        let steps = (distance(from.position, toward) / 0.1).ceil().max(1.) as usize;
+        (0..=steps)
+            .map(|i| {
+                let t = i as f64 / steps as f64;
+                [
+                    from.position[0] + (toward[0] - from.position[0]) * t,
+                    from.position[1] + (toward[1] - from.position[1]) * t,
+                ]
+            })
+            .find(|p| inside(*p))
+            .map(|position| Spot {
+                locale: locale.into(),
+                space: from.space.clone(),
+                position,
             })
     }
     /// 同一空间与处所、距离不超过 limit，且中间没有遮挡；目标道具自己可以忽略。

@@ -17,6 +17,69 @@ impl World {
             && self.check_weather_chat(actor).is_ok()
     }
 
+    /// 玩家（化身或附身的人）和村民搭话、送东西：在哪儿进行。只看距离和遮挡，不要求同一处所，
+    /// 地点定在村民所在的处所；交谈连路上也行，送东西要那里是驻留地。不是玩家和村民之间的、
+    /// 或招待用餐这类要用道具的互动为空，按原规则两人在同一驻留处所。
+    pub(crate) fn player_pair_place(
+        &self,
+        a: &str,
+        b: &str,
+        kind: &InteractionKind,
+    ) -> Option<String> {
+        let (x, y) = (self.actors.get(a)?, self.actors.get(b)?);
+        let resident = match (x.player_controlled(), y.player_controlled()) {
+            (true, false) => y,
+            (false, true) => x,
+            _ => return None,
+        };
+        let place = &resident.locus.locale;
+        match kind {
+            InteractionKind::Talk => Some(place.clone()),
+            InteractionKind::Give { .. } if self.topo.is_dwell(place) => Some(place.clone()),
+            _ => None,
+        }
+    }
+
+    /// 玩家操控的人往前挪一小步，站进处所 place（朝着 toward 这个人）：隔着处所分界说上话后，
+    /// 两人要在同一处所进行互动（读档也这样校验）。本来就在那里时不动。
+    fn step_player_into(&mut self, player: &str, place: &str, toward: &str) -> Result<()> {
+        if self.actors[player].locus.locale == place {
+            return Ok(());
+        }
+        let map = self
+            .walk_map
+            .clone()
+            .ok_or_else(|| KernelError::navigation("缺少行走地图"))?;
+        let reach = crate::avatar::Reach::new(self);
+        let from = reach
+            .talk_spot(player)
+            .ok_or_else(|| KernelError::navigation("化身不在场"))?;
+        let toward = reach
+            .talk_spot(toward)
+            .map_or(from.position, |s| s.position);
+        let spot = map
+            .step_into(place, &from, toward, &self.avatar_obstacles())
+            .ok_or_else(|| KernelError::interaction("请再走近对方一点"))?;
+        let a = self.actor_mut(player);
+        a.locus = spot.locus();
+        a.current.locale = place.into();
+        Ok(())
+    }
+
+    /// 玩家参与的双方互动开始前（见 player_pair_place）：互动记在村民那边，玩家操控的人挪进去。
+    fn settle_pair_place(&mut self, id: &str, place: &str) -> Result<()> {
+        let item = &self.interactions[id];
+        let (a, b) = (item.initiator.clone(), item.partner.clone());
+        let (player, resident) = if self.actors[&a].player_controlled() {
+            (a, b)
+        } else {
+            (b, a)
+        };
+        self.step_player_into(&player, place, &resident)?;
+        self.interactions.get_mut(id).locale = place.into();
+        Ok(())
+    }
+
     pub fn prop_occupants(&self, prop: &str) -> Vec<String> {
         self.interactions
             .prop_occupants(&self.actors, self.minutes, prop)
@@ -86,14 +149,23 @@ impl World {
             self.check_weather_chat(actor)?;
         }
         if let InteractionCommand::Join { interaction_id, .. } = command {
-            if let Some(chat) = self
+            if let Some(i) = self
                 .interactions
                 .get(interaction_id)
-                .and_then(|i| i.chat.as_ref())
+                .filter(|i| i.status == Status::Running)
             {
+                let (place, members) =
+                    (i.locale.clone(), i.chat.as_ref().map(|c| c.members.clone()));
+                let members = members.unwrap_or_default();
                 let reach = crate::avatar::Reach::new(self);
-                for member in &chat.members {
+                for member in &members {
                     reach.pair(actor, member)?;
+                }
+                // 玩家走到聊天的人身边就能加入：隔着处所分界时往前挪一步，站进聊天所在的处所
+                if player && !members.contains(actor) {
+                    if let Some(member) = members.iter().next() {
+                        self.step_player_into(actor, &place, member)?;
+                    }
                 }
             }
         }
@@ -144,10 +216,11 @@ impl World {
             self.actors[actor].interaction_available(),
             KernelError::interaction("请先完成当前活动，再发起邀请")
         );
-        check_pair_here(self, actor, partner)?;
+        check_pair_here(self, actor, partner, &kind)?;
         self.interactions.check_new_offer(actor, partner, &kind)?;
         let duration_minutes = check_kind(self, actor, partner, &kind)?;
-        let item = Interactions::new_offer(
+        let place = self.player_pair_place(actor, partner, &kind);
+        let mut item = Interactions::new_offer(
             command_id,
             &self.actors[actor],
             partner,
@@ -156,6 +229,10 @@ impl World {
             duration_minutes,
             self.minutes,
         );
+        // 玩家和村民之间的：记在村民所在的处所（接受时再按那时的位置定一次）
+        if let Some(place) = place {
+            item.locale = place;
+        }
         let now = self.minutes;
         self.interactions
             .record_offer(&mut self.actors, now, &item, message);
@@ -192,6 +269,9 @@ impl World {
         );
         if accept {
             self.check_accept(actor, &old)?;
+            if let Some(place) = self.player_pair_place(&old.initiator, actor, &old.kind) {
+                self.settle_pair_place(interaction_id, &place)?;
+            }
         }
         let now = self.minutes;
         // 所有距离、身体与同意校验通过后才中断，不把未完成的工作算作完成。
@@ -220,11 +300,14 @@ impl World {
         Ok(self.interactions[interaction_id].clone())
     }
 
-    /// 接受邀请前再查一遍：双方仍在邀请地点、能够回应，互动内容本身仍然可行。
+    /// 接受邀请前再查一遍：双方仍在邀请地点（玩家参与的只看还够不够得着）、能够回应，
+    /// 互动内容本身仍然可行。
     fn check_accept(&self, actor: &str, old: &Interaction) -> Result<()> {
-        check_pair_here(self, &old.initiator, actor)?;
+        check_pair_here(self, &old.initiator, actor, &old.kind)?;
         ensure!(
-            self.actors[actor].locus.locale == old.locale,
+            self.player_pair_place(&old.initiator, actor, &old.kind)
+                .is_some()
+                || self.actors[actor].locus.locale == old.locale,
             KernelError::interaction("双方已离开邀请地点，请重新发起")
         );
         if old.kind == InteractionKind::Talk {

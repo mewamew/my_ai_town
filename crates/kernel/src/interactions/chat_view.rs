@@ -44,9 +44,17 @@ impl Interactions {
 
     /// 本人所在处所里进行中的聊天。
     pub(crate) fn nearby_chats(&self, actor: &Actor) -> Vec<NearbyChat> {
+        self.running_chats()
+            .into_iter()
+            .filter(|c| c.locale == actor.locus.locale)
+            .collect()
+    }
+
+    /// 正在进行的交谈，不论在哪。
+    pub(crate) fn running_chats(&self) -> Vec<NearbyChat> {
         self.items
             .values()
-            .filter(|i| i.locale == actor.locus.locale && i.status == Status::Running)
+            .filter(|i| i.status == Status::Running)
             .filter_map(|i| {
                 Some(NearbyChat {
                     id: i.id.clone(),

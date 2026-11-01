@@ -21,14 +21,37 @@ interface AvatarNavigationDeps {
   showToast: (message: string, sticky?: boolean) => void
   /** 化身方向变化（已按能否行走归零），供脚步声使用 */
   onDirection?: (direction: [number, number]) => void
+  /** 玩家开始走（点地图、按方向键、推摇杆）：镜头重新跟上 */
+  onWalk?: () => void
 }
+
+/** 判断走没走动、到点前减速按多长一段算（秒）：方向每 0.1 秒发一次，后端按真实经过的时间走
+ *  （见 crates/host/src/avatar/tick.rs 的 advance_avatar），0.1 秒就是相邻两次方向之间走的路 */
+const TICK_SECONDS = 0.1
+/** 旧服务端不给步速时按村民的步速算：每模拟分钟 12 米 */
+const RESIDENT_METRES_PER_MINUTE = 12
+/** 追人时多久看一次他挪没挪开（毫秒） */
+const CHASE_CHECK_MS = 300
 
 /** 行走输入、点击目标的路线与到达后的互动。 */
 export function createAvatarNavigation(deps: AvatarNavigationDeps) {
   const { map, signal, getState, getWorld, getHolds, owned, mapVisible, send, execute } = deps
-  const { targets, cycleTarget, toggleBag, showToast, onDirection } = deps
+  const { targets, cycleTarget, toggleBag, showToast, onDirection, onWalk } = deps
   // 化身输入的序号：换租约时从头计
   let inputSequence = 0
+  /** 按住 Shift 在跑；输入模块建好之前当作没按 */
+  let running = () => false
+  /** 此刻每秒走多少米：步速（奔跑再乘倍数）× 每秒的模拟分钟数 */
+  const metresPerSecond = () => {
+    const state = getState()
+    const walk = state?.walk
+    const perMinute =
+      (walk?.metres_per_minute ?? RESIDENT_METRES_PER_MINUTE) *
+      (walk && running() ? walk.sprint_factor : 1)
+    return perMinute * (state?.speed ?? 0)
+  }
+  /** 相邻两次方向之间走多少米 */
+  const stepMetres = () => metresPerSecond() * TICK_SECONDS
   const canWalk = () => {
     const state = getState()
     return (
@@ -45,7 +68,8 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
     if (!owned()) return
     if (!canWalk()) direction = [0, 0]
     onDirection?.(direction)
-    // 还没拿到租约时不发
+    // 还没拿到租约时不发；发出去的同时交给地图预先画（服务端按到达时刻换方向，两边走的路一样）
+    map.setAvatarMotion?.(state?.epoch ? direction : [0, 0], metresPerSecond())
     if (!state?.epoch) return
     send({
       type: 'avatar_input',
@@ -54,10 +78,13 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
       sequence: ++inputSequence,
       navigation_revision: state.navigation_revision ?? 1,
       direction,
+      ...(running() && { run: true }),
     })
   }
-  const emitManualDirection = (direction: [number, number]) =>
+  const emitManualDirection = (direction: [number, number]) => {
+    if ((direction[0] || direction[1]) && canWalk()) onWalk?.()
     emitDirection(map.walkDirection?.(direction) ?? direction)
+  }
   const primaryAction = () => {
     if (owned())
       targets()
@@ -67,11 +94,14 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
   const bagAction = () => {
     if (owned() && mapVisible()) toggleBag()
   }
-  /** 化身此刻的米制位置；自由位置最准，站在落脚点时退回地图上的坐标 */
+  /** 化身此刻的米制位置：地图在预测自己的小人时用它画的位置（服务端马上要走到的地方，比名册新），
+   *  不然用服务端给的自由位置；站在落脚点时退回地图上的坐标 */
   const herePoint = (): WalkTarget | undefined => {
     const state = getState()
     const a = state?.actor
     if (!a) return undefined
+    const predicted = map.avatarAt?.()
+    if (predicted) return predicted
     const at = a.locus.at
     if (at.kind === 'free') return { space: at.space, position: at.position }
     return map.walkTargetOf?.('person', a.id)
@@ -91,7 +121,7 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
   }
   const walk = createWalkTo({
     here: herePoint,
-    speed: () => getState()?.speed ?? 0,
+    step: stepMetres,
     canWalk,
     emit: emitDirection,
     portal: async (id) => {
@@ -116,8 +146,20 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
   /** 走到了：这时的状态就是后端按同一位置算出来的，能做就直接做 */
   function runOnArrival(id: string) {
     const target = targets().find((t) => t.prompt.id === id)
-    if (target && !target.prompt.muted) target.run()
-    else showToast(target ? target.prompt.label : '走到了，但现在够不着')
+    if (target && !target.approach && !target.prompt.muted) target.run()
+    else
+      showToast(
+        target?.approach
+          ? '还说不上话，换个不隔着东西的位置再试'
+          : target
+            ? target.prompt.label
+            : '走到了，但现在够不着'
+      )
+  }
+  /** 要找的人或东西已经够得着：不必走到终点，停下就做 */
+  function arriveEarly() {
+    const ready = arriveAction && targets().find((t) => t.prompt.id === arriveAction)
+    if (ready && !ready.approach && !ready.prompt.muted) walk.arrive()
   }
   const input = createWalkingInput(
     canWalk,
@@ -131,6 +173,7 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
     { KeyB: bagAction },
     cycleTarget
   )
+  running = input.running
   // 触屏摇杆：按住时每 100 毫秒重发一次方向（后端的输入会过期），松手发零向量
   let stickDirection: [number, number] | null = null
   let stickTimer = 0
@@ -186,7 +229,11 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
     }
     arriveAction = object
     walk.set(route, radius)
-    map.setAvatarDestination?.(target)
+    // 圈画在实际要去的地方：点到站不了的地方时，选路换成了附近能站的一点
+    map.setAvatarDestination?.(route[route.length - 1].point)
+    onWalk?.()
+    // 当场发出第一份方向，不等下一拍的化身状态
+    walk.tick()
     return true
   }
   /** 点地图上的人或道具：够得着就直接做，够不着就走过去，到了再做一次。
@@ -196,7 +243,7 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
     if (kind === 'person' && id === state?.actor?.id) return false
     const object = `${kind}:${id}`
     const ready = targets().find((t) => t.prompt.id === object)
-    if (ready && !ready.prompt.muted && state?.speed && !state.actor?.busy) {
+    if (ready && !ready.approach && !ready.prompt.muted && state?.speed && !state.actor?.busy) {
       ready.run()
       return true
     }
@@ -207,11 +254,13 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
       chasing = { id, at: target, checked: performance.now() }
     return true
   }
-  /** 每收到一次化身状态：要找的人挪开两米以上（或进了别的屋子），按他现在的位置重新选路 */
+  /** 每收到一次化身状态：要找的人或东西已经够得着就停下来做；要找的人挪开一米以上
+   *  （或进了别的屋子），按他现在的位置重新选路 */
   function followChased() {
+    arriveEarly()
     if (!chasing || !arriveAction) return
     const now = performance.now()
-    if (now - chasing.checked < 800) return
+    if (now - chasing.checked < CHASE_CHECK_MS) return
     chasing.checked = now
     const there = map.walkTargetOf?.('person', chasing.id)
     if (!there) return
@@ -220,13 +269,13 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
       Math.hypot(
         there.position[0] - chasing.at.position[0],
         there.position[1] - chasing.at.position[1]
-      ) > 2
+      ) > 1
     if (!moved) return
     const route = planRoute(there)
     if (!route?.length) return
     chasing.at = there
     walk.set(route, 1.4)
-    map.setAvatarDestination?.(there)
+    map.setAvatarDestination?.(route[route.length - 1].point)
   }
   map.onAvatarWalkTo = (target) => {
     if (owned() && startWalk(target, 0.5, null)) chasing = null

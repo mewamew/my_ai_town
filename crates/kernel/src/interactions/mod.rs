@@ -554,8 +554,14 @@ impl Interactions {
     }
 }
 
-/// 双方在场：同一驻留处所，对方受 Agent 控制且能回应。
-pub(crate) fn check_pair_here(w: &World, actor: &str, partner: &str) -> Result<()> {
+/// 双方在场：对方受 Agent 控制且能回应。村民之间要在同一驻留处所；玩家搭话、送东西只看距离和遮挡
+/// （见 World::player_pair_place 与 Reach::pair），路上也能聊。
+pub(crate) fn check_pair_here(
+    w: &World,
+    actor: &str,
+    partner: &str,
+    kind: &InteractionKind,
+) -> Result<()> {
     let a = w
         .actors
         .get(actor)
@@ -564,13 +570,10 @@ pub(crate) fn check_pair_here(w: &World, actor: &str, partner: &str) -> Result<(
         .actors
         .get(partner)
         .ok_or_else(|| KernelError::interaction("对方不存在"))?;
+    let here = w.player_pair_place(actor, partner, kind).is_some()
+        || (a.locus.locale == b.locus.locale && w.topo.is_dwell(&a.locus.locale));
     ensure!(
-        actor != partner
-            && a.locus.locale == b.locus.locale
-            && w.topo.is_dwell(&a.locus.locale)
-            && a.present()
-            && b.controllable()
-            && !b.needs.incapacitated(),
+        actor != partner && here && a.present() && b.controllable() && !b.needs.incapacitated(),
         KernelError::interaction("需要另一名在场、能够回应的村民")
     );
     crate::avatar::Reach::new(w).pair(actor, partner)?;

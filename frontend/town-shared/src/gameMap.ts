@@ -94,6 +94,22 @@ export interface GameMap {
   /** 居民的屏幕范围；台词气泡据此摆在头顶并躲开旁人。没有实现时只按 getScreenPos 的一点估算 */
   getScreenBox?(id: string): ScreenBox | undefined
   getMemberPos(id: string): [number, number] | undefined
+  /** 人此刻画在哪（地图坐标）；画面平滑走动时和名册位置差一点。没有实现时用 getMemberPos */
+  getDrawnPos?(id: string): [number, number] | undefined
+  /** 镜头跟着化身，每帧一次：dt 是离上一帧的毫秒数。window（默认）人走出画面中间的取景框才跟上，
+   *  centre 把人慢慢挪回画面中间，snap 直接切过去（进门、出门）。返回这一帧挪了镜头 */
+  followTo?(x: number, y: number, dt: number, how?: 'window' | 'centre' | 'snap'): boolean
+  /** 地图每次画之前调 hook（镜头跟随放在这里，和人物、名字同一帧到位），hook 返回这一帧挪了镜头；
+   *  地图不逐帧画时返回 false，调用方自己逐帧跑 */
+  setFrameHook?(hook: ((t: number) => boolean) | null): boolean
+  /** 下一帧就画，不等节拍 */
+  requestFrame?(): void
+  /** 本页发出的化身行走方向（世界方向）和此刻步速（米 / 秒）：地图照着它预先画自己的小人 */
+  setAvatarMotion?(direction: [number, number], metresPerSecond: number): void
+  /** 自己操控的人此刻画在哪（本地预测的米制位置，就是服务端马上要走到的地方）；不预测时为空 */
+  avatarAt?(): WalkTarget | undefined
+  /** 滚轮缩放的不动点（屏幕坐标）；null 或返回 undefined 时围着鼠标缩 */
+  setZoomAnchor?(anchor: (() => [number, number] | undefined) | null): void
   panTo(x: number, y: number): void
   getViewBox(): number[]
   setViewBox(view: number[]): void

@@ -129,7 +129,17 @@ interface PresentView {
   interactions: AvatarInteraction[]
   mode: 'avatar' | 'possession'
   navigation_revision: number
-  nearby: { id: string; name: string; available: boolean; can_talk: boolean; activity: string }[]
+  /** 够得着的人；聊不了时 busy 写着原因 */
+  nearby: {
+    id: string
+    name: string
+    available: boolean
+    can_talk: boolean
+    activity: string
+    busy?: string
+  }[]
+  /** 附近还说不上话的人：离得远（米），或已经够近、只是隔着东西 */
+  approach?: { id: string; name: string; distance: number; blocked: boolean }[]
   nearby_chats: { id: string; locale: string; members: string[] }[]
   portals: { id: string; label: string }[]
   props: AvatarProp[]
@@ -171,7 +181,7 @@ export type AvatarState = AvatarSight &
     goals?: { status: GoalStatus; text: string }[]
     /** 三维地图由前端上报位置；二维地图没有这个键 */
     client_positions?: true
-    /** 三维地图上前端自己移动化身用的步速：每模拟分钟多少米、按住奔跑的倍数 */
+    /** 玩家操控的人的步速：每模拟分钟多少米、按住奔跑（Shift）时再乘的倍数；没有行走地图时没有这个键 */
     walk?: { metres_per_minute: number; sprint_factor: number }
     /** 三维地图且本连接持有租约时：最近处理的位置上报序号与被拒原因 */
     position_error?: string | null

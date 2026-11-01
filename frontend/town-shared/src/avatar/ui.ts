@@ -5,6 +5,7 @@ import { createAvatarEntry } from './entry'
 import { lookChoice, type LookChoice } from './looks'
 import { actionButton, field, keycap } from './view'
 import { button, el } from '../dom'
+import { isTouch } from '../platform'
 import type { AvatarActions } from './ui-types'
 
 /** 状态面板里常驻的形象表单：不随重绘重建，避免丢焦点 */
@@ -218,8 +219,9 @@ export function createAvatarUI(
   const { badge, ...hud } = hudBar(actions, profile.profile, game)
   const side = sidePanel(signal, actions, game)
   const { toast, showToast, hideToast } = toastBar()
-  // 拖动地图脱离跟随后，用它重新跟上化身
-  const back = button('回到化身', () => actions.follow())
+  // 拖动地图脱离跟随后，用它（或按 C）重新跟上化身；一开始走也会自动跟上
+  const back = button('', () => actions.follow())
+  back.append(...(isTouch() ? [] : [keycap('C')]), el('span', '回到化身'))
   back.className = 'avatar-return'
   root.append(
     ...badge,
@@ -246,7 +248,8 @@ export function createAvatarUI(
 }
 export type AvatarUI = ReturnType<typeof createAvatarUI>
 
-/** 化身界面的指针事件：不漏给地图；拖动地图超过 6 像素算脱离跟随；点操作条外面收起菜单 */
+/** 化身界面的指针事件：不漏给地图；单指或左键拖动地图超过 6 像素算脱离跟随（右键转视角、
+ *  双指缩放和调俯角都不算，镜头照样跟着人）；点操作条外面收起菜单 */
 export function guardPointer(
   ui: AvatarUI,
   mapEl: HTMLElement,
@@ -257,18 +260,22 @@ export function guardPointer(
   for (const event of ['pointerdown', 'dblclick', 'wheel'])
     ui.root.addEventListener(event, (e) => e.stopPropagation(), { signal })
   let dragStart: [number, number] | null = null
+  const down = new Set<number>()
   mapEl.addEventListener(
     'pointerdown',
     (e) => {
+      down.add(e.pointerId)
       const onUi = e.target instanceof Node && ui.root.contains(e.target)
-      dragStart = onUi ? null : [e.clientX, e.clientY]
+      dragStart = onUi || e.button !== 0 || down.size > 1 ? null : [e.clientX, e.clientY]
     },
     { signal }
   )
+  for (const type of ['pointerup', 'pointercancel'])
+    mapEl.addEventListener(type, (e) => down.delete((e as PointerEvent).pointerId), { signal })
   mapEl.addEventListener(
     'pointermove',
     (e) => {
-      if (!dragStart || !e.buttons) return
+      if (!dragStart || !(e.buttons & 1) || down.size > 1) return
       if (Math.hypot(e.clientX - dragStart[0], e.clientY - dragStart[1]) <= 6) return
       dragStart = null
       onDragAway()

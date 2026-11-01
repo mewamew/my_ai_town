@@ -2,17 +2,28 @@
 use super::*;
 use crate::interactions::Interactions;
 use protocol::{
-    AvatarActor, AvatarChatItem, AvatarInteraction, AvatarMode, AvatarPairItem, AvatarPropView,
-    AvatarState, AvatarView, Interaction, InteractionObservation, NearbyChat, NearbyPerson,
-    PortalView,
+    ApproachPerson, AvatarActor, AvatarChatItem, AvatarInteraction, AvatarMode, AvatarPairItem,
+    AvatarPropView, AvatarState, AvatarView, Interaction, InteractionObservation, NearbyChat,
+    NearbyPerson, PortalView,
 };
 
 /// 视图里列出的最近动作回执数。
 const FEEDBACK_ACTIONS: usize = 3;
+/// 这么远（米）以内还说不上话的人列给玩家，提示走过去。
+const APPROACH_RANGE: f64 = 8.0;
 /// 附身的居民没有自定外观时，地图标记用名字的第一个字和这个颜色。
 const RESIDENT_COLOR: &str = "#397d60";
 
 impl World {
+    /// 玩家操控的人的步速（见 WALK_PACE、RUN_PACE）；没有行走地图时为空。
+    pub fn avatar_walk(&self) -> Option<protocol::AvatarWalk> {
+        let map = self.walk_map.as_ref()?;
+        Some(protocol::AvatarWalk {
+            metres_per_minute: map.metres_per_minute * WALK_PACE,
+            sprint_factor: RUN_PACE / WALK_PACE,
+        })
+    }
+
     pub fn avatar_view(&self) -> AvatarView {
         let Some(map) = &self.walk_map else {
             return AvatarView::Unsupported { supported: false };
@@ -48,6 +59,7 @@ impl World {
             },
             navigation_revision: self.topo.navigation_revision().unwrap_or(1),
             nearby: b.nearby_people(),
+            approach: b.approach_people(),
             nearby_chats: b.reachable_chats(),
             portals: b.nearby_portals(map),
             props: b.reachable_props(),
@@ -104,19 +116,72 @@ impl Builder<'_> {
         }
     }
 
-    /// 够得着、能看到的人。
+    /// 够得着、能看到的人（隔着处所分界、走在路上的也算，见 Reach::pair）。
     fn nearby_people(&self) -> Vec<NearbyPerson> {
         let a = self.a;
         self.w
             .actors
             .values()
             .filter(|b| b.id != a.id && b.present() && self.reach.pair(&a.id, &b.id).is_ok())
-            .map(|b| NearbyPerson {
-                activity: b.current.verb.clone(),
-                available: b.interaction_available(),
-                can_talk: self.w.talk_available(&b.id),
-                id: b.id.clone(),
-                name: b.name.clone(),
+            .map(|b| {
+                let can_talk = self.w.talk_available(&b.id);
+                NearbyPerson {
+                    activity: b.current.verb.clone(),
+                    available: b.interaction_available(),
+                    can_talk,
+                    busy: (!can_talk).then(|| self.busy_reason(b)),
+                    id: b.id.clone(),
+                    name: b.name.clone(),
+                }
+            })
+            .collect()
+    }
+
+    /// 为什么现在和他聊不了，写给玩家看。
+    fn busy_reason(&self, b: &Actor) -> String {
+        if b.needs.body.dead {
+            "已经死了".into()
+        } else if b.needs.incapacitated() {
+            "倒下了，没法回应".into()
+        } else if let Some(id) = &b.current.interaction {
+            let with_me = self
+                .w
+                .interactions
+                .get(id)
+                .is_some_and(|i| i.includes(&self.a.id));
+            if with_me {
+                "正在和你说话"
+            } else {
+                "正在和别人说话"
+            }
+            .into()
+        } else if let Err(e) = self.w.check_weather_chat(&b.id) {
+            e.to_string()
+        } else {
+            "现在没法回应".into()
+        }
+    }
+
+    /// 附近（同一空间 APPROACH_RANGE 米内）还说不上话、能走过去找的人：离得远，或者中间隔着东西。
+    fn approach_people(&self) -> Vec<ApproachPerson> {
+        let a = self.a;
+        self.w
+            .actors
+            .values()
+            .filter(|b| {
+                b.id != a.id
+                    && b.present()
+                    && !b.needs.incapacitated()
+                    && self.reach.pair(&a.id, &b.id).is_err()
+            })
+            .filter_map(|b| {
+                let (distance, visible) = self.reach.gap(&a.id, &b.id)?;
+                (distance <= APPROACH_RANGE).then(|| ApproachPerson {
+                    id: b.id.clone(),
+                    name: b.name.clone(),
+                    distance: (distance * 10.).round() / 10.,
+                    blocked: !visible && distance <= TALK_REACH,
+                })
             })
             .collect()
     }
@@ -168,10 +233,12 @@ impl Builder<'_> {
     }
 
     /// 附近的聊天：成员都够得着（不隔墙）才列出。
+    /// 能加入的交谈：在场的人都够得着（不管在哪个处所，加入时化身挪进去，见 step_player_into）。
     fn reachable_chats(&self) -> Vec<NearbyChat> {
         let actor = &self.a.id;
         self.w
-            .nearby_chats(actor)
+            .interactions
+            .running_chats()
             .into_iter()
             .filter(|c| {
                 c.members

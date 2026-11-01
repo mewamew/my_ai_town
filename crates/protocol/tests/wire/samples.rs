@@ -1039,9 +1039,16 @@ fn avatar_state() -> AvatarState {
         nearby: vec![NearbyPerson {
             activity: "工作".into(),
             available: false,
-            can_talk: true,
+            can_talk: false,
+            busy: Some("正在和别人说话".into()),
             id: "resident_ashu".into(),
             name: "阿树".into(),
+        }],
+        approach: vec![ApproachPerson {
+            id: "resident_xiaohe".into(),
+            name: "小禾".into(),
+            distance: 5.5,
+            blocked: false,
         }],
         nearby_chats: vec![NearbyChat {
             id: "chat2".into(),
@@ -1224,6 +1231,7 @@ pub fn client_samples() -> Vec<ClientMsg> {
             sequence: 1,
             navigation_revision: 1,
             direction: [1., 0.],
+            run: true,
             pose: Some(AvatarPose {
                 actor: "resident_ashu".into(),
                 locale: "road".into(),

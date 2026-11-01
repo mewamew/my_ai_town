@@ -1,5 +1,6 @@
 /** 采集移动方向并交给后端推进位置。E 触发主动作，hotkeys 是其他按键。
- *  cycle 是 Tab / Shift+Tab 换当前对象，返回 false 表示没有可换的，Tab 照常移动焦点。 */
+ *  cycle 是 Tab / Shift+Tab 换当前对象，返回 false 表示没有可换的，Tab 照常移动焦点。
+ *  按住 Shift 是奔跑：方向键和点地图走过去都算，running() 给出现在是否按着。 */
 export function createWalkingInput(
   enabled: () => boolean,
   emit: (direction: [number, number]) => void,
@@ -10,6 +11,7 @@ export function createWalkingInput(
 ) {
   const keys = new Set<string>()
   let composing = false
+  let shift = false
   const editing = () => {
     const e = document.activeElement
     return (
@@ -25,11 +27,13 @@ export function createWalkingInput(
     ])
   function stop() {
     keys.clear()
+    shift = false
     emit([0, 0])
   }
   window.addEventListener(
     'keydown',
     (e) => {
+      if (e.key === 'Shift') shift = !composing && !editing()
       if (composing || e.isComposing || editing() || e.metaKey || e.ctrlKey || e.altKey) return
       const hotkey = hotkeys[e.code]
       if (hotkey) {
@@ -65,6 +69,7 @@ export function createWalkingInput(
   window.addEventListener(
     'keyup',
     (e) => {
+      if (e.key === 'Shift') shift = false
       if (keys.delete(e.code)) send()
     },
     { signal }
@@ -102,5 +107,5 @@ export function createWalkingInput(
     clearInterval(timer)
     keys.clear()
   })
-  return { stop }
+  return { stop, running: () => shift }
 }

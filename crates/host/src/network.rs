@@ -10,7 +10,10 @@ use std::sync::{
     mpsc::{sync_channel, Receiver, SyncSender, TryRecvError, TrySendError},
     Arc, Mutex,
 };
-use std::{thread, time::Duration};
+use std::{
+    thread,
+    time::{Duration, Instant},
+};
 use tungstenite::{
     handshake::server::{Request, Response},
     Message, WebSocket,
@@ -20,12 +23,18 @@ use tungstenite::{
 const OUTBOUND_QUEUE: usize = 1024;
 /// 一次写入超过这么久没写完就断开这条连接。
 const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+/// 连接线程读一条客户端消息最多等这么久，等完才回头发广播：等得越久，名册和化身状态晚到得越多、
+/// 越不均匀（原来 50 毫秒，每拍的位置随机晚到 0–50 毫秒，玩家自己的小人一走一顿）。
+const READ_WAIT: Duration = Duration::from_millis(5);
+/// 每个连接最多攒这么多条还没交给模拟循环的方向输入（客户端 0.1 秒一条，模拟循环 0.1 秒取一次）。
+const INPUT_QUEUE: usize = 32;
 
 pub(crate) struct Peer {
     sender: SyncSender<String>,
     /// 同一个套接字的副本：积压超限时从这里关闭，连接线程的读写随即失败退出。
     socket: TcpStream,
-    input: Option<ClientMsg>,
+    /// 还没交给模拟循环的方向输入和到达的时刻，按先后排：化身按到达时刻换方向（见 avatar/tick.rs）。
+    inputs: Vec<(Instant, ClientMsg)>,
 }
 
 impl Peer {
@@ -62,12 +71,17 @@ pub(crate) fn send_to(clients: &Clients, connection: u64, message: &ServerMsg) {
         peers.remove(&connection);
     }
 }
-pub(crate) fn take_inputs(clients: &Clients) -> Vec<(u64, ClientMsg)> {
+/// 取走各连接攒下的方向输入：连接编号、到达时刻、输入，同一连接的按先后排。
+pub(crate) fn take_inputs(clients: &Clients) -> Vec<(u64, Instant, ClientMsg)> {
     clients
         .lock()
         .unwrap()
         .iter_mut()
-        .filter_map(|(id, p)| p.input.take().map(|v| (*id, v)))
+        .flat_map(|(id, p)| {
+            std::mem::take(&mut p.inputs)
+                .into_iter()
+                .map(move |(at, input)| (*id, at, input))
+        })
         .collect()
 }
 
@@ -106,7 +120,7 @@ pub(crate) fn listen(
                 Peer {
                     sender: tx,
                     socket,
-                    input: None,
+                    inputs: Vec::new(),
                 },
             );
             let to_sim = to_sim.clone();
@@ -128,9 +142,7 @@ fn handshake(
     greeting: Option<&str>,
 ) -> Option<WebSocket<TcpStream>> {
     stream.set_nodelay(true).ok();
-    stream
-        .set_read_timeout(Some(Duration::from_millis(50)))
-        .ok();
+    stream.set_read_timeout(Some(READ_WAIT)).ok();
     stream.set_write_timeout(Some(WRITE_TIMEOUT)).ok();
     let expected = token.map(|t| format!("session={t}"));
     let mut ws = tungstenite::accept_hdr(stream, |request: &Request, response: Response| {
@@ -184,7 +196,10 @@ fn serve_connection(
                 Ok(msg) => {
                     if matches!(msg, ClientMsg::AvatarInput { .. }) {
                         if let Some(peer) = peers.lock().unwrap().get_mut(&connection) {
-                            peer.input = Some(msg);
+                            if peer.inputs.len() >= INPUT_QUEUE {
+                                peer.inputs.remove(0);
+                            }
+                            peer.inputs.push((Instant::now(), msg));
                         }
                         continue;
                     }

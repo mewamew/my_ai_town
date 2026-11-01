@@ -1,12 +1,9 @@
 import type { WalkStep, WalkTarget } from '../gameMap'
 // 点击移动：后端只接受方向（avatar_input），没有「走到某点」的命令。
-// 路线由地图选好（见 town-2d 的 route.ts），这里逐段走：每收到一次化身状态就按最新位置
+// 路线由地图选好（见 town-2d 的 route.ts），这里逐段走：设好路线和每收到一次化身状态时按最新位置
 // 重算方向，到了一个路径点换下一个，遇到门先站到门口再开门。撞墙由后端沿墙滑动；
 // 一段路连续几拍走不动就重新选一次路线，还是不行才算走不过去。
 
-/** 后端一拍走的距离：12 米/模拟分钟 × 0.1 模拟分钟 × 世界速度，见 crates/host/src/avatar/tick.rs 的 walk */
-const METRES_PER_MINUTE = 12
-const MINUTES_PER_TICK = 0.1
 /** 连续这么多拍几乎没动就算这一段走不动 */
 const STUCK_TICKS = 6
 /** 位移小于一拍步长的这个比例算没动 */
@@ -22,8 +19,8 @@ type WalkEnd = 'arrived' | 'blocked' | 'cancelled'
 interface WalkDeps {
   /** 化身此刻的米制位置 */
   here: () => WalkTarget | undefined
-  /** 当前世界速度 */
-  speed: () => number
+  /** 后端一拍走多少米（按现在的步速，奔跑时更多）；暂停时为 0 */
+  step: () => number
   /** 现在还能不能走：暂停、正忙、不能动时为假 */
   canWalk: () => boolean
   emit: (direction: [number, number]) => void
@@ -79,23 +76,32 @@ export function createWalkTo(deps: WalkDeps) {
     clear() {
       if (route.length) finish('cancelled')
     },
-    /** 每收到一次化身状态调用一次：位置是新的，方向也要重发，后端 350 毫秒不刷新就归零 */
+    /** 还没走到终点但已经够得着要找的人或东西：就当走到了 */
+    arrive() {
+      if (route.length && !opening) finish('arrived')
+    },
+    /** 设好路线后马上调一次，之后每收到一次化身状态调一次：位置是新的，方向也要重发，
+     *  后端 350 毫秒不刷新就归零。已经到了的路径点一并跳过，同一次就朝下一个点出发 */
     tick() {
       if (!route.length || opening) return
       if (!deps.canWalk()) return finish('cancelled')
       const here = deps.here()
       if (!here) return finish('blocked')
-      const step = route[index]
-      if (here.space !== step.point.space) return retry()
-      const dx = step.point.position[0] - here.position[0]
-      const dy = step.point.position[1] - here.position[1]
-      const distance = Math.hypot(dx, dy)
-      const reach = step.portal
-        ? PORTAL_RADIUS
-        : index === route.length - 1
-          ? radius
-          : WAYPOINT_RADIUS
-      if (distance <= reach) {
+      let dx = 0,
+        dy = 0,
+        distance = 0
+      for (;;) {
+        const step = route[index]
+        if (here.space !== step.point.space) return retry()
+        dx = step.point.position[0] - here.position[0]
+        dy = step.point.position[1] - here.position[1]
+        distance = Math.hypot(dx, dy)
+        const reach = step.portal
+          ? PORTAL_RADIUS
+          : index === route.length - 1
+            ? radius
+            : WAYPOINT_RADIUS
+        if (distance > reach) break
         if (step.portal) {
           opening = true
           deps.emit([0, 0])
@@ -110,9 +116,8 @@ export function createWalkTo(deps: WalkDeps) {
         }
         rest()
         if (++index >= route.length) return finish('arrived')
-        return
       }
-      const step0 = Math.max(METRES_PER_MINUTE * MINUTES_PER_TICK * deps.speed(), 0.01)
+      const step0 = Math.max(deps.step(), 0.01)
       if (last) {
         const moved = Math.hypot(here.position[0] - last[0], here.position[1] - last[1])
         still = moved < step0 * STILL_RATIO ? still + 1 : 0

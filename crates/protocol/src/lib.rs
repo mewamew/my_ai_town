@@ -35,10 +35,10 @@ pub use actions::{
     ReadableFact, WorldFact, WritingDraft,
 };
 pub use avatar::{
-    AvatarActor, AvatarChatItem, AvatarCommand, AvatarGoal, AvatarInteraction, AvatarLease,
-    AvatarMode, AvatarPairItem, AvatarPose, AvatarPropView, AvatarResultCode, AvatarSession,
-    AvatarSight, AvatarState, AvatarView, AvatarWalk, NearbyPerson, PortalView, PositionAck,
-    RecentEvent,
+    ApproachPerson, AvatarActor, AvatarChatItem, AvatarCommand, AvatarGoal, AvatarInteraction,
+    AvatarLease, AvatarMode, AvatarPairItem, AvatarPose, AvatarPropView, AvatarResultCode,
+    AvatarSession, AvatarSight, AvatarState, AvatarView, AvatarWalk, NearbyPerson, PortalView,
+    PositionAck, RecentEvent,
 };
 pub use chat::{
     ChatEntry, ChatEntryKind, ChatObservation, ChatPresence, ChatState, ChatSummary,

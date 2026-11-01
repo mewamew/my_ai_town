@@ -1,6 +1,6 @@
 import { WeatherLayer } from './weather'
 import type { ServerMsg } from 'town-shared/protocol'
-import { position as spatialPosition, type Spatial } from 'town-shared/spatial'
+import { heightAt, position as spatialPosition, type Spatial } from 'town-shared/spatial'
 import { savedAppearance, defaultAppearance } from 'town-shared/props/appearances'
 import type { Appearance, PropView } from 'town-shared/props/types'
 import type { Atlas, Topology } from 'town-shared/mapDocument'
@@ -17,7 +17,8 @@ import { buildStaticMap, type PlacedProp } from './map/staticLayers'
 import { groundOf, paintGround, type Ground } from './map/pixel/terrain'
 import type { DecorPlan } from './map/decor'
 import type { HdScene } from './map/hd2d/scene'
-import type { VillagerPlacement } from './map/hd2d/villagers'
+import type { LiveMotion, VillagerPlacement } from './map/hd2d/villagers'
+import { AvatarMotion } from './map/avatarMotion'
 import { PropPositions } from './map/propPositions'
 import { RoomCovers } from './map/rooms'
 import { MapCamera, type CameraArea } from './map/camera'
@@ -68,11 +69,14 @@ export class TownMap {
   private zoom = 1
   setAvatarActive(active: boolean) {
     this.avatarActive = active
+    // 控制化身时连点两下是在走路，不放大
+    this.camera.doubleClickZoom = !active
     this.svg.classList.toggle('avatar-mode', active)
     this.applyMarkerScale()
     if (!active) {
       this.avatarPrompts = []
       this.prompts.clear()
+      this.svg.classList.remove('walk-blocked')
     }
   }
   /** 化身在场或立体场景接手时，标记、文字与提示标签按缩放倍率反向缩放：整图时和观察模式一样大，
@@ -146,8 +150,74 @@ export class TownMap {
   private drawnProps: { id: string; x: number; y: number; base: number; size: number }[] = []
   /** 行走坐标的比例由后端随化身状态给出，不在前端复制一份 */
   private walkUnits?: number
+  /** 本页正在操控的人：立体场景里他的立牌按本地预测画（见 map/avatarMotion.ts） */
+  private liveId: string | null = null
+  /** 本页正在操控的人的本地预测：附身的村民还在自己走过来时不预测，和别人一样按名册画 */
+  private motion: AvatarMotion | null = null
   setAvatarState(state: AvatarState | null) {
     this.walkUnits = state?.units
+    this.liveId = state?.controlled && state.actor?.present ? state.actor.id : null
+    const predicted = this.liveId && !state?.awaiting_arrival ? this.liveId : null
+    if (predicted !== this.motionId) {
+      this.motionId = predicted
+      this.motion = predicted
+        ? new AvatarMotion((space, x, y) => this.walkGrid().clear(space, x, y))
+        : null
+      this.hd?.setLiveMotion(this.liveMotion())
+      // 先把选路格子建好：第一次走路时才建会卡一下
+      if (predicted) setTimeout(() => !this.disposed && this.walkGrid(), 0)
+    }
+    // 玩家邀请了还没回应的人、正和玩家聊着的人：站着时转身朝向玩家；还在想怎么回时头上冒「…」
+    const me = this.liveId ?? ''
+    const facing = new Map<string, string>()
+    const awaited = new Set<string>()
+    for (const i of (me && state?.interactions) || []) {
+      if (i.kind.kind !== 'talk') continue
+      if (i.status === 'offered' && i.initiator === me) {
+        facing.set(i.partner, me)
+        awaited.add(i.partner)
+      }
+      if (i.status === 'running')
+        for (const id of [i.initiator, i.partner, ...(i.members ?? [])])
+          if (id !== me) facing.set(id, me)
+    }
+    this.facing = facing
+    for (const g of this.svg.querySelectorAll<SVGGElement>('[data-vid]'))
+      g.classList.toggle('awaited', awaited.has(g.getAttribute('data-vid') ?? ''))
+  }
+  /** 转身朝向谁：村民编号 → 玩家操控的人 */
+  private facing = new Map<string, string>()
+  private motionId: string | null = null
+  /** 给立体场景的本地预测：米制位置换成地图坐标 */
+  private liveMotion(): LiveMotion | null {
+    const motion = this.motion
+    if (!motion) return null
+    return {
+      at: (now) => {
+        const at = motion.current(now)
+        return at && this.walkPoint(at)
+      },
+      active: () => motion.active(),
+      walking: () => motion.walking(),
+    }
+  }
+  /** 本页发出的行走方向和此刻的步速（米 / 秒）：立牌照着它预先走（见 map/avatarMotion.ts） */
+  setAvatarMotion(direction: [number, number], metresPerSecond: number) {
+    this.motion?.command(direction, metresPerSecond, performance.now())
+  }
+  avatarAt(): WalkTarget | undefined {
+    return this.motion?.current(performance.now())
+  }
+  /** 立体场景每次画之前调（镜头跟随）：返回这一帧挪了镜头。没有立体场景时返回 false，调用方自己逐帧跑 */
+  private frameHook: ((t: number) => boolean) | null = null
+  setFrameHook(hook: ((t: number) => boolean) | null): boolean {
+    this.frameHook = hook
+    if (this.hd) this.hd.beforeDraw = hook ?? undefined
+    return !!this.hd
+  }
+  /** 下一帧就画（不等节拍）：镜头要开始挪了之类 */
+  requestFrame() {
+    this.hd?.requestDraw()
   }
   private readonly scene: ReturnType<typeof buildStaticMap>
   private readonly sourceAtlas: Atlas
@@ -272,7 +342,7 @@ export class TownMap {
       (id) => this.onPromptClick?.(id),
       (point, client) => {
         if (this.placing) return this.onPlaceClick?.(client)
-        this.onAvatarWalkTo?.(this.walkTarget(point))
+        if (this.onAvatarWalkTo) this.onAvatarWalkTo(this.walkTargetAt(point))
         this.onGroundClick?.()
       },
       (key, client) => this.residents.openGroup(key, client),
@@ -281,6 +351,17 @@ export class TownMap {
         if (this.hd) this.hd.setPitch(this.hd.pitch + dy * 0.2)
       }
     )
+    // 控制化身时指针下附近都走不到就换成禁止的指针；每帧最多算一次
+    let hover: { client: [number, number]; target: EventTarget | null } | null = null
+    this.svg.addEventListener('pointermove', (e) => {
+      if (!this.avatarActive || e.pointerType !== 'mouse') return
+      if (!hover)
+        requestAnimationFrame(() => {
+          if (hover && !this.disposed) this.hoverWalk(hover.client, hover.target)
+          hover = null
+        })
+      hover = { client: [e.clientX, e.clientY], target: e.target }
+    })
     this.svg.classList.add('map-loading')
     this.ready = new Promise((resolve) => (this.markReady = resolve))
     this.startHd(atlas)
@@ -305,6 +386,8 @@ export class TownMap {
         this.rooms.attach(this.svg, this.hd.houses)
         this.hd.onTilt = () => this.applyTilt()
         this.hd.onVillagersMoved = () => this.followVillagers()
+        this.hd.beforeDraw = this.frameHook ?? undefined
+        this.hd.setLiveMotion(this.liveMotion())
         this.applyTilt()
         if (this.viewInsets) this.hd.setFocusInsets(this.viewInsets.top, this.viewInsets.bottom)
         this.camera.setViewPresets([
@@ -497,6 +580,11 @@ export class TownMap {
     }
   }
 
+  private faceToward(id: string): [number, number] | undefined {
+    const other = this.facing.get(id)
+    return other ? this.residents.getMemberPos(other) : undefined
+  }
+
   private villagerPlacements(covered: (p: [number, number]) => boolean): VillagerPlacement[] {
     return this.entries.flatMap(({ member }) => {
       const p = this.residents.getMemberPos(member.id)
@@ -508,6 +596,8 @@ export class TownMap {
               x: p[0],
               y: p[1],
               visible: !covered(p),
+              live: member.id === this.motionId,
+              faceToward: this.faceToward(member.id),
               condition:
                 member.body?.life === 'dead'
                   ? ('dead' as const)
@@ -562,12 +652,98 @@ export class TownMap {
   /** 选路用的格子图：第一次要走路时才建，之后跟着地图上的道具更新障碍 */
   private routes?: WalkRoutes
   private routeMarks: { id: string; at: [number, number] }[] = []
-  walkRoute(from: WalkTarget, to: WalkTarget): WalkStep[] | null {
+  private walkGrid(): WalkRoutes {
     if (!this.routes) {
-      this.routes = new WalkRoutes(this.sourceAtlas, this.topology, this.walkUnit, !!this.spatial)
+      const t = this.spatial?.terrain
+      // 和后端 WalkMap::terrain_clear 一样：在地形范围里、高出海面、往东往南 0.2 米的落差都不大
+      const ground =
+        t &&
+        ((x: number, y: number) => {
+          const [ox, oy] = t.origin
+          if (
+            x < ox ||
+            y < oy ||
+            x > ox + t.step * (t.columns - 1) ||
+            y > oy + t.step * (t.rows - 1)
+          )
+            return false
+          const h = heightAt(t, x, y)
+          return (
+            h > t.sea_level + 0.05 &&
+            Math.abs(heightAt(t, x + 0.2, y) - h) <= 0.16 &&
+            Math.abs(heightAt(t, x, y + 0.2) - h) <= 0.16
+          )
+        })
+      this.routes = new WalkRoutes(this.sourceAtlas, this.topology, this.walkUnit, !!this.spatial, {
+        routes: this.spatial?.routes.map((r) => ({ ...r, points: r.points })),
+        ground: ground || undefined,
+      })
       this.applyRouteObstacles()
     }
-    return this.routes.find(from, to)
+    return this.routes
+  }
+  walkRoute(from: WalkTarget, to: WalkTarget): WalkStep[] | null {
+    return this.walkGrid().find(from, to)
+  }
+
+  /** 控制化身时点了地图：点在盖着屋顶的房子（屋顶、墙）上就走进它的门，不然走到点的地面；
+   *  这一点站不了时由选路换成附近能站的地方 */
+  private walkTargetAt(point: [number, number]): WalkTarget {
+    if (!this.avatarActive) return this.walkTarget(point)
+    const house = this.houseAt(this.camera.project(point))
+    const door = house ? this.walkGrid().entrance(house) : undefined
+    return door?.inside ?? this.walkTarget(point)
+  }
+
+  /** 立体场景里一点（视图坐标）落在哪栋房子的墙和屋顶上：房子立起来后遮住了它后面的地面，
+   *  点在那里是点房子，不是点房子后面的地。点在掀开屋顶的房间地面上不算。重叠时取离镜头近的 */
+  private houseAt([vx, vy]: [number, number]): string | undefined {
+    const hd = this.hd
+    if (!hd) return
+    let best: { id: string; front: number } | undefined
+    for (const house of hd.houses) {
+      const centre: [number, number] = [house.x + house.w / 2, house.y + house.h / 2]
+      const open = !this.rooms.covered(centre)
+      const foot = (
+        [
+          [house.x, house.y],
+          [house.x + house.w, house.y],
+          [house.x + house.w, house.y + house.h],
+          [house.x, house.y + house.h],
+        ] as [number, number][]
+      ).map(this.camera.project)
+      // 立起来的高度：盖着屋顶时到屋脊，掀开后只有墙（和 RoomCovers 摆房间名的算法一样）
+      const rise = open
+        ? house.y - hd.roomTop(house)
+        : house.y + (house.alongX ? house.h / 2 : 0) - hd.roofTop(house)
+      const outline = hull([...foot, ...foot.map(([x, y]) => [x, y - rise] as [number, number])])
+      if (!inside(outline, [vx, vy])) continue
+      // 掀开的房间：点在地面上就是走到屋里那一点
+      if (open && inside(foot, [vx, vy])) continue
+      const front = Math.max(...foot.map((p) => p[1]))
+      if (!best || front > best.front) best = { id: house.id, front }
+    }
+    return best?.id
+  }
+
+  /** 指针下面能不能走过去：控制化身时，附近都走不到的地方显示禁止的指针 */
+  private hoverWalk(client: [number, number], target: EventTarget | null) {
+    const blocked =
+      this.avatarActive &&
+      !this.placing &&
+      !(
+        target instanceof Element &&
+        target.closest('[data-vid],[data-prop-id],[data-prompt],[data-group]')
+      ) &&
+      (() => {
+        const point = this.camera.groundAt(...client)
+        const house = this.houseAt(this.camera.project(point))
+        return (
+          !(house && this.walkGrid().entrance(house)) &&
+          !this.walkGrid().destination(this.walkTarget(point))
+        )
+      })()
+    this.svg.classList.toggle('walk-blocked', blocked)
   }
   /** 挡路的就是画在图上的道具；拿走或收进容器的本来就不画。
    *  有三维数据时道具按自己的占地算，树木也一并算上，与 maps/walk.rs 一致。 */
@@ -840,6 +1016,20 @@ export class TownMap {
   getMemberPos(id: string) {
     return this.residents.getMemberPos(id)
   }
+  /** 立牌此刻画在哪（地图坐标）：立体场景里立牌和名册差一点，平面图上就是名册位置 */
+  getDrawnPos(id: string): [number, number] | undefined {
+    const p = this.residents.getMemberPos(id)
+    const lag = this.hd?.villagerLag(id)
+    return p && lag ? [p[0] + lag[0], p[1] + lag[1]] : p
+  }
+  /** 镜头跟着化身（见 MapCamera.follow）：返回这一帧挪了镜头 */
+  followTo(x: number, y: number, dt: number, how?: 'window' | 'centre' | 'snap') {
+    return this.camera.follow(x, y, dt, how)
+  }
+  /** 滚轮缩放的不动点：给了就围着它缩（化身跟随时围着化身），没有就围着鼠标 */
+  setZoomAnchor(anchor: (() => [number, number] | undefined) | null) {
+    this.camera.zoomAnchor = anchor
+  }
   /** 地图被面板盖住的四边；立体场景晚一步建好时补上 */
   private viewInsets: { top: number; right: number; bottom: number; left: number } | undefined
   setViewInsets(insets: { top: number; right: number; bottom: number; left: number }) {
@@ -888,6 +1078,10 @@ export class TownMap {
     if (this.rosters < 2) this.rosters++
     this.entries = entries
     this.residents.update(entries)
+    // 名册里自己的位置是服务端的权威位置：交给本地预测校正
+    const me = this.motionId && entries.find((e) => e.member.id === this.motionId)?.member.at
+    if (this.motion && me && me.kind === 'free')
+      this.motion.sample({ space: me.space, position: me.position }, performance.now())
     this.refreshRooms(true)
   }
 
@@ -902,4 +1096,34 @@ export class TownMap {
       this.bubbles.follow(member.id, lag)
     }
   }
+}
+
+/** 凸包（单调链）：点不多，算房子立起来以后在画面上占的轮廓 */
+function hull(points: [number, number][]): [number, number][] {
+  const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) =>
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+  const half = (list: [number, number][]) => {
+    const out: [number, number][] = []
+    for (const p of list) {
+      while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop()
+      out.push(p)
+    }
+    return out.slice(0, -1)
+  }
+  return [...half(sorted), ...half([...sorted].reverse())]
+}
+
+/** 点在凸多边形里（边上也算） */
+function inside(polygon: [number, number][], [x, y]: [number, number]): boolean {
+  let sign = 0
+  for (let i = 0; i < polygon.length; i++) {
+    const [ax, ay] = polygon[i],
+      [bx, by] = polygon[(i + 1) % polygon.length]
+    const side = Math.sign((bx - ax) * (y - ay) - (by - ay) * (x - ax))
+    if (!side) continue
+    if (!sign) sign = side
+    else if (side !== sign) return false
+  }
+  return true
 }

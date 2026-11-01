@@ -20,8 +20,12 @@ use std::time::{Duration, Instant};
 pub(crate) struct Control {
     lease: Option<Lease>,
     direction: [f64; 2],
+    /// 最近的方向输入按住了奔跑键。
+    run: bool,
     input_sequence: u64,
     input_at: Option<Instant>,
+    /// 化身已经按方向输入走到了哪一刻：下一段从这里算起（见 tick.rs 的 advance_avatar）。
+    moved_at: Option<Instant>,
     /// 轮到玩家发言的聊天、当时的动作版本与已等待的时长。
     turn: Option<(String, u64, Duration)>,
     last_tick: Option<Instant>,
@@ -74,7 +78,9 @@ impl Runtime {
                     },
                     clients,
                 ),
-                message @ ClientMsg::AvatarInput { .. } => self.avatar_input(connection, message),
+                message @ ClientMsg::AvatarInput { .. } => {
+                    self.avatar_input(connection, message, Instant::now())
+                }
                 other => self.command(connection, other, clients),
             },
         }

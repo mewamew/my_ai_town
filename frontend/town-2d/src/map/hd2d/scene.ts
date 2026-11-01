@@ -11,7 +11,7 @@ import { OPEN, paintGround, treeShape, type Ground } from '../pixel/terrain'
 import type { Dock } from '../pixel/island'
 import { fbm, rng } from '../pixel/noise'
 import { Motes } from './motes'
-import { Villagers, type VillagerPlacement } from './villagers'
+import { Villagers, type LiveMotion, type VillagerPlacement } from './villagers'
 import { VILLAGER_HALF } from './villagerSprite'
 import { Weather3D } from './weather'
 import { DOORS } from '../buildings'
@@ -74,6 +74,9 @@ const ROOF_NIGHT_GLOW = 0.3
 const PREVIEW_HOUR = 17
 /** 环境动画的节拍（毫秒）：约每秒 30 拍；比 1000/30 少一点，60Hz 屏上正好隔一帧一拍 */
 const BEAT_MS = 30
+/** 玩家操控的人在走、镜头在动、有操作要马上画时的间隔：60Hz 屏上每帧都画，
+ *  120Hz 屏上隔一帧画，最多每秒 60 帧；比 1000/60 少一点，免得刚好差一点点就跳过一帧 */
+const MOTION_MS = 1000 / 60 - 2
 /** 雾气浓度与镜头距离，按演示页换算：演示页一个单位是一个地图像素 */
 const FOG_DENSITY = 0.00042 / PIXEL
 const CAMERA_DISTANCE_PER_VIEW_HEIGHT = 2.17
@@ -192,8 +195,17 @@ export class HdScene {
   private readonly horizon: Horizon
   private readonly observers: { disconnect(): void }[] = []
   private readonly reduceMotion = matchMedia('(prefers-reduced-motion: reduce)')
-  private frame = 0
   private ticker = 0
+  /** 有操作带来的变化（拖地图、换角度、开合屋顶）要在下一帧画，不等节拍 */
+  private dirty = false
+  /** 上一次画的时刻；镜头上一次画的时候还在动 */
+  private lastDraw = 0
+  private cameraMoving = false
+  /** 立体镜头已经按这个 viewBox 设好 */
+  private viewBox = ''
+  /** 每次画之前、立牌摆好以后调用（玩家操控时的镜头跟随）：返回这一帧挪了镜头。
+   *  挪镜头改的 viewBox 当场读进立体镜头，SVG 上的名字和立体画面同一帧到位 */
+  beforeDraw?: (t: number) => boolean
   /** 天光、立牌显隐这类环境变化等下一个节拍再画，不在两拍之间插一帧 */
   private ambient = false
   private hour = PREVIEW_HOUR
@@ -257,7 +269,7 @@ export class HdScene {
     this.bloom = post.bloom
     this.tiltShift = post.tiltShift
     this.grade = post.grade
-    const views = new MutationObserver(() => this.readView())
+    const views = new MutationObserver(() => this.syncView())
     views.observe(svg, { attributes: true, attributeFilter: ['viewBox'] })
     const sizes = new ResizeObserver(() => this.resize())
     sizes.observe(container)
@@ -305,19 +317,21 @@ export class HdScene {
     this.scene.add(this.hemi, this.sun, this.sun.target)
   }
 
-  /** 节拍：跟着屏幕刷新走，每秒约 30 拍（60Hz 屏隔一帧一拍）。环境变化只在拍上画，帧距均匀，走路才匀 */
+  /** 节拍：跟着屏幕刷新走。玩家操控的人在走、镜头在动、有操作要马上画时每帧都画（最多每秒 60 帧），
+   *  不然每秒约 30 拍（60Hz 屏隔一帧一拍），环境变化只在拍上画。帧距均匀，走路才匀；一帧最多画一遍 */
   private loop = (t: number) => {
     this.ticker = requestAnimationFrame(this.loop)
-    if (t - this.lastTick >= BEAT_MS) this.tick(t)
+    const fast = this.dirty || this.cameraMoving || this.villagers.liveActive()
+    if (fast ? t - this.lastDraw >= MOTION_MS : t - this.lastTick >= BEAT_MS) this.tick(t, fast)
   }
 
-  /** 村民走动、水面波纹、空气微粒和天气按节拍推进，画面有变化才重画。
+  /** 村民走动、水面波纹、空气微粒和天气按节拍推进，画面有变化（或 fast）才重画。
    *  页面隐藏或地图没显示出来时停下；要求减少动画时海、微粒和树都不动，只有村民走动和天气变化时重画 */
-  private tick(t: number) {
+  private tick(t: number, fast = false) {
     const dt = Math.min(0.1, (t - this.lastTick) / 1000)
     this.lastTick = t
     if (document.hidden || !this.container.clientWidth) return
-    let changed = this.villagers.active()
+    let changed = fast || this.villagers.active()
     const weather = this.weather.step(dt, t / 1000, this.day)
     if (weather.light) this.applyLight(false)
     changed ||= weather.changed || this.ambient
@@ -335,10 +349,25 @@ export class HdScene {
     if (changed) this.draw(t)
   }
 
-  /** 画一帧：立牌先摆到这一帧那一刻的位置，名字跟上，再画 */
+  /** 画一帧：立牌先摆到这一帧那一刻的位置，名字跟上；镜头按立牌挪好、读进立体镜头，再画 */
   private draw(t: number) {
+    this.lastDraw = t
     if (this.villagers.step(t)) this.onVillagersMoved?.()
+    this.cameraMoving = this.beforeDraw?.(t) ?? false
+    this.syncView()
+    this.dirty = false
     this.composer.render()
+  }
+
+  /** 玩家操控的人的本地预测（见 villagers.ts 的 LiveMotion）；没在操控时为空 */
+  setLiveMotion(motion: LiveMotion | null) {
+    this.villagers.setLiveMotion(motion)
+    this.request()
+  }
+
+  /** 下一帧画（不等节拍）：镜头要开始挪了之类 */
+  requestDraw() {
+    this.request()
   }
 
   /** 会被雨打湿的面：高光随湿度变，另外补上积雪和云影 */
@@ -1289,8 +1318,14 @@ export class HdScene {
     else this.ambient = true
   }
 
+  /** SVG 的视口变了才重设立体镜头：镜头跟随在画之前已经设过的，观察回调来时不再设、不再多画一帧 */
+  private syncView() {
+    if ((this.svg.getAttribute('viewBox') ?? '') !== this.viewBox) this.readView()
+  }
+
   private readView() {
-    const vb = this.svg.getAttribute('viewBox')?.split(/[ ,]+/).map(Number)
+    this.viewBox = this.svg.getAttribute('viewBox') ?? ''
+    const vb = this.viewBox.split(/[ ,]+/).map(Number)
     if (!vb || vb.length !== 4 || vb.some((v) => !Number.isFinite(v))) return
     const [x, y, w, h] = vb
     const cam = this.camera
@@ -1335,17 +1370,12 @@ export class HdScene {
     this.readView()
   }
 
-  /** 操作带来的变化（拖地图、换角度、开合屋顶）马上画，不等节拍 */
+  /** 操作带来的变化（拖地图、换角度、开合屋顶）下一帧就画，不等节拍 */
   private request() {
-    if (!this.frame)
-      this.frame = requestAnimationFrame((t) => {
-        this.frame = 0
-        this.draw(t)
-      })
+    this.dirty = true
   }
 
   dispose() {
-    cancelAnimationFrame(this.frame)
     cancelAnimationFrame(this.ticker)
     this.abort.abort()
     this.weather.dispose()

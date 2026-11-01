@@ -769,6 +769,8 @@ export type ClientMsg =
       sequence: number
       navigation_revision: number
       direction: [number, number]
+      /** 按住了奔跑键 */
+      run?: boolean
       pose?: {
         actor: string
         locale: string

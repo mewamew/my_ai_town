@@ -69,7 +69,7 @@ impl Runtime {
             }),
             // 旧协议字段仅为兼容保留，不再启用前端位置上报。
             client_positions: false,
-            walk: None,
+            walk: self.world.avatar_walk(),
             position: None,
         };
         session

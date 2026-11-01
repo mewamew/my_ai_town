@@ -4,7 +4,7 @@ use crate::{network::Clients, runtime::Runtime};
 use protocol::InteractionCommand;
 use std::time::{Duration, Instant};
 
-/// 二维地图的方向输入超过这么久没更新就停下。
+/// 二维地图的方向输入超过这么久没更新就停下：模拟循环卡了很久之后，也最多按这么久走一段。
 const INPUT_TIMEOUT: Duration = Duration::from_millis(350);
 /// 交谈轮到玩家后等这么久（或玩家已断线）就代为倾听，不让整场交谈卡住。
 const TURN_WAIT: Duration = Duration::from_secs(60);
@@ -47,27 +47,46 @@ impl Runtime {
             return;
         }
         let online = lease.online();
+        if !online {
+            self.avatar_control.halt();
+        }
+        self.advance_avatar(now);
         if self.save_failed || self.speed <= 0. || !self.world_settings.ready() {
             self.avatar_control.halt();
             return;
         }
-        self.walk(online);
         self.listen_when_turn_waits(online, elapsed);
     }
 
-    /// 按最近的方向输入走一拍；输入过期或断线就原地不动。
-    fn walk(&mut self, online: bool) {
-        let fresh = self
-            .avatar_control
-            .input_at
-            .is_some_and(|at| at.elapsed() <= INPUT_TIMEOUT);
-        let direction = if online && fresh {
-            self.avatar_control.direction
-        } else {
-            [0., 0.]
+    /// 按方向输入把化身走到 until 这一刻：从上次走到的时刻算起，按真实经过的时间走，
+    /// 输入到达 INPUT_TIMEOUT 后还没续上就停在那一刻。每拍和每来一条输入各调一次，
+    /// 走的路就和玩家按住方向的时长一致，不随模拟循环一拍的长短（实际约 107 毫秒）忽快忽慢。
+    /// 暂停、存盘失败、世界没设好时只记下时刻、不走；撞墙之类走不动时原地不动，不需要回执。
+    pub(super) fn advance_avatar(&mut self, until: Instant) {
+        let Some(from) = self.avatar_control.moved_at else {
+            self.avatar_control.moved_at = Some(until);
+            return;
         };
-        // 撞墙之类走不动时原地不动，不需要回执。
-        let _ = self.world.avatar_move(direction, 0.1 * self.normal_pace());
+        // 上一拍处理期间到的输入，取出来时已经走过它到达的那一刻：从走到的地方接着算，不倒回去重走
+        let until = until.max(from);
+        self.avatar_control.moved_at = Some(until);
+        let control = &self.avatar_control;
+        let end = control
+            .input_at
+            .map_or(from, |at| (at + INPUT_TIMEOUT).min(until));
+        if end <= from
+            || control.direction == [0., 0.]
+            || self.save_failed
+            || self.speed <= 0.
+            || !self.world_settings.ready()
+        {
+            return;
+        }
+        // 内核一次最多收 10 模拟分钟（最高倍率下一拍约 8 分钟）
+        let minutes = ((end - from).as_secs_f64() * self.normal_pace()).min(10.);
+        let _ = self
+            .world
+            .avatar_move(control.direction, control.run, minutes);
     }
 
     /// 交谈轮到玩家：同一次轮到（同一聊天、同一动作版本）累计等待，超时或断线就代为倾听。

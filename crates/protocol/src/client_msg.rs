@@ -65,6 +65,9 @@ pub enum ClientMsg {
         sequence: u64,
         navigation_revision: u64,
         direction: [f64; 2],
+        /// 按住了奔跑键。
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        run: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pose: Option<crate::AvatarPose>,
     },

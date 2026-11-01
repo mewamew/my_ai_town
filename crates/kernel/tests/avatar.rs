@@ -178,7 +178,7 @@ fn avatar_uses_inventory_and_chat_without_an_agent_and_keeps_identity_after_leav
     )
     .unwrap();
     let before = w.avatar().unwrap().locus.clone();
-    w.avatar_move([1., 0.], 0.1).unwrap();
+    w.avatar_move([1., 0.], false, 0.04).unwrap();
     assert_eq!(w.avatar().unwrap().locus, before);
     assert!(w
         .interact(
@@ -374,16 +374,16 @@ fn movement_normalizes_diagonals_stops_at_walls_and_only_uses_nearby_doors() {
     w.step(240.);
     assert_eq!(snapshot(&w)["actors"][ID]["needs"], needs);
     assert_eq!(json!(w.avatar_view())["actor"]["needs"], json!([]));
-    assert!(w.avatar_move([f64::NAN, 0.], 0.1).is_err());
-    assert!(w.avatar_move([1., 0.], 30.).is_err());
+    assert!(w.avatar_move([f64::NAN, 0.], false, 0.04).is_err());
+    assert!(w.avatar_move([1., 0.], false, 30.).is_err());
     assert!(w.avatar_portal("door").is_err());
-    w.avatar_move([1., 1.], 0.1).unwrap();
+    w.avatar_move([1., 1.], false, 0.04).unwrap();
     let protocol::At::Free { position, .. } = w.avatar().unwrap().locus.at else {
         panic!()
     };
     assert!(((position[0] - 2.).hypot(position[1] - 2.) - 1.2).abs() < 1e-8);
     for _ in 0..30 {
-        w.avatar_move([1., 0.], 0.1).unwrap();
+        w.avatar_move([1., 0.], false, 0.04).unwrap();
     }
     let protocol::At::Free { position, .. } = w.avatar().unwrap().locus.at else {
         panic!()
@@ -392,7 +392,7 @@ fn movement_normalizes_diagonals_stops_at_walls_and_only_uses_nearby_doors() {
     let rev = w.avatar().unwrap().actions.revision;
     assert!(w.avatar_action("remote",rev,&serde_json::from_value(json!({"intent":{"verb":"拾取"},"inventory":{"operation":"pick_up","items":["flower"]}})).unwrap()).is_err());
     for _ in 0..4 {
-        w.avatar_move([-1., 0.], 0.1).unwrap();
+        w.avatar_move([-1., 0.], false, 0.04).unwrap();
     }
     w.avatar_portal("door").unwrap();
     assert_eq!(w.avatar().unwrap().locus.locale, "loc_b");
@@ -461,6 +461,7 @@ fn default_runtime_props_keep_authoritative_and_legacy_positions() {
 }
 
 mod busy_talk;
+mod talk_anywhere;
 
 fn avatar_rejects_people_and_props_beyond_reach_or_behind_a_wall() {
     for blocked_by_wall in [false, true] {
@@ -536,7 +537,7 @@ fn resident_on_the_doorstep_counts_as_inside() {
     doorstep(&mut w);
     enter(&mut w);
     for _ in 0..2 {
-        w.avatar_move([1., 0.], 0.1).unwrap();
+        w.avatar_move([1., 0.], false, 0.04).unwrap();
     }
     w.avatar_portal("door").unwrap();
     let revision = w.avatar().unwrap().actions.revision;

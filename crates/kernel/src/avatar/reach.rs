@@ -123,7 +123,15 @@ impl<'a> Reach<'a> {
         Ok(())
     }
 
-    /// 有一方是玩家控制时，双方要在交谈距离内且中间没有隔墙。
+    /// 说话时这个人在哪：落脚点或自由位置；走在路段上的按进度算（见 WalkMap::transit_spot）。
+    pub(crate) fn talk_spot(&self, id: &str) -> Option<Spot> {
+        let w = self.w;
+        w.actor_spot(id)
+            .or_else(|| w.walk_map.as_ref()?.transit_spot(&w.actors.get(id)?.locus))
+    }
+
+    /// 有一方是玩家控制时，双方要在交谈距离内且中间没有隔墙。只看距离和遮挡，不管是不是同一个处所，
+    /// 走在路上的人也算：处所的分界在画面上看不出来（交谈开始时化身再挪进对方的处所，见 settle_pair_place）。
     pub(crate) fn pair(&self, a: &str, b: &str) -> Result<()> {
         let w = self.w;
         let first = w
@@ -137,14 +145,38 @@ impl<'a> Reach<'a> {
         if !first.player_controlled() && !second.player_controlled() {
             return Ok(());
         }
-        let spot = w
-            .actor_spot(b)
+        let spot = self
+            .talk_spot(b)
             .ok_or_else(|| KernelError::interaction("对方不在场"))?;
         ensure!(
-            self.reaches(a, &spot, TALK_REACH, None),
+            self.talks_to(a, &spot),
             KernelError::interaction("请走到对方附近，不能隔墙交谈")
         );
         Ok(())
+    }
+
+    fn talks_to(&self, a: &str, spot: &Spot) -> bool {
+        let (Some(map), Some(from)) = (&self.w.walk_map, self.talk_spot(a)) else {
+            return false;
+        };
+        map.within_talk(&from, spot, TALK_REACH, || {
+            self.obstacles.get_or_init(|| self.w.avatar_obstacles())
+        })
+    }
+
+    /// 同一空间里两人隔多远、中间有没有东西挡着；不在同一空间（隔着墙）为空。
+    pub(crate) fn gap(&self, a: &str, b: &str) -> Option<(f64, bool)> {
+        let (from, to) = (self.talk_spot(a)?, self.talk_spot(b)?);
+        let map = self.w.walk_map.as_ref()?;
+        (from.space == to.space).then(|| {
+            let d = distance(from.position, to.position);
+            (
+                d,
+                map.within_talk(&from, &to, f64::INFINITY, || {
+                    self.obstacles.get_or_init(|| self.w.avatar_obstacles())
+                }),
+            )
+        })
     }
 
     /// 玩家放下物品的落脚点：够得着的站点里最近的一个。

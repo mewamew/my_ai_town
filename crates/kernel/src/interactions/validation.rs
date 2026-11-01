@@ -65,11 +65,14 @@ fn validate_item(
         id == item.id && !id.is_empty() && id.len() <= ID_MAX_BYTES,
         KernelError::snapshot("存档互动编号无效")
     );
+    // 玩家搭话可以在路上（见 World::player_pair_place），交谈的地点也可以是路段
+    let place_ok = topo.is_dwell(&item.locale)
+        || (item.kind == InteractionKind::Talk && topo.locales.contains_key(&item.locale));
     ensure!(
         item.initiator != item.partner
             && actors.contains_key(&item.initiator)
             && actors.contains_key(&item.partner)
-            && topo.is_dwell(&item.locale),
+            && place_ok,
         KernelError::snapshot("存档互动的双方或地点无效")
     );
     ensure!(

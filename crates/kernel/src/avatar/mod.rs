@@ -22,6 +22,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub const ID: &str = "player_avatar";
+/// 玩家操控的人（化身和附身的村民）走路是村民步速的几倍。村民的步速和模拟时间绑在一起，
+/// 路线时长、到达时刻都按它算；玩家操控的人只求跟手，走多快不进入任何村民的计算。
+pub const WALK_PACE: f64 = 2.5;
+/// 按住奔跑键时是村民步速的几倍。
+pub const RUN_PACE: f64 = 4.0;
 /// 化身名字最多几个字；地图标记最多几个字符。
 const NAME_MAX_CHARS: usize = 24;
 const MARKER_MAX_CHARS: usize = 2;

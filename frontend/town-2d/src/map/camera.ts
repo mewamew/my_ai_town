@@ -15,6 +15,16 @@ const closeUpPixels = () => (isCompact() ? 1.5 : 3)
 const ZOOM_MS = 180
 /** 滚轮停这么久算这次缩放结束，落到整档 */
 const WHEEL_SETTLE_MS = 160
+/** 跟随化身的取景框：人在露出来那块正中间、宽高各占这个比例两倍的框里走动时镜头不动，
+ *  顶出框才跟上，人停在框边上。走两步画面不动，一直走时画面和人一样快地平移，不往前多看、不来回荡 */
+const FOLLOW_WINDOW = 0.12
+/** 人顶出取景框后镜头追上去的快慢（毫秒）：临界阻尼的弹簧大约这么久追上，起步、停下都是缓的，不过冲 */
+const FOLLOW_SMOOTH_MS = 180
+/** 把人挪回画面中间的时长，慢起慢停：按 C、点「回到化身」，或人离取景框太远（见 GLIDE_FROM） */
+const RECENTRE_MS = 450
+/** 人顶出取景框超过露出部分短边的这个比例（拖开地图后开始走、刚切回地图），不再贴着框追，
+ *  改成慢起慢停地挪回中间，免得整个画面一下子甩过去。平常走路、跑步只顶出几十像素 */
+const GLIDE_FROM = 0.2
 /** 「界面动画：减少」或系统要求少动画时，缩放直接到位 */
 const reducedMotion = () =>
   document.body.classList.contains('reduce-ui-motion') ||
@@ -160,15 +170,115 @@ export class MapCamera {
   /** 把世界点放到露出来的那块的中间（没有面板时就是画面中心），倍数不变。
    *  那块很矮时（弹出键盘）往下放一点，头顶上至少留 80 像素给名字 */
   lookAt(x: number, y: number) {
-    ;[x, y] = this.project([x, y])
-    const [w, h] = this.viewSize()
-    const [l, t, r, b] = this.openArea()
-    const minAbove = 80 / (this.container.getBoundingClientRect().height || 1)
-    const fy = Math.min(b - 0.02, Math.max((t + b) / 2, t + minAbove))
-    this.center = [x + (0.5 - (l + r) / 2) * w, y + (0.5 - fy) * h]
+    this.center = this.centreFor(x, y)
     this.fitted = false
     this.applyViewBox()
   }
+
+  /** 世界点放到露出来那块的中间时，视图中心该在哪 */
+  private centreFor(x: number, y: number): [number, number] {
+    ;[x, y] = this.project([x, y])
+    const [w, h] = this.viewSize()
+    const [l, , r] = this.openArea()
+    return [x + (0.5 - (l + r) / 2) * w, y + (0.5 - this.anchorY()) * h]
+  }
+
+  /** 世界点放在露出来那块的什么高度（占容器高的比例）：正中间；那块很矮时往下放，头顶留出 minAbove */
+  private anchorY() {
+    const [, t, , b] = this.openArea()
+    return Math.min(b - 0.02, Math.max((t + b) / 2, t + this.minAbove()))
+  }
+
+  /** 头顶上还挂着名字和提示标签：人离露出来那块的上沿至少这么远（占容器高的比例） */
+  private minAbove() {
+    return 80 / (this.container.getBoundingClientRect().height || 1)
+  }
+
+  /** 正在把人挪回画面中间：已经过了多久（毫秒） */
+  private glide: { elapsed: number } | null = null
+  /** 跟着人走时镜头的速度（视图单位 / 毫秒），弹簧带着它起步、停下 */
+  private followVelocity: [number, number] = [0, 0]
+
+  /**
+   * 化身跟随，每帧调一次（dt 是离上一帧的毫秒数），(x, y) 是人此刻画在哪：
+   * - window：人在取景框（见 FOLLOW_WINDOW）里镜头不动，顶出框才平滑地跟上，让人停在框边上；
+   *   顶出去太远（见 GLIDE_FROM）改成慢起慢停地挪回中间
+   * - centre：把人慢起慢停地挪回中间（按 C、点「回到化身」）
+   * - snap：直接切过去，进门出门。人离得比一屏还远时也直接切，不让整个画面飞过去
+   * 返回这一帧挪了镜头（还在动），场景据此每帧都画
+   */
+  follow(x: number, y: number, dt: number, how: 'window' | 'centre' | 'snap' = 'window'): boolean {
+    // 点了「整图」在看全貌：人一直在画面里，镜头不跟着挪（进门出门也不切），放大以后再跟
+    if (this.fitted && how !== 'centre') {
+      this.followVelocity = [0, 0]
+      return false
+    }
+    const want = this.centreFor(x, y)
+    const [w, h] = this.viewSize()
+    const [l, t, r, b] = this.openArea()
+    const [cx, cy] = this.center
+    const dx = want[0] - cx,
+      dy = want[1] - cy
+    // 取景框的四边（视图单位）；上边不越过头顶要留出的那段
+    const ix = FOLLOW_WINDOW * (r - l) * w
+    const down = FOLLOW_WINDOW * (b - t) * h
+    const up = Math.max(0, Math.min(down, (this.anchorY() - t - this.minAbove()) * h))
+    const ex = dx > ix ? dx - ix : dx < -ix ? dx + ix : 0
+    const ey = dy > down ? dy - down : dy < -up ? dy + up : 0
+    // 顶出去多远按屏幕像素比：立体场景里纵深在屏幕上是压扁的
+    const box = this.container.getBoundingClientRect()
+    const W = box.width || 1,
+      H = box.height || 1
+    const beyond = Math.max((Math.abs(ex) / w) * W, (Math.abs(ey) / h) * H)
+    if (Math.abs(dx) > w || Math.abs(dy) > h) how = 'snap'
+    else if (
+      how === 'centre' ||
+      (!this.glide && beyond > GLIDE_FROM * Math.min((r - l) * W, (b - t) * H))
+    ) {
+      // 要少动画时不滑过去，直接切
+      if (reducedMotion()) how = 'snap'
+      else this.glide = { elapsed: 0 }
+    }
+    let next: [number, number]
+    if (how === 'snap') {
+      this.glide = null
+      this.followVelocity = [0, 0]
+      next = want
+    } else if (this.glide) {
+      this.followVelocity = [0, 0]
+      // 按慢起慢停的进度，每帧把剩下的差按比例收小；人边走边挪、中途缩放都接得上
+      const ease = (u: number) => u * u * (3 - 2 * u)
+      const before = 1 - ease(Math.min(1, this.glide.elapsed / RECENTRE_MS))
+      this.glide.elapsed += Math.max(0, dt)
+      const after = 1 - ease(Math.min(1, this.glide.elapsed / RECENTRE_MS))
+      if (after <= 0) this.glide = null
+      const keep = before > 0 ? after / before : 0
+      next = [want[0] - dx * keep, want[1] - dy * keep]
+    } else {
+      // 往「人刚好在框边上」的位置追：弹簧带着速度，起步慢慢加速，人停下后慢慢停住
+      const t = Math.max(0, dt)
+      const [nx, vx] = smoothDamp(cx, cx + ex, this.followVelocity[0], FOLLOW_SMOOTH_MS, t)
+      const [ny, vy] = smoothDamp(cy, cy + ey, this.followVelocity[1], FOLLOW_SMOOTH_MS, t)
+      // 换成屏幕像素看：这一帧挪不到四分之一像素、速度也几乎为零就停住，不再每帧重画
+      const moved = Math.hypot(((nx - cx) / w) * W, ((ny - cy) / h) * H)
+      const speed = Math.hypot((vx / w) * W, (vy / h) * H) * 1000
+      if (moved < 0.25 && speed < 4) {
+        this.followVelocity = [0, 0]
+        return false
+      }
+      this.followVelocity = [vx, vy]
+      next = [nx, ny]
+    }
+    this.center = next
+    this.fitted = false
+    this.applyViewBox()
+    return true
+  }
+
+  /** 滚轮缩放的不动点（屏幕坐标）：化身跟随时围着化身缩，没有时围着鼠标 */
+  zoomAnchor: (() => [number, number] | undefined) | null = null
+  /** 双击（手指双点）放大两档；控制化身时关掉，连点两下是在走路 */
+  doubleClickZoom = true
 
   getViewBox(): number[] {
     return [...this.vb]
@@ -176,6 +286,8 @@ export class MapCamera {
 
   /** 按给定视口的中心取中心，按宽度取最接近的倍数 */
   setViewBox(v: number[]) {
+    this.glide = null
+    this.followVelocity = [0, 0]
     this.center = [v[0] + v[2] / 2, v[1] + v[3] / 2]
     this.scale = this.levels()[this.clampIndex(this.indexOf((this.size()[0] * PIXEL) / v[2]))]
     this.fitted = false
@@ -187,6 +299,8 @@ export class MapCamera {
   frameArea(area: CameraArea) {
     if (area.width <= 0 || area.height <= 0) return
     this.stopZoomAnimation()
+    this.glide = null
+    this.followVelocity = [0, 0]
     const [width, height] = this.size()
     const [left, top, right, bottom] = this.openArea()
     const c = Math.abs(this.yawCos),
@@ -253,6 +367,8 @@ export class MapCamera {
 
   /** 回到整图：能装下整张图的最大倍数 */
   resetView() {
+    this.glide = null
+    this.followVelocity = [0, 0]
     this.scale = this.fitScale()
     this.center = this.project([this.vb0[0] + this.vb0[2] / 2, this.vb0[1] + this.vb0[3] / 2])
     this.fitted = true
@@ -385,6 +501,8 @@ export class MapCamera {
    * 画面每帧按指数追向目标，连着滚只是把目标往前推，动画不重新起步，停在哪就是哪。
    */
   private wheelZoom(notches: number, cx: number, cy: number) {
+    const anchored = this.zoomAnchor?.()
+    if (anchored) [cx, cy] = anchored
     const levels = this.levels()
     const base = this.wheel?.target ?? this.zoomTarget ?? this.scale
     const target = Math.max(
@@ -606,7 +724,7 @@ export class MapCamera {
       'dblclick',
       (ev) => {
         // 手指双击由手势那边处理，浏览器补发的 dblclick 不再放大一次
-        if (performance.now() - this.lastTouch < 800) return
+        if (!this.doubleClickZoom || performance.now() - this.lastTouch < 800) return
         const [wx, wy] = this.clientToView(ev.clientX, ev.clientY)
         this.zoomCenter(2, wx, wy)
       },
@@ -764,6 +882,8 @@ export class MapCamera {
         }
         const m = this.svg.getScreenCTM() // a / d 即屏幕像素 ↔ 世界单位的比例
         if (!m) return
+        this.glide = null
+        this.followVelocity = [0, 0]
         this.center[0] -= (ev.clientX - drag[0]) / m.a
         this.center[1] -= (ev.clientY - drag[1]) / m.d
         this.fitted = false
@@ -798,7 +918,7 @@ export class MapCamera {
       // 手指双击空地：以那里为中心放大两档
       const now = performance.now()
       const target = d.prompt || d.group || d.vid || d.prop
-      if (p.touch && !target) {
+      if (p.touch && !target && this.doubleClickZoom) {
         if (
           lastTap &&
           now - lastTap.t < 320 &&
@@ -834,6 +954,33 @@ function wheelNotches(ev: WheelEvent): number | undefined {
   const counted = legacy !== 0 && legacy % 120 === 0
   if (!counted && ev.deltaMode === 0 && Math.abs(ev.deltaY) < 40) return undefined
   return -Math.sign(ev.deltaY) * (counted ? Math.min(3, Math.abs(legacy) / 120) : 1)
+}
+
+/**
+ * 临界阻尼的弹簧（同 Unity 的 SmoothDamp）：从 current 追向 target，velocity 是带着的速度（每毫秒），
+ * smooth 是大约多久追上（毫秒）。返回新的位置和速度；不会冲过 target
+ */
+function smoothDamp(
+  current: number,
+  target: number,
+  velocity: number,
+  smooth: number,
+  dt: number
+): [number, number] {
+  if (dt <= 0) return [current, velocity]
+  const omega = 2 / smooth
+  const x = omega * dt
+  const exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x)
+  const change = current - target
+  const temp = (velocity + omega * change) * dt
+  let v = (velocity - omega * temp) * exp
+  let out = target + (change + temp) * exp
+  // 冲过头就停在 target（target 就是当前位置时只是带着速度滑一段，不算冲过头）
+  if (change !== 0 && target - current > 0 === out > target) {
+    out = target
+    v = 0
+  }
+  return [out, v]
 }
 
 /** 事件目标向上找带某属性的祖先，返回属性值 */

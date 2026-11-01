@@ -83,6 +83,9 @@ pub struct AvatarState {
     pub mode: AvatarMode,
     pub navigation_revision: u64,
     pub nearby: Vec<NearbyPerson>,
+    /// 附近还说不上话的人：再走近些，或换个不隔着东西的位置。
+    #[serde(default)]
+    pub approach: Vec<ApproachPerson>,
     pub nearby_chats: Vec<NearbyChat>,
     pub portals: Vec<PortalView>,
     pub props: Vec<AvatarPropView>,
@@ -126,8 +129,22 @@ pub struct NearbyPerson {
     /// 完全空闲，可以一起开始双方活动。
     pub available: bool,
     pub can_talk: bool,
+    /// 现在聊不了的原因（正在和别人说话、倒下了……）；能聊时没有。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub busy: Option<String>,
     pub id: String,
     pub name: String,
+}
+
+/// 附近还说不上话的人。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ApproachPerson {
+    pub id: String,
+    pub name: String,
+    /// 离玩家多少米。
+    pub distance: f64,
+    /// 已经够近，只是中间有东西挡着。
+    pub blocked: bool,
 }
 
 /// 够得着的道具。
@@ -237,7 +254,7 @@ pub struct AvatarSession {
     /// 三维地图由前端上报位置；二维地图不输出。
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub client_positions: bool,
-    /// 三维地图上前端自己移动化身用的步速；二维地图不输出。
+    /// 玩家操控的人的步速；没有行走地图时不输出。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub walk: Option<AvatarWalk>,
     /// 三维地图且本连接持有租约时：位置上报的处理结果。
@@ -275,7 +292,8 @@ pub struct AvatarLease {
     pub sequence: u64,
 }
 
-/// 化身的步速：每模拟分钟走多少米，按住奔跑时乘的倍数。host 按同样的数核对上报的位置。
+/// 玩家操控的人的步速：每模拟分钟走多少米，按住奔跑时乘的倍数。服务端按它移动化身，
+/// 前端按它判断走没走动、到点前减速，并照着同样的方向和步速逐帧预测自己的小人。
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct AvatarWalk {
     pub metres_per_minute: f64,
