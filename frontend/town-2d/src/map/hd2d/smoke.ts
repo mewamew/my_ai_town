@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { PIXEL } from '../grid'
 import type { Tilt } from './layout'
 import { texture } from './standee'
+import { pixelMaterial } from './pixelSampling'
 
 // 烟囱冒的烟：每根烟囱一串烟团，从烟囱口往上飘、顺风往东偏，越飘越大越淡，飘完从烟囱口重新冒出来。
 // 烟团是朝向镜头的像素小片，受场景光照，夜里跟着暗下去。
@@ -45,11 +46,13 @@ export class ChimneySmoke {
   /** 烟囱口在世界坐标 (x, y, z)；seed 错开各根烟囱的节奏 */
   add(x: number, y: number, z: number, seed: number) {
     for (let k = 0; k < PUFFS; k++) {
-      const material = new THREE.MeshLambertMaterial({
-        map: this.map,
-        transparent: true,
-        depthWrite: false,
-      })
+      const material = pixelMaterial(
+        new THREE.MeshLambertMaterial({
+          map: this.map,
+          transparent: true,
+          depthWrite: false,
+        })
+      )
       const mesh = new THREE.Mesh(this.geometry, material)
       mesh.renderOrder = 2
       this.group.add(mesh)

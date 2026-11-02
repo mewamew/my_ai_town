@@ -75,26 +75,43 @@ export interface IsletPalette {
   cliff: readonly [string, string, string]
 }
 
-/** 光照与调色：白天、夜里、傍晚三组颜色，场景按时间在它们之间插值 */
+type Rgb = [number, number, number]
+
+/** 光照与调色：白天、傍晚（金色时刻）、蓝调时刻（日落后天没黑透、灯已亮）、夜里四组，
+ *  场景按太阳高度在它们之间插值 */
 export interface LightPalette {
-  sky: { day: string; night: string; golden: string }
-  top: { day: string; night: string; golden: string }
+  sky: { day: string; night: string; golden: string; blue: string }
+  top: { day: string; night: string; golden: string; blue: string }
   hill: string
-  hemiSky: { day: string; night: string }
-  hemiGround: { day: string; night: string }
+  hemiSky: { day: string; night: string; blue: string }
+  hemiGround: { day: string; night: string; blue: string }
   sun: { day: string; low: string }
-  /** 调色：白天底色、傍晚、夜里各乘一层 */
-  tint: {
-    day: [number, number, number]
-    golden: [number, number, number]
-    night: [number, number, number]
-  }
+  /** 调色：整幅画面各乘一层 */
+  tint: { day: Rgb; golden: Rgb; blue: Rgb; night: Rgb }
+  /** 暗部偏色：只乘在暗部，亮部不动（傍晚亮处暖、暗处偏青就是它） */
+  shade: { day: Rgb; golden: Rgb; blue: Rgb; night: Rgb }
   saturation: number
   /** 雾的浓度倍数 */
   fog: number
   lamp: string
   /** 夜里天幕上极光的强度，0 是没有 */
   aurora: number
+  /** 这个风格整体的胶片色调，启动时烘成一张 3D LUT（见 hd2d/post.ts 的 lookTexture） */
+  look: LookParams
+}
+
+/** 胶片色调的几个参数，都在 0 附近，0 是不改 */
+export interface LookParams {
+  /** 黑位抬起多少（0～0.05） */
+  lift: number
+  /** 高光往暖色偏 */
+  warm: number
+  /** 暗部往青色偏 */
+  teal: number
+  /** 草绿：正数往黄绿偏、负数往青绿偏，同时按绝对值稍微降饱和 */
+  greens: number
+  /** S 形对比（0 不变，0.2 明显） */
+  contrast: number
 }
 
 export interface MapTheme {

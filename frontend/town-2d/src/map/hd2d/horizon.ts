@@ -3,6 +3,7 @@ import { PIXEL } from '../grid'
 import { bayer, fbm, hash, rng } from '../pixel/noise'
 import type { Tilt } from './layout'
 import { texture } from './standee'
+import { pixelMaterial } from './pixelSampling'
 import type { IsletPalette } from '../themes/types'
 
 // 远景：正交镜头下东西不会因为远而变小，海面不会自己收成一条线，所以在北边（画面上方）
@@ -316,7 +317,7 @@ export class Horizon {
       const far = Math.min(1, Math.max(0, (box.z0 - z) / (box.z0 - horizon)))
       const size = Math.round((full * (1 - 0.5 * far)) / PIXEL) * PIXEL
       const map = texture(isletCanvas(Math.round(size / PIXEL), seed + 500 + k * 17, this.islet))
-      const material = new THREE.MeshLambertMaterial({ map, alphaTest: 0.5 })
+      const material = pixelMaterial(new THREE.MeshLambertMaterial({ map, alphaTest: 0.5 }))
       material.onBeforeCompile = (shader) => addHaze(shader, this.haze)
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size), material)
       mesh.rotation.x = -Math.PI / 2

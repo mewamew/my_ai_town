@@ -103,9 +103,11 @@ export class Villagers {
     this.motion = motion
   }
 
+  /** prepare：每个新立牌的材质过一遍（接光照图） */
   constructor(
     private scene: THREE.Scene,
-    private tilt: Tilt
+    private tilt: Tilt,
+    private readonly prepare?: (material: THREE.Material) => void
   ) {}
 
   /** 俯角变了：所有人重新立好 */
@@ -303,6 +305,7 @@ export class Villagers {
     const map = atlas.clone()
     map.repeat.set(1 / 4, 1 / 4)
     const mesh = standee(map, { scale: VILLAGER_SCALE, frame: [FRAME_W, FRAME_H] })
+    this.prepare?.(mesh.material as THREE.Material)
     this.scene.add(mesh)
     const v: Villager = {
       mesh,

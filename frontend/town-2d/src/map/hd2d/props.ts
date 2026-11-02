@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { PIXEL } from '../grid'
 import type { Tilt } from './layout'
-import { stand, standee } from './standee'
+import { pixelFilter, stand, standee } from './standee'
 
 // 道具立牌：道具像素图立在地上，和树、村民一样按俯角转向镜头、和墙互相遮挡。
 // SVG 层只留道具的点击区和名字。道具可以被拿走、放回、新增，每次按渲染层给的名单同步。
@@ -32,18 +32,18 @@ export class PropStandees {
   private readonly textures = new Map<string, THREE.Texture>()
   private readonly loader = new THREE.TextureLoader()
 
+  /** prepare：每个新立牌的材质过一遍（接光照图） */
   constructor(
     private readonly scene: THREE.Scene,
     private tilt: Tilt,
-    private readonly onLoad: () => void
+    private readonly onLoad: () => void,
+    private readonly prepare?: (material: THREE.Material) => void
   ) {}
 
   private texture(url: string) {
     let t = this.textures.get(url)
     if (!t) {
-      t = this.loader.load(url, () => this.onLoad())
-      t.magFilter = t.minFilter = THREE.NearestFilter
-      t.generateMipmaps = false
+      t = pixelFilter(this.loader.load(url, () => this.onLoad()))
       t.colorSpace = THREE.SRGBColorSpace
       this.textures.set(url, t)
     }
@@ -64,6 +64,7 @@ export class PropStandees {
           scale: p.size / (ART * PIXEL),
           frame: [ART, ART],
         })
+        this.prepare?.(mesh.material as THREE.Material)
         this.scene.add(mesh)
         s = { mesh, placement: p }
         this.all.set(p.id, s)

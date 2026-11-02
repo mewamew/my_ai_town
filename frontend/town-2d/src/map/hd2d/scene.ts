@@ -9,7 +9,7 @@ import { fromPx, MARGIN, OUTDOOR_SPACE, PIXEL, pxIndex, roomPoint } from '../gri
 import { WALL_CAP } from '../palette'
 import { OPEN, paintGround, treeShape, type Ground } from '../pixel/terrain'
 import type { Dock } from '../pixel/island'
-import { fbm, rng } from '../pixel/noise'
+import { fbm, hash, rng } from '../pixel/noise'
 import { Motes } from './motes'
 import { Villagers, type LiveMotion, type VillagerPlacement } from './villagers'
 import { VILLAGER_HALF } from './villagerSprite'
@@ -40,7 +40,16 @@ import {
   wallCanvases,
 } from './textures'
 import { OVERHANG, chimneySpot, gableGeometry, roofHeight, roofParts } from './roofs'
-import { gradeShader, SceneDepthPass, TILT_FOCUS, tiltShader } from './post'
+import {
+  finishShader,
+  gradeShader,
+  lookTexture,
+  SceneDepthPass,
+  TILT_FOCUS,
+  tiltShader,
+} from './post'
+import { LightMap, type LightSource } from './lightmap'
+import { pixelMaterial } from './pixelSampling'
 import { landmarkSprites } from './landmarks'
 import { coastTexture, outerMaterial, surfOnLand } from './sea'
 import { Horizon } from './horizon'
@@ -84,10 +93,10 @@ const CAMERA_DISTANCE_PER_VIEW_HEIGHT = 2.17
 const MAX_CAMERA_DISTANCE = 600 * PIXEL
 /** 移轴模糊按近景设计：视野高度超过这么多地图单位后按比例减弱，拉远时不把上下两片糊掉 */
 const TILT_SHIFT_VIEW_HEIGHT = 2000
-/** 路灯里带真实点光源的数量，其余只有光晕 */
-const LIT_LAMPS = 12
-/** 路灯点光源的照亮半径：90 个地图像素 */
-const LAMP_REACH = 90 * PIXEL
+/** 路灯在地上照出的光圈半径、门灯和窗光往外投多远（地图单位） */
+const LAMP_REACH = 64 * PIXEL
+const DOOR_REACH = 16 * PIXEL
+const WINDOW_REACH = 22 * PIXEL
 
 function storedPitch() {
   try {
@@ -140,8 +149,35 @@ function createComposer(
   const grade = new ShaderPass(gradeShader)
   composer.addPass(grade)
   composer.addPass(new OutputPass())
-  return { composer, sceneDepth, bloom, tiltShift, grade }
+  // 色调映射之后再套风格包的胶片 LUT
+  const finish = new ShaderPass(finishShader)
+  composer.addPass(finish)
+  return { composer, sceneDepth, bloom, tiltShift, grade, finish }
 }
+
+/** 窗在墙面贴图上占的列：自发光图里亮着的列连成一段就是一扇窗。返回 [起, 止) 列 */
+function windowSpans(emissive: HTMLCanvasElement) {
+  const { width: w, height: h } = emissive
+  const data = emissive.getContext('2d')!.getImageData(0, 0, w, h).data
+  const spans: [number, number][] = []
+  let start = -1
+  for (let x = 0; x <= w; x++) {
+    let lit = false
+    for (let y = 0; x < w && y < h && !lit; y++) {
+      const o = (y * w + x) * 4
+      lit = data[o] + data[o + 1] + data[o + 2] > 60 && data[o + 3] > 0
+    }
+    if (lit && start < 0) start = x
+    if (!lit && start >= 0) {
+      spans.push([start, x])
+      start = -1
+    }
+  }
+  return spans
+}
+
+/** 一栋房子的窗和灯在入夜后什么时候亮（亮灯程度的门槛），按房子编号错开 */
+const houseLightsOn = (house: House) => 0.12 + hash(house.seed, 3, 11) * 0.62
 
 export class HdScene {
   readonly houses: House[]
@@ -153,6 +189,7 @@ export class HdScene {
   private readonly bloom: UnrealBloomPass
   private readonly tiltShift: ShaderPass[]
   private readonly grade: ShaderPass
+  private readonly finish: ShaderPass
   private readonly sun = new THREE.DirectionalLight('#fff4e0', 2.6)
   /** 天光：颜色和强度由 applyLight 按风格包和时间设置 */
   private readonly hemi = new THREE.HemisphereLight()
@@ -176,11 +213,17 @@ export class HdScene {
   private pitchControl?: HTMLElement
   /** 俯角变化后通知地图，屋顶上的房间名要跟着挪 */
   onTilt: (() => void) | null = null
-  private readonly glowing: THREE.Material[] = []
+  /** 夜里发光的窗、灯罩：亮灯程度超过 on 才亮，入夜时一栋栋、一盏盏错开 */
+  private readonly glowing: { material: THREE.Material; on: number }[] = []
   /** 屋顶、山墙和墙顶：夜里按自身颜色发一点微光，房子不至于黑成一片 */
   private readonly moonlit: (THREE.MeshLambertMaterial | THREE.MeshPhongMaterial)[] = []
-  private readonly glows: THREE.Sprite[] = []
-  private readonly lampLights: THREE.PointLight[] = []
+  /** 门口和灯头的光晕贴片，和各自的灯同时亮 */
+  private readonly glows: { sprite: THREE.Sprite; on: number }[] = []
+  /** 地面光照图：所有灯、门、窗和掀开的屋子把光洒在地上，地面、墙和立牌按它受光 */
+  private readonly lightmap: LightMap
+  private readonly lightSources: LightSource[] = []
+  /** 夜里亮灯的程度：日落前后从 0 升到 1，各盏灯按自己的门槛亮起 */
+  private lit = 0
   /** 灯塔转动的光束（冰雪风格） */
   private readonly beams: THREE.Mesh[] = []
   private readonly smoke = new ChimneySmoke()
@@ -217,8 +260,15 @@ export class HdScene {
   /** 场景的雾，颜色由 applyLight 跟着天色改 */
   private readonly fog: THREE.FogExp2
   private readonly motes: Motes
-  private readonly villagers = new Villagers(this.scene, this.tilt)
-  private readonly props = new PropStandees(this.scene, this.tilt, () => this.request())
+  private readonly villagers = new Villagers(this.scene, this.tilt, (m) =>
+    this.lightmap.shade(m, 'standee')
+  )
+  private readonly props = new PropStandees(
+    this.scene,
+    this.tilt,
+    () => this.request(),
+    (m) => this.lightmap.shade(m, 'standee')
+  )
   private lastTick = performance.now()
 
   private readonly theme: MapTheme
@@ -247,10 +297,12 @@ export class HdScene {
     this.upright.push((t) => this.horizon.setTilt(t))
     this.scene.add(this.smoke.group)
     this.upright.push((t) => this.smoke.setTilt(t))
+    this.houses = atlas.spaces.filter((s) => s.id !== OUTDOOR_SPACE).map((s) => houseOf(s, theme))
+    // 光照图先建好：后面建的地面、墙和立牌的材质都要接上它
+    this.lightmap = new LightMap(ground.width, ground.height, this.houses)
     const sea = this.addGround(ground)
     this.seaTime = sea.time
     this.seaSparkle = sea.sparkle
-    this.houses = atlas.spaces.filter((s) => s.id !== OUTDOOR_SPACE).map((s) => houseOf(s, theme))
     const glowMap = new THREE.CanvasTexture(glowCanvas())
     glowMap.colorSpace = THREE.SRGBColorSpace
     this.addHouses(atlas, glowMap)
@@ -259,6 +311,7 @@ export class HdScene {
     const clear = { width: ground.width, height: ground.height, open }
     this.addTrees(decor, clear, seed)
     this.addLamps(atlas, ground.wet, ground.width, glowMap)
+    this.lightmap.setSources(this.lightSources)
     this.motes = new Motes(clear, seed, theme.motes)
     this.scene.add(this.motes.points)
     this.scene.fog = this.fog
@@ -269,6 +322,8 @@ export class HdScene {
     this.bloom = post.bloom
     this.tiltShift = post.tiltShift
     this.grade = post.grade
+    this.finish = post.finish
+    this.finish.uniforms.tLook.value = lookTexture(theme.light.look)
     const views = new MutationObserver(() => this.syncView())
     views.observe(svg, { attributes: true, attributeFilter: ['viewBox'] })
     const sizes = new ResizeObserver(() => this.resize())
@@ -289,12 +344,63 @@ export class HdScene {
       const points = [...atlas.stations, ...atlas.props]
         .filter((p) => p.space === s.id)
         .map((p) => roomPoint(s.unfold, p.x, p.y))
-      this.addHouse(
-        this.houses.find((h) => h.id === s.id)!,
-        s.door_outside,
-        points
-      )
-      if (s.door_outside) this.addGlow(glowMap, s.door_outside[0], s.door_outside[1], 14, 70)
+      const house = this.houses.find((h) => h.id === s.id)!
+      const on = houseLightsOn(house)
+      this.addHouse(house, s.door_outside, points, on)
+      const lamp = new THREE.Color(this.theme.light.lamp)
+      if (s.door_outside) {
+        const [dx, dy] = s.door_outside
+        this.addGlow(glowMap, dx, dy, 14, 70, on)
+        this.lightSources.push({
+          kind: 'door',
+          x: dx,
+          y: dy,
+          reach: DOOR_REACH,
+          color: lamp.clone().multiplyScalar(0.9),
+          on,
+        })
+      }
+      // 掀开屋顶后屋里的灯：整间屋子暖暖地亮
+      this.lightSources.push({
+        kind: 'room',
+        x: house.x + house.w / 2,
+        y: house.y + house.h / 2,
+        width: house.w / 2,
+        reach: house.h / 2,
+        color: lamp.clone().multiplyScalar(0.55),
+        on,
+        house: house.id,
+      })
+    }
+  }
+
+  /** 墙上每扇窗往外投一块光：四面墙贴的是同一张墙面图（见 addBody），窗按比例落在各面墙上 */
+  private addWindowLights(house: House, emissive: HTMLCanvasElement, on: number) {
+    const { x, y, w, h } = house
+    const color = new THREE.Color(this.theme.light.lamp).multiplyScalar(0.8)
+    const len = emissive.width
+    for (const [a, b] of windowSpans(emissive)) {
+      const f = (a + b) / 2 / len,
+        part = (b - a) / len
+      // BoxGeometry 各面贴图的横向：南面从西到东，北面从东到西，东面从南到北，西面从北到南
+      const sides: [number, number, number, [number, number]][] = [
+        [x + f * w, y + h, part * w, [0, 1]],
+        [x + (1 - f) * w, y, part * w, [0, -1]],
+        [x + w, y + (1 - f) * h, part * h, [1, 0]],
+        [x, y + f * h, part * h, [-1, 0]],
+      ]
+      for (const [sx, sy, width, dir] of sides)
+        this.lightSources.push({
+          kind: 'window',
+          x: sx,
+          y: sy,
+          width: Math.max(width, 2 * PIXEL),
+          reach: WINDOW_REACH,
+          dir,
+          color,
+          on,
+          house: house.id,
+        })
     }
   }
 
@@ -352,6 +458,7 @@ export class HdScene {
   /** 画一帧：立牌先摆到这一帧那一刻的位置，名字跟上；镜头按立牌挪好、读进立体镜头，再画 */
   private draw(t: number) {
     this.lastDraw = t
+    this.lightmap.render(this.renderer)
     if (this.villagers.step(t)) this.onVillagersMoved?.()
     this.cameraMoving = this.beforeDraw?.(t) ?? false
     this.syncView()
@@ -671,7 +778,7 @@ export class HdScene {
     for (let i = 0; i < pw * ph; i++) if (wet[i]) img.data[i * 4 + 3] = 0
     ctx.putImageData(img, 0, 0)
     const landMaterial = this.wettable(
-      new THREE.MeshPhongMaterial({ map: texture(land), alphaTest: 0.5 })
+      pixelMaterial(new THREE.MeshPhongMaterial({ map: texture(land), alphaTest: 0.5 }))
     )
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(w, h), landMaterial)
     ground.rotation.x = -Math.PI / 2
@@ -682,6 +789,7 @@ export class HdScene {
     // 海面也有云影，风和雨从天气里来
     this.weather.shade(material, { snow: 0, wet: 0 })
     if (this.theme.outer === 'sea') surfOnLand(landMaterial, coast, time, this.theme)
+    this.lightmap.shade(landMaterial, 'ground')
     const sea = new THREE.Mesh(new THREE.PlaneGeometry(w * 6, h * 6), material)
     sea.rotation.x = -Math.PI / 2
     sea.position.set(ground.position.x, -1, ground.position.z)
@@ -690,14 +798,20 @@ export class HdScene {
     return { time, sparkle }
   }
 
-  private addHouse(house: House, door?: [number, number], points: [number, number][] = []) {
+  /** on：这栋房子的窗和灯在亮灯程度超过它时亮 */
+  private addHouse(
+    house: House,
+    door: [number, number] | undefined,
+    points: [number, number][],
+    on: number
+  ) {
     const { x, y, w, h } = house
     const group = new THREE.Group()
     group.position.set(x + w / 2, 0, y + h / 2)
     // 只有朝南的墙面向镜头；门在南墙上时画出来
     const onSouth = door && Math.abs(door[1] - (y + h)) <= Math.min(Math.abs(door[1] - y), 40)
-    const top = this.addBody(group, house, onSouth ? (door![0] - x) / PIXEL : undefined)
-    this.addRoof(group, house, top)
+    const top = this.addBody(group, house, onSouth ? (door![0] - x) / PIXEL : undefined, on)
+    this.addRoof(group, house, top, on)
     this.addFeatures(group, house, onSouth ? door![0] - (x + w / 2) : undefined)
     this.addChimney(group, house)
     this.flat.add(group)
@@ -706,22 +820,26 @@ export class HdScene {
     this.flat.add(room.group)
     this.rooms.set(house.id, room.group)
     this.partitions.set(house.id, room.partition)
-    this.glowing.push(room.glowing)
+    this.glowing.push({ material: room.glowing, on })
   }
 
   /** 房子的墙：朝镜头的墙面贴画好的墙（夜里窗户发光），墙顶压深色；door 是门离墙左端的像素数。
    *  返回墙顶的材质，夜里和屋顶一起微亮 */
-  private addBody(group: THREE.Group, house: House, door?: number) {
+  private addBody(group: THREE.Group, house: House, door: number | undefined, on: number) {
     const { w, h, wallH } = house
     const wall = wallCanvases(house, Math.max(4, Math.round(w / PIXEL)), door)
-    const front = new THREE.MeshLambertMaterial({
-      map: texture(wall.map),
-      emissiveMap: texture(wall.emissive),
-      emissive: new THREE.Color('#ffffff'),
-      emissiveIntensity: 0,
-    })
-    this.glowing.push(front)
+    const front = pixelMaterial(
+      new THREE.MeshLambertMaterial({
+        map: texture(wall.map),
+        emissiveMap: texture(wall.emissive),
+        emissive: new THREE.Color('#ffffff'),
+        emissiveIntensity: 0,
+      })
+    )
+    this.glowing.push({ material: front, on })
+    this.addWindowLights(house, wall.emissive, on)
     this.weather.shade(front, { snow: 0, wet: 0.5 })
+    this.lightmap.shade(front, 'wall')
     const top = new THREE.MeshLambertMaterial({ color: WALL_CAP, emissive: WALL_CAP })
     this.weather.shade(top, { snow: 1, wet: 0.5 })
     const body = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, h), [
@@ -739,7 +857,7 @@ export class HdScene {
   }
 
   /** 屋顶：斜面、两头山墙、南坡上的十字脊或老虎窗（形状见 roofs.ts），剧院是拱顶 */
-  private addRoof(group: THREE.Group, house: House, top: THREE.MeshLambertMaterial) {
+  private addRoof(group: THREE.Group, house: House, top: THREE.MeshLambertMaterial, on: number) {
     const { w, h, wallH, ridge, alongX } = house
     const parts = roofParts(house)
     const roofMap = texture(
@@ -750,12 +868,14 @@ export class HdScene {
       )
     )
     const roofMaterial = this.wettable(
-      new THREE.MeshPhongMaterial({
-        map: roofMap,
-        emissiveMap: roofMap,
-        emissive: '#ffffff',
-        side: THREE.DoubleSide,
-      })
+      pixelMaterial(
+        new THREE.MeshPhongMaterial({
+          map: roofMap,
+          emissiveMap: roofMap,
+          emissive: '#ffffff',
+          side: THREE.DoubleSide,
+        })
+      )
     )
     this.moonlit.push(top, roofMaterial)
     if (house.look.vault) {
@@ -777,14 +897,16 @@ export class HdScene {
     group.add(roof)
     // 山墙面和墙一样贴墙面材质，窗夜里亮；屋脊南北向时南头的山墙正对镜头，开一扇圆窗
     const face = (geometry: THREE.BufferGeometry, art: ReturnType<typeof gableCanvases>) => {
-      const material = new THREE.MeshLambertMaterial({
-        map: texture(art.map),
-        emissiveMap: texture(art.emissive),
-        emissive: new THREE.Color('#ffffff'),
-        emissiveIntensity: 0,
-        side: THREE.DoubleSide,
-      })
-      this.glowing.push(material)
+      const material = pixelMaterial(
+        new THREE.MeshLambertMaterial({
+          map: texture(art.map),
+          emissiveMap: texture(art.emissive),
+          emissive: new THREE.Color('#ffffff'),
+          emissiveIntensity: 0,
+          side: THREE.DoubleSide,
+        })
+      )
+      this.glowing.push({ material, on })
       this.weather.shade(material, { snow: 0, wet: 0.5 })
       const mesh = new THREE.Mesh(geometry, material)
       mesh.castShadow = mesh.receiveShadow = true
@@ -818,9 +940,11 @@ export class HdScene {
     const base = roofHeight(house, x, z) - 3 * WALL_TEXEL
     const top = Math.max(base + 11 * WALL_TEXEL, wallH + ridge + 4 * WALL_TEXEL)
     const height = top - base
-    const side = new THREE.MeshLambertMaterial({
-      map: texture(chimneyCanvas(house, Math.round(height / WALL_TEXEL))),
-    })
+    const side = pixelMaterial(
+      new THREE.MeshLambertMaterial({
+        map: texture(chimneyCanvas(house, Math.round(height / WALL_TEXEL))),
+      })
+    )
     const mouth = new THREE.MeshLambertMaterial({ color: '#2e2a26' })
     const chimney = new THREE.Mesh(new THREE.BoxGeometry(6 * PIXEL, height, 6 * PIXEL), [
       side,
@@ -854,11 +978,13 @@ export class HdScene {
       const depth = 6 * PIXEL,
         tilt = 0.5
       const map = texture(awningCanvas(Math.max(4, Math.round(width / PIXEL)), look.awning.colors))
-      const material = new THREE.MeshLambertMaterial({
-        map,
-        side: THREE.DoubleSide,
-        alphaTest: 0.5,
-      })
+      const material = pixelMaterial(
+        new THREE.MeshLambertMaterial({
+          map,
+          side: THREE.DoubleSide,
+          alphaTest: 0.5,
+        })
+      )
       this.weather.shade(material, { snow: 1, wet: 0.5 })
       const awning = new THREE.Mesh(new THREE.PlaneGeometry(width, depth), material)
       // 贴在南墙门上方，外沿往下斜
@@ -881,7 +1007,8 @@ export class HdScene {
         this.theme.lighthouse
       )
       group.add(tower.group)
-      this.glowing.push(tower.lamp)
+      // 灯塔天一暗就最先亮
+      this.glowing.push({ material: tower.lamp, on: 0.02 })
       if (tower.beam) this.beams.push(tower.beam)
     }
     if (look.flag) {
@@ -893,7 +1020,7 @@ export class HdScene {
       pole.position.set(0, wallH + ridge + poleH / 2, 0)
       pole.castShadow = true
       const map = texture(flagCanvas(this.theme.flag))
-      const cloth = new THREE.MeshLambertMaterial({ map, side: THREE.DoubleSide })
+      const cloth = pixelMaterial(new THREE.MeshLambertMaterial({ map, side: THREE.DoubleSide }))
       this.weather.shade(cloth, { snow: 0, wet: 0.3, sway: true })
       const flag = new THREE.Mesh(new THREE.PlaneGeometry(10 * PIXEL, 6 * WALL_TEXEL), cloth)
       flag.geometry.translate(5 * PIXEL, 0, 0)
@@ -948,6 +1075,7 @@ export class HdScene {
         this.flipbooks.push({ maps, frames, fps: s.fps ?? 1 })
       }
       this.weather.shade(material, { snow: 1, wet: 0.4 })
+      this.lightmap.shade(material, 'standee')
       const sx = Math.round(s.x / PIXEL) * PIXEL,
         sy = Math.round(s.y / PIXEL) * PIXEL
       this.upright.push((t) => stand(mesh, sx, sy, t))
@@ -997,6 +1125,7 @@ export class HdScene {
         if (!clear) continue
         const mesh = standee(texture(canvas))
         this.weather.shade(mesh.material as THREE.MeshLambertMaterial, { snow: 1, wet: 0.4 })
+        this.lightmap.shade(mesh.material as THREE.Material, 'standee')
         const sx = fromPx(x),
           sy = fromPx(y)
         this.upright.push((t) => stand(mesh, sx, sy, t))
@@ -1009,7 +1138,15 @@ export class HdScene {
       }
   }
 
-  private addGlow(map: THREE.Texture, x: number, y: number, texelsUp: number, size: number) {
+  /** 光晕贴片；on 是它跟着亮起的那盏灯（那栋房子）的门槛 */
+  private addGlow(
+    map: THREE.Texture,
+    x: number,
+    y: number,
+    texelsUp: number,
+    size: number,
+    on: number
+  ) {
     const sprite = new THREE.Sprite(
       new THREE.SpriteMaterial({
         map,
@@ -1023,7 +1160,7 @@ export class HdScene {
     this.upright.push((t) => onStandee(sprite, x, y, texelsUp, t, 40))
     sprite.scale.set(size, size, 1)
     this.scene.add(sprite)
-    this.glows.push(sprite)
+    this.glows.push({ sprite, on })
     return sprite
   }
 
@@ -1046,12 +1183,14 @@ export class HdScene {
       if (!cache.has(key))
         cache.set(key, texture(treeCanvas(r, variant, bush, seed, this.theme.flora)))
       const mesh = standee(cache.get(key)!, { scale })
-      // 树冠顶上积雪，随风摆
+      // 树冠顶上积雪，随风摆；树影跟着摆
       this.weather.shade(mesh.material as THREE.MeshLambertMaterial, {
         snow: 1,
         wet: 0.3,
         sway: true,
       })
+      this.lightmap.shade(mesh.material as THREE.Material, 'standee')
+      if (mesh.customDepthMaterial) this.weather.swayShadow(mesh.customDepthMaterial)
       const sx = Math.round(x / PIXEL) * PIXEL,
         sy = Math.round(y / PIXEL) * PIXEL
       this.upright.push((t) => stand(mesh, sx, sy, t))
@@ -1096,7 +1235,7 @@ export class HdScene {
       }
   }
 
-  /** 沿室外路段每隔一段立一盏路灯，离地图中心近的几盏带点光源 */
+  /** 沿室外路段每隔一段立一盏路灯，灯光画进光照图。入夜时从镇中心往外一盏盏亮起 */
   private addLamps(atlas: Atlas, wet: Uint8Array, pw: number, glowMap: THREE.Texture) {
     const rooms = this.houses
     const inRoom = (x: number, y: number, pad: number) =>
@@ -1131,22 +1270,22 @@ export class HdScene {
     }
     const cx = atlas.canvas.width / 2,
       cy = atlas.canvas.height / 2
-    spots.sort((p, q) => Math.hypot(p[0] - cx, p[1] - cy) - Math.hypot(q[0] - cx, q[1] - cy))
+    const far = Math.max(1, ...spots.map(([x, y]) => Math.hypot(x - cx, y - cy)))
     const post = texture(lampCanvas(false, this.theme.lamp)),
       glass = texture(lampCanvas(true, this.theme.lamp))
-    spots.forEach(([x, y], i) => {
+    const color = new THREE.Color(this.theme.light.lamp).multiplyScalar(1.5)
+    spots.forEach(([x, y]) => {
       const mesh = standee(post, { emissive: glass })
+      this.lightmap.shade(mesh.material as THREE.Material, 'standee')
       const sx = Math.round(x / PIXEL) * PIXEL,
         sy = Math.round(y / PIXEL) * PIXEL
+      // 离镇中心越远亮得越晚，再按位置错开一点，不整圈同时亮
+      const on = 0.04 + (Math.hypot(x - cx, y - cy) / far) * 0.6 + hash(sx, sy, 17) * 0.14
       this.upright.push((t) => stand(mesh, sx, sy, t))
       this.scene.add(mesh)
-      this.glowing.push(mesh.material as THREE.Material)
-      this.addGlow(glowMap, sx, sy, 24, 120)
-      if (i >= LIT_LAMPS) return
-      const light = new THREE.PointLight(this.theme.light.lamp, 0, LAMP_REACH, 1)
-      this.upright.push((t) => onStandee(light, sx, sy, 24, t, 60))
-      this.scene.add(light)
-      this.lampLights.push(light)
+      this.glowing.push({ material: mesh.material as THREE.Material, on })
+      this.addGlow(glowMap, sx, sy, 24, 120, on)
+      this.lightSources.push({ kind: 'lamp', x: sx, y: sy, reach: LAMP_REACH, color, on })
     })
   }
 
@@ -1235,84 +1374,104 @@ export class HdScene {
   setOpenRooms(open: ReadonlySet<string>) {
     for (const [id, group] of this.houseGroups) group.visible = !open.has(id)
     for (const [id, group] of this.rooms) group.visible = open.has(id)
+    this.lightmap.setOpenRooms(open)
     this.request()
   }
 
-  /** 光照公式与演示页相同；cloud 压低日照和饱和度。now 为 false 时等下一个节拍再画（名册、天气这类环境变化） */
+  /** 按太阳高度分四段：白天、金色时刻、蓝调时刻（日落后天没黑透、环境光发蓝、灯已亮）、夜，
+   *  颜色在风格包的四组之间插值；cloud 压低日照和饱和度。now 为 false 时等下一个节拍再画（名册、天气这类环境变化） */
   private applyLight(now = true) {
     const e = Math.sin(((this.hour - 6) / 12) * Math.PI)
     const elev = (e * Math.PI) / 3,
       az = ((this.hour - 12) / 12) * Math.PI
-    const day = smooth(-0.06, 0.22, e),
-      night = 1 - smooth(-0.12, 0.1, e)
+    const day = smooth(-0.02, 0.25, e),
+      night = 1 - smooth(-0.32, -0.12, e)
     const { cloud, overcast, flash } = this.weather
+    // 蓝调：日落后到天黑前约四十分钟（e 从 0 降到 -0.25），日出前对称一段
+    const twilight = smooth(-0.3, -0.08, e) * (1 - smooth(-0.04, 0.1, e)) * (1 - night)
     this.day = day
-    const golden = Math.max(0, 1 - Math.abs(e - 0.12) / 0.3) * day * (1 - cloud)
+    const golden = Math.max(0, 1 - Math.abs(e - 0.1) / 0.25) * day * (1 - cloud)
+    // 亮灯：日落前一刻钟开始，到蓝调过半全亮；天亮前按同样的顺序熄
+    this.lit = 1 - smooth(-0.16, 0.06, e)
+    this.lightmap.setLit(this.lit)
     // 太阳在南边（镜头这一侧）偏高处：朝镜头的南墙受光，影子往北落在房子后面；
-    // 中午最偏南，早晚偏东西、斜照南墙
+    // 中午最偏南，早晚偏东西、斜照南墙；傍晚太阳压得低，影子拉得长
     const dir =
       e > -0.06
         ? new THREE.Vector3(
             -Math.sin(az) * Math.cos(elev),
-            Math.max(Math.sin(elev), 0.33),
+            Math.max(Math.sin(elev), 0.2),
             0.3 + 0.2 * Math.cos(az)
           )
         : new THREE.Vector3(-0.35, 0.8, 0.55)
     this.sun.position.copy(this.sun.target.position).addScaledVector(dir.normalize(), 12000)
     const L = this.theme.light
     const color = (hex: string) => new THREE.Color(hex)
+    /** 一组颜色按此刻的时段混出来：夜 → 白天，再往蓝调、金色时刻靠 */
+    const phase = (
+      p: { day: string; night: string; blue: string; golden?: string },
+      warm = 0.55
+    ) => {
+      const c = color(p.night).lerp(color(p.day), day).lerp(color(p.blue), twilight)
+      return p.golden ? c.lerp(color(p.golden), golden * warm) : c
+    }
     const sunColor = color(L.sun.low).lerp(color(L.sun.day), smooth(0.05, 0.6, e))
     // 闪电那一下是冷白色的强光
     this.sun.color
       .copy(new THREE.Color('#8fa6d9').lerp(sunColor, day))
       .lerp(new THREE.Color('#dce6ff'), flash)
-    // 夜里的月光和天光比演示页亮一些，游戏里要能看清人和房子
-    this.sun.intensity = (lerp(0.9, 2.7, day) + golden * 1.1) * (1 - cloud * 0.7) + flash * 6
-    // 阴天光线是漫射的：影子变淡
-    this.sun.shadow.intensity = 1 - 0.7 * overcast
-    this.hemi.color.copy(color(L.hemiSky.night).lerp(color(L.hemiSky.day), day))
-    this.hemi.groundColor.copy(color(L.hemiGround.night).lerp(color(L.hemiGround.day), day))
-    this.hemi.intensity = lerp(1.35, 1.05, day) + golden * 0.35 + cloud * 0.3 * day + flash * 2.5
-    const sky = color(L.sky.night)
-      .lerp(color(L.sky.day), day)
-      .lerp(color(L.sky.golden), golden * 0.55)
+    // 夜里的月光和天光比演示页亮一些，游戏里要能看清人和房子；蓝调时环境光为主、月光弱
+    this.sun.intensity =
+      (lerp(0.9, 2.7, day) + golden * 1.1 - twilight * 0.3) * (1 - cloud * 0.7) + flash * 6
+    // 阴天光线是漫射的：影子变淡；蓝调时天光从四面来，影子也淡
+    this.sun.shadow.intensity = (1 - 0.7 * overcast) * (1 - 0.55 * twilight)
+    this.hemi.color.copy(phase(L.hemiSky))
+    this.hemi.groundColor.copy(phase(L.hemiGround))
+    this.hemi.intensity =
+      lerp(1.35, 1.05, day) + golden * 0.35 + cloud * 0.3 * day + twilight * 0.4 + flash * 2.5
+    const sky = phase(L.sky)
     this.fog.color.copy(sky)
     this.renderer.setClearColor(sky)
     // 远景：高处的天色比海雾深、偏蓝，傍晚带一点暖色，阴天往海雾色靠；远山是压暗的海雾色
-    const top = color(L.top.night)
-      .lerp(color(L.top.day), day)
-      .lerp(color(L.top.golden), golden * 0.45)
-      .lerp(sky, overcast * 0.7)
+    const top = phase(L.top, 0.45).lerp(sky, overcast * 0.7)
     const hill = sky
       .clone()
       .multiplyScalar(0.72)
       .lerp(color(L.hill), 0.35 * day)
     this.horizon.setColors(sky, top, hill)
-    // 夜里灯只是点缀：窗户和路灯微亮，看清人和房子靠天光和对比度
-    for (const m of this.glowing) (m as THREE.MeshLambertMaterial).emissiveIntensity = night * 0.9
+    // 窗、灯罩和光晕按各自的门槛错开亮；屋顶夜里按自身颜色微亮，看清房子靠天光和对比度
+    for (const g of this.glowing)
+      (g.material as THREE.MeshLambertMaterial).emissiveIntensity = this.lightmap.level(g.on) * 0.9
+    for (const g of this.glows) g.sprite.material.opacity = this.lightmap.level(g.on) * 0.3
     for (const m of this.moonlit) m.emissiveIntensity = night * ROOF_NIGHT_GLOW
-    for (const m of this.selfLit) m.emissiveIntensity = lerp(0.3, 0.55, night)
+    for (const m of this.selfLit) m.emissiveIntensity = lerp(0.3, 0.55, Math.max(night, twilight))
     this.seaSparkle.value = lerp(0.3, 1, day) * (1 - cloud * 0.9)
-    for (const g of this.glows) g.material.opacity = night * 0.3
-    for (const l of this.lampLights) l.intensity = night * 220
-    for (const b of this.beams) (b.material as THREE.MeshBasicMaterial).opacity = night * 0.45
+    for (const b of this.beams) (b.material as THREE.MeshBasicMaterial).opacity = this.lit * 0.45
     this.horizon.setAurora(night * L.aurora)
-    this.bloom.strength = lerp(0.35, 0.5, night)
-    this.bloom.threshold = lerp(0.9, 0.82, night)
-    this.grade.uniforms.contrast.value = lerp(1, 1.15, night)
-    const tint = this.grade.uniforms.tint.value as THREE.Color
-    tint
-      .setRGB(...L.tint.day)
-      .lerp(new THREE.Color(...L.tint.golden), golden)
-      .lerp(new THREE.Color(...L.tint.night), night)
+    const dusk = Math.max(night, twilight * 0.8)
+    this.bloom.strength = lerp(0.35, 0.5, dusk)
+    this.bloom.threshold = lerp(0.9, 0.82, dusk)
+    // 地上积雪时阴影压蓝、对比稍强，雪地不再一片灰白
+    const snow = this.weather.snowLevel * day
+    this.grade.uniforms.contrast.value = lerp(1, 1.15, night) + twilight * 0.05 + snow * 0.08
+    const mixRgb = (p: Record<'day' | 'golden' | 'blue' | 'night', [number, number, number]>) =>
+      new THREE.Color(...p.day)
+        .lerp(new THREE.Color(...p.golden), golden)
+        .lerp(new THREE.Color(...p.blue), twilight)
+        .lerp(new THREE.Color(...p.night), night)
+    ;(this.grade.uniforms.tint.value as THREE.Color)
+      .copy(mixRgb(L.tint))
       .lerp(new THREE.Color(0.94, 0.98, 1.06), overcast * 0.6 * day)
+    ;(this.grade.uniforms.shade.value as THREE.Color)
+      .copy(mixRgb(L.shade))
+      .lerp(new THREE.Color(0.82, 0.9, 1.16), snow * 0.7)
     ;(this.grade.uniforms.lift.value as THREE.Color).setRGB(
-      0.004 * night,
-      0.008 * night,
-      0.02 * night
+      0.004 * night + 0.004 * twilight,
+      0.008 * night + 0.006 * twilight,
+      0.02 * night + 0.016 * twilight
     )
-    this.grade.uniforms.sat.value = L.saturation - cloud * 0.25
-    this.renderer.toneMappingExposure = lerp(1.3, 1.12, day)
+    this.grade.uniforms.sat.value = L.saturation - cloud * 0.25 - twilight * 0.05 + snow * 0.06
+    this.renderer.toneMappingExposure = lerp(1.3, 1.12, day) + twilight * 0.12
     this.motes.setLight(day, golden, cloud)
     if (now) this.request()
     else this.ambient = true
@@ -1398,6 +1557,8 @@ export class HdScene {
         m.dispose()
       }
     })
+    this.lightmap.dispose()
+    ;(this.finish.uniforms.tLook.value as THREE.Texture | null)?.dispose()
     // composer.dispose 只释放它自己的两张渲染目标，泛光等各个 pass 的渲染目标和材质要逐个释放
     for (const pass of this.composer.passes) pass.dispose()
     this.composer.dispose()

@@ -134,6 +134,10 @@ varying float vAlpha;
 varying vec3 vColor;
 void main() { gl_FragColor = vec4(vColor, vAlpha); }`
 
+/** 树冠随风摆的横向位移（世界单位）：根部为 0，越高摆得越多；树和树影共用 */
+const SWAY = /* glsl */ `sin(uTime * 1.4 + modelMatrix[3].x * 0.013 + modelMatrix[3].z * 0.007)
+  * (0.4 + uWind) * position.y * 0.03`
+
 /** 云影、积雪、湿润和摇摆：补进地面、屋顶、树的材质 */
 const SHADE_VERTEX_HEAD = /* glsl */ `
 uniform float uTime;
@@ -380,8 +384,7 @@ export class Weather3D {
           '#include <begin_vertex>',
           `#include <begin_vertex>
           // 树冠顶端随风摆，根部不动
-          transformed.x += uSway * sin(uTime * 1.4 + modelMatrix[3].x * 0.013 + modelMatrix[3].z * 0.007)
-            * (0.4 + uWind) * position.y * 0.03;`
+          transformed.x += uSway * ${SWAY};`
         )
         .replace(
           '#include <project_vertex>',
@@ -424,6 +427,30 @@ export class Weather3D {
     }
     material.customProgramCacheKey = () =>
       `${beforeKey}|weather:${surface.snow}:${surface.wet}:${surface.sway ? 1 : 0}`
+  }
+
+  /** 树影跟着树摆：投影用的深度材质补上和树冠一样的摆动 */
+  swayShadow(material: THREE.Material) {
+    const shared = this.shared
+    const before = material.onBeforeCompile.bind(material)
+    const beforeKey = material.customProgramCacheKey()
+    material.onBeforeCompile = (shader, renderer) => {
+      before(shader, renderer)
+      Object.assign(shader.uniforms, { uTime: shared.uTime, uWind: shared.uWind })
+      shader.vertexShader =
+        'uniform float uTime;\nuniform float uWind;\n' +
+        shader.vertexShader.replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+          transformed.x += ${SWAY};`
+        )
+    }
+    material.customProgramCacheKey = () => `${beforeKey}|sway`
+  }
+
+  /** 地上积雪的程度（0～1），调色按它把阴影压蓝 */
+  get snowLevel() {
+    return this.snowCover
   }
 
   get cloud() {

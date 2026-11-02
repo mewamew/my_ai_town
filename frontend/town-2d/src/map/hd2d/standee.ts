@@ -1,15 +1,24 @@
 import * as THREE from 'three'
 import { PIXEL } from '../grid'
 import type { Tilt } from './layout'
+import { pixelMaterial } from './pixelSampling'
 
 // 像素贴图与立牌：树、路灯、村民、道具都是竖在地上的像素图。
 
+/** 像素贴图：线性过滤，配 pixelMaterial 的抗锯齿采样用（见 pixelSampling.ts），
+ *  用它的材质都要过一遍 pixelMaterial，不然会糊 */
 export function texture(canvas: HTMLCanvasElement) {
   const t = new THREE.CanvasTexture(canvas)
-  t.magFilter = THREE.NearestFilter
-  t.minFilter = THREE.NearestFilter
-  t.generateMipmaps = false
+  pixelFilter(t)
   t.colorSpace = THREE.SRGBColorSpace
+  return t
+}
+
+/** 外面加载的像素图（道具）也按像素贴图过滤 */
+export function pixelFilter(t: THREE.Texture) {
+  t.magFilter = THREE.LinearFilter
+  t.minFilter = THREE.LinearFilter
+  t.generateMipmaps = false
   return t
 }
 
@@ -29,7 +38,9 @@ export function standee(
     h = fh * PIXEL * scale
   const g = new THREE.PlaneGeometry(w, h)
   g.translate(0, h / 2, 0)
-  const m = new THREE.MeshLambertMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide })
+  const m = pixelMaterial(
+    new THREE.MeshLambertMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide })
+  )
   // 立牌按俯角后仰，上半截会伸到身后：整张牌的深度都按底边算，身前的墙挡得住它，身后的墙挡不住
   m.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader.replace(
@@ -49,11 +60,13 @@ export function standee(
   const mesh = new THREE.Mesh(g, m)
   mesh.castShadow = true
   mesh.receiveShadow = true
-  const depth = new THREE.MeshDepthMaterial({
-    depthPacking: THREE.RGBADepthPacking,
-    map,
-    alphaTest: 0.5,
-  })
+  const depth = pixelMaterial(
+    new THREE.MeshDepthMaterial({
+      depthPacking: THREE.RGBADepthPacking,
+      map,
+      alphaTest: 0.5,
+    })
+  )
   mesh.customDepthMaterial = depth
   // 投影用的深度材质只挂在 customDepthMaterial 上，遍历场景时找不到，跟着主材质一起释放
   m.addEventListener('dispose', () => depth.dispose())

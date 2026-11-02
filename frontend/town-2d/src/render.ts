@@ -28,6 +28,16 @@ import { ThoughtBubbles } from './map/bubbles'
 import { ResidentLayer } from './map/residents'
 import { PromptLayer } from './map/prompts'
 import { propArtwork } from './map/propArt'
+
+/** 开发版：地址里的 ?clock=18:30&weather=rain 只替换立体场景用的时间和天气，世界本身不变。
+ *  画面改动前后按同一时刻、同一天气截图对比用；正式包里没有这段 */
+const DEV_CLOCK = import.meta.env.DEV ? devClock(new URLSearchParams(location.search)) : null
+function devClock(query: URLSearchParams) {
+  const clock = /^(\d{1,2}):(\d{2})$/.exec(query.get('clock') ?? '')
+  const minutes = clock ? Number(clock[1]) * 60 + Number(clock[2]) : undefined
+  const weather = query.get('weather') ?? undefined
+  return minutes === undefined && !weather ? null : { minutes, weather }
+}
 import type { PropPlacement } from './map/hd2d/props'
 import { avatarLookOptions, VILLAGER_HALF, VILLAGER_HEIGHT } from './map/hd2d/villagerSprite'
 import { PROP_HALF, WalkRoutes } from './map/route'
@@ -909,7 +919,10 @@ export class TownMap {
     this.weather?.handleMsg(msg)
     if (msg.type === 'roster') {
       this.lastRoster = msg
-      this.clock = [msg.sim_minutes, msg.environment?.kind]
+      this.clock = [
+        DEV_CLOCK?.minutes ?? msg.sim_minutes,
+        DEV_CLOCK?.weather ?? msg.environment?.kind,
+      ]
       this.hd?.setClock(...this.clock)
     }
     if (msg.type === 'population') {

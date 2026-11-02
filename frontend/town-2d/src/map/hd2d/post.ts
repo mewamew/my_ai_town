@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import { CopyShader } from 'three/addons/shaders/CopyShader.js'
+import type { LookParams } from '../themes/types'
 
 // 后期：真实表面深度控制前后景离焦，叠加原有上下边缘移轴模糊，再调色和暗角。
 // 调色在色调映射之前的线性空间里做，对比度以中灰 0.18 为中心按幂次拉开，暗部不会变成负数。
@@ -118,17 +119,148 @@ void main() {
 }`,
 }
 
+/** 调色：饱和、整体偏色（tint）、只乘在暗部的偏色（shade，傍晚暗处偏青、亮处保持暖）、黑位、对比、暗角 */
 export const gradeShader = {
   uniforms: {
     tDiffuse: { value: null },
     tint: { value: new THREE.Color(1, 1, 1) },
+    shade: { value: new THREE.Color(1, 1, 1) },
     sat: { value: 1.18 },
     vignette: { value: 0.55 },
     lift: { value: new THREE.Color(0, 0, 0) },
     contrast: { value: 1 },
   },
   vertexShader,
-  fragmentShader: `uniform sampler2D tDiffuse;uniform vec3 tint;uniform float sat;uniform float vignette;uniform vec3 lift;uniform float contrast;varying vec2 vUv;
-void main(){vec4 c=texture2D(tDiffuse,vUv);float l=dot(c.rgb,vec3(.2126,.7152,.0722));c.rgb=mix(vec3(l),c.rgb,sat)*tint+lift;c.rgb=.18*pow(max(c.rgb,vec3(0.))/.18,vec3(contrast));
-vec2 q=vUv-.5;q.x*=1.25;c.rgb*=mix(1.,smoothstep(.95,.25,length(q)),vignette);gl_FragColor=c;}`,
+  fragmentShader: /* glsl */ `
+uniform sampler2D tDiffuse;
+uniform vec3 tint;
+uniform vec3 shade;
+uniform float sat;
+uniform float vignette;
+uniform vec3 lift;
+uniform float contrast;
+varying vec2 vUv;
+void main() {
+  vec4 c = texture2D(tDiffuse, vUv);
+  float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+  c.rgb = mix(vec3(l), c.rgb, sat) * tint;
+  c.rgb *= mix(shade, vec3(1.0), smoothstep(0.02, 0.45, l));
+  c.rgb += lift;
+  c.rgb = 0.18 * pow(max(c.rgb, vec3(0.0)) / 0.18, vec3(contrast));
+  vec2 q = vUv - 0.5;
+  q.x *= 1.25;
+  c.rgb *= mix(1.0, smoothstep(0.95, 0.25, length(q)), vignette);
+  gl_FragColor = c;
+}`,
+}
+
+/** 3D LUT 的边长 */
+const LOOK_SIZE = 32
+
+/** 风格包的胶片色调烘成一张 32³ 的 3D LUT：S 形对比、抬黑位、高光偏暖、暗部偏青、草绿偏移。
+ *  在色调映射之后的显示空间里用（见 finishShader），以后换成美术调好的 LUT 只要换这张图 */
+export function lookTexture(look: LookParams) {
+  const n = LOOK_SIZE
+  const data = new Uint8Array(n * n * n * 4)
+  const smooth = (a: number, b: number, x: number) => {
+    const t = Math.max(0, Math.min(1, (x - a) / (b - a)))
+    return t * t * (3 - 2 * t)
+  }
+  for (let bi = 0; bi < n; bi++)
+    for (let gi = 0; gi < n; gi++)
+      for (let ri = 0; ri < n; ri++) {
+        let [r, g, b] = [ri / (n - 1), gi / (n - 1), bi / (n - 1)]
+        // 草绿：色相落在绿区的颜色往黄绿或青绿挪一点、降一点饱和
+        const [h, s, v] = rgbToHsv(r, g, b)
+        const green = smooth(60, 95, h) * (1 - smooth(150, 185, h)) * smooth(0.08, 0.3, s)
+        if (green > 0 && look.greens !== 0) {
+          ;[r, g, b] = hsvToRgb(
+            h - look.greens * 260 * green,
+            s * (1 - Math.abs(look.greens) * 2.5 * green),
+            v
+          )
+        }
+        // S 形对比和抬起的黑位
+        const curve = (x: number) => {
+          const k = x + (x * x * (3 - 2 * x) - x) * look.contrast * 2
+          return look.lift + k * (1 - look.lift)
+        }
+        r = curve(r)
+        g = curve(g)
+        b = curve(b)
+        // 高光偏暖、暗部偏青
+        const l = 0.2126 * r + 0.7152 * g + 0.0722 * b
+        const hi = smooth(0.45, 1, l) * look.warm,
+          lo = (1 - smooth(0, 0.45, l)) * look.teal
+        r += hi * 0.55 - lo * 0.45
+        g += hi * 0.12 + lo * 0.1
+        b += -hi * 0.5 + lo * 0.35
+        const o = (ri + gi * n + bi * n * n) * 4
+        data[o] = Math.round(Math.max(0, Math.min(1, r)) * 255)
+        data[o + 1] = Math.round(Math.max(0, Math.min(1, g)) * 255)
+        data[o + 2] = Math.round(Math.max(0, Math.min(1, b)) * 255)
+        data[o + 3] = 255
+      }
+  const t = new THREE.Data3DTexture(data, n, n, n)
+  t.format = THREE.RGBAFormat
+  t.type = THREE.UnsignedByteType
+  t.magFilter = t.minFilter = THREE.LinearFilter
+  t.wrapS = t.wrapT = t.wrapR = THREE.ClampToEdgeWrapping
+  t.unpackAlignment = 1
+  t.needsUpdate = true
+  return t
+}
+
+function rgbToHsv(r: number, g: number, b: number): [number, number, number] {
+  const max = Math.max(r, g, b),
+    min = Math.min(r, g, b),
+    d = max - min
+  let h = 0
+  if (d > 0) {
+    if (max === r) h = 60 * (((g - b) / d) % 6)
+    else if (max === g) h = 60 * ((b - r) / d + 2)
+    else h = 60 * ((r - g) / d + 4)
+  }
+  return [(h + 360) % 360, max ? d / max : 0, max]
+}
+
+function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
+  h = ((h % 360) + 360) % 360
+  s = Math.max(0, Math.min(1, s))
+  const c = v * s,
+    x = c * (1 - Math.abs(((h / 60) % 2) - 1)),
+    m = v - c
+  const [r, g, b] =
+    h < 60
+      ? [c, x, 0]
+      : h < 120
+        ? [x, c, 0]
+        : h < 180
+          ? [0, c, x]
+          : h < 240
+            ? [0, x, c]
+            : h < 300
+              ? [x, 0, c]
+              : [c, 0, x]
+  return [r + m, g + m, b + m]
+}
+
+/** 最后一遍，在色调映射和转 sRGB 之后：套风格包的胶片 LUT */
+export const finishShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    tLook: { value: null as THREE.Data3DTexture | null },
+    lookAmount: { value: 1 },
+  },
+  vertexShader,
+  fragmentShader: /* glsl */ `
+uniform sampler2D tDiffuse;
+uniform sampler3D tLook;
+uniform float lookAmount;
+varying vec2 vUv;
+void main() {
+  vec4 c = texture2D(tDiffuse, vUv);
+  vec3 graded = texture(tLook, clamp(c.rgb, 0.0, 1.0) * ${((LOOK_SIZE - 1) / LOOK_SIZE).toFixed(6)} + ${(0.5 / LOOK_SIZE).toFixed(6)}).rgb;
+  gl_FragColor = vec4(mix(c.rgb, graded, lookAmount), c.a);
+}`,
 }

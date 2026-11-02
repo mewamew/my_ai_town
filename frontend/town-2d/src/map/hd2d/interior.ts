@@ -4,6 +4,7 @@ import { hash } from '../pixel/noise'
 import type { BuildingKind } from '../buildings'
 import { WALL_TEXEL, type House, type Tilt } from './layout'
 import { texture } from './standee'
+import { pixelMaterial } from './pixelSampling'
 import { wallBase } from './textures'
 import { planPartition, type Partition } from './partition'
 import type { InteriorPalette } from '../themes/interiors'
@@ -390,9 +391,11 @@ function partitionWalls(group: THREE.Group, house: House, plan: Partition, m: Wa
   const post = new THREE.MeshLambertMaterial({ color: house.interior.trim })
   for (const [a, b] of plan.segments) {
     const along = Math.max(2, Math.round((b - a) / PIXEL))
-    const skin = new THREE.MeshLambertMaterial({
-      map: texture(partitionCanvas(along, texels, house.interior)),
-    })
+    const skin = pixelMaterial(
+      new THREE.MeshLambertMaterial({
+        map: texture(partitionCanvas(along, texels, house.interior)),
+      })
+    )
     const faces = plan.alongX
       ? [m.inner, m.inner, m.cap, m.cap, skin, m.inner]
       : [skin, skin, m.cap, m.cap, m.inner, m.inner]
@@ -428,7 +431,9 @@ function addRug(group: THREE.Group, house: House, rug: string, plan: Partition |
     rh = Math.max(8, Math.round(box.h / PIXEL))
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(rw * PIXEL, rh * PIXEL),
-    new THREE.MeshLambertMaterial({ map: texture(rugCanvas(rw, rh, rug, house.seed)) })
+    pixelMaterial(
+      new THREE.MeshLambertMaterial({ map: texture(rugCanvas(rw, rh, rug, house.seed)) })
+    )
   )
   mesh.rotation.x = -Math.PI / 2
   mesh.position.set(box.x, 0.4, box.z)
@@ -449,12 +454,14 @@ export function interior(house: House, door?: [number, number], points: [number,
     outer: new THREE.MeshLambertMaterial({ color: wallBase(house) }),
     inner: new THREE.MeshLambertMaterial({ color: house.interior.paper }),
     cap: new THREE.MeshLambertMaterial({ color: WALL_CAP }),
-    face: new THREE.MeshLambertMaterial({
-      map: texture(art.map),
-      emissiveMap: texture(art.glow),
-      emissive: '#ffffff',
-      emissiveIntensity: 0,
-    }),
+    face: pixelMaterial(
+      new THREE.MeshLambertMaterial({
+        map: texture(art.map),
+        emissiveMap: texture(art.glow),
+        emissive: '#ffffff',
+        emissiveIntensity: 0,
+      })
+    ),
   }
   outerWalls(group, house, door, H, materials)
   if (PILLARED.has(house.kind)) pillars(group, house, H)

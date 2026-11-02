@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { pixelMaterial } from './pixelSampling'
 import { PIXEL } from '../grid'
 import { WALL_TEXEL, type House } from './layout'
 import { texture } from './standee'
@@ -75,7 +76,9 @@ export function lighthouseTower(
   const group = new THREE.Group()
   const body = new THREE.Mesh(
     new THREE.CylinderGeometry(radius * 0.8, radius, towerH, 16),
-    new THREE.MeshLambertMaterial({ map: stripes(Math.round(towerH / WALL_TEXEL), ruined) })
+    pixelMaterial(
+      new THREE.MeshLambertMaterial({ map: stripes(Math.round(towerH / WALL_TEXEL), ruined) })
+    )
   )
   body.position.y = towerH / 2
   group.position.set(side * (house.w / 2 - radius * 1.2), 0, 0)
