@@ -9,6 +9,7 @@ import { MARGIN, PIXEL } from '../grid'
 import { noise, rng } from '../pixel/noise'
 import { WEATHER_LEVELS, type WeatherLevels } from '../weatherLevels'
 import { hashNoise } from './glsl'
+import { REFLECTION_SKIP, wetReflection, type Reflection } from './reflection'
 
 // 立体场景里的天气：雨丝、落地水花、雪花、落叶是场景里的粒子；地面变湿、积水、积雪、云影和树随风摆
 // 是给地面、屋顶、树的材质补的一段着色器。天气强度几秒内平滑过渡；湿度和积雪按游戏时间累积和消退。
@@ -252,9 +253,11 @@ export class Weather3D {
     this.leaves.geometry.setAttribute('aColor', new THREE.BufferAttribute(leafColors, 3))
     for (const o of [this.rain, this.splash, this.snow, this.leaves]) {
       o.frustumCulled = false
+      o.layers.set(REFLECTION_SKIP)
       scene.add(o)
     }
     this.puddles = puddleMesh(terrain, seed)
+    this.puddles.layers.set(REFLECTION_SKIP)
     flat.add(this.puddles)
 
     window.addEventListener(
@@ -434,6 +437,11 @@ export class Weather3D {
     }
     material.customProgramCacheKey = () =>
       `${beforeKey}|weather:${surface.snow}:${surface.wet}:${surface.sway ? 1 : 0}`
+  }
+
+  /** 积水映出岸上的灯、窗和房子（见 reflection.ts） */
+  reflectPuddles(uniforms: Reflection['uniforms']) {
+    wetReflection(this.puddles.material as THREE.Material, uniforms, 'puddle')
   }
 
   /** 树影跟着树摆：投影用的深度材质补上和树冠一样的摆动 */

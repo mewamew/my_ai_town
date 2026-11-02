@@ -4,6 +4,7 @@ import { bayer, fbm, hash, rng } from '../pixel/noise'
 import type { Tilt } from './layout'
 import { texture } from './standee'
 import { pixelMaterial } from './pixelSampling'
+import { REFLECTION_SKIP } from './reflection'
 import type { IsletPalette } from '../themes/types'
 
 // 远景：正交镜头下东西不会因为远而变小，海面不会自己收成一条线，所以在北边（画面上方）
@@ -313,6 +314,8 @@ export class Horizon {
     geometry.translate(0, 100000, 0)
     this.backdrop = new THREE.Mesh(geometry, this.sky)
     this.backdrop.position.set((box.x0 + box.x1) / 2, 0, horizon)
+    // 天幕不进倒影：水里没映着东西的地方由材质自己映天色
+    this.backdrop.layers.set(REFLECTION_SKIP)
     scene.add(this.backdrop)
     this.addIslets(scene, box, horizon, seed)
   }
@@ -430,6 +433,8 @@ export class Horizon {
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size), material)
       mesh.rotation.x = -Math.PI / 2
       mesh.position.set(x, 0.5, z)
+      // 平铺在海上的小岛不进倒影
+      mesh.layers.set(REFLECTION_SKIP)
       mesh.receiveShadow = true
       scene.add(mesh)
     })

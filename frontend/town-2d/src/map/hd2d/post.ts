@@ -12,6 +12,9 @@ import type { LookParams } from '../themes/types'
  *  独立目标在后续模糊期间保持只读，避免 composer 交换缓冲时覆盖深度或产生读写反馈。 */
 export class SceneDepthPass extends RenderPass {
   captureDepth = true
+  /** 画场景之前先做的事（画倒影）、改尺寸时跟着改的东西（倒影图） */
+  prepare?: (renderer: THREE.WebGLRenderer) => void
+  onResize?: (width: number, height: number) => void
   private readonly target = new THREE.WebGLRenderTarget(1, 1, {
     type: THREE.HalfFloatType,
     depthTexture: new THREE.DepthTexture(1, 1, THREE.UnsignedIntType),
@@ -31,6 +34,15 @@ export class SceneDepthPass extends RenderPass {
 
   override setSize(width: number, height: number) {
     this.target.setSize(width, height)
+    this.onResize?.(width, height)
+  }
+
+  /** 多重采样（高档以上 4×）：房子边缘和屋顶斜线不爬锯齿，深度一起解析 */
+  setSamples(samples: number) {
+    if (this.target.samples === samples) return
+    this.target.samples = samples
+    // 渲染目标的多重采样在第一次用时建好，换采样数要释放重建
+    this.target.dispose()
   }
 
   override render(
@@ -40,6 +52,7 @@ export class SceneDepthPass extends RenderPass {
     deltaTime: number,
     maskActive: boolean
   ) {
+    this.prepare?.(renderer)
     if (!this.captureDepth) {
       super.render(renderer, writeBuffer, readBuffer, deltaTime, maskActive)
       return

@@ -49,6 +49,8 @@ import {
 } from './post'
 import { LightMap, type LightSource } from './lightmap'
 import { BokehPass, GlowPass } from './lens'
+import { Reflection, REFLECTION_SKIP, wetReflection } from './reflection'
+import { groundAo, groundOcclusion, wallAo, type Contact } from './ao'
 import { VolumetricPass } from './volumetric'
 import { pixelMaterial } from './pixelSampling'
 import { landmarkSprites } from './landmarks'
@@ -184,6 +186,26 @@ function windowSpans(emissive: HTMLCanvasElement) {
   return spans
 }
 
+/** 不画的面（房子贴地的底面） */
+const HIDDEN = new THREE.MeshBasicMaterial({ visible: false })
+
+/** 水的粗格子：16 个地面像素一格，格子里有水就记下；外圈是干海床时只算池塘 */
+const WATER_CELL = 16
+function waterGridOf(ground: Ground, outerWater: boolean) {
+  const { width: pw, height: ph, wet, depth } = ground
+  const gw = Math.ceil(pw / WATER_CELL),
+    gh = Math.ceil(ph / WATER_CELL)
+  const cells = new Uint8Array(gw * gh)
+  for (let y = 0; y < ph; y++)
+    for (let x = 0; x < pw; x++) {
+      const i = y * pw + x
+      // 干海床的「水」像素是旧海床，不反光；池塘离岸近、depth 小
+      if (wet[i] && (outerWater || depth[i] < 6))
+        cells[((y / WATER_CELL) | 0) * gw + ((x / WATER_CELL) | 0)] = 1
+    }
+  return { cells, gw, gh, outerWater }
+}
+
 /** 一栋房子的窗和灯在入夜后什么时候亮（亮灯程度的门槛），按房子编号错开 */
 const houseLightsOn = (house: House) => 0.12 + hash(house.seed, 3, 11) * 0.62
 
@@ -232,6 +254,17 @@ export class HdScene {
   /** 地面光照图：所有灯、门、窗和掀开的屋子把光洒在地上，地面、墙和立牌按它受光 */
   private readonly lightmap: LightMap
   private readonly lightSources: LightSource[] = []
+  /** 水面倒影（见 reflection.ts）；视野里有没有水，没有且地不湿时不画倒影 */
+  private readonly reflection = new Reflection()
+  private waterVisible = true
+  /** 粗格子（16 个地面像素一格）：这一格里有没有水；地面画布以外都是海 */
+  private waterGrid: { cells: Uint8Array; gw: number; gh: number } | null = null
+  /** 镜头看着的地面点（世界坐标），倒影镜头按它翻转 */
+  private readonly viewTarget = new THREE.Vector3()
+  /** 地面材质：烘好遮蔽图后接上 */
+  private landMaterial: THREE.MeshPhongMaterial | null = null
+  /** 树根、灯杆、地标脚下的接触阴影，最后和房子一起烘进地面遮蔽图 */
+  private readonly contacts: Contact[] = []
   /** 夜里亮灯的程度：日落前后从 0 升到 1，各盏灯按自己的门槛亮起 */
   private lit = 0
   /** 灯塔转动的光束（冰雪风格） */
@@ -309,6 +342,9 @@ export class HdScene {
 
     this.fog = new THREE.FogExp2(theme.light.sky.day, FOG_DENSITY * theme.light.fog)
     this.weather = new Weather3D(this.scene, this.flat, ground, seed)
+    this.weather.reflectPuddles(this.reflection.uniforms)
+    // 主镜头也看「不进倒影」的那一层（地面、海、积水、粒子）
+    this.camera.layers.enable(REFLECTION_SKIP)
     this.horizon = new Horizon(
       this.scene,
       { x0: fromPx(0), z0: fromPx(0), x1: fromPx(ground.width), z1: fromPx(ground.height) },
@@ -334,13 +370,31 @@ export class HdScene {
     this.addTrees(decor, clear, seed)
     this.addLamps(atlas, ground.wet, ground.width, glowMap)
     this.lightmap.setSources(this.lightSources)
+    // 房子、树根、灯杆、地标脚下的遮蔽烘进地面；粗格子记下哪里有水，没水时不画倒影
+    if (this.landMaterial)
+      groundAo(
+        this.landMaterial,
+        groundOcclusion(ground.width, ground.height, this.houses, this.contacts)
+      )
+    this.waterGrid = waterGridOf(ground, theme.outer !== 'seabed')
     this.motes = new Motes(clear, seed, theme.motes)
+    this.motes.points.layers.set(REFLECTION_SKIP)
     this.scene.add(this.motes.points)
     this.scene.fog = this.fog
     this.setupSun(atlas)
     const post = createComposer(this.renderer, this.scene, this.camera)
     this.composer = post.composer
     this.sceneDepth = post.sceneDepth
+    // 画场景之前先画倒影：这时镜头已经按这一帧挪好
+    this.sceneDepth.prepare = (renderer) =>
+      this.reflection.render(
+        renderer,
+        this.scene,
+        this.camera,
+        this.viewTarget,
+        this.waterVisible || this.weather.wetLevel > 0.05
+      )
+    this.sceneDepth.onResize = (w, h) => this.reflection.setSize(w, h)
     this.bloom = post.bloom
     this.bokeh = post.bokeh
     this.volumetric = post.volumetric
@@ -596,6 +650,9 @@ export class HdScene {
     this.sceneDepth.captureDepth = !low
     for (const p of this.tiltShift) p.enabled = mid
     this.bokeh.enabled = !low && !mid
+    // 倒影镜头和多重采样只在高档以上；中档海面只反射天色和日光路径
+    this.reflection.enabled = !low && !mid
+    this.sceneDepth.setSamples(!low && !mid ? 4 : 0)
     this.volumetric.enabled = !low && !mid
     this.finish.uniforms.grain.value = low ? 0 : mid ? 0.025 : 0.035
     this.finish.uniforms.aberration.value = low || mid ? 0 : 0.012
@@ -871,15 +928,24 @@ export class HdScene {
     ground.position.set(-MARGIN + w / 2, 0, -MARGIN + h / 2)
     ground.receiveShadow = true
     const coast = coastTexture(terrain.depth, terrain.shore, pw, ph)
-    const { material, time, sparkle, sunPath } = outerMaterial(coast, this.horizon.haze, this.theme)
+    const { material, time, sparkle, sunPath } = outerMaterial(
+      coast,
+      this.horizon.haze,
+      this.theme,
+      this.reflection.uniforms
+    )
     // 海面也有云影，风和雨从天气里来
     this.weather.shade(material, { snow: 0, wet: 0 })
     if (this.theme.outer === 'sea') surfOnLand(landMaterial, coast, time, this.theme)
     this.lightmap.shade(landMaterial, 'ground')
+    wetReflection(landMaterial, this.reflection.uniforms, 'ground')
+    this.landMaterial = landMaterial
     const sea = new THREE.Mesh(new THREE.PlaneGeometry(w * 6, h * 6), material)
     sea.rotation.x = -Math.PI / 2
     sea.position.set(ground.position.x, -1, ground.position.z)
     sea.receiveShadow = true
+    ground.layers.set(REFLECTION_SKIP)
+    sea.layers.set(REFLECTION_SKIP)
     this.flat.add(ground, sea)
     return { time, sparkle, sunPath }
   }
@@ -926,13 +992,15 @@ export class HdScene {
     this.addWindowLights(house, wall.emissive, on)
     this.weather.shade(front, { snow: 0, wet: 0.5 })
     this.lightmap.shade(front, 'wall')
+    wallAo(front, wallH)
     const top = new THREE.MeshLambertMaterial({ color: WALL_CAP, emissive: WALL_CAP })
     this.weather.shade(top, { snow: 1, wet: 0.5 })
+    // 底面贴着地面，主画面里看不到；倒影镜头从水面下往上看时它会挡住墙，不画
     const body = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, h), [
       front,
       front,
       top,
-      top,
+      HIDDEN,
       front,
       front,
     ])
@@ -1166,6 +1234,7 @@ export class HdScene {
         sy = Math.round(s.y / PIXEL) * PIXEL
       this.upright.push((t) => stand(mesh, sx, sy, t))
       this.scene.add(mesh)
+      this.contacts.push({ x: sx, y: sy, r: Math.max(3, width * 0.4), strength: 0.3 })
       const clear = Math.ceil(width / 2) + 3
       for (let dy = -Math.ceil(s.canvas.height * 0.6); dy <= 4; dy++)
         for (let dx = -clear; dx <= clear; dx++) {
@@ -1286,6 +1355,7 @@ export class HdScene {
       if (v.kind === 'grass' || v.kind === 'flowers') continue
       const { r, variant, bush } = treeShape(v)
       add(v.x, v.y, r, variant, bush, 1)
+      this.contacts.push({ x: v.x, y: v.y, r: r * 0.85, strength: bush ? 0.28 : 0.38 })
     }
     const { width: pw, height: ph, open } = terrain
     const random = rng(seed + 12)
@@ -1318,6 +1388,7 @@ export class HdScene {
         if (placed.some(([px, py, pr]) => Math.hypot(px - x, py - y) < (pr + r) * 0.8)) continue
         placed.push([x, y, r])
         add(fromPx(x), fromPx(y), r, Math.floor(random() * 3), bush, 1.3)
+        this.contacts.push({ x: fromPx(x), y: fromPx(y), r: r * 1.1, strength: bush ? 0.28 : 0.38 })
       }
   }
 
@@ -1372,6 +1443,7 @@ export class HdScene {
       this.glowing.push({ material: mesh.material as THREE.Material, on })
       this.addGlow(glowMap, sx, sy, 24, 120, on)
       this.lightSources.push({ kind: 'lamp', x: sx, y: sy, reach: LAMP_REACH, color, on })
+      this.contacts.push({ x: sx, y: sy, r: 2.5, strength: 0.3 })
     })
   }
 
@@ -1525,6 +1597,7 @@ export class HdScene {
       .multiplyScalar(0.72)
       .lerp(color(L.hill), 0.35 * day)
     this.horizon.setColors(sky, top, hill)
+    this.reflection.uniforms.uReflSky.value.copy(top)
     // 窗、灯罩和光晕按各自的门槛错开亮；屋顶夜里按自身颜色微亮，看清房子靠天光和对比度
     for (const g of this.glowing)
       (g.material as THREE.MeshLambertMaterial).emissiveIntensity = this.lightmap.level(g.on) * 0.9
@@ -1560,10 +1633,43 @@ export class HdScene {
     )
     this.grade.uniforms.sat.value = L.saturation - cloud * 0.25 - twilight * 0.05 + snow * 0.06
     this.renderer.toneMappingExposure = lerp(1.3, 1.12, day) + twilight * 0.12
+    // 立牌轮廓光：太阳在画面上的方向（镜头的右、上分量），侧光、逆光时亮，傍晚最明显
+    const { sin: ps, cos: pc, yawSin: ys, yawCos: yc } = this.tilt
+    const sx = dir.dot(new THREE.Vector3(yc, 0, -ys)),
+      sy = dir.dot(new THREE.Vector3(-ys * ps, pc, -yc * ps)),
+      sz = dir.dot(new THREE.Vector3(ys * pc, ps, yc * pc))
+    const rim =
+      (golden * 0.9 * Math.min(1, Math.abs(sx) * 1.2) + Math.max(0, -sz) * 0.6 * day) *
+      (1 - cloud * 0.8)
+    this.lightmap.setRim(
+      new THREE.Vector2(sx, sy).normalize(),
+      this.sun.color.clone().multiplyScalar(this.sun.intensity * rim * 0.6),
+      new THREE.Vector2(yc, -ys)
+    )
+    // 倒影越接近街景越亮，俯视时淡
+    this.reflection.strength = lerp(0.3, 0.12, smooth(40, PITCH_MAX, this.pitchDegrees))
     this.applySky(e, day, night, twilight, golden, dir)
     this.motes.setLight(day, golden, cloud)
     if (now) this.request()
     else this.ambient = true
+  }
+
+  /** 视野里有没有水：视野四角在地面上的外接框碰到有水的格子，或者伸出了地面画布（外面都是海） */
+  private waterInView(target: THREE.Vector3, w: number, h: number) {
+    const grid = this.waterGrid
+    if (!grid) return true
+    const { yawSin, yawCos } = this.tilt
+    const ex = (Math.abs(yawCos) * w + Math.abs(yawSin) * h) / 2,
+      ez = (Math.abs(yawSin) * w + Math.abs(yawCos) * h) / 2
+    const cell = WATER_CELL * PIXEL
+    const x0 = Math.floor((target.x - ex + MARGIN) / cell),
+      x1 = Math.floor((target.x + ex + MARGIN) / cell)
+    const z0 = Math.floor((target.z - ez + MARGIN) / cell),
+      z1 = Math.floor((target.z + ez + MARGIN) / cell)
+    if (x0 < 0 || z0 < 0 || x1 >= grid.gw || z1 >= grid.gh) return this.theme.outer !== 'seabed'
+    for (let z = z0; z <= z1; z++)
+      for (let x = x0; x <= x1; x++) if (grid.cells[z * grid.gw + x]) return true
+    return false
   }
 
   /** 天上和空气里的东西跟着时段走：日月星辰、彩虹、闪电、海面的日光路径，体积光的雾和光柱 */
@@ -1671,6 +1777,9 @@ export class HdScene {
     cam.lookAt(target)
     cam.updateProjectionMatrix()
     this.volumetric.setView(cam)
+    this.viewTarget.copy(target)
+    this.reflection.uniforms.uReflStreak.value.set(-yawSin, -yawCos).multiplyScalar(6 * PIXEL)
+    this.waterVisible = this.waterInView(target, w, h)
     this.updateTiltShift()
     this.request()
   }
@@ -1715,6 +1824,7 @@ export class HdScene {
       }
     })
     this.lightmap.dispose()
+    this.reflection.dispose()
     ;(this.finish.uniforms.tLook.value as THREE.Texture | null)?.dispose()
     // composer.dispose 只释放它自己的两张渲染目标，泛光等各个 pass 的渲染目标和材质要逐个释放
     for (const pass of this.composer.passes) pass.dispose()

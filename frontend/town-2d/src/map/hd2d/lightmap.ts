@@ -98,6 +98,9 @@ uniform sampler2D uLightMap;
 uniform vec2 uLightOrigin;
 uniform vec2 uLightSize;
 uniform float uLightGain;
+uniform vec2 uRimDir;
+uniform vec3 uRimSun;
+uniform vec2 uRimRight;
 float lightBayer2(vec2 a) { a = floor(a); return fract(dot(a, vec2(0.5, a.y * 0.75))); }
 float lightBayer(vec2 a) { return lightBayer2(0.5 * a) * 0.25 + lightBayer2(a); }
 vec3 lightAt(vec2 xz) {
@@ -108,6 +111,26 @@ vec3 lightAt(vec2 xz) {
   float q = floor(m * 5.0 + lightBayer(cell)) / 5.0;
   return l * (q / m) * uLightGain;
 }`
+
+/** 立牌的轮廓光：贴图透明度在四邻的差给出这一格边缘朝外的方向（画面上的方向），
+ *  和太阳在画面上的方向一致时亮（傍晚侧光、逆光）；灯按光照图在脚底左右的差找到在哪一边，人从灯下走过，
+ *  朝灯那一侧的边亮。只亮最外一格，保持像素感 */
+const RIM = /* glsl */ `
+  #ifdef USE_MAP
+  {
+    vec2 rimTexel = 1.0 / vec2(textureSize(map, 0));
+    float aL = texture2D(map, vMapUv - vec2(rimTexel.x, 0.0)).a, aR = texture2D(map, vMapUv + vec2(rimTexel.x, 0.0)).a;
+    float aD = texture2D(map, vMapUv - vec2(0.0, rimTexel.y)).a, aU = texture2D(map, vMapUv + vec2(0.0, rimTexel.y)).a;
+    vec2 outward = vec2(aL - aR, aD - aU);
+    if (dot(outward, outward) > 0.09) {
+      vec2 n = normalize(outward);
+      vec3 rimLight = uRimSun * max(dot(n, uRimDir), 0.0);
+      float side = dot(lightAt(vLightFoot + uRimRight * ${(6 * PIXEL).toFixed(1)}) - lightAt(vLightFoot - uRimRight * ${(6 * PIXEL).toFixed(1)}), vec3(0.3, 0.5, 0.2));
+      rimLight += lightAt(vLightFoot) * 1.6 * max(dot(n, normalize(vec2(side, 0.35))), 0.0) * smoothstep(0.01, 0.12, abs(side) + 0.04);
+      lamp += rimLight;
+    }
+  }
+  #endif`
 
 /** 受光的方式：地面逐像素格；墙按墙外一格取、越高越暗；立牌按脚底取、越高越暗 */
 export type LightSurface = 'ground' | 'wall' | 'standee'
@@ -125,6 +148,9 @@ export class LightMap {
     uLightOrigin: { value: THREE.Vector2 }
     uLightSize: { value: THREE.Vector2 }
     uLightGain: { value: number }
+    uRimDir: { value: THREE.Vector2 }
+    uRimSun: { value: THREE.Color }
+    uRimRight: { value: THREE.Vector2 }
   }
   private sources: LightSource[] = []
   private levels = new Float32Array(0)
@@ -179,6 +205,9 @@ export class LightMap {
       uLightOrigin: { value: origin },
       uLightSize: { value: size },
       uLightGain: { value: 1 },
+      uRimDir: { value: new THREE.Vector2(0, 1) },
+      uRimSun: { value: new THREE.Color(0, 0, 0) },
+      uRimRight: { value: new THREE.Vector2(1, 0) },
     }
   }
 
@@ -308,7 +337,8 @@ export class LightMap {
             ? `vec3 lampN = normalize(vLightNormal);
               vec3 lamp = lightAt(vLightFoot + lampN.xz * ${(1.5 * PIXEL).toFixed(1)})
                 * exp(-max(vLightHeight, 0.0) / ${(36 * PIXEL).toFixed(1)}) * (1.0 - max(lampN.y, 0.0));`
-            : `vec3 lamp = lightAt(vLightFoot) * mix(1.0, 0.45, clamp(vLightHeight / ${(60 * PIXEL).toFixed(1)}, 0.0, 1.0));`
+            : `vec3 lamp = lightAt(vLightFoot) * mix(1.0, 0.45, clamp(vLightHeight / ${(60 * PIXEL).toFixed(1)}, 0.0, 1.0));
+              ${RIM}`
       shader.fragmentShader =
         'varying vec2 vLightFoot;\nvarying float vLightHeight;\nvarying vec3 vLightNormal;\n' +
         SAMPLE +
@@ -324,6 +354,13 @@ export class LightMap {
     }
     material.customProgramCacheKey = () => `${beforeKey}|lightmap:${surface}`
     return material
+  }
+
+  /** 太阳在画面上的方向（右、上）和轮廓光的颜色强度；镜头右手方向在地图上的朝向（找灯在哪边用） */
+  setRim(dir: THREE.Vector2, color: THREE.Color, right: THREE.Vector2) {
+    this.uniforms.uRimDir.value.copy(dir)
+    this.uniforms.uRimSun.value.copy(color)
+    this.uniforms.uRimRight.value.copy(right)
   }
 
   /** 光照图贴图：体积光按它给灯上方的雾加光晕 */

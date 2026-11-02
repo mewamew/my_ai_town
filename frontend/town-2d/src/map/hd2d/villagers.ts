@@ -2,10 +2,13 @@ import * as THREE from 'three'
 import { PIXEL } from '../grid'
 import type { Tilt } from './layout'
 import { stand, standee, texture } from './standee'
+import { contactTexture } from './ao'
+import { REFLECTION_SKIP } from './reflection'
 import {
   DIRECTIONS,
   FRAME_H,
   FRAME_W,
+  VILLAGER_HALF,
   VILLAGER_SCALE,
   villagerAtlas,
   type Direction,
@@ -69,6 +72,8 @@ interface Sample {
 
 interface Villager {
   mesh: THREE.Mesh
+  /** 脚下的像素暗斑 */
+  contact: THREE.Mesh
   map: THREE.Texture
   look: string
   at: [number, number]
@@ -86,8 +91,21 @@ interface Villager {
   faceToward?: [number, number]
 }
 
+/** 脚下暗斑的大小（地图单位）：比人略宽，平放在地上 */
+const CONTACT_W = VILLAGER_HALF * 2.4
+
 export class Villagers {
   private readonly all = new Map<string, Villager>()
+  private readonly contactGeometry = new THREE.PlaneGeometry(CONTACT_W, CONTACT_W * 0.7).rotateX(
+    -Math.PI / 2
+  )
+  private readonly contactMaterial = new THREE.MeshBasicMaterial({
+    map: contactTexture(),
+    color: '#000000',
+    transparent: true,
+    opacity: 0.42,
+    depthWrite: false,
+  })
   private readonly atlases = new Map<string, THREE.Texture>()
   /** 最新一份名册在时间轴上的时刻（毫秒），每来一份加一拍 */
   private latest = 0
@@ -150,7 +168,7 @@ export class Villagers {
         changed = true
       }
       if (v.mesh.visible !== p.visible) changed = true
-      v.mesh.visible = p.visible
+      v.mesh.visible = v.contact.visible = p.visible
       const color = (v.mesh.material as THREE.MeshLambertMaterial).color
       const tint = color.getHex()
       color.set(TINT[p.condition])
@@ -313,8 +331,13 @@ export class Villagers {
     const mesh = standee(map, { scale: VILLAGER_SCALE, frame: [FRAME_W, FRAME_H] })
     this.prepare?.(mesh.material as THREE.Material)
     this.scene.add(mesh)
+    const contact = new THREE.Mesh(this.contactGeometry, this.contactMaterial)
+    contact.layers.set(REFLECTION_SKIP)
+    contact.renderOrder = 1
+    this.scene.add(contact)
     const v: Villager = {
       mesh,
+      contact,
       map,
       look: p.look,
       at: [p.x, p.y],
@@ -335,6 +358,7 @@ export class Villagers {
     v.at = [x, y]
     // 往镜头方向挪一个像素，站在同一处的道具前面
     stand(v.mesh, x + v.offset[0], y + v.offset[1], this.tilt, PIXEL)
+    v.contact.position.set(x + v.offset[0], 0.35, y + v.offset[1])
   }
 
   private face(v: Villager) {
@@ -351,7 +375,7 @@ export class Villagers {
   private remove(id: string) {
     const v = this.all.get(id)
     if (!v) return
-    this.scene.remove(v.mesh)
+    this.scene.remove(v.mesh, v.contact)
     v.mesh.geometry.dispose()
     ;(v.mesh.material as THREE.Material).dispose()
     v.map.dispose()
@@ -361,5 +385,8 @@ export class Villagers {
   dispose() {
     for (const id of [...this.all.keys()]) this.remove(id)
     for (const a of this.atlases.values()) a.dispose()
+    this.contactGeometry.dispose()
+    this.contactMaterial.map?.dispose()
+    this.contactMaterial.dispose()
   }
 }

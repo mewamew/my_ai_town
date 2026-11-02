@@ -4,6 +4,7 @@ import { MAX_DEPTH } from '../pixel/island'
 import { hashNoise } from './glsl'
 import { addHaze, type HazeUniforms } from './horizon'
 import type { MapTheme } from '../themes/types'
+import { REFLECTION_SAMPLE, type Reflection } from './reflection'
 
 // 海面：一整块平面垫在地面下面，地面贴图上水的像素是透明的，露出海。
 // 颜色按离岸像素数分档（近岸浅青、远处深蓝），档与档之间按有序抖动交错；外海有大片深浅不一的色斑和几处浅滩。
@@ -56,6 +57,13 @@ uniform vec3 uSunGlint;
 uniform float uPathFade;
 varying vec2 vSeaPos;
 ${hashNoise('sea')}
+${REFLECTION_SAMPLE}
+// 倒影：浪把它横向切成一段段，偏移按地图像素取整；越平静越清楚
+vec4 seaReflection(vec2 cell, float t, float calm) {
+  float row = floor(cell.y / 2.0);
+  float wob = (seaNoise(vec2(row * 0.7, t * 0.6 + cell.x / 40.0)) - 0.5) * (2.0 + 6.0 * uWind) * (1.4 - calm);
+  return reflectionAt(vec3(vSeaPos.x, 0.0, vSeaPos.y), vec2(floor(wob + 0.5) * uPixel, 0.0));
+}
 ${surf('sea')}
 vec3 seaHex(vec3 c) { return pow(c / 255.0, vec3(2.2)); }
 // 4×4 有序抖动（0～1）
@@ -133,6 +141,21 @@ const COLOR = /* glsl */ `
     if (net < 0.9) c = mix(c, mix(seaHex(uSeaBand[0]), foam, 0.55), 0.5 * clear);
   }
 
+  // 倒影：房子、灯塔、船、灯和天色映在水里；浅水透底的地方淡一些
+  if (uReflAmount > 0.0) {
+    vec4 r = seaReflection(cell, t, 1.0 - uRain);
+    float k = uReflAmount * (1.0 - 0.6 * clear) * (1.0 - 0.5 * uRain);
+    c = mix(c, uReflSky, k * 0.3 * (1.0 - r.a));
+    c = mix(c, r.rgb * vec3(0.8, 0.88, 0.96), k * r.a);
+    // 灯和窗的倒影朝镜头方向拉成一道道断续的光带：往岸那边多取几次，只留比白还亮的部分
+    vec3 streak = vec3(0.0);
+    for (int i = 1; i <= 4; i++) {
+      vec4 sr = reflectionAt(vec3(vSeaPos.x, 0.0, vSeaPos.y), uReflStreak * float(i));
+      streak = max(streak, sr.rgb * sr.a * (1.0 - float(i) * 0.17));
+    }
+    float gap = step(0.35, seaHash(floor(cell / vec2(5.0, 2.0)) + seaTick(3.0)));
+    c += max(streak - 0.4, 0.0) * k * 2.4 * gap;
+  }
   // 外海：不画一条条浪纹，只有大片的明暗起伏，慢慢朝镜头这边（南）推，按抖动分成三档
   float far = smoothstep(7.0, 16.0, d);
   if (far > 0.0) {
@@ -280,6 +303,11 @@ const ICE = /* glsl */ `
     c = block > 0.55 ? mix(c, uSalt, 0.85) : block > 0.2 ? c * 0.82 : c;
   }
   if (d < 1.5) c = uSalt;
+  // 冰面也映一点岸上的灯和房子，比水淡
+  if (uReflAmount > 0.0) {
+    vec4 r = reflectionAt(vec3(vSeaPos.x, 0.0, vSeaPos.y), vec2(0.0));
+    c = mix(c, r.rgb, uReflAmount * 0.35 * r.a);
+  }
   // 冰面反光：稀疏的亮点，隔一会儿换一处
   if (seaHash(cell + vec2(seaTick(3.0) * 7.0, 1.0)) > 0.9985) c = vec3(1.0);
   diffuseColor.rgb = c;
@@ -300,7 +328,12 @@ export function coastTexture(depth: Uint8Array, shore: Uint8Array, pw: number, p
 
 /** 外圈的材质：会动的海，或者干海床、冰原。coast 是 coastTexture 的贴图，画布左上角在世界坐标
  *  (-MARGIN, -MARGIN)；haze 是远景的海雾。time 是秒，sparkle 是闪光的多少（0～1，随昼夜和云量） */
-export function outerMaterial(coast: THREE.DataTexture, haze: HazeUniforms, theme: MapTheme) {
+export function outerMaterial(
+  coast: THREE.DataTexture,
+  haze: HazeUniforms,
+  theme: MapTheme,
+  reflection: Reflection['uniforms']
+) {
   const { width: pw, height: ph } = coast.image
   const time = { value: 0 }
   const sparkle = { value: 1 }
@@ -342,6 +375,7 @@ export function outerMaterial(coast: THREE.DataTexture, haze: HazeUniforms, them
       uSand: { value: raw(theme.ground.sand[0]) },
       uSparkle: sparkle,
       ...sunPath,
+      ...reflection,
     })
     shader.vertexShader =
       'varying vec2 vSeaPos;\n' +
