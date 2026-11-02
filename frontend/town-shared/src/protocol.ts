@@ -592,6 +592,8 @@ export interface WorldSettingsState {
   persistent: boolean
   max_chars: number
   physiology: PhysiologySwitches
+  /** 化身神力：化身能对够得着的人复活、治愈、补满。随存档保存，缺省为关 */
+  miracles: boolean
 }
 
 export type ServerMsg =
@@ -810,6 +812,8 @@ export type ClientMsg =
       expected_revision: number
       switches: PhysiologySwitches
     }
+  /** 打开或关掉化身神力：只是开关，不暂停世界，不核对设定修订号 */
+  | { type: 'set_miracles'; request_id: string; world_id: string; enabled: boolean }
   | { type: 'get_props' }
   | {
       type: 'validate_prop' | 'save_prop'
@@ -897,7 +901,15 @@ export type ClientMsg =
 type Life = 'alive' | 'dead'
 /** 生命历史里一条记录的来源 */
 type BodyEventKind =
-  'pressure' | 'prop' | 'death' | 'ability' | 'experiment' | 'condition' | 'cure' | 'revive'
+  | 'pressure'
+  | 'prop'
+  | 'death'
+  | 'ability'
+  | 'experiment'
+  | 'condition'
+  | 'cure'
+  | 'revive'
+  | 'miracle'
 export interface BodyView {
   revision: number
   life: Life

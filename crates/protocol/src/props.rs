@@ -37,6 +37,9 @@ pub struct PropActionView {
     pub id: String,
     pub label: String,
     pub minutes: f64,
+    /// 只能对在场的别人用（复活、伤人）：玩家选对象时不列自己。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub others_only: bool,
     pub portion_name: Option<String>,
     pub recipient: bool,
     /// 只有道具列表给出：补给剩余份数，没有有限补给时为 null。动作说明里没有这个键。

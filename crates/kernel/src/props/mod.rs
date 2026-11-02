@@ -453,6 +453,12 @@ impl Action {
     pub(crate) fn harms(&self) -> bool {
         self.on_complete.iter().any(InstantEffect::harms)
     }
+    /// 完成时复活对方：只能对在场的死者用。
+    pub(crate) fn revives(&self) -> bool {
+        self.on_complete
+            .iter()
+            .any(|e| matches!(e, InstantEffect::Revive { .. }))
+    }
 }
 impl InstantEffect {
     fn harms(&self) -> bool {

@@ -112,6 +112,8 @@ export function createPanels(input: ShellInputs) {
     onResumeAgents: () => resumeAgents(),
     waitLine: (m) => modelWait.line(m),
     onTalk: (id) => void avatar.talkTo(id),
+    miracleReady: () => avatar.miracleReady(),
+    onMiracle: (id, kind) => void avatar.miracle(id, kind),
   })
   const resumeAgents = () => pages.speeds.choose(pages.speeds.current() || input.normalSpeed)
   /** 「在地图上定位」：先停止跟随，不然下一份名册就把镜头拉回跟着的人 */
@@ -264,14 +266,22 @@ export function createPanels(input: ShellInputs) {
     }
     resumeAgents()
   }
-  // 重要事件提示卡：「查看」选中该村民并让镜头跟随；暂停卡的按钮直接去修
+  // 重要事件提示卡：「查看」选中该村民并让镜头跟随；暂停卡的按钮直接去修；
+  // 开着化身神力时死亡卡上的「去复活」：化身走到最近的一位身边复活他
   const notices = createNotices(
     $('map'),
     (id) => {
       infoPanel.select(id)
       infoPanel.follow(true)
     },
-    (fix, provider) => void fixHold(fix, provider)
+    (fix, provider) => void fixHold(fix, provider),
+    {
+      ready: () => avatar.miracleReady(),
+      go: (ids) => {
+        const id = avatar.nearest(ids)
+        if (id) avatar.miracle(id, 'revive')
+      },
+    }
   )
   events.onImportant((clock, important) => notices.show(clock, important))
   const parts = { session, chatHistory, chatBubbles, worldSettings, observed, infoPanel }
@@ -467,7 +477,13 @@ function register(input: ShellInputs, p: RegisteredParts) {
     observedPanel,
     topbarPanel(p.speeds, p.pauseHint, () => p.avatar.active()),
     p.modelWait.panel,
-    { roster: ({ msg }) => p.notices.syncHolds(msg.holds ?? []) },
+    {
+      roster: ({ msg, residents }) => {
+        p.notices.syncHolds(msg.holds ?? [])
+        const life = new Map(residents.map(({ member }) => [member.id, member.body?.life]))
+        p.notices.syncLife((id) => life.get(id) === 'alive')
+      },
+    },
     p.session.panel,
     {
       roster: ({ msg }) => input.audio.update(msg.clock, msg.environment?.kind),

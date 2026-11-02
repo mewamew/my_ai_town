@@ -90,6 +90,16 @@
   font-size: 12px;
   white-space: pre-wrap;
 }
+/* 化身神力：页底单独一块，和上面的生理开关隔开 */
+.miracles-switch {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.miracles-switch h3 {
+  margin: 0;
+  font-size: 15px;
+}
 @media (prefers-reduced-motion: reduce) {
   .physiology-row input,
   .physiology-row input::after {

@@ -89,7 +89,12 @@
       <div id="info-plan" aria-live="polite">计划数据暂不可用</div>
     </section>
     <section class="card-section">
-      <h3 class="card-caption">状态</h3>
+      <h3 class="card-caption">
+        状态<span id="info-miracles" class="card-miracles" hidden
+          ><button type="button" data-miracle="heal">✦ 治愈</button
+          ><button type="button" data-miracle="refill">✦ 补满</button></span
+        >
+      </h3>
       <div id="info-needs"></div>
       <section id="info-physiology"></section>
     </section>
@@ -105,6 +110,7 @@
   </div>
   <div id="info-actions">
     <div class="card-verbs">
+      <button id="info-revive" class="card-verb primary" type="button" hidden>复活</button>
       <button id="info-talk" class="card-verb primary" type="button">说话</button>
       <button id="info-follow" class="card-verb" type="button">跟随</button>
       <button id="info-possess" class="card-verb" type="button">附身</button>

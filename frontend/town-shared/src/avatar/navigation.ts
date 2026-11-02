@@ -18,6 +18,8 @@ interface AvatarNavigationDeps {
   /** Tab 换当前对象；没有可换的返回 false */
   cycleTarget?: (step: 1 | -1) => boolean
   toggleBag: () => void
+  /** F：对当前对象施展神力（开着化身神力时） */
+  miracleMenu: () => void
   showToast: (message: string, sticky?: boolean) => void
   /** 化身方向变化（已按能否行走归零），供脚步声使用 */
   onDirection?: (direction: [number, number]) => void
@@ -36,7 +38,7 @@ const CHASE_CHECK_MS = 300
 /** 行走输入、点击目标的路线与到达后的互动。 */
 export function createAvatarNavigation(deps: AvatarNavigationDeps) {
   const { map, signal, getState, getWorld, getHolds, owned, mapVisible, send, execute } = deps
-  const { targets, cycleTarget, toggleBag, showToast, onDirection, onWalk } = deps
+  const { targets, cycleTarget, toggleBag, miracleMenu, showToast, onDirection, onWalk } = deps
   // 化身输入的序号：换租约时从头计
   let inputSequence = 0
   /** 按住 Shift 在跑；输入模块建好之前当作没按 */
@@ -108,6 +110,8 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
   }
   // 走到目标后要做的那件事（提示编号）；只是走过去时为空
   let arriveAction: string | null = null
+  /** 到了要做的不是对象的主动作（比如施展神力）：做这个；对方正忙也照做 */
+  let arriveAct: (() => void) | null = null
   /** 正在走向的人：他走开（出门、进屋、换地方）时路线跟着改，不扑空到他原来站的地方 */
   let chasing: { id: string; at: WalkTarget; checked: number } | null = null
   // 路线经过门时化身自己发开门命令，这一下不算用户改主意，不该清掉路线
@@ -136,17 +140,22 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
     end: (reason) => {
       map.setAvatarDestination?.(null)
       const object = arriveAction
+      const act = arriveAct
       arriveAction = null
+      arriveAct = null
       chasing = null
-      if (reason === 'arrived' && object) runOnArrival(object)
+      if (reason === 'arrived' && object) runOnArrival(object, act)
       else if (reason === 'blocked')
         showToast(object ? '走不过去，先靠近一点再点' : '走不过去，换个位置试试')
     },
   })
+  /** 够得着、可以做了：要做的是主动作时对方还得有空，另有要做的事（施展神力）时够得着就行 */
+  const doable = (t: AvatarTarget, act: (() => void) | null) =>
+    !t.approach && (!!act || !t.prompt.muted)
   /** 走到了：这时的状态就是后端按同一位置算出来的，能做就直接做 */
-  function runOnArrival(id: string) {
+  function runOnArrival(id: string, act: (() => void) | null) {
     const target = targets().find((t) => t.prompt.id === id)
-    if (target && !target.approach && !target.prompt.muted) target.run()
+    if (target && doable(target, act)) (act ?? target.run)()
     else
       showToast(
         target?.approach
@@ -158,8 +167,8 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
   }
   /** 要找的人或东西已经够得着：不必走到终点，停下就做 */
   function arriveEarly() {
-    const ready = arriveAction && targets().find((t) => t.prompt.id === arriveAction)
-    if (ready && !ready.approach && !ready.prompt.muted) walk.arrive()
+    const ready = arriveAction ? targets().find((t) => t.prompt.id === arriveAction) : undefined
+    if (ready && doable(ready, arriveAct)) walk.arrive()
   }
   const input = createWalkingInput(
     canWalk,
@@ -170,7 +179,7 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
     },
     primaryAction,
     signal,
-    { KeyB: bagAction },
+    { KeyB: bagAction, KeyF: () => owned() && mapVisible() && miracleMenu() },
     cycleTarget
   )
   running = input.running
@@ -201,8 +210,13 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
     stick(null)
     if (!autoPortal) walk.clear()
   }
-  /** 设一个新的点击目标；走不了就说明原因 */
-  function startWalk(target: WalkTarget, radius: number, object: string | null): boolean {
+  /** 设一个新的点击目标；走不了就说明原因。act 是到了要做的事，不给就做对象的主动作 */
+  function startWalk(
+    target: WalkTarget,
+    radius: number,
+    object: string | null,
+    act: (() => void) | null = null
+  ): boolean {
     const state = getState(),
       holds = getHolds()
     if (!owned()) return false
@@ -228,6 +242,7 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
       return false
     }
     arriveAction = object
+    arriveAct = act
     walk.set(route, radius)
     // 圈画在实际要去的地方：点到站不了的地方时，选路换成了附近能站的一点
     map.setAvatarDestination?.(route[route.length - 1].point)
@@ -236,21 +251,21 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
     walk.tick()
     return true
   }
-  /** 点地图上的人或道具：够得着就直接做，够不着就走过去，到了再做一次。
-   *  点自己或对象不在图上时交回观察界面。 */
-  function reachFor(kind: 'person' | 'prop', id: string): boolean {
+  /** 点地图上的人或道具：够得着就直接做，够不着就走过去，到了再做一次。act 是要做的事，
+   *  不给就做对象的主动作（交谈、拾取……）。点自己或对象不在图上时交回观察界面。 */
+  function reachFor(kind: 'person' | 'prop', id: string, act?: () => void): boolean {
     const state = getState()
     if (kind === 'person' && id === state?.actor?.id) return false
     const object = `${kind}:${id}`
     const ready = targets().find((t) => t.prompt.id === object)
-    if (ready && !ready.approach && !ready.prompt.muted && state?.speed && !state.actor?.busy) {
-      ready.run()
+    if (ready && doable(ready, act ?? null) && state?.speed && !state.actor?.busy) {
+      ;(act ?? ready.run)()
       return true
     }
     const target = map.walkTargetOf?.(kind, id)
     if (!target) return false
     // 停在伸手可及的距离外（后端道具 1.6 米、交谈 3 米），不踩到对象身上
-    if (startWalk(target, kind === 'person' ? 1.4 : 1.2, object) && kind === 'person')
+    if (startWalk(target, kind === 'person' ? 1.4 : 1.2, object, act) && kind === 'person')
       chasing = { id, at: target, checked: performance.now() }
     return true
   }

@@ -1,4 +1,4 @@
-import type { AvatarCommand, AvatarProp, AvatarState, PlayerAction } from './types'
+import type { AvatarCommand, AvatarProp, AvatarState, MiracleKind, PlayerAction } from './types'
 import type { WalkTarget } from '../gameMap'
 
 import { pendingTalk, runningTalk } from './view'
@@ -9,11 +9,12 @@ import { postsHere } from './bulletin'
 type Actor = NonNullable<AvatarState['actor']>
 
 /** 当前对象：Tab 换到的提示编号；where 给出人和道具的米制位置，用来把近的排在前面；
- *  approach 是走到够不着的人身边再搭话 */
+ *  approach 是走到够不着的人身边再搭话；cast 是对够得着的人施展神力 */
 interface TargetFocus {
   id: string | null
   where?: (kind: 'person' | 'prop', id: string) => WalkTarget | undefined
   approach?: (id: string) => void
+  cast?: (id: string, kind: MiracleKind) => void
 }
 
 /** Derive interaction prompts from the latest authoritative avatar state. */
@@ -42,6 +43,16 @@ export function avatarTargets(
       return { label: `${p.name} · 张贴公告`, run: () => bulletin.open(board) }
     }
     const v = p.actions[0]
+    // 只能对别人用的（复活、伤人），化身也没有身体可用的：打开背包选对象
+    const choose = !!v?.recipient && (!!v.others_only || state?.mode !== 'possession')
+    if (v && choose)
+      return {
+        label: `${p.name} · ${v.label}`,
+        run: () => {
+          selectBag(`prop:${p.id}`)
+          openTab('bag')
+        },
+      }
     if (v)
       return {
         label: `${p.name} · ${v.label}`,
@@ -87,8 +98,17 @@ export function avatarTargets(
     const talk = runningTalk(state)
     const talking = new Set(talk?.members ?? (talk ? [talk.initiator, talk.partner] : []))
     const list: AvatarTarget[] = []
+    const cast = state.miracles ? focus.cast : undefined
     for (const n of nearestFirst(a, state.nearby ?? [], 'person')) {
       if (talking.has(n.id)) continue
+      // 开着化身神力时，倒在跟前的死者的主动作是复活
+      if (n.dead && cast) {
+        list.push({
+          prompt: { id: `person:${n.id}`, kind: 'person', target: n.id, label: `复活${n.name}` },
+          run: () => cast(n.id, 'revive'),
+        })
+        continue
+      }
       const invitation = pendingTalk(state, n.id)
       const available = (n.can_talk ?? n.available) && !invitation
       // 在和别人聊、够得着那一圈人：可以加入（没在聊天时）
@@ -111,6 +131,8 @@ export function avatarTargets(
                 ? `加入${n.name}的交谈`
                 : `${n.name} · ${n.busy ?? '暂时无法交谈'}`,
           muted: !available && !chat,
+          // 开着化身神力时，活着的人另有 F：治愈、补满
+          ...(cast && !n.dead && { alt: { key: 'F', label: '神力' } }),
         },
         run: () => {
           if (invitation) openTab('chat')

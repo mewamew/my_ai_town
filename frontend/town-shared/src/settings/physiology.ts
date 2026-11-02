@@ -195,7 +195,60 @@ function createPhysiologySwitches(
   return { el: root, isDirty, save, discard, refresh: read }
 }
 
-/** 设定中心「小镇」组里的生理页：保存走底部保存条。 */
+/** 化身神力的两种说法：开着时能做什么，关着时怎样 */
+const MIRACLES_ON =
+  '化身走到人跟前，可以复活、治愈、补满；在场的村民会看到是谁做的。附身村民时不能用。'
+const MIRACLES_OFF = '化身和村民一样，只能用道具救人。'
+
+/**
+ * 化身神力开关：切换就保存，不走底部保存条，也不暂停世界；显示值始终来自后端回读。
+ * 和生理开关放在同一页，是因为它也直接改村民的身体。
+ */
+function createMiraclesSwitch(world: WorldSettingsController) {
+  const root = el('section', '', 'physiology-switches miracles-switch')
+  const row = el('label', '', 'physiology-row')
+  const input = el('input')
+  input.type = 'checkbox'
+  input.id = 'settings-miracles'
+  input.setAttribute('role', 'switch')
+  row.htmlFor = input.id
+  const description = el('small')
+  const text = el('span', '', 'physiology-text')
+  text.append(el('b', '允许化身施展神力'), description)
+  row.append(input, text)
+  const status = el('p', '', 'physiology-status')
+  status.setAttribute('role', 'status')
+  root.append(
+    el('h3', '化身神力'),
+    row,
+    el(
+      'p',
+      '切换就保存，跟着这个小镇的存档；世界不会暂停。想让村民事先知道世上有神，写进「世界观」。',
+      'physiology-note'
+    ),
+    status
+  )
+  function render() {
+    const state = world.state()
+    input.checked = !!state?.miracles
+    input.disabled = !state || !world.online() || world.saving()
+    row.classList.toggle('off', !input.checked)
+    description.textContent = input.checked ? MIRACLES_ON : MIRACLES_OFF
+  }
+  input.addEventListener('change', () => {
+    status.textContent = '正在保存…'
+    world.saveMiracles(input.checked, (ok, message) => {
+      status.textContent = ok ? `✓ ${message}` : message
+      render()
+    })
+    render()
+  })
+  world.subscribe(render)
+  render()
+  return root
+}
+
+/** 设定中心「小镇」组里的生理页：保存走底部保存条；化身神力在页底，切换就保存。 */
 export function createPhysiologyPage(
   world: WorldSettingsController,
   onDirty: () => void
@@ -206,7 +259,7 @@ export function createPhysiologyPage(
     actions: false,
     onDirty,
   })
-  page.append(el('h2', '村民生理'), form.el)
+  page.append(el('h2', '村民生理'), form.el, createMiraclesSwitch(world))
   return {
     id: 'physiology',
     group: 'town',

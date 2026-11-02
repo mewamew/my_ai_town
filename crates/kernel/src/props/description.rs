@@ -177,6 +177,7 @@ pub fn action_description_for(a: &Action, s: PhysiologySwitches) -> PropActionVi
         id: a.id.clone(),
         label: a.label.clone(),
         minutes: a.duration_minutes,
+        others_only: a.harms() || a.revives(),
         portion_name: a.portion_name.clone(),
         recipient: a.recipient,
         remaining: None,

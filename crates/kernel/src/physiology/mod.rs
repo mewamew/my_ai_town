@@ -8,7 +8,7 @@ use crate::{
     needs::{
         NeedValues, Needs, EMPTY, FIXED_THRESHOLDS, FULL, LOW, RECOVERY_FED, RECOVERY_RESTED, SAFE,
     },
-    props::{Action, Completion, InstantEffect, Need},
+    props::{Action, Completion, Need},
     World,
 };
 use protocol::{BodyCondition, BodyConditionKind as C, NeedsTuning, PhysiologySwitches};
@@ -633,10 +633,7 @@ pub(crate) fn check_body_use(
             || (a.locus.locale == locale && !matches!(a.locus.at, protocol::At::Transit { .. })),
         KernelError::physiology("接受者须与施用者和道具在同一地点，且不在途中")
     );
-    let revive = action
-        .on_complete
-        .iter()
-        .any(|e| matches!(e, InstantEffect::Revive { .. }));
+    let revive = action.revives();
     ensure!(
         !revive || (a.needs.body.dead && target != id),
         KernelError::physiology("复活需要由其他存活村民对死者施用")

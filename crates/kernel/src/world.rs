@@ -46,6 +46,8 @@ pub struct World {
     pub(crate) need_rules: NeedRules,
     /// 世界级生理开关（physiology/commands.rs），随快照保存。
     pub(crate) physiology: PhysiologySwitches,
+    /// 化身神力开关（miracle.rs），随快照保存。
+    pub(crate) miracles: bool,
     /// 空间放置器：由 host 注入，内核放置道具时向它要位置与通路。
     pub(crate) placer: Option<Box<dyn Placer>>,
     /// 道具动作引发的后续：定时事件、随机流（happenings.rs），随快照保存。
@@ -69,6 +71,7 @@ impl World {
             events: Vec::new(),
             need_rules,
             physiology: Default::default(),
+            miracles: false,
             placer: None,
             happenings: Default::default(),
         }

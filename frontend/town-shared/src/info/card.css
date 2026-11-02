@@ -384,6 +384,28 @@
   display: flex;
   gap: 8px;
 }
+/* 「状态」标题右边的治愈、补满（开着化身神力时） */
+.card-miracles {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  letter-spacing: 0;
+}
+.card-miracles button {
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-s);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.card-miracles button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 .card-verb {
   flex: 1;
   justify-content: center;

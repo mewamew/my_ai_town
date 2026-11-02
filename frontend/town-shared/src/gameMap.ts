@@ -22,6 +22,8 @@ export interface AvatarPrompt {
   key?: string
   /** 现在做不了（对方正忙）：只显示，不响应点击 */
   muted?: boolean
+  /** 同一对象的另一件事和它的键（开着化身神力时活人的「F 神力」）；画在主动作后面 */
+  alt?: { key: string; label: string }
   /** 当前对象：Tab 换到的那个，没换过时是最近的；同一时刻只有一个。2D 地图只画它 */
   focused?: boolean
 }

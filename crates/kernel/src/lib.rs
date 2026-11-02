@@ -39,6 +39,7 @@ pub mod intent;
 pub mod interactions;
 pub mod inventory;
 pub mod journal;
+mod miracle;
 pub mod navigation;
 pub mod needs;
 mod outcome;

@@ -88,7 +88,7 @@ export function createWorldSettings(
     for (const listener of listeners) listener()
   }
   type Done = (ok: boolean, message: string) => void
-  /** 世界观与生理开关共用一个回执通道：同一时间只允许一个保存请求。 */
+  /** 世界观、生理开关与化身神力共用一个回执通道：同一时间只允许一个保存请求。 */
   function submit(
     build: (current: WorldSettingsState, requestId: string) => ClientMsg,
     done: Done
@@ -188,6 +188,18 @@ export function createWorldSettings(
           world_id: current.world_id,
           expected_revision: revision,
           switches,
+        }),
+        done
+      )
+    },
+    /** 打开或关掉化身神力：切换就保存，不带修订号，世界不暂停 */
+    saveMiracles(enabled: boolean, done: Done) {
+      submit(
+        (current, id) => ({
+          type: 'set_miracles',
+          request_id: id,
+          world_id: current.world_id,
+          enabled,
         }),
         done
       )

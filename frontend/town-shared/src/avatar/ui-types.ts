@@ -35,4 +35,6 @@ export interface AvatarActions {
   bulletin: () => BulletinTargets | null
   render: (force?: boolean) => void
   selectBag: (id: string | null) => void
+  /** 对当前对象施展神力：打开操作条上方的选项单（F、操作条上的「神力」） */
+  miracleMenu: () => void
 }

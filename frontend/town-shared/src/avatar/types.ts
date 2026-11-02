@@ -34,6 +34,8 @@ export type InteractionCommand =
   | { operation: 'cancel' | 'listen'; interaction_id: string }
   | { operation: 'join' | 'leave'; interaction_id: string; message: string }
   | { operation: 'say'; interaction_id: string; message: string; to?: string }
+/** 化身神力：复活死者、治好伤病、补满饱腹精力水分 */
+export type MiracleKind = 'revive' | 'heal' | 'refill'
 export type AvatarCommand =
   | { kind: 'view' | 'heartbeat' | 'leave' | 'stop' }
   | { kind: 'enter' | 'profile'; name: string; appearance: Appearance }
@@ -43,6 +45,7 @@ export type AvatarCommand =
   | { kind: 'action'; revision: number; action: PlayerAction }
   | { kind: 'interact'; revision: number; command: InteractionCommand }
   | { kind: 'request_turn'; chat_id: string; revision: number }
+  | { kind: 'miracle'; revision: number; recipient: string; miracle: MiracleKind }
 /** 化身命令回执的结果类别（crates/protocol AvatarResultCode） */
 export type AvatarResultCode =
   | 'ok'
@@ -127,6 +130,8 @@ interface PresentView {
   /** 最近三个动作的变化与失败原因 */
   feedback: string[]
   interactions: AvatarInteraction[]
+  /** 化身神力开着，控制的又是化身本人：能对够得着的人施展 */
+  miracles: boolean
   mode: 'avatar' | 'possession'
   navigation_revision: number
   /** 够得着的人；聊不了时 busy 写着原因 */
@@ -137,6 +142,8 @@ interface PresentView {
     can_talk: boolean
     activity: string
     busy?: string
+    /** 已经死了 */
+    dead?: true
   }[]
   /** 附近还说不上话的人：离得远（米），或已经够近、只是隔着东西 */
   approach?: { id: string; name: string; distance: number; blocked: boolean }[]

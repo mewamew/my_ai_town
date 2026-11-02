@@ -149,7 +149,8 @@ impl Runtime {
                 self.weather_failed(request_id.clone(), code, message)
             }
             ClientMsg::SetWorldview { request_id, .. }
-            | ClientMsg::SetPhysiology { request_id, .. } => ServerMsg::WorldSettingsSaved {
+            | ClientMsg::SetPhysiology { request_id, .. }
+            | ClientMsg::SetMiracles { request_id, .. } => ServerMsg::WorldSettingsSaved {
                 request_id: request_id.clone(),
                 ok: false,
                 message,
@@ -243,6 +244,11 @@ impl Runtime {
                 switches,
                 ..
             } => self.save_physiology(request_id, expected_revision, switches),
+            SetMiracles {
+                request_id,
+                enabled,
+                ..
+            } => self.save_miracles(request_id, enabled),
             SetSpeed { speed, .. } => self.set_speed(speed, clients),
             ResetWorld { .. } => self.reset(),
             GetProps => Outcome::reply(self.props_message()),
@@ -649,6 +655,7 @@ fn world_id_of(msg: &ClientMsg) -> Option<&str> {
         | ClientMsg::Content { world_id, .. }
         | ClientMsg::SetWorldview { world_id, .. }
         | ClientMsg::SetPhysiology { world_id, .. }
+        | ClientMsg::SetMiracles { world_id, .. }
         | ClientMsg::RemoveProp { world_id, .. }
         | ClientMsg::PlaceProp { world_id, .. }
         | ClientMsg::JoinResident { world_id, .. }
@@ -704,6 +711,7 @@ fn requires_ready(msg: &ClientMsg) -> bool {
         | ClientMsg::GetWorldSettings
         | ClientMsg::SetWorldview { .. }
         | ClientMsg::SetPhysiology { .. }
+        | ClientMsg::SetMiracles { .. }
         | ClientMsg::GetProps
         | ClientMsg::ValidateProp { .. }
         | ClientMsg::SaveProp { .. }

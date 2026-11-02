@@ -1,4 +1,5 @@
 //! 化身命令：检查世界与控制代次、按操作编号去重，改动世界后存盘，失败整体回滚；回执带失败类别。
+//! 成功时回执的说明一般为空；神力把给玩家看的结果写在这里，页面当提示显示。
 use super::Control;
 use crate::{
     network::{self, Clients},
@@ -121,7 +122,7 @@ impl Runtime {
             return;
         }
         let (ok, code, message) = match self.run_avatar_command(connection, &request) {
-            Ok(()) => (true, AvatarResultCode::Ok, String::new()),
+            Ok(note) => (true, AvatarResultCode::Ok, note),
             Err(rejection) => (false, rejection.code, rejection.message),
         };
         let quiet = matches!(request.command, Command::View | Command::Heartbeat);
@@ -141,12 +142,12 @@ impl Runtime {
         }
     }
 
-    /// 世界、就绪、控制代次与去重检查都过了，才进事务。
+    /// 世界、就绪、控制代次与去重检查都过了，才进事务。成功时返回给玩家看的说明（多数为空）。
     fn run_avatar_command(
         &mut self,
         connection: u64,
         request: &AvatarRequest,
-    ) -> Result<(), Rejection> {
+    ) -> Result<String, Rejection> {
         let AvatarRequest {
             world_id,
             epoch,
@@ -158,13 +159,13 @@ impl Runtime {
             return Err(AvatarFailure::WrongWorld.into());
         }
         match command {
-            Command::View => return Ok(()),
+            Command::View => return Ok(String::new()),
             Command::Heartbeat => {
                 self.check_control(connection, epoch)?;
                 if let Some(lease) = &mut self.avatar_control.lease {
                     lease.beat();
                 }
-                return Ok(());
+                return Ok(String::new());
             }
             _ => {}
         }
@@ -178,7 +179,7 @@ impl Runtime {
         if !lifecycle {
             self.check_control(connection, epoch)?;
             if self.already_applied(epoch, *sequence, command)? {
-                return Ok(());
+                return Ok(String::new());
             }
         }
         if self.save_failed {
@@ -212,10 +213,10 @@ impl Runtime {
         sequence: u64,
         command: &Command,
         lifecycle: bool,
-    ) -> Result<(), Rejection> {
+    ) -> Result<String, Rejection> {
         let actor_before = self.world.player_id().to_owned();
         let outcome = self.transact(|rt| {
-            rt.apply_avatar_command(connection, command)?;
+            let note = rt.apply_avatar_command(connection, command)?;
             // 交还之后 player_control() 指向离场的化身，不能把村民这条命令记进化身的回执账本。
             let leave = matches!(command, Command::Leave);
             if !lifecycle && !leave {
@@ -231,10 +232,11 @@ impl Runtime {
                 _ => fingerprint(command),
             };
             rt.world.record_player_event(&actor, event);
-            Ok::<_, AvatarFailure>(())
+            Ok::<_, AvatarFailure>(note)
         });
-        let Err(aborted) = outcome else {
-            return Ok(());
+        let aborted = match outcome {
+            Ok(note) => return Ok(note),
+            Err(aborted) => aborted,
         };
         self.avatar_control.halt();
         let message = aborted.to_string();
@@ -248,11 +250,12 @@ impl Runtime {
         Err(Rejection { code, message })
     }
 
+    /// 执行一条化身命令；成功时返回给玩家看的说明，只有神力写，其他为空。
     fn apply_avatar_command(
         &mut self,
         connection: u64,
         command: &Command,
-    ) -> Result<(), AvatarFailure> {
+    ) -> Result<String, AvatarFailure> {
         match command {
             Command::Enter { name, appearance } => self.enter(connection, name, appearance),
             Command::Possess { resident } => self.take_over(connection, resident),
@@ -273,12 +276,15 @@ impl Runtime {
             Command::Portal { .. }
             | Command::Action { .. }
             | Command::Interact { .. }
-            | Command::RequestTurn { .. } => self.act(command),
+            | Command::RequestTurn { .. }
+            | Command::Miracle { .. } => return self.act(command),
         }
+        .map(|()| String::new())
     }
 
-    /// 在世界里做事：穿门、动作、互动、请求发言。附身的村民还没走到或世界暂停时不行。
-    fn act(&mut self, command: &Command) -> Result<(), AvatarFailure> {
+    /// 在世界里做事：穿门、动作、互动、请求发言、施展神力。附身的村民还没走到或世界暂停时不行。
+    /// 成功时返回给玩家看的说明（神力的结果），其他为空。
+    fn act(&mut self, command: &Command) -> Result<String, AvatarFailure> {
         if self.awaiting_arrival() {
             return Err(AvatarFailure::Busy("等待村民到达后才能操作，可随时交还 AI"));
         }
@@ -299,6 +305,11 @@ impl Runtime {
             Command::RequestTurn { chat_id, revision } => {
                 self.world.avatar_request_turn(chat_id, *revision)?
             }
+            Command::Miracle {
+                revision,
+                recipient,
+                miracle,
+            } => return Ok(self.world.avatar_miracle(*revision, recipient, *miracle)?),
             Command::View
             | Command::Heartbeat
             | Command::Enter { .. }
@@ -308,7 +319,7 @@ impl Runtime {
             | Command::Profile { .. }
             | Command::Stop => return Err(AvatarFailure::Rejected("化身命令分派出错".into())),
         }
-        Ok(())
+        Ok(String::new())
     }
 
     fn awaiting_arrival(&self) -> bool {

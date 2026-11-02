@@ -42,6 +42,8 @@ pub enum BodyEventKind {
     Condition,
     Cure,
     Revive,
+    /// 化身神力带来的变化（治愈、补满）；复活仍记作 Revive
+    Miracle,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -11,6 +11,7 @@ import type {
 import { panelButton } from './view'
 import { isPostAction } from './bulletin'
 import type { BulletinTargets } from './ui-types'
+import type { ActionDescription } from '../props/types'
 import { el } from '../dom'
 import { isTouch } from '../platform'
 // 背包面板：自己的东西按格子摆，点开一格出动作单；附近的东西单列，主动作同时画在地图上。
@@ -76,6 +77,24 @@ function sheet(bag: BagView) {
   }
 }
 
+type AddItem = (label: string, note: string, run: () => void, enabled: boolean) => void
+
+/** 一个道具动作的几行：只能自己用的一行；能对别人用的每个够得着的人一行（倒下的、死了的
+ *  也列出来，写明状况），附身时先列自己——只能对别人用的（复活、伤人）不列自己，化身没有身体
+ *  也不列。规则在内核（check_body_use），选错了回执写明原因。 */
+function addUses(bag: BagView, add: AddItem, action: ActionDescription, propId: string) {
+  const time = action.minutes ? `约 ${action.minutes} 分钟` : ''
+  const use = (recipient?: string) => () =>
+    bag.act({ intent: { verb: action.id }, prop_id: propId, ...(recipient && { recipient }) })
+  if (!action.recipient) return add(action.label, time, use(), bag.idle)
+  const self = bag.state.mode === 'possession' && !action.others_only
+  if (self) add(`${action.label} · 自己`, time, use(), bag.idle)
+  const people = bag.state.nearby ?? []
+  for (const n of people)
+    add(`${action.label} · ${n.name}`, n.dead ? '已经死了' : time, use(n.id), bag.idle)
+  if (!self && !people.length) add(action.label, '身边没有能施用的人，走近一点', () => {}, false)
+}
+
 /** 自己的东西摆成格子；只读时只给查看说明，返回 false 表示不再往下画 */
 function myTiles(bag: BagView) {
   const { root, actor: a, ui } = bag
@@ -113,13 +132,7 @@ function slotSheet(bag: BagView, slot: InventorySlot) {
   const { state, idle, inventory } = bag
   const id = slot.items[0]
   const add = sheet(bag)
-  for (const action of slot.actions)
-    add(
-      action.label,
-      action.minutes ? `约 ${action.minutes} 分钟` : '',
-      () => bag.act({ intent: { verb: action.id }, prop_id: id }),
-      idle
-    )
+  for (const action of slot.actions) addUses(bag, add, action, id)
   add(
     '放下',
     state.can_drop ? '' : '需靠近落脚点',
@@ -167,12 +180,7 @@ function propSheet(bag: BagView, prop: AvatarProp) {
     item('张贴公告', '署你的名字', () => bulletin.open(bulletin.spots.board), true)
   for (const action of prop.actions) {
     if (posting && isPostAction(action.label)) continue
-    item(
-      action.label,
-      action.minutes ? `约 ${action.minutes} 分钟` : '',
-      () => bag.act({ intent: { verb: action.id }, prop_id: prop.id }),
-      idle
-    )
+    addUses(bag, item, action, prop.id)
     if (action.portion_name && action.supply)
       item(
         `领取${action.portion_name}`,

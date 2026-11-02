@@ -188,3 +188,76 @@ fn legacy_save_migration_preserves_residents() {
         std::path::PathBuf::from(format!("{}.before-avatar-v1", town.save().display())).exists()
     );
 }
+
+/// 化身神力走完整路径：开关在设定里打开、随存档保存；化身对倒在入口的居民施展复活，
+/// 回执带着给玩家看的结果；开关关着时同一条命令被拒。
+#[test]
+fn miracle_switch_persists_and_the_avatar_revives_a_resident() {
+    let mut town = Town::new();
+    town.args = map_args(MAP_2D);
+    let mut ws = town.start();
+    let resident = join_id(&mut ws, "tpl_a");
+    town.shutdown();
+    drop(ws);
+    // 刚从入口进镇的居民（世界还停着，他没走开）倒在入口
+    let mut save = read_json(&town.save());
+    let needs = &mut save["world"]["actors"][&resident]["needs"];
+    needs["health"]["value"] = json!(0.0);
+    needs["body"]["dead"] = json!(true);
+    std::fs::write(town.save(), serde_json::to_vec(&save).unwrap()).unwrap();
+    let mut ws = town.start();
+    let settings = |ws: &mut WebSocket<TcpStream>| {
+        reply(ws, json!({"type":"get_world_settings"}), "world_settings")["state"].clone()
+    };
+    assert_eq!(settings(&mut ws)["miracles"], false);
+    let s = state(&mut ws);
+    let entered = command(
+        &mut ws,
+        &s,
+        1,
+        json!({"kind":"enter","name":"aya","appearance":{"marker":"我","color":"#387963"}}),
+    );
+    assert_eq!(entered["ok"], true, "{entered}");
+    let s = entered["state"].clone();
+    assert!(
+        s["nearby"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["id"] == resident.as_str() && p["dead"] == true),
+        "倒在跟前的人列在够得着的人里，标着已经死了：{s}"
+    );
+    send(
+        &mut ws,
+        json!({"type":"set_speed","request_id":"go","speed":1}),
+    );
+    until(&mut ws, |m| m["type"] == "roster" && m["speed"] == 1.0);
+    let revive = |state: &Value| json!({"kind":"miracle","revision":state["actor"]["revision"],"recipient":resident,"miracle":"revive"});
+    let off = command(&mut ws, &s, 2, revive(&s));
+    assert_eq!(off["ok"], false, "开关关着时不能施展：{off}");
+    assert_eq!(off["state"]["miracles"], false);
+    let saved = reply(
+        &mut ws,
+        json!({"type":"set_miracles","request_id":"m1","world_id":s["world_id"],"enabled":true}),
+        "world_settings_saved",
+    );
+    assert_eq!(saved["ok"], true, "{saved}");
+    let done = command(&mut ws, &s, 3, revive(&off["state"]));
+    assert_eq!(done["ok"], true, "{done}");
+    assert!(
+        done["message"].as_str().unwrap().contains("活了过来"),
+        "{done}"
+    );
+    assert_eq!(done["state"]["miracles"], true);
+    let roster = until(&mut ws, |m| {
+        m["type"] == "roster"
+            && members(m)
+                .iter()
+                .any(|r| r["id"] == resident.as_str() && r["body"]["life"] == "alive")
+    });
+    assert!(!members(&roster).is_empty());
+    town.shutdown();
+    drop(ws);
+    let mut ws = town.start();
+    assert_eq!(settings(&mut ws)["miracles"], true, "开关随存档保存");
+}

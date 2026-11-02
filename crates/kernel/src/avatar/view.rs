@@ -52,6 +52,7 @@ impl World {
                 .into_iter()
                 .map(|i| b.interaction(i))
                 .collect(),
+            miracles: self.miracles && a.is_avatar(),
             mode: if a.possession.is_some() {
                 AvatarMode::Possession
             } else {
@@ -130,6 +131,7 @@ impl Builder<'_> {
                     available: b.interaction_available(),
                     can_talk,
                     busy: (!can_talk).then(|| self.busy_reason(b)),
+                    dead: b.needs.body.dead,
                     id: b.id.clone(),
                     name: b.name.clone(),
                 }

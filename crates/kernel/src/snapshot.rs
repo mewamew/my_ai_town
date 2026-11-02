@@ -61,6 +61,9 @@ pub struct WorldSnapshot {
     /// 旧存档没有这一项，按全部开启读入。
     #[serde(default)]
     physiology: protocol::PhysiologySwitches,
+    /// 化身神力开关；旧存档没有这一项，按关闭读入。关着时不写，没开过神力的存档换回旧版本照样能读。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    miracles: bool,
     /// 旧存档没有这一项：没有待发生的事，随机流从固定起点开始。
     #[serde(default)]
     happenings: crate::happenings::Happenings,
@@ -94,6 +97,7 @@ impl World {
             placed_props: self.props.placed.clone(),
             supplies: self.props.supplies.clone(),
             physiology: self.physiology,
+            miracles: self.miracles,
             happenings: self.happenings.clone(),
         }
     }
@@ -128,6 +132,7 @@ impl World {
         }
         let mut candidate = self.restore_candidate(&snapshot)?;
         candidate.physiology = snapshot.physiology;
+        candidate.miracles = snapshot.miracles;
         snapshot.validate(&candidate)?;
         candidate.minutes = snapshot.minutes;
         candidate.actors = snapshot.actors;

@@ -19,6 +19,8 @@ import { displayClock, playerText } from './format'
 import { portraitKey } from './portraits'
 import { agentStateLabels } from './labels'
 import { lineLabel } from './game/icons'
+import type { MiracleKind } from './avatar/types'
+import { miracleOptions } from './miracles'
 
 interface InfoPanelDeps {
   map: GameMap
@@ -42,6 +44,10 @@ interface InfoPanelDeps {
   waitLine: (m: RosterMember) => WaitLine | null
   /** 「说话」：进入化身、走过去搭话 */
   onTalk: (id: string) => void
+  /** 化身神力的入口该不该出现：世界开着神力、能用化身、没在附身 */
+  miracleReady: () => boolean
+  /** 「复活」「治愈」「补满」：进入化身、走过去施展 */
+  onMiracle: (id: string, kind: MiracleKind) => void
 }
 
 import { installPanelWidth } from './info/width'
@@ -64,6 +70,11 @@ export function initInfoPanel(deps: InfoPanelDeps) {
   const followBtn = $('info-follow')
   const talkBtn = query<HTMLButtonElement>(panel, '#info-talk')
   const possessBtn = query<HTMLButtonElement>(panel, '#info-possess')
+  const reviveBtn = query<HTMLButtonElement>(panel, '#info-revive')
+  // 「状态」标题右边的治愈、补满：看着数值直接点
+  const miracleBox = $('info-miracles')
+  const miracleBtns = [...miracleBox.querySelectorAll<HTMLButtonElement>('button')]
+  lineLabel(reviveBtn, 'spark', '复活')
   lineLabel(talkBtn, 'chat', '说话')
   lineLabel(followBtn, 'eye', '跟随')
   lineLabel(possessBtn, 'person', '附身')
@@ -113,7 +124,17 @@ export function initInfoPanel(deps: InfoPanelDeps) {
       if (selectedId) deps.onPossess(selectedId)
     },
     card: () => (panel.hidden ? setCollapsed(false) : collapse()),
+    miracle: (kind) => {
+      if (selectedId) deps.onMiracle(selectedId, kind)
+    },
   })
+  reviveBtn.onclick = () => {
+    if (selectedId) deps.onMiracle(selectedId, 'revive')
+  }
+  for (const b of miracleBtns)
+    b.onclick = () => {
+      if (selectedId) deps.onMiracle(selectedId, b.dataset.miracle as MiracleKind)
+    }
 
   function setCollapsed(collapsed: boolean) {
     panel.hidden = collapsed
@@ -145,6 +166,11 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     )
   }
 
+  /** 化身神力的选项：开着神力、能用化身时才有 */
+  function miraclesFor(m: RosterMember | undefined) {
+    return m?.kind === 'resident' && deps.miracleReady() ? miracleOptions(m) : null
+  }
+
   /** 地图上的动作钮跟着名册和右栏开合更新 */
   function syncFocus() {
     const m = current
@@ -155,7 +181,22 @@ export function initInfoPanel(deps: InfoPanelDeps) {
       following,
       cardOpen: !panel.hidden,
       alert: alert ? { kind: alert.kind, text: `${m?.name}${needWord(alert)}` } : null,
+      miracles: miraclesFor(m),
     })
+  }
+
+  /** 角色卡上的神力：死者的「复活」大钮，活人「状态」右边的治愈、补满 */
+  function renderMiracles(m: RosterMember) {
+    const options = miraclesFor(m)
+    const dead = m.body?.life === 'dead'
+    reviveBtn.hidden = !options || !dead
+    reviveBtn.title = `你的化身会走过去，让${m.name}活过来`
+    miracleBox.hidden = !options || dead
+    for (const b of miracleBtns) {
+      const o = options?.find((x) => x.kind === b.dataset.miracle)
+      b.disabled = !o?.enabled
+      b.title = o ? `${o.note}；你的化身会走过去` : ''
+    }
   }
 
   /** 选中谁：地图描出来、脚下冒动作钮；不自动打开角色卡，卡片开着时跟着换人 */
@@ -267,6 +308,7 @@ export function initInfoPanel(deps: InfoPanelDeps) {
       : '直接接管这名村民；AI 暂停决策'
     talkBtn.hidden = !canTalk(m)
     talkBtn.title = `你的化身会走过去，${m.name}会停下来等你`
+    renderMiracles(m)
 
     needs.setResidentName(m.name)
     $('info-edit').title = `编辑${m.name}的设定`

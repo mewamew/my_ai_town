@@ -79,6 +79,8 @@ export interface ActionDescription {
   consumes_item: boolean
   portion_name: string | null
   recipient: boolean
+  /** 只能对在场的别人用（复活、伤人）：选对象时不列自己 */
+  others_only?: true
   remaining?: number | null
   supply: { initial: number; cost: number } | null
   id: string

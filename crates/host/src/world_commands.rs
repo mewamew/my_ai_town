@@ -59,6 +59,30 @@ impl Runtime {
         }
     }
 
+    /// 打开或关掉化身神力：只是一个开关，不暂停世界、不打断谁，也不占世界设定的修订号
+    /// （正在别的页面改的世界观不会因此被拒）。存盘失败时撤回。回执后广播世界设定。
+    pub(crate) fn save_miracles(&mut self, request_id: String, enabled: bool) -> Outcome {
+        let result = self
+            .transact(|rt| {
+                rt.world.set_miracles(enabled);
+                Ok::<_, HostError>(())
+            })
+            .map_err(|aborted| aborted.to_string());
+        Outcome::none()
+            .and_all(self.world_settings_msg())
+            .and_reply(ServerMsg::WorldSettingsSaved {
+                request_id,
+                ok: result.is_ok(),
+                message: result.err().unwrap_or_else(|| {
+                    if enabled {
+                        "化身神力已打开：化身能对够得着的人复活、治愈、补满".into()
+                    } else {
+                        "化身神力已关闭".into()
+                    }
+                }),
+            })
+    }
+
     /// 开关变化后世界暂停，所有居民的旧安排作废、重新观察；数值不动。
     fn set_physiology(
         &mut self,
@@ -129,6 +153,7 @@ impl Runtime {
     pub(crate) fn world_settings_msg(&self) -> ServerMsg {
         let state = WorldSettingsView {
             max_chars: host::world_settings::MAX_WORLDVIEW_CHARS,
+            miracles: self.world.miracles(),
             mock: self.driver.mock,
             model: self.driver.target.model.clone(),
             persistent: self.store.is_some(),

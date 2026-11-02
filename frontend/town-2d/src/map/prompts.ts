@@ -77,6 +77,12 @@ export class PromptLayer {
     const keys = !isTouch()
     if (p.key && keys) x += keycap(g, x, p.key, KEY_WIDTH) + GAP
     x += text(g, x, p.label, 'aprompt-text')
+    // 另一件事（F 神力）只给键盘画：触屏在操作条上点「神力」
+    if (p.alt && keys) {
+      x += GAP * 2
+      x += keycap(g, x, p.alt.key, KEY_WIDTH) + GAP
+      x += text(g, x, p.alt.label, 'aprompt-text')
+    }
     if (prompts.length > 1) {
       const word = prompts.every((q) => q.kind === 'person') ? '换人' : '切换'
       x += GAP * 2

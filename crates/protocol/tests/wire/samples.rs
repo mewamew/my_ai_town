@@ -126,12 +126,20 @@ fn body() -> BodyView {
         limitation: "身体低值，不能劳作".into(),
         causes: vec!["受伤".into()],
         exposure: [0.0, 0.0, 0.0],
-        history: vec![BodyEvent {
-            at: 400.0,
-            kind: BodyEventKind::Condition,
-            source: "摔了一跤".into(),
-            text: "出现受伤".into(),
-        }],
+        history: vec![
+            BodyEvent {
+                at: 400.0,
+                kind: BodyEventKind::Condition,
+                source: "摔了一跤".into(),
+                text: "出现受伤".into(),
+            },
+            BodyEvent {
+                at: 410.0,
+                kind: BodyEventKind::Miracle,
+                source: "旅人的神迹".into(),
+                text: "旅人施展神迹：饱腹回满".into(),
+            },
+        ],
         wound: None,
     }
 }
@@ -485,6 +493,7 @@ pub fn server_samples() -> Vec<ServerMsg> {
         ServerMsg::WorldSettings {
             state: WorldSettingsView {
                 max_chars: 6000,
+                miracles: true,
                 mock: false,
                 model: "m".into(),
                 persistent: true,
@@ -854,6 +863,7 @@ fn prop_action() -> PropActionView {
         id: "eat".into(),
         label: "吃饭".into(),
         minutes: 30.0,
+        others_only: false,
         portion_name: Some("一碗饭".into()),
         recipient: false,
         remaining: None,
@@ -935,7 +945,16 @@ fn avatar_state() -> AvatarState {
             inventory: InventoryView {
                 capacity: 4,
                 slots: vec![InventorySlot {
-                    actions: vec![prop_action()],
+                    actions: vec![
+                        prop_action(),
+                        PropActionView {
+                            id: "revive".into(),
+                            label: "施用复苏石".into(),
+                            others_only: true,
+                            recipient: true,
+                            ..prop_action()
+                        },
+                    ],
                     definition: Some("core:bread@1".into()),
                     items: vec!["bread_1".into()],
                     name: "面包".into(),
@@ -1034,16 +1053,29 @@ fn avatar_state() -> AvatarState {
                 response_error: None,
             }),
         ],
+        miracles: false,
         mode: AvatarMode::Possession,
         navigation_revision: 2,
-        nearby: vec![NearbyPerson {
-            activity: "工作".into(),
-            available: false,
-            can_talk: false,
-            busy: Some("正在和别人说话".into()),
-            id: "resident_ashu".into(),
-            name: "阿树".into(),
-        }],
+        nearby: vec![
+            NearbyPerson {
+                activity: "工作".into(),
+                available: false,
+                can_talk: false,
+                busy: Some("正在和别人说话".into()),
+                dead: false,
+                id: "resident_ashu".into(),
+                name: "阿树".into(),
+            },
+            NearbyPerson {
+                activity: "死亡".into(),
+                available: false,
+                can_talk: false,
+                busy: Some("已经死了".into()),
+                dead: true,
+                id: "resident_xiaohe".into(),
+                name: "小禾".into(),
+            },
+        ],
         approach: vec![ApproachPerson {
             id: "resident_xiaohe".into(),
             name: "小禾".into(),
@@ -1174,6 +1206,11 @@ pub fn shape_samples() -> (Vec<ServerMsg>, Vec<ClientMsg>) {
                 interaction: InteractionKind::Talk,
                 message: "一起聊聊？".into(),
             }),
+            avatar(AvatarCommand::Miracle {
+                revision: 3,
+                recipient: "resident_xiaohe".into(),
+                miracle: MiracleKind::Revive,
+            }),
         ],
     )
 }
@@ -1259,6 +1296,11 @@ pub fn client_samples() -> Vec<ClientMsg> {
             world_id: "w1".into(),
             expected_revision: 1,
             text: "小镇".into(),
+        },
+        ClientMsg::SetMiracles {
+            request_id: "r1".into(),
+            world_id: "w1".into(),
+            enabled: true,
         },
         ClientMsg::SetPhysiology {
             request_id: "r1".into(),

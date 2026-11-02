@@ -3,7 +3,10 @@ use kernel::{
     avatar::{Area, Obstacle, Portal, Spot, Surface, WalkMap, ID},
     World,
 };
-use protocol::{Appearance, InteractionCommand as Chat, InteractionKind, InventoryAction};
+use protocol::{
+    Appearance, BodyEventKind, InteractionCommand as Chat, InteractionKind, InventoryAction,
+    MiracleKind,
+};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
@@ -20,13 +23,14 @@ fn world() -> World {
     ]))
 }
 fn world_with_props(props: Value) -> World {
+    world_of(props, &[("a", "阿树", "loc_a"), ("b", "远处的人", "loc_b")])
+}
+/// 甲乙两处、入口在甲处落脚点的小镇：甲处有一面墙和通往乙处的门；道具 stone 摆在甲处、
+/// 和 flower 一样在入口旁一米。
+fn world_of(props: Value, residents: &[(&str, &str, &str)]) -> World {
     let mut topo = common::two_places(props);
     topo.entry = Some(serde_json::from_value(json!({"locale":"loc_a","station":"st_a"})).unwrap());
-    let mut w = common::world_with(
-        topo,
-        600.,
-        &[("a", "阿树", "loc_a"), ("b", "远处的人", "loc_b")],
-    );
+    let mut w = common::world_with(topo, 600., residents);
     w.walk_map = Some(Arc::new(WalkMap {
         version: 1,
         svg_units_per_metre: 12.,
@@ -47,7 +51,11 @@ fn world_with_props(props: Value) -> World {
             ("st_b".into(), spot("loc_b", 2., 2.)),
         ]
         .into(),
-        props: [("flower".into(), spot("loc_a", 3., 2.))].into(),
+        props: [
+            ("flower".into(), spot("loc_a", 3., 2.)),
+            ("stone".into(), spot("loc_a", 3., 2.)),
+        ]
+        .into(),
         obstacles: vec![Obstacle {
             id: "wall".into(),
             spot: spot("loc_a", 10., 10.),
@@ -558,4 +566,119 @@ fn resident_on_the_doorstep_counts_as_inside() {
     assert_eq!(snapshot(&w)["actors"]["b"]["locus"]["at"]["space"], "loc_b");
     let saved = w.snapshot();
     w.restore_snapshot(saved).unwrap();
+}
+
+/// 化身也能对别人用道具：对倒在跟前的死者施用复苏石，复活记着是化身用的。玩家界面选了对象
+/// 就发这样的动作（frontend/town-shared/src/avatar/bag.ts）。
+#[test]
+fn avatar_revives_the_dead_with_a_revival_stone() {
+    let mut w = world_with_props(json!([
+        {"id":"stone","definition":"test:revival_stone@1","locale":"loc_a"}
+    ]));
+    w.set_body_values("a", None, None, None, Some(0.)).unwrap();
+    enter(&mut w);
+    let draft = |recipient: Option<&str>| -> protocol::ActionDraft {
+        serde_json::from_value(
+            json!({"intent":{"verb":"revive"},"prop_id":"stone","recipient":recipient}),
+        )
+        .unwrap()
+    };
+    let rev = w.avatar().unwrap().actions.revision;
+    assert!(
+        w.avatar_action("self", rev, &draft(None)).is_err(),
+        "复活要对死者用，不能对自己"
+    );
+    w.avatar_action("revive", rev, &draft(Some("a"))).unwrap();
+    common::finish(&mut w, ID, "revive");
+    let a = w.actor("a").unwrap();
+    assert!(!a.needs.body.dead);
+    assert!(a
+        .needs
+        .body
+        .history
+        .iter()
+        .any(|e| e.kind == BodyEventKind::Revive && e.source.starts_with("aya")));
+}
+
+/// 化身神力：打开开关后，化身对够得着的人复活、补满、治愈，做不了的写明原因；附身村民时不行。
+/// 死者躺在床上：身下的家具不挡视线（不然从哪边都够不着）。复活记成「某某的神迹」，
+/// 同一处所醒着的人亲眼看到，别处的人不知道；开关随存档保存。
+#[test]
+fn miracles_need_the_switch_and_bystanders_see_them() {
+    let town = || {
+        world_of(
+            json!([]),
+            &[
+                ("a", "阿树", "loc_a"),
+                ("c", "小禾", "loc_a"),
+                ("b", "远处的人", "loc_b"),
+            ],
+        )
+    };
+    let cast = |w: &mut World, who: &str, kind| {
+        let rev = w.avatar().unwrap().actions.revision;
+        w.avatar_miracle(rev, who, kind).map_err(|e| e.to_string())
+    };
+    let mut w = town();
+    // 甲处落脚点上摆一张床：阿树、小禾都站（躺）在床上
+    Arc::make_mut(w.walk_map.as_mut().unwrap())
+        .obstacles
+        .push(Obstacle {
+            id: "bed".into(),
+            spot: spot("loc_a", 2., 2.),
+            half: [0.6, 1.0],
+        });
+    w.set_body_values("a", None, None, None, Some(0.)).unwrap();
+    enter(&mut w);
+    let off = cast(&mut w, "a", MiracleKind::Revive).unwrap_err();
+    assert!(off.contains("没有打开"), "{off}");
+    w.set_miracles(true);
+    assert!(cast(&mut w, "a", MiracleKind::Heal)
+        .unwrap_err()
+        .contains("先复活"));
+    assert!(cast(&mut w, "c", MiracleKind::Revive)
+        .unwrap_err()
+        .contains("还活着"));
+    assert!(
+        cast(&mut w, "b", MiracleKind::Refill).is_err(),
+        "够不着的人不行"
+    );
+    let told = cast(&mut w, "a", MiracleKind::Revive).unwrap();
+    assert!(told.contains("活了过来"), "{told}");
+    let a = w.actor("a").unwrap();
+    assert!(!a.needs.body.dead);
+    assert_eq!(a.needs.health.value, 100.);
+    assert!(a
+        .needs
+        .body
+        .history
+        .iter()
+        .any(|e| e.kind == BodyEventKind::Revive && e.source == "aya的神迹"));
+    let saw = |w: &World, who: &str| {
+        w.actor(who)
+            .unwrap()
+            .journal
+            .events
+            .iter()
+            .any(|e| e.text == "看见aya让阿树活了过来")
+    };
+    assert!(saw(&w, "c"));
+    assert!(!saw(&w, "b"));
+    assert!(cast(&mut w, "a", MiracleKind::Refill)
+        .unwrap_err()
+        .contains("都是满的"));
+    w.set_body_values("a", Some(20.), None, None, None).unwrap();
+    cast(&mut w, "a", MiracleKind::Refill).unwrap();
+    assert_eq!(w.actor("a").unwrap().needs.fullness.value, 100.);
+    assert!(cast(&mut w, "a", MiracleKind::Heal)
+        .unwrap_err()
+        .contains("身体无恙"));
+    let mut restored = town();
+    restored.restore_snapshot(w.snapshot()).unwrap();
+    assert!(restored.miracles());
+    w.avatar_leave().unwrap();
+    w.possess("c").unwrap();
+    assert!(cast(&mut w, "a", MiracleKind::Refill)
+        .unwrap_err()
+        .contains("附身"));
 }

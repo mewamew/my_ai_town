@@ -121,6 +121,63 @@
     transform: translateX(-50%) scale(0.8);
   }
 }
+/* 神力的选项单：浮在这排钮上方；钮翻到头顶时改到下方 */
+.focus-miracles {
+  pointer-events: auto;
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  width: 230px;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 2px solid var(--text);
+  border-radius: var(--r-m);
+  background: var(--surface);
+  box-shadow: 0 3px 0 var(--text);
+  color: var(--text);
+  text-align: left;
+}
+.resident-focus.flip .focus-miracles {
+  top: calc(100% + 10px);
+  bottom: auto;
+}
+.focus-miracles-head {
+  margin: 0;
+  padding: 2px 8px 6px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+.focus-miracles button {
+  display: grid;
+  gap: 1px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--r-s);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.focus-miracles button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+.focus-miracles button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.focus-miracles small {
+  color: var(--text-2);
+  font-size: 11px;
+}
+.focus-miracles-foot {
+  margin: 0;
+  padding: 4px 8px 0;
+  color: var(--text-3);
+  font-size: 11px;
+}
 @keyframes focus-bob {
   50% {
     transform: translateY(-4px);

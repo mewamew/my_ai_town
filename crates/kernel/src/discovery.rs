@@ -50,7 +50,7 @@ impl World {
     }
 
     /// 能发现东西的人：在场、活着、能行动、没在睡觉；化身是玩家的眼睛，不记。
-    fn can_notice(&self, a: &Actor) -> bool {
+    pub(crate) fn can_notice(&self, a: &Actor) -> bool {
         let asleep = crate::physiology::body_spot(self, a)
             .and_then(|s| s.action.as_ref())
             .is_some_and(|action| action.completion == Completion::Sleep);

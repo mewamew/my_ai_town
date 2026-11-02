@@ -12,6 +12,8 @@ use serde::Serialize;
 #[derive(Debug, Clone, Serialize)]
 pub struct WorldSettingsView {
     pub max_chars: usize,
+    /// 化身神力：化身能对够得着的人复活、治愈、补满。随存档保存，缺省为关。
+    pub miracles: bool,
     pub mock: bool,
     pub model: String,
     pub persistent: bool,

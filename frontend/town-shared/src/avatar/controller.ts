@@ -14,8 +14,10 @@ import { createAvatarTouch } from './touch'
 import { isTouch } from '../platform'
 import type { AvatarActions, AvatarTab } from './ui-types'
 import type { GameMap } from '../gameMap'
-import type { ClientMsg, ServerMsg, WorldHold } from '../protocol'
-import type { AvatarCommand, AvatarState } from './types'
+import type { ClientMsg, RosterMember, ServerMsg, WorldHold } from '../protocol'
+import type { AvatarCommand, AvatarState, MiracleKind } from './types'
+import { miracleOptions } from '../miracles'
+import { playMiracle } from './miracleFx'
 import type { GameAudio } from '../audio/controller'
 import { $, el } from '../dom'
 import type { HoldFix } from '../holds'
@@ -105,6 +107,12 @@ export function createAvatar(deps: AvatarDeps) {
     select: (kind: 'chat' | 'bag', id?: string) => avatar.select(kind, id),
     /** 右栏「和 X 说话」：进入化身（来过的直接回到上次的位置），走过去搭话 */
     talkTo: (resident: string) => avatar.talkTo(resident),
+    /** 神力的入口（地图上的钮、角色卡、死亡卡）该不该出现 */
+    miracleReady: () => avatar.miracleReady(),
+    /** 对某人施展神力：进入化身、走过去，到了就施展 */
+    miracle: (resident: string, kind: MiracleKind) => avatar.miracle(resident, kind),
+    /** 几个人里离化身最近的一个（死亡卡上的「去复活」先去最近的） */
+    nearest: (ids: string[]) => avatar.nearest(ids),
     onReset: () => avatar.reset(),
     active: () => avatar.owned(),
     dispose: () => avatar.dispose(),
@@ -153,6 +161,12 @@ class AvatarController {
   private focusedTarget: string | null = null
   /** 「和 X 说话」时还没进入化身：进去后走过去找的人 */
   private pendingTalk: string | null = null
+  /** 「复活」「治愈」时还没进入化身：进去后走过去施展 */
+  private pendingMiracle: { resident: string; kind: MiracleKind } | null = null
+  /** 世界开着化身神力（世界设定）；化身状态里的 miracles 只在控制化身本人时为真 */
+  private miraclesOn = false
+  /** 名册上每个人的身体：神力选项单写会变成多少、做不了的原因 */
+  private members = new Map<string, RosterMember>()
   /** 刚进入化身：镜头拉近到能看清人，拉一次 */
   private closeUp = false
 
@@ -255,6 +269,7 @@ class AvatarController {
       selectBag: (id) => {
         this.bagSelection = id
       },
+      miracleMenu: () => this.miracleMenu(),
     }
   }
 
@@ -272,6 +287,7 @@ class AvatarController {
       targets: () => this.targets(),
       cycleTarget: (step) => this.cycleTarget(step),
       toggleBag: () => this.toggleTab('bag'),
+      miracleMenu: () => this.miracleMenu(),
       showToast: this.ui.showToast,
       onDirection: (direction) => this.footsteps.update(direction[0] !== 0 || direction[1] !== 0),
       onWalk: () => this.resumeFollowing(false),
@@ -348,6 +364,7 @@ class AvatarController {
           this.focusedTarget = `person:${id}`
           this.navigation.reachFor('person', id)
         },
+        cast: (id, kind) => void this.castAt(id, kind),
       },
       this.bulletinTargets()
     )
@@ -446,6 +463,7 @@ class AvatarController {
   private closeDialog() {
     this.ui.entry.close()
     this.pendingTalk = null
+    this.pendingMiracle = null
     this.render()
   }
 
@@ -483,10 +501,17 @@ class AvatarController {
   /** 右栏「和 X 说话」：控制中直接走过去；没进入化身时先进入（第一次先选样子），进去后走过去 */
   talkTo(resident: string) {
     if (this.owned()) return this.select('chat', resident)
+    if (!this.enterFirst()) return false
+    this.pendingTalk = resident
+    this.pendingMiracle = null
+    return true
+  }
+
+  /** 进入化身：来过的直接回到上次的位置，第一次先选样子。进不去（断线、被别的页面占着）返回 false */
+  private enterFirst() {
     const { state } = this
     if (!this.online || state?.occupied || !this.map.avatarSupported || !state?.supported)
       return false
-    this.pendingTalk = resident
     const actor = state.actor
     if (actor)
       void this.execute({
@@ -496,6 +521,94 @@ class AvatarController {
       })
     else this.openDialog()
     return true
+  }
+
+  /** 神力的入口（地图上的钮、角色卡、死亡卡）该不该出现：世界开着神力，这张地图能用化身，
+   *  没被别的页面占着，也没在附身（附身就是那个村民，村民不会神力） */
+  miracleReady() {
+    const s = this.state
+    return (
+      this.online &&
+      this.miraclesOn &&
+      !!this.map.avatarSupported &&
+      !!s?.supported &&
+      !(s.occupied && !s.controlled) &&
+      s.mode !== 'possession'
+    )
+  }
+
+  /** 对某人施展神力：控制中直接走过去，到了就施展；没进入化身时先进入，进去后再走过去 */
+  miracle(resident: string, kind: MiracleKind) {
+    if (!this.miracleReady()) return false
+    if (this.owned()) return this.castAt(resident, kind)
+    if (!this.enterFirst()) return false
+    this.pendingMiracle = { resident, kind }
+    this.pendingTalk = null
+    return true
+  }
+
+  /** 走过去（够得着就不走），到了施展；施展前按最新的状态取修订号 */
+  private castAt(resident: string, kind: MiracleKind) {
+    this.ui.miracles.hidden = true
+    this.focusedTarget = `person:${resident}`
+    if (this.navigation.reachFor('person', resident, () => void this.cast(resident, kind)))
+      return true
+    this.ui.showToast('看不到这个人在哪，先走近一点')
+    return false
+  }
+
+  private async cast(resident: string, kind: MiracleKind) {
+    const a = this.state?.actor
+    if (!a) return
+    const ok = await this.execute({
+      kind: 'miracle',
+      revision: a.revision,
+      recipient: resident,
+      miracle: kind,
+    })
+    // 结果那句话随回执的说明当提示显示（handleMsg）；这里只画那一下光
+    if (ok) playMiracle(this.map, $('map'), resident)
+  }
+
+  /** 几个人里离化身最近的一个；化身不在场或量不出位置时取第一个 */
+  nearest(ids: string[]) {
+    const me = this.state?.actor?.present ? this.map.getMemberPos(this.state.actor.id) : undefined
+    const far = (id: string) => {
+      const p = me && this.map.getMemberPos(id)
+      return me && p ? Math.hypot(p[0] - me[0], p[1] - me[1]) : Infinity
+    }
+    return [...ids].sort((x, y) => far(x) - far(y))[0]
+  }
+
+  /** F 或操作条上的「神力」：对当前对象（人）打开选项单，写清会变成多少，做不了的灰着写原因 */
+  private miracleMenu() {
+    const { ui, state } = this
+    if (!this.owned() || !state?.miracles) return
+    if (!ui.miracles.hidden) {
+      ui.miracles.hidden = true
+      return
+    }
+    const current = this.targets().find((t) => t.prompt.focused)
+    const id = current?.prompt.kind === 'person' ? current.prompt.target : null
+    const m = id ? this.members.get(id) : undefined
+    if (!id || !m) {
+      ui.showToast('走近一个人，再施展神力')
+      return
+    }
+    const head = el('p', `✦ 神力 · ${m.name}`, 'avatar-miracles-head')
+    const rows = miracleOptions(m).map((o) => {
+      const b = el('button')
+      b.type = 'button'
+      b.setAttribute('role', 'menuitem')
+      b.disabled = !o.enabled
+      b.append(el('b', o.label), el('small', o.note))
+      b.onclick = () => void this.castAt(id, o.kind)
+      return b
+    })
+    const foot = el('p', '够不着就先走过去；在场的人会看到', 'avatar-miracles-foot')
+    ui.miracles.replaceChildren(head, ...rows, foot)
+    ui.miracles.hidden = false
+    rows.find((b) => !b.disabled)?.focus()
   }
 
   private panelState(): AvatarPanelState {
@@ -597,6 +710,8 @@ class AvatarController {
     ui.hud.hidden = !controlling
     if (this.deps.game) document.body.classList.toggle('player-mode', controlling)
     if (!controlling) ui.menu.hidden = true
+    ui.miracleBtn.hidden = !controlling || !state?.miracles
+    if (ui.miracleBtn.hidden) ui.miracles.hidden = true
     if (controlling) {
       this.panels.renderHud(this.panelState())
     }
@@ -662,10 +777,13 @@ class AvatarController {
     this.closeUp = true
     this.tab = null
     this.bagSelection = null
-    // 从右栏「和 X 说话」进来的：进去后直接走过去
+    // 从右栏「和 X 说话」「复活」进来的：进去后直接走过去
     const talk = this.pendingTalk
+    const miracle = this.pendingMiracle
     this.pendingTalk = null
+    this.pendingMiracle = null
     if (talk) window.setTimeout(() => this.select('chat', talk), 200)
+    if (miracle) window.setTimeout(() => this.castAt(miracle.resident, miracle.kind), 200)
     // 触屏上提示条在顶上压着地图，写短一点、早点收：摇杆和右下的按钮自己就看得出用法
     this.ui.showToast(
       isTouch()
@@ -701,9 +819,13 @@ class AvatarController {
   handleMsg(message: ServerMsg) {
     if (message.type === 'roster') {
       this.holds = message.holds ?? []
+      this.members = new Map(message.locales.flatMap((l) => l.members).map((m) => [m.id, m]))
       this.render()
     }
-    if (message.type === 'world_settings') this.enterWorld(message.state.world_id)
+    if (message.type === 'world_settings') {
+      this.miraclesOn = message.state.miracles
+      this.enterWorld(message.state.world_id)
+    }
     // 化身命令没能执行（格式错误、命令过多）时回的是通用错误：结束等待并提示
     if (message.type === 'error' && message.request_id !== undefined) {
       const p = this.commands.settle(message.request_id, false)

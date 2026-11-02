@@ -215,6 +215,55 @@
   background: var(--avatar-hover);
 }
 
+/* ---- 化身神力：操作条上的钮、上方的选项单 ---- */
+.avatar-act.avatar-miracle {
+  color: var(--avatar-green);
+  font-weight: 600;
+}
+.avatar-miracles {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  width: 240px;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--avatar-line);
+  border-radius: var(--r-m);
+  background: var(--avatar-paper);
+  box-shadow: var(--elev-3);
+  white-space: normal;
+}
+.avatar-miracles-head {
+  margin: 0;
+  padding: 4px 8px 8px;
+  border-bottom: 1px solid var(--avatar-line);
+  font-weight: 600;
+}
+.avatar-miracles button {
+  display: grid;
+  gap: 1px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--r-s);
+  background: transparent;
+  text-align: left;
+}
+.avatar-miracles button:hover:not(:disabled) {
+  background: var(--avatar-hover);
+}
+.avatar-miracles button small {
+  color: var(--avatar-dim);
+  font-size: 11px;
+}
+.avatar-miracles-foot {
+  margin: 0;
+  padding: 4px 8px 2px;
+  color: var(--avatar-dim);
+  font-size: 11px;
+}
+
 /* ---- 提示条与回到化身 ---- */
 .avatar-toast {
   pointer-events: auto;
@@ -987,4 +1036,96 @@
 }
 .avatar-composer textarea[readonly] {
   background: var(--surface-sunken);
+}
+
+/* ---- 施展神力的那一下：一道光落在对方身上（miracleFx.ts） ---- */
+.miracle-fx {
+  --fx-half: 20px;
+  position: absolute;
+  z-index: 6;
+  width: calc(var(--fx-half) * 2.4);
+  height: 220px;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+  border-radius: 999px 999px 40% 40%;
+  transform-origin: 50% 100%;
+  background: linear-gradient(
+    to bottom,
+    rgb(255 246 207 / 0),
+    rgb(255 246 207 / 0.7) 45%,
+    rgb(255 255 255 / 0.95)
+  );
+  filter: blur(1px);
+  animation: miracle-beam 1.1s ease-out forwards;
+}
+.miracle-fx::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -10px;
+  width: 180%;
+  height: 26px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(rgb(255 248 216 / 0.95), rgb(255 248 216 / 0));
+}
+.miracle-fx i {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  background: #fff7c2;
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  animation: miracle-spark 1.1s ease-out forwards;
+}
+.miracle-fx i:nth-child(1) {
+  left: -40%;
+  top: 55%;
+}
+.miracle-fx i:nth-child(2) {
+  right: -35%;
+  top: 40%;
+  animation-delay: 0.12s;
+}
+.miracle-fx i:nth-child(3) {
+  left: 10%;
+  top: 20%;
+  animation-delay: 0.2s;
+}
+.miracle-fx i:nth-child(4) {
+  right: -10%;
+  top: 72%;
+  animation-delay: 0.3s;
+}
+.miracle-fx i:nth-child(5) {
+  left: -20%;
+  top: 85%;
+  animation-delay: 0.08s;
+}
+@keyframes miracle-beam {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -100%) scaleY(0.2);
+  }
+  25% {
+    opacity: 1;
+    transform: translate(-50%, -100%) scaleY(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -100%) scaleY(1);
+  }
+}
+@keyframes miracle-spark {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.4);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.6);
+  }
 }

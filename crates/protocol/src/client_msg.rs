@@ -93,6 +93,13 @@ pub enum ClientMsg {
         expected_revision: u64,
         switches: crate::PhysiologySwitches,
     },
+    /// 打开或关掉化身神力；回执与世界观相同（WorldSettingsSaved），随后广播世界设定。
+    /// 只是一个开关，不暂停世界，不核对设定修订号：别的页面正在改的世界观不会因此被拒。
+    SetMiracles {
+        request_id: String,
+        world_id: String,
+        enabled: bool,
+    },
     GetProps,
     Content {
         request_id: String,
@@ -280,6 +287,7 @@ impl ClientMsg {
             | GetChatHistory { request_id, .. }
             | SetWorldview { request_id, .. }
             | SetPhysiology { request_id, .. }
+            | SetMiracles { request_id, .. }
             | Content { request_id, .. }
             | ValidateProp { request_id, .. }
             | SaveProp { request_id, .. }

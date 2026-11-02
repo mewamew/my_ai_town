@@ -95,6 +95,21 @@ function hudBar(h: AvatarActions, profile: HTMLElement, game: boolean) {
   const { menu, moreBtn, profileMenu, leaveMenu } = moreMenu(h, profile)
   const chatBtn = actionButton('交谈', 'E', () => h.toggleTab('chat'))
   const cameraBtn = actionButton('镜头回正', 'V', h.resetCamera)
+  // 化身神力开着时才出现：点它（或按 F）对当前对象施展；触屏没有键盘，不画 F
+  const miracleBtn = actionButton(
+    '神力',
+    isTouch() ? undefined : 'F',
+    () => h.miracleMenu(),
+    gameIcon('spark', true)
+  )
+  miracleBtn.classList.add('avatar-miracle')
+  miracleBtn.hidden = true
+  miracleBtn.title = '对身边的人复活、治愈、补满'
+  // 神力的选项单：浮在操作条上方，选了就走过去施展
+  const miracles = el('div')
+  miracles.className = 'avatar-miracles'
+  miracles.hidden = true
+  miracles.setAttribute('role', 'menu')
   // 原型附身模式：热栏上方的四条需求数值条
   const needsStrip = el('div')
   needsStrip.className = 'avatar-needs'
@@ -107,12 +122,13 @@ function hudBar(h: AvatarActions, profile: HTMLElement, game: boolean) {
     leaveSlot.classList.add('avatar-leave')
     leaveSlot.title = '离开小镇（Esc）'
     badge.push(me, leaveSlot)
-    hud.append(mid, chatBtn, bagBtn, statusBtn, cameraBtn, releaseBtn, moreBtn, menu)
+    hud.append(mid, miracleBtn, chatBtn, bagBtn, statusBtn, cameraBtn, releaseBtn, moreBtn)
   } else {
     chatBtn.hidden = true
     cameraBtn.hidden = true
-    hud.append(me, mid, bagBtn, statusBtn, releaseBtn, moreBtn, menu)
+    hud.append(me, mid, miracleBtn, bagBtn, statusBtn, releaseBtn, moreBtn)
   }
+  hud.append(menu, miracles)
   return {
     hud,
     badge,
@@ -124,6 +140,8 @@ function hudBar(h: AvatarActions, profile: HTMLElement, game: boolean) {
     bagCount,
     needsStrip,
     buttons: { chat: chatBtn, bag: bagBtn, status: statusBtn, camera: cameraBtn },
+    miracleBtn,
+    miracles,
     releaseBtn,
     moreBtn,
     menu,
@@ -287,6 +305,7 @@ export function guardPointer(
     (e) => {
       const onHud = e.target instanceof Node && ui.hud.contains(e.target)
       if (!ui.menu.hidden && !onHud) ui.menu.hidden = true
+      if (!ui.miracles.hidden && !onHud) ui.miracles.hidden = true
     },
     { signal }
   )
@@ -307,6 +326,7 @@ export function escapeKey(
       if (event.key !== 'Escape' || document.querySelector('dialog[open]')) return
       const typing = document.activeElement?.matches('input, textarea, select')
       if (!ui.menu.hidden) ui.menu.hidden = true
+      else if (!ui.miracles.hidden) ui.miracles.hidden = true
       else if (!ui.panel.hidden) closeTab()
       else if (ui.entry.isOpen()) closeDialog()
       else if (leave && !typing && !ui.hud.hidden) leave()

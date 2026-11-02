@@ -52,6 +52,21 @@ pub enum AvatarCommand {
         chat_id: String,
         revision: u64,
     },
+    /// 化身神力：对够得着的人施展。只有世界打开了化身神力、控制的是化身本人时才行。
+    Miracle {
+        revision: u64,
+        recipient: String,
+        miracle: MiracleKind,
+    },
+}
+
+/// 化身神力的三种：复活死者、治好伤病、补满饱腹精力水分。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MiracleKind {
+    Revive,
+    Heal,
+    Refill,
 }
 
 /// 玩家控制目标的个人视图。地图不支持化身、还没有控制目标、有控制目标三种形状。
@@ -80,6 +95,8 @@ pub struct AvatarState {
     /// 最近三个动作的变化与失败原因。
     pub feedback: Vec<String>,
     pub interactions: Vec<AvatarInteraction>,
+    /// 化身神力开着，控制的又是化身本人：能对够得着的人施展。
+    pub miracles: bool,
     pub mode: AvatarMode,
     pub navigation_revision: u64,
     pub nearby: Vec<NearbyPerson>,
@@ -132,6 +149,9 @@ pub struct NearbyPerson {
     /// 现在聊不了的原因（正在和别人说话、倒下了……）；能聊时没有。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub busy: Option<String>,
+    /// 已经死了：开着化身神力时能复活。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub dead: bool,
     pub id: String,
     pub name: String,
 }

@@ -2,6 +2,7 @@
 // 同一时刻同一类的事合成一张卡（「阿岚、阿树等 8 人去世了」）；同时最多显示 2 张（手机 1 张），
 // 更多的排队，关掉一张补一张。卡片不自动消失，要玩家关掉。带数值的原文在事件栏和日志页的「详情」里。
 // 全镇暂停按原因合成一张卡，列出受影响的人，按钮直接去修；暂停解除后卡片自己收起。
+// 开着化身神力时死亡卡上多一个「去复活」（先去最近的一位）；卡上的人活过来就从卡上拿掉，都活了卡就收起。
 
 import './notices.css'
 import { el, button } from './dom'
@@ -21,11 +22,18 @@ interface Notice {
   box?: HTMLElement
 }
 
+/** 死亡卡上的「去复活」：现在能不能用（开着化身神力、能用化身），以及去复活这几个人中的一位 */
+interface Revive {
+  ready: () => boolean
+  go: (residentIds: string[]) => void
+}
+
 export function createNotices(
   host: HTMLElement,
   onView: (residentId: string) => void,
   /** 暂停卡上的修复按钮；provider 是受影响村民用的服务名 */
-  onFix: (fix: HoldFix, provider: string) => void
+  onFix: (fix: HoldFix, provider: string) => void,
+  revive?: Revive
 ) {
   const stack = el('div', '', 'town-notices')
   stack.setAttribute('role', 'alert')
@@ -36,6 +44,8 @@ export function createNotices(
   const shown: Notice[] = []
   const queue: Notice[] = []
   let residents: ResidentRegistration[] = []
+  /** 上次画死亡卡时「去复活」能不能用；变了就重画 */
+  let reviveReady = false
 
   /** 多人时标题写「阿岚、阿树等 8 人去世了」；标题去掉名字剩下的部分就是发生的事 */
   function titleOf(items: ImportantEvent[]): string {
@@ -95,6 +105,8 @@ export function createNotices(
       el('div', displayClock(n.clock) + (reason ? ` · ${playerText(reason)}` : ''), 'notice-line')
     )
     const actions = el('div', '', 'notice-actions')
+    if (first.kind === 'death' && revive?.ready())
+      actions.append(button('✦ 去复活', () => revive.go(n.items.map((e) => e.actor)), 'primary'))
     if (who)
       actions.append(
         button('查看', () => {
@@ -153,6 +165,24 @@ export function createNotices(
     /** 居民登记：按编号找头像，「查看」按编号选中 */
     setResidents(list: ResidentRegistration[]) {
       residents = list
+    },
+    /** 每份名册：死亡卡上活过来的人拿掉，都活了就收起；「去复活」能不能用变了就重画死亡卡。
+     *  alive 只对名册上活着的人返回 true，不在名册上的人（离开了）留在卡上 */
+    syncLife(alive: (residentId: string) => boolean) {
+      const ready = !!revive?.ready()
+      const redraw = ready !== reviveReady
+      reviveReady = ready
+      for (const n of [...shown, ...queue]) {
+        if (n.items[0].kind !== 'death') continue
+        const left = n.items.filter((e) => !alive(e.actor))
+        if (!left.length) {
+          if (shown.includes(n)) close(n)
+          else queue.splice(queue.indexOf(n), 1)
+        } else if (left.length !== n.items.length || redraw) {
+          n.items = left
+          if (n.box) place(n)
+        }
+      }
     },
     /** 每份名册：暂停解除了（玩家点了继续、换好了密钥）就收起暂停卡 */
     syncHolds(holds: WorldHold[]) {

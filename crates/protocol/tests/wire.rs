@@ -85,6 +85,7 @@ fn client_variants() -> Vec<String> {
         GetWorldSettings,
         SetWorldview,
         SetPhysiology,
+        SetMiracles,
         GetProps,
         Content,
         ValidateProp,

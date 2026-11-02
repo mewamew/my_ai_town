@@ -69,6 +69,13 @@ pub struct Obstacle {
     pub spot: Spot,
     pub half: Point,
 }
+impl Obstacle {
+    /// 占地盖住这一点（同一空间里）：站在这里的人是坐在、躺在这件家具上。
+    fn covers(&self, at: &Spot) -> bool {
+        self.spot.space == at.space
+            && (0..2).all(|i| (at.position[i] - self.spot.position[i]).abs() < self.half[i])
+    }
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Portal {
     pub id: String,
@@ -192,15 +199,15 @@ impl WalkMap {
             .map(|s| s.locale.as_str())
     }
     pub fn clear(&self, space: &str, p: Point, obstacles: &[Obstacle], radius: f64) -> bool {
-        self.clear_except(space, p, obstacles, None, radius)
+        self.clear_except(space, p, obstacles, &[], radius)
     }
-    /// 同 clear，但 ignored 这件障碍不算（通常是要够着的目标道具自己）。
+    /// 同 clear，但 ignored 里的障碍不算（要够着的目标道具自己、两人身下的家具）。
     fn clear_except(
         &self,
         space: &str,
         p: Point,
         obstacles: &[Obstacle],
-        ignored: Option<&str>,
+        ignored: &[&str],
         radius: f64,
     ) -> bool {
         p.iter().all(|v| v.is_finite())
@@ -215,7 +222,7 @@ impl WalkMap {
                 .is_some()
             })
             && !obstacles.iter().any(|o| {
-                Some(o.id.as_str()) != ignored
+                !ignored.contains(&o.id.as_str())
                     && o.spot.space == space
                     && (0..2).all(|i| (p[i] - o.spot.position[i]).abs() < o.half[i] + radius)
             })
@@ -262,7 +269,8 @@ impl WalkMap {
         })
     }
     /// 玩家和人说话够不够得着：同一空间、距离不超过 limit、中间没有遮挡。
-    /// 不管是不是同一个处所：处所之间的分界在画面上看不出来。
+    /// 不管是不是同一个处所：处所之间的分界在画面上看不出来。两人身下的家具（坐着的长椅、
+    /// 躺着的床，占地盖住站位点）不算遮挡，不然坐着、躺着的人从哪个方向都够不着。
     pub(crate) fn within_talk<'o>(
         &self,
         from: &Spot,
@@ -270,9 +278,16 @@ impl WalkMap {
         limit: f64,
         obstacles: impl FnOnce() -> &'o [Obstacle],
     ) -> bool {
-        from.space == to.space
-            && distance(from.position, to.position) <= limit
-            && self.visible_except(from, to, obstacles(), None)
+        if from.space != to.space || distance(from.position, to.position) > limit {
+            return false;
+        }
+        let obstacles = obstacles();
+        let under: Vec<&str> = obstacles
+            .iter()
+            .filter(|o| o.covers(from) || o.covers(to))
+            .map(|o| o.id.as_str())
+            .collect();
+        self.visible_except(from, to, obstacles, &under)
     }
     /// 从 from 往 toward（对方的位置）走，第一个落在处所 locale 里、站得下的点：玩家和隔着处所分界的人
     /// 说上话时，往前挪这一步站进对方的处所，两人才在同一个地方。本来就在里面时就是原地；找不到为空。
@@ -318,19 +333,13 @@ impl WalkMap {
         if from.locale != to.locale {
             return false;
         }
-        self.visible_except(from, to, obstacles(), ignored)
+        self.visible_except(from, to, obstacles(), ignored.as_slice())
     }
     pub fn visible(&self, a: &Spot, b: &Spot, obstacles: &[Obstacle]) -> bool {
-        self.visible_except(a, b, obstacles, None)
+        self.visible_except(a, b, obstacles, &[])
     }
-    /// 两点之间看得见：按 0.15 米一步取样，中间每个点都不被挡（ignored 这件障碍不算）。
-    fn visible_except(
-        &self,
-        a: &Spot,
-        b: &Spot,
-        obstacles: &[Obstacle],
-        ignored: Option<&str>,
-    ) -> bool {
+    /// 两点之间看得见：按 0.15 米一步取样，中间每个点都不被挡（ignored 里的障碍不算）。
+    fn visible_except(&self, a: &Spot, b: &Spot, obstacles: &[Obstacle], ignored: &[&str]) -> bool {
         if a.space != b.space {
             return false;
         }
