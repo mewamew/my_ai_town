@@ -194,6 +194,7 @@ export class TownMap {
     this.facing = facing
     for (const g of this.svg.querySelectorAll<SVGGElement>('[data-vid]'))
       g.classList.toggle('awaited', awaited.has(g.getAttribute('data-vid') ?? ''))
+    this.syncFocus()
   }
   /** 转身朝向谁：村民编号 → 玩家操控的人 */
   private facing = new Map<string, string>()
@@ -398,6 +399,7 @@ export class TownMap {
         this.hd.onVillagersMoved = () => this.followVillagers()
         this.hd.beforeDraw = this.frameHook ?? undefined
         this.hd.setLiveMotion(this.liveMotion())
+        this.syncFocus()
         this.applyTilt()
         if (this.viewInsets) this.hd.setFocusInsets(this.viewInsets.top, this.viewInsets.bottom)
         this.camera.setViewPresets([
@@ -1086,11 +1088,19 @@ export class TownMap {
       this.rosters++
     }
     this.refreshRooms()
+    this.syncFocus()
+  }
+  /** 立体场景的焦点跟着选中的人，没选人时跟着玩家操控的人；他在交谈时清晰带收窄，像特写 */
+  private syncFocus() {
+    const id = this.selectedId ?? this.liveId
+    const member = id ? this.entries.find((e) => e.member.id === id)?.member : undefined
+    this.hd?.setFocusSubject(member ? member.id : null, !!member?.chat)
   }
   update(entries: ResidentEntry[]) {
     if (this.rosters < 2) this.rosters++
     this.entries = entries
     this.residents.update(entries)
+    this.syncFocus()
     // 名册里自己的位置是服务端的权威位置：交给本地预测校正
     const me = this.motionId && entries.find((e) => e.member.id === this.motionId)?.member.at
     if (this.motion && me && me.kind === 'free')

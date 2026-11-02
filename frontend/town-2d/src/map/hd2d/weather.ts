@@ -146,6 +146,8 @@ uniform float uSway;
 varying vec3 vWeatherPos;
 varying float vWeatherUp;`
 const SHADE_FRAGMENT_HEAD = /* glsl */ `
+uniform float uTime;
+uniform float uSnowSparkle;
 uniform float uWet;
 uniform float uSnow;
 uniform float uCloudShadow;
@@ -176,6 +178,8 @@ export class Weather3D {
     uCloudOffset: { value: new THREE.Vector2() },
     /** 雨下得多大（0～1），海面画雨点用 */
     uRain: { value: 0 },
+    /** 雪面闪光的多少：晴天白天多 */
+    uSnowSparkle: { value: 0 },
   }
   private readonly particles: THREE.ShaderMaterial[] = []
   private readonly rain: THREE.LineSegments
@@ -414,7 +418,10 @@ export class Weather3D {
           float depth = smoothstep(0.0, 0.25, uSnow * 1.05 - 0.05 - snowLevel);
           vec3 snowTone = vec3(0.86, 0.89, 0.94) * (0.82 + 0.3 * under + 0.06 * (snowCell - 0.5));
           snowTone = mix(mix(diffuseColor.rgb, snowTone, 0.6), snowTone, depth);
-          diffuseColor.rgb = mix(diffuseColor.rgb, snowTone, snowed);`
+          diffuseColor.rgb = mix(diffuseColor.rgb, snowTone, snowed);
+          // 晴天雪面零星闪一下，一格一格换地方
+          if (snowed > 0.5 && weatherHash(snowP + floor(uTime * 2.0) * 7.31) > 1.0 - 0.006 * uSnowSparkle)
+            diffuseColor.rgb = vec3(1.3, 1.3, 1.35);`
         )
         .replace(
           '#include <opaque_fragment>',
@@ -446,6 +453,21 @@ export class Weather3D {
         )
     }
     material.customProgramCacheKey = () => `${beforeKey}|sway`
+  }
+
+  /** 此刻雨下得多大（0～1） */
+  get rainLevel() {
+    return this.now.rain
+  }
+
+  /** 地面湿的程度（0～1）：雨停后慢慢变干，彩虹按它淡出 */
+  get wetLevel() {
+    return this.wet
+  }
+
+  /** 这一下闪电的编号（开始的时刻），天幕上的闪电按它换位置 */
+  get flashSeed() {
+    return this.flashAt
   }
 
   /** 地上积雪的程度（0～1），调色按它把阴影压蓝 */
@@ -484,6 +506,7 @@ export class Weather3D {
     s.uRain.value = effects && moving ? this.now.rain : 0
     s.uCloudShadow.value =
       effects && this.prefs.quality !== 'low' ? this.now.shadows * day * 0.35 : 0
+    s.uSnowSparkle.value = effects && moving ? day * (1 - this.now.overcast * 0.8) : 0
     if (moving) s.uCloudOffset.value.x += dt * PIXEL * 4 * (0.4 + this.now.wind)
     const show = (o: THREE.Object3D, amount: number, cap: number, total: number) => {
       const m = (o as THREE.Points).material as THREE.ShaderMaterial

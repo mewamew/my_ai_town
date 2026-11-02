@@ -259,8 +259,8 @@ export const village: MapTheme = {
     },
     shade: {
       day: [0.97, 0.99, 1.05],
-      golden: [0.86, 0.93, 1.12],
-      blue: [0.8, 0.88, 1.2],
+      golden: [0.9, 0.95, 1.08],
+      blue: [0.82, 0.9, 1.16],
       night: [0.86, 0.92, 1.14],
     },
     saturation: 1.18,

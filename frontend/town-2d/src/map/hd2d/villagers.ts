@@ -229,6 +229,12 @@ export class Villagers {
     return false
   }
 
+  /** 立牌此刻站在哪（地图坐标，含避让家具和墙的偏移）；不在场或看不见时为 undefined */
+  drawnAt(id: string): [number, number] | undefined {
+    const v = this.all.get(id)
+    return v?.mesh.visible ? [v.at[0] + v.offset[0], v.at[1] + v.offset[1]] : undefined
+  }
+
   /** 立牌比名册里的位置落后多少（地图单位）：名字和心声泡按它跟着立牌平移 */
   lag(id: string): [number, number] | undefined {
     const v = this.all.get(id)

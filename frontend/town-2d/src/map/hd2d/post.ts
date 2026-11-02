@@ -245,22 +245,43 @@ function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
   return [r + m, g + m, b + m]
 }
 
-/** 最后一遍，在色调映射和转 sRGB 之后：套风格包的胶片 LUT */
+/** 最后一遍，在色调映射和转 sRGB 之后：虚化区边缘一点色差、套风格包的胶片 LUT、细颗粒。
+ *  颗粒顺带把雾和天空大片渐变里的色带打散；低档关掉色差和颗粒 */
 export const finishShader = {
   uniforms: {
     tDiffuse: { value: null },
     tLook: { value: null as THREE.Data3DTexture | null },
     lookAmount: { value: 1 },
+    grain: { value: 0 },
+    aberration: { value: 0 },
+    focus: { value: TILT_FOCUS },
+    band: { value: 0.16 },
+    seed: { value: 0 },
   },
   vertexShader,
   fragmentShader: /* glsl */ `
 uniform sampler2D tDiffuse;
 uniform sampler3D tLook;
 uniform float lookAmount;
+uniform float grain;
+uniform float aberration;
+uniform float focus;
+uniform float band;
+uniform float seed;
 varying vec2 vUv;
 void main() {
   vec4 c = texture2D(tDiffuse, vUv);
+  // 色差只在上下虚化的地方，往画面外沿方向分开，清楚的地方不动
+  vec2 d = vUv - 0.5;
+  float ca = aberration * smoothstep(band, band + 0.38, abs(vUv.y - focus)) * length(d);
+  if (ca > 0.0) {
+    c.r = texture2D(tDiffuse, vUv - d * ca).r;
+    c.b = texture2D(tDiffuse, vUv + d * ca).b;
+  }
   vec3 graded = texture(tLook, clamp(c.rgb, 0.0, 1.0) * ${((LOOK_SIZE - 1) / LOOK_SIZE).toFixed(6)} + ${(0.5 / LOOK_SIZE).toFixed(6)}).rgb;
-  gl_FragColor = vec4(mix(c.rgb, graded, lookAmount), c.a);
+  c.rgb = mix(c.rgb, graded, lookAmount);
+  float n = fract(sin(dot(gl_FragCoord.xy + seed, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
+  c.rgb += n * grain * (1.0 - 0.6 * dot(c.rgb, vec3(0.299, 0.587, 0.114)));
+  gl_FragColor = c;
 }`,
 }

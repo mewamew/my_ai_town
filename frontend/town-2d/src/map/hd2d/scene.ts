@@ -1,6 +1,5 @@
 import * as THREE from 'three'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import type { Atlas } from 'town-shared/mapDocument'
@@ -12,7 +11,7 @@ import type { Dock } from '../pixel/island'
 import { fbm, hash, rng } from '../pixel/noise'
 import { Motes } from './motes'
 import { Villagers, type LiveMotion, type VillagerPlacement } from './villagers'
-import { VILLAGER_HALF } from './villagerSprite'
+import { VILLAGER_HALF, VILLAGER_HEIGHT } from './villagerSprite'
 import { Weather3D } from './weather'
 import { DOORS } from '../buildings'
 import type { WeatherKind } from 'town-shared/weather/types'
@@ -49,6 +48,8 @@ import {
   tiltShader,
 } from './post'
 import { LightMap, type LightSource } from './lightmap'
+import { BokehPass, GlowPass } from './lens'
+import { VolumetricPass } from './volumetric'
 import { pixelMaterial } from './pixelSampling'
 import { landmarkSprites } from './landmarks'
 import { coastTexture, outerMaterial, surfOnLand } from './sea'
@@ -129,7 +130,8 @@ function createRenderer(container: HTMLElement, svg: SVGSVGElement) {
   return renderer
 }
 
-/** 后期：保留场景深度，泛光，横竖两遍景深与边缘模糊，调色，最后输出 */
+/** 后期：保留场景深度 → 体积光和雾 → 景深（中档两遍高斯移轴，高档以上散景）→ 泛光 → 调色 → 色调映射 → 胶片 LUT。
+ *  体积光在景深之前，雾和光柱跟着虚化；泛光在景深之后，散景光斑也会发光 */
 function createComposer(
   renderer: THREE.WebGLRenderer,
   scene: THREE.Scene,
@@ -138,21 +140,27 @@ function createComposer(
   const composer = new EffectComposer(renderer)
   const sceneDepth = new SceneDepthPass(scene, camera)
   composer.addPass(sceneDepth)
-  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.5, 0.5, 0.85)
-  composer.addPass(bloom)
+  const volumetric = new VolumetricPass()
+  volumetric.uniforms.tDepth.value = sceneDepth.depthTexture
+  composer.addPass(volumetric)
   const tiltShift = [new ShaderPass(tiltShader), new ShaderPass(tiltShader)]
   tiltShift[1].uniforms.dir.value.set(0, 1)
   for (const p of tiltShift) {
     p.uniforms.tDepth.value = sceneDepth.depthTexture
     composer.addPass(p)
   }
+  const bokeh = new BokehPass()
+  bokeh.uniforms.tDepth.value = sceneDepth.depthTexture
+  composer.addPass(bokeh)
+  const bloom = new GlowPass()
+  composer.addPass(bloom)
   const grade = new ShaderPass(gradeShader)
   composer.addPass(grade)
   composer.addPass(new OutputPass())
   // 色调映射之后再套风格包的胶片 LUT
   const finish = new ShaderPass(finishShader)
   composer.addPass(finish)
-  return { composer, sceneDepth, bloom, tiltShift, grade, finish }
+  return { composer, sceneDepth, volumetric, bokeh, bloom, tiltShift, grade, finish }
 }
 
 /** 窗在墙面贴图上占的列：自发光图里亮着的列连成一段就是一扇窗。返回 [起, 止) 列 */
@@ -186,7 +194,9 @@ export class HdScene {
   private readonly camera = new THREE.OrthographicCamera()
   private readonly composer: EffectComposer
   private readonly sceneDepth: SceneDepthPass
-  private readonly bloom: UnrealBloomPass
+  private readonly bloom: GlowPass
+  private readonly bokeh: BokehPass
+  private readonly volumetric: VolumetricPass
   private readonly tiltShift: ShaderPass[]
   private readonly grade: ShaderPass
   private readonly finish: ShaderPass
@@ -235,6 +245,17 @@ export class HdScene {
   private readonly seaTime: { value: number }
   /** 海面闪光的多少：晴天白天多，夜里和阴天少 */
   private readonly seaSparkle: { value: number }
+  /** 海面的日光路径（见 sea.ts） */
+  private readonly seaPath: ReturnType<typeof outerMaterial>['sunPath']
+  /** 焦点跟着的人（选中的村民或玩家操控的人）；在交谈时清晰带收窄 */
+  private focusSubject: string | null = null
+  private focusTalking = false
+  /** 正在用的焦点（从下往上 0～1），往跟着的人那里缓动；没跟人时为 null，按面板遮挡居中 */
+  private focusNow: number | null = null
+  private focusTalk = 0
+  private focusAt = 0
+  /** 焦点还在缓动：要每帧画 */
+  private focusMoving = false
   private readonly horizon: Horizon
   private readonly observers: { disconnect(): void }[] = []
   private readonly reduceMotion = matchMedia('(prefers-reduced-motion: reduce)')
@@ -303,6 +324,7 @@ export class HdScene {
     const sea = this.addGround(ground)
     this.seaTime = sea.time
     this.seaSparkle = sea.sparkle
+    this.seaPath = sea.sunPath
     const glowMap = new THREE.CanvasTexture(glowCanvas())
     glowMap.colorSpace = THREE.SRGBColorSpace
     this.addHouses(atlas, glowMap)
@@ -320,6 +342,10 @@ export class HdScene {
     this.composer = post.composer
     this.sceneDepth = post.sceneDepth
     this.bloom = post.bloom
+    this.bokeh = post.bokeh
+    this.volumetric = post.volumetric
+    this.volumetric.uniforms.tLight.value = this.lightmap.texture
+    this.volumetric.uniforms.lightSize.value.set(ground.width * PIXEL, ground.height * PIXEL)
     this.tiltShift = post.tiltShift
     this.grade = post.grade
     this.finish = post.finish
@@ -427,7 +453,7 @@ export class HdScene {
    *  不然每秒约 30 拍（60Hz 屏隔一帧一拍），环境变化只在拍上画。帧距均匀，走路才匀；一帧最多画一遍 */
   private loop = (t: number) => {
     this.ticker = requestAnimationFrame(this.loop)
-    const fast = this.dirty || this.cameraMoving || this.villagers.liveActive()
+    const fast = this.dirty || this.cameraMoving || this.focusMoving || this.villagers.liveActive()
     if (fast ? t - this.lastDraw >= MOTION_MS : t - this.lastTick >= BEAT_MS) this.tick(t, fast)
   }
 
@@ -444,6 +470,7 @@ export class HdScene {
     this.ambient = false
     if (!this.reduceMotion.matches) {
       this.seaTime.value = t / 1000
+      this.volumetric.uniforms.time.value = t / 1000
       this.motes.step(t)
       this.horizon.step(t / 1000)
       for (const b of this.beams) b.rotation.y -= dt * 0.9
@@ -461,6 +488,8 @@ export class HdScene {
     this.lightmap.render(this.renderer)
     if (this.villagers.step(t)) this.onVillagersMoved?.()
     this.cameraMoving = this.beforeDraw?.(t) ?? false
+    this.stepFocus(t)
+    this.finish.uniforms.seed.value = (t * 0.37) % 100
     this.syncView()
     this.dirty = false
     this.composer.render()
@@ -556,15 +585,71 @@ export class HdScene {
     this.readView()
   }
 
-  /** 画质：低档直接画场景，不拷贝深度颜色目标，也关闭泛光和景深模糊 */
+  /** 画质：低档直接画场景，不拷贝深度颜色目标，关掉泛光、景深、色差和颗粒；中档是两遍高斯的移轴模糊；
+   *  高档以上换成散景景深、打开体积光和雾 */
   setQuality(quality: Quality) {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, pixelRatioCap(quality)))
     this.composer.setPixelRatio(this.renderer.getPixelRatio())
-    this.bloom.enabled = quality !== 'low'
-    this.sceneDepth.captureDepth = quality !== 'low'
-    for (const p of this.tiltShift) p.enabled = quality !== 'low'
+    const low = quality === 'low',
+      mid = quality === 'mid'
+    this.bloom.enabled = !low
+    this.sceneDepth.captureDepth = !low
+    for (const p of this.tiltShift) p.enabled = mid
+    this.bokeh.enabled = !low && !mid
+    this.volumetric.enabled = !low && !mid
+    this.finish.uniforms.grain.value = low ? 0 : mid ? 0.025 : 0.035
+    this.finish.uniforms.aberration.value = low || mid ? 0 : 0.012
     this.resize()
+    this.applyLight()
+  }
+
+  /** 焦点跟着谁：选中的村民或玩家操控的人（null 回到画面中间）；talking 时清晰带收窄，像对话时的特写 */
+  setFocusSubject(id: string | null, talking = false) {
+    if (id === this.focusSubject && talking === this.focusTalking) return
+    this.focusSubject = id
+    this.focusTalking = talking
     this.request()
+  }
+
+  /** 跟着的人的身子在画面上的高度（从下往上 0～1）；不在画面里时为 undefined */
+  private subjectFocus() {
+    const at = this.focusSubject && this.villagers.drawnAt(this.focusSubject)
+    if (!at) return
+    const p = new THREE.Vector3(at[0], 0, at[1]).project(this.camera)
+    const half = VILLAGER_HEIGHT / (this.camera.top - this.camera.bottom)
+    const y = (p.y + half) * 0.5 + 0.5
+    return y > 0.02 && y < 0.98 && Math.abs(p.x) < 1 ? Math.max(0.18, Math.min(0.82, y)) : undefined
+  }
+
+  /** 每帧画之前：焦点往跟着的人那里缓动，约 400 毫秒到位；交谈时清晰带慢慢收窄 */
+  private stepFocus(t: number) {
+    const dt = Math.min(0.1, Math.max(0, (t - this.focusAt) / 1000))
+    this.focusAt = t
+    const target = this.subjectFocus()
+    const k = 1 - Math.exp(-dt / 0.12)
+    const talk = this.focusTalking && target !== undefined ? 1 : 0
+    let moving = Math.abs(talk - this.focusTalk) > 0.01
+    this.focusTalk += (talk - this.focusTalk) * k
+    if (target !== undefined) {
+      const from = this.focusNow ?? this.defaultFocus()
+      this.focusNow = from + (target - from) * k
+      moving ||= Math.abs(target - this.focusNow) > 0.002
+    } else if (this.focusNow !== null) {
+      const home = this.defaultFocus()
+      this.focusNow += (home - this.focusNow) * k
+      if (Math.abs(home - this.focusNow) < 0.002) this.focusNow = null
+      else moving = true
+    }
+    if (moving || this.focusMoving) this.updateTiltShift()
+    this.focusMoving = moving
+  }
+
+  /** 没跟人时的焦点：画面中间稍低，跟着没被面板盖住的那块地图走 */
+  private defaultFocus() {
+    const h = this.container.clientHeight
+    const [top, bottom] = this.focusInsets
+    const centre = top + Math.max(0, h - top - bottom) / 2
+    return h ? TILT_FOCUS + (h / 2 - centre) / h : TILT_FOCUS
   }
 
   private updateTiltShift() {
@@ -573,26 +658,27 @@ export class HdScene {
     // 低角度保留前、中、后景层次；转向俯视时逐渐收小离焦，方便读地图与选中人物。
     const overhead = smooth(52, PITCH_MAX, this.pitchDegrees)
     const amount = lerp(3.2, 0.35, overhead) * pr * near
-    // 清晰带跟着露出来的那块地图走：手机上村民卡盖住下半屏时，上半屏选中的人不糊
-    const h = this.container.clientHeight
-    const [top, bottom] = this.focusInsets
-    const centre = top + Math.max(0, h - top - bottom) / 2
-    const focus = h ? TILT_FOCUS + (h / 2 - centre) / h : TILT_FOCUS
+    // 清晰带跟着选中的人；没选人时跟着露出来的那块地图走：手机上村民卡盖住下半屏时，上半屏选中的人不糊
+    const focus = this.focusNow ?? this.defaultFocus()
+    const band = lerp(0.16, 0.1, this.focusTalk)
     const depthSpan = (this.viewHeight * this.tilt.cos) / this.tilt.sin
     const distance = Math.min(
       this.viewHeight * CAMERA_DISTANCE_PER_VIEW_HEIGHT,
       MAX_CAMERA_DISTANCE
     )
-    for (const p of this.tiltShift) {
-      p.uniforms.amount.value = amount
-      p.uniforms.focus.value = focus
-      p.uniforms.depthAmount.value = 2.4 * (1 - overhead) * pr * near
-      p.uniforms.cameraNear.value = this.camera.near
-      p.uniforms.cameraFar.value = this.camera.far
-      p.uniforms.focusDepth.value = distance + (focus - 0.5) * depthSpan
-      p.uniforms.focusRange.value = Math.max(24 * PIXEL, depthSpan * 0.19)
-      p.uniforms.depthFalloff.value = Math.max(48 * PIXEL, depthSpan * 0.3)
+    for (const u of [...this.tiltShift.map((p) => p.uniforms), this.bokeh.uniforms]) {
+      u.amount.value = amount
+      u.focus.value = focus
+      u.band.value = band
+      u.depthAmount.value = 2.4 * (1 - overhead) * pr * near
+      u.cameraNear.value = this.camera.near
+      u.cameraFar.value = this.camera.far
+      u.focusDepth.value = distance + (focus - 0.5) * depthSpan
+      u.focusRange.value = Math.max(24 * PIXEL, depthSpan * (0.19 - 0.06 * this.focusTalk))
+      u.depthFalloff.value = Math.max(48 * PIXEL, depthSpan * 0.3)
     }
+    this.finish.uniforms.focus.value = focus
+    this.finish.uniforms.band.value = band
   }
 
   /** 地图上下被面板盖住多少（CSS 像素） */
@@ -785,7 +871,7 @@ export class HdScene {
     ground.position.set(-MARGIN + w / 2, 0, -MARGIN + h / 2)
     ground.receiveShadow = true
     const coast = coastTexture(terrain.depth, terrain.shore, pw, ph)
-    const { material, time, sparkle } = outerMaterial(coast, this.horizon.haze, this.theme)
+    const { material, time, sparkle, sunPath } = outerMaterial(coast, this.horizon.haze, this.theme)
     // 海面也有云影，风和雨从天气里来
     this.weather.shade(material, { snow: 0, wet: 0 })
     if (this.theme.outer === 'sea') surfOnLand(landMaterial, coast, time, this.theme)
@@ -795,7 +881,7 @@ export class HdScene {
     sea.position.set(ground.position.x, -1, ground.position.z)
     sea.receiveShadow = true
     this.flat.add(ground, sea)
-    return { time, sparkle }
+    return { time, sparkle, sunPath }
   }
 
   /** on：这栋房子的窗和灯在亮灯程度超过它时亮 */
@@ -1462,9 +1548,11 @@ export class HdScene {
     ;(this.grade.uniforms.tint.value as THREE.Color)
       .copy(mixRgb(L.tint))
       .lerp(new THREE.Color(0.94, 0.98, 1.06), overcast * 0.6 * day)
-    ;(this.grade.uniforms.shade.value as THREE.Color)
+    // 暗部偏色只改色相不改亮度：按亮度归一，清晨、傍晚不因为偏色而变暗
+    const shade = (this.grade.uniforms.shade.value as THREE.Color)
       .copy(mixRgb(L.shade))
       .lerp(new THREE.Color(0.82, 0.9, 1.16), snow * 0.7)
+    shade.multiplyScalar(1 / (0.2126 * shade.r + 0.7152 * shade.g + 0.0722 * shade.b))
     ;(this.grade.uniforms.lift.value as THREE.Color).setRGB(
       0.004 * night + 0.004 * twilight,
       0.008 * night + 0.006 * twilight,
@@ -1472,9 +1560,73 @@ export class HdScene {
     )
     this.grade.uniforms.sat.value = L.saturation - cloud * 0.25 - twilight * 0.05 + snow * 0.06
     this.renderer.toneMappingExposure = lerp(1.3, 1.12, day) + twilight * 0.12
+    this.applySky(e, day, night, twilight, golden, dir)
     this.motes.setLight(day, golden, cloud)
     if (now) this.request()
     else this.ambient = true
+  }
+
+  /** 天上和空气里的东西跟着时段走：日月星辰、彩虹、闪电、海面的日光路径，体积光的雾和光柱 */
+  private applySky(
+    e: number,
+    day: number,
+    night: number,
+    twilight: number,
+    golden: number,
+    sunDir: THREE.Vector3
+  ) {
+    const { cloud, overcast } = this.weather
+    const rain = this.weather.rainLevel,
+      wet = this.weather.wetLevel
+    const clear = 1 - cloud
+    // 太阳在视野里偏左还是偏右：太阳方向在镜头右手方向上的分量
+    const right = new THREE.Vector2(this.tilt.yawCos, -this.tilt.yawSin)
+    const flat = new THREE.Vector2(sunDir.x, sunDir.z)
+    const side = flat.lengthSq() > 1e-6 ? flat.normalize().dot(right) : 0
+    const sun = smooth(-0.06, 0.01, e) * (1 - smooth(0.22, 0.4, e)) * clear
+    const sunColor = this.sun.color.clone().lerp(new THREE.Color('#ffd9a0'), 0.4)
+    this.horizon.setSky({
+      side,
+      elevation: e,
+      sun,
+      sunColor,
+      moon: night * clear,
+      stars: night * clear * (1 - rain),
+      // 雨停了地还湿、天放晴：天边挂一道彩虹，地干了就淡出
+      rainbow:
+        Math.min(1, Math.max(0, (wet - 0.25) * 2.5)) *
+        day *
+        (1 - Math.min(1, rain * 4)) *
+        (1 - overcast * 0.7),
+      bolt: this.weather.flash,
+      boltSeed: this.weather.flashSeed,
+    })
+    const path = this.seaPath
+    path.uSunPath.value = sun * (0.4 + 0.6 * golden)
+    path.uPathTo.value.set(...this.horizon.sunOnHorizon())
+    path.uSunGlint.value.copy(sunColor).lerp(new THREE.Color('#ffe3a0'), 0.55).multiplyScalar(1.3)
+    // 体积光：清晨和雨后有贴地的晨雾，傍晚空气里有暖色的光柱，夜里灯在雾里有光晕
+    const hour = this.hour
+    const dawn = smooth(4.3, 5.6, hour) * (1 - smooth(7.6, 9.2, hour))
+    const v = this.volumetric.uniforms
+    v.density.value =
+      (0.00022 +
+        golden * 0.0005 +
+        twilight * 0.0004 +
+        night * 0.00035 +
+        wet * 0.0006 +
+        rain * 0.0008) *
+      this.theme.light.fog
+    v.mist.value = (dawn * 0.004 + wet * 0.0015) * (1 - rain * 0.5)
+    v.sunColor.value
+      .copy(this.sun.color)
+      .multiplyScalar(this.sun.intensity * (0.25 + 0.75 * day) * (0.5 + golden))
+    v.skyColor.value.copy(this.hemi.color).multiplyScalar(this.hemi.intensity)
+    v.lampScatter.value = 0.025 + wet * 0.04 + rain * 0.03
+    this.volumetric.setSun(this.sun)
+    // 有体积光时灯在雾里的光晕由它画，加色贴片淡一些
+    const sprites = this.volumetric.enabled ? 0.55 : 1
+    for (const g of this.glows) g.sprite.material.opacity *= sprites
   }
 
   /** SVG 的视口变了才重设立体镜头：镜头跟随在画之前已经设过的，观察回调来时不再设、不再多画一帧 */
@@ -1504,6 +1656,10 @@ export class HdScene {
     const unitPx = this.renderer.domElement.width / w
     this.motes.setScale(unitPx)
     this.weather.setView(target.x, target.z, w, h, screenH, unitPx, sin, cos, yawSin, yawCos)
+    this.horizon.setView(target.x, target.z, w)
+    // 日光路径从画面下沿（朝镜头那一侧的地面）出发
+    this.seaPath.uPathFrom.value.set(target.x + (yawSin * h) / 2, target.z + (yawCos * h) / 2)
+    this.seaPath.uPathFade.value = h
     // 正交镜头的距离不改变画面，只决定雾气：按演示页，视野越大离得越远、雾越浓
     const distance = Math.min(screenH * CAMERA_DISTANCE_PER_VIEW_HEIGHT, MAX_CAMERA_DISTANCE)
     cam.near = -40000
@@ -1514,6 +1670,7 @@ export class HdScene {
       .add(new THREE.Vector3(yawSin * cos, sin, yawCos * cos).multiplyScalar(distance))
     cam.lookAt(target)
     cam.updateProjectionMatrix()
+    this.volumetric.setView(cam)
     this.updateTiltShift()
     this.request()
   }

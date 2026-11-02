@@ -49,6 +49,11 @@ uniform vec3 uSand;
 uniform float uSparkle;
 uniform float uWind;
 uniform float uRain;
+uniform float uSunPath;
+uniform vec2 uPathFrom;
+uniform vec2 uPathTo;
+uniform vec3 uSunGlint;
+uniform float uPathFade;
 varying vec2 vSeaPos;
 ${hashNoise('sea')}
 ${surf('sea')}
@@ -109,6 +114,8 @@ const COLOR = /* glsl */ `
   bool open = coast.y == 1.0;
   float t = floor(uSeaTime * 8.0) / 8.0;
   float dither = seaBayer(cell);
+  // 拉远到一个海面格子不到一个屏幕像素时，一像素的浪尖、反光、雨点和闪光淡掉，不排成规则的白点阵
+  float detail = 1.0 - smoothstep(0.75, 1.6, fwidth(vSeaPos.x) / uPixel);
   // 水深分档，外海叠上大片色斑和几处浅滩
   float deep = clamp((d - 8.0) / 16.0, 0.0, 1.0);
   float blotch = seaNoise(cell / 140.0) * 0.7 + seaNoise(cell / 50.0 + 7.0) * 0.3;
@@ -139,7 +146,7 @@ const COLOR = /* glsl */ `
     vec2 blk = floor(cell / vec2(12.0, 6.0));
     float cycle = uSeaTime * 0.22 + seaHash(blk + 2.0);
     float shown = seaHash(blk + mod(floor(cycle), 241.0));
-    float chance = (0.05 + 0.15 * uWind) * (0.5 + max(light, 0.0));
+    float chance = (0.05 + 0.15 * uWind) * (0.5 + max(light, 0.0)) * detail;
     vec2 at = blk * vec2(12.0, 6.0) + floor(vec2(seaHash(blk + 4.0) * 4.0, 1.0 + seaHash(blk + 6.0) * 4.0));
     float len = floor((3.0 + seaHash(blk + 8.0) * 5.0) * sin(fract(cycle) * 3.1416) + 0.5);
     if (shown > 1.0 - chance && cell.y == at.y && cell.x >= at.x && cell.x < at.x + len) {
@@ -175,7 +182,7 @@ const COLOR = /* glsl */ `
   if (!open && d < 1.5 && seaHash(cell + seaTick(2.0)) > 0.5) c = mix(c, foam, 0.5);
 
   // 雨点：每 10×10 格最多一处，落下先是一个点，再散成上下左右四瓣，淡淡的
-  if (uRain > 0.01) {
+  if (uRain > 0.01 && detail > 0.5) {
     c *= 1.0 - 0.12 * uRain;
     vec2 g = floor(cell / 10.0);
     float rt = uSeaTime * 1.8 + seaHash(g + 0.37);
@@ -187,7 +194,7 @@ const COLOR = /* glsl */ `
   }
 
   // 闪光：零星亮点，浪脊上多一些；更少的大亮点带十字星芒
-  float sparkle = uSparkle * (1.0 - uRain);
+  float sparkle = uSparkle * (1.0 - uRain) * detail;
   if (seaHash(cell + vec2(seaTick(3.0) * 17.0, 3.0)) > 1.0 - sparkle * (crest ? 0.03 : 0.002)) c = glint;
   if (sparkle > 0.0 && d > 3.0) {
     float s = seaTick(2.0) * 31.0;
@@ -195,6 +202,21 @@ const COLOR = /* glsl */ `
     if (seaHash(cell + vec2(s, 7.0)) > star) c = glint * 1.15;
     else if (seaHash(cell + vec2(s + 1.0, 7.0)) > star || seaHash(cell + vec2(s - 1.0, 7.0)) > star
       || seaHash(cell + vec2(s, 8.0)) > star || seaHash(cell + vec2(s, 6.0)) > star) c = mix(c, glint, 0.6);
+  }
+  // 傍晚的日光路径：从画面下方朝太阳落下的方向，一条近宽远窄的带子里闪光变密、泛一层暖色
+  if (uSunPath > 0.0) {
+    vec2 pd = uPathTo - uPathFrom;
+    float pathLen = max(length(pd), 1.0);
+    vec2 pdir = pd / pathLen;
+    vec2 rel = vSeaPos - uPathFrom;
+    float along = dot(rel, pdir), across = abs(dot(rel, vec2(-pdir.y, pdir.x)));
+    float width = mix(30.0, 8.0, clamp(along / uPathFade, 0.0, 1.0)) * uPixel;
+    // 只在画面下半截到中间一段：再远（岛后面的远海）就淡掉
+    float band = exp(-pow(across / width, 2.0)) * smoothstep(-30.0 * uPixel, 0.0, along)
+      * (1.0 - smoothstep(uPathFade * 0.45, uPathFade, along));
+    c += uSunGlint * band * 0.035 * uSunPath;
+    float glint = seaHash(floor(cell / vec2(3.0, 1.0)) + seaTick(4.0) * 5.0);
+    if (glint > 1.0 - band * 0.14 * uSunPath * max(detail, 0.35)) c = mix(c, uSunGlint, 0.8);
   }
   diffuseColor.rgb = c;
 `
@@ -282,6 +304,15 @@ export function outerMaterial(coast: THREE.DataTexture, haze: HazeUniforms, them
   const { width: pw, height: ph } = coast.image
   const time = { value: 0 }
   const sparkle = { value: 1 }
+  /** 日光路径：强弱（0 没有）、从哪（画面下方）朝哪（太阳落向海平线的那一点）、闪光的颜色（线性） */
+  const sunPath = {
+    uSunPath: { value: 0 },
+    uPathFrom: { value: new THREE.Vector2() },
+    uPathTo: { value: new THREE.Vector2() },
+    uSunGlint: { value: new THREE.Color(1, 0.75, 0.45) },
+    /** 日光路径从画面下沿往前伸多远（世界单位），按视野高度设 */
+    uPathFade: { value: 1000 },
+  }
   const surface = theme.ground.seaSurface
   if (theme.outer === 'sea' && !surface) throw Error('外圈是海的风格包要给 ground.seaSurface')
   // 海的颜色按 0～255 交给着色器，在着色器里换算成线性值
@@ -310,6 +341,7 @@ export function outerMaterial(coast: THREE.DataTexture, haze: HazeUniforms, them
       uGlint: { value: raw(surface?.glint ?? '#000000') },
       uSand: { value: raw(theme.ground.sand[0]) },
       uSparkle: sparkle,
+      ...sunPath,
     })
     shader.vertexShader =
       'varying vec2 vSeaPos;\n' +
@@ -321,7 +353,7 @@ export function outerMaterial(coast: THREE.DataTexture, haze: HazeUniforms, them
     shader.fragmentShader = HEADER + shader.fragmentShader.replace('#include <map_fragment>', body)
     addHaze(shader, haze)
   }
-  return { material, time, sparkle }
+  return { material, time, sparkle, sunPath }
 }
 
 /** 浪冲上沙滩：沙滩上的地面材质补一段着色。浪打到岸上那一刻和海面的浪线对得上（共用 surfPhase）：

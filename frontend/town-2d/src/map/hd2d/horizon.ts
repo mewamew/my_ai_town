@@ -69,6 +69,14 @@ uniform float uPixel;
 uniform float uSeed;
 uniform float uTime;
 uniform float uAurora;
+uniform float uViewX;
+uniform float uViewW;
+uniform vec3 uSun;
+uniform vec3 uSunColor;
+uniform vec3 uMoon;
+uniform float uStars;
+uniform float uRainbow;
+uniform vec3 uBolt;
 varying vec2 vSky;
 float h1(float x) { return fract(sin(x * 127.1 + uSeed) * 43758.5453); }
 float n1(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(h1(i), h1(i + 1.0), f); }
@@ -82,6 +90,36 @@ void main() {
   float t = clamp(up / 1500.0, 0.0, 1.0);
   float dither = fract(sin(dot(floor(vSky / uPixel), vec2(12.9898, 78.233))) * 43758.5453);
   vec3 c = mix(uHaze, uTop, clamp(floor((sqrt(t) + dither * 0.08) * 8.0) / 8.0, 0.0, 1.0));
+  // 星星：按像素格零星几颗，各自明暗闪烁；流星每二十来秒划过一道
+  if (uStars > 0.0 && up > 240.0) {
+    vec2 cell = floor(vSky / uPixel);
+    float h = fract(sin(dot(cell, vec2(41.3, 289.1)) + uSeed) * 43758.5453);
+    if (h > 0.9968) {
+      float twinkle = 0.55 + 0.45 * sin(uTime * (1.3 + h * 40.0) + h * 300.0);
+      c = mix(c, vec3(0.85, 0.9, 1.0), uStars * twinkle * smoothstep(240.0, 520.0, up));
+    }
+    float k = floor(uTime / 23.0), ft = fract(uTime / 23.0);
+    if (ft < 0.07) {
+      vec2 start = vec2(uViewX + (h1(k) - 0.5) * uViewW * 0.8, 900.0 + h1(k + 1.0) * 500.0);
+      vec2 dir = normalize(vec2(-0.85, -0.35));
+      vec2 head = start + dir * (ft / 0.07) * 700.0;
+      vec2 rel = p - head;
+      float along = dot(rel, -dir), across = abs(dot(rel, vec2(-dir.y, dir.x)));
+      if (along > 0.0 && along < 180.0 && across < uPixel)
+        c = mix(c, vec3(1.0, 0.97, 0.9), uStars * (1.0 - along / 180.0));
+    }
+  }
+  // 太阳和月亮：贴着海平线的大光盘带一圈晕，夜里一弯月牙
+  if (uSun.z > 0.0) {
+    float d = length(p - uSun.xy);
+    c += uSunColor * uSun.z * (0.55 * exp(-d / 260.0) + 0.25 * exp(-d / 900.0));
+    if (d < 46.0) c = mix(c, mix(uSunColor, vec3(1.0, 0.97, 0.9), 0.55), uSun.z);
+  }
+  if (uMoon.z > 0.0) {
+    float d = length(p - uMoon.xy);
+    c += vec3(0.55, 0.62, 0.8) * uMoon.z * 0.18 * exp(-d / 220.0);
+    if (d < 30.0 && length(p - uMoon.xy - vec2(13.0, 7.0)) > 26.0) c = mix(c, vec3(0.93, 0.94, 1.0), uMoon.z);
+  }
   // 横向拉长的像素云：越高的云越大，下沿压一道暗边
   for (int k = 0; k < 3; k++) {
     float fk = float(k);
@@ -110,6 +148,23 @@ void main() {
         c += mix(vec3(0.55, 0.35, 0.9), vec3(0.35, 1.0, 0.65), f) * f * f * flick * uAurora * 0.35;
       }
     }
+  }
+  // 雨停后的彩虹：七道按像素格的色带，淡淡地挂在天边
+  if (uRainbow > 0.0 && up > 0.0) {
+    float d = length(p - vec2(uViewX + uViewW * 0.12, -160.0)) - 1150.0;
+    if (d > 0.0 && d < 14.0 * uPixel) {
+      float b = floor(d / (2.0 * uPixel));
+      vec3 bow = b < 1.0 ? vec3(0.55, 0.35, 0.8) : b < 2.0 ? vec3(0.35, 0.4, 0.95) : b < 3.0 ? vec3(0.35, 0.75, 0.95)
+        : b < 4.0 ? vec3(0.4, 0.85, 0.45) : b < 5.0 ? vec3(0.95, 0.9, 0.35) : b < 6.0 ? vec3(0.98, 0.6, 0.3) : vec3(0.95, 0.35, 0.3);
+      c = mix(c, bow, uRainbow * 0.32 * smoothstep(0.0, 300.0, up));
+    }
+  }
+  // 雷暴：闪的那一下，天上劈下一道折线
+  if (uBolt.y > 0.01 && up > 0.0 && up < 1500.0) {
+    float xb = uBolt.x + (h1(floor(up / 36.0) + uBolt.z) - 0.5) * 44.0 + (h1(floor(up / 110.0) + uBolt.z * 3.0) - 0.5) * 120.0;
+    float dx = abs(p.x - xb);
+    c += vec3(0.55, 0.55, 0.85) * uBolt.y * 0.3 * exp(-dx / 90.0);
+    if (dx < uPixel * 1.2) c = mix(c, vec3(1.4, 1.38, 1.6), uBolt.y);
   }
   // 远山两层：远的一层更淡、更高低起伏平缓，近的一层稍深；中间有大段空隙露出海平线
   float gapFar = smoothstep(0.3, 0.55, n1(p.x / 5200.0 + 11.0));
@@ -242,6 +297,14 @@ export class Horizon {
         uSeed: { value: seed % 1000 },
         uTime: { value: 0 },
         uAurora: { value: 0 },
+        uViewX: { value: 0 },
+        uViewW: { value: 1000 },
+        uSun: { value: new THREE.Vector3() },
+        uSunColor: { value: new THREE.Color() },
+        uMoon: { value: new THREE.Vector3() },
+        uStars: { value: 0 },
+        uRainbow: { value: 0 },
+        uBolt: { value: new THREE.Vector3() },
       },
       fog: false,
     })
@@ -268,6 +331,51 @@ export class Horizon {
     this.haze.uHazeDirection.value.set(tilt.yawSin, tilt.yawCos)
     this.haze.uHorizon.value = cx * tilt.yawSin + cz * tilt.yawCos - distance
     this.haze.uHazeLen.value = beyond * 0.75
+  }
+
+  /** 镜头看着的地方（世界坐标）和视野宽（世界单位）：天幕上的日月、彩虹、流星摆在看得见的地方 */
+  setView(x: number, z: number, width: number) {
+    const b = this.backdrop.position,
+      yaw = this.backdrop.rotation.y
+    this.sky.uniforms.uViewX.value = (x - b.x) * Math.cos(yaw) - (z - b.z) * Math.sin(yaw)
+    this.sky.uniforms.uViewW.value = width
+  }
+
+  /** 天上的东西。side：太阳在视野里偏左（-1）还是偏右（1）；elevation：太阳高度（-1～1）；
+   *  sun、moon、stars、rainbow 是各自的显隐（0～1）；bolt 是闪电亮度，boltSeed 区分每一下 */
+  setSky(o: {
+    side: number
+    elevation: number
+    sun: number
+    sunColor: THREE.Color
+    moon: number
+    stars: number
+    rainbow: number
+    bolt: number
+    boltSeed: number
+  }) {
+    const u = this.sky.uniforms
+    const view = u.uViewX.value as number,
+      width = u.uViewW.value as number
+    ;(u.uSun.value as THREE.Vector3).set(
+      view + o.side * width * 0.38,
+      (o.elevation + 0.03) * 1600,
+      o.sun
+    )
+    ;(u.uSunColor.value as THREE.Color).copy(o.sunColor)
+    ;(u.uMoon.value as THREE.Vector3).set(view + width * 0.3, 980, o.moon)
+    u.uStars.value = o.stars
+    u.uRainbow.value = o.rainbow
+    const r = Math.abs(Math.sin(o.boltSeed * 12.9898) * 43758.5453) % 1
+    ;(u.uBolt.value as THREE.Vector3).set(view + (r - 0.5) * width * 0.7, o.bolt, o.boltSeed % 97)
+  }
+
+  /** 太阳在天幕上那一点落到海平线上的世界坐标（x, z）：海面的日光路径朝着它 */
+  sunOnHorizon(): [number, number] {
+    const b = this.backdrop.position,
+      yaw = this.backdrop.rotation.y
+    const u = (this.sky.uniforms.uSun.value as THREE.Vector3).x
+    return [b.x + u * Math.cos(yaw), b.z - u * Math.sin(yaw)]
   }
 
   /** 极光强度（0 是没有）；场景按夜色和风格设 */
