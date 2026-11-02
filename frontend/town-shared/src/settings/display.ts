@@ -143,7 +143,7 @@ export function createDisplayPage(map: GameMap | undefined, game: boolean): Sett
   // 画质：只在有立体场景的地图上有意义；即时生效
   const qualityChoice = segmented(
     '画质',
-    (['auto', 'high', 'mid', 'low'] as const).map((value) => ({
+    (['auto', 'ultra', 'high', 'mid', 'low'] as const).map((value) => ({
       value,
       label: qualityLabels[value],
     })),

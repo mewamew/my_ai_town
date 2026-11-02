@@ -4,7 +4,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import type { Atlas } from 'town-shared/mapDocument'
 import type { DecorPlan } from '../decor'
-import { fromPx, MARGIN, OUTDOOR_SPACE, PIXEL, pxIndex, roomPoint } from '../grid'
+import { fromPx, MARGIN, OUTDOOR_SPACE, PIXEL, pxIndex, roomPoint, toPx } from '../grid'
 import { WALL_CAP } from '../palette'
 import { OPEN, paintGround, treeShape, type Ground } from '../pixel/terrain'
 import type { Dock } from '../pixel/island'
@@ -51,6 +51,11 @@ import { LightMap, type LightSource } from './lightmap'
 import { BokehPass, GlowPass } from './lens'
 import { Reflection, REFLECTION_SKIP, wetReflection } from './reflection'
 import { groundAo, groundOcclusion, wallAo, type Contact } from './ao'
+import { Grass, tuftsOf } from './grass'
+import { Trail } from './trail'
+import { Fauna, shallowsOf } from './fauna'
+import { GpuTimer, PerfOverlay } from './perf'
+import { qualityLabels, storedQuality } from 'town-shared/quality'
 import { VolumetricPass } from './volumetric'
 import { pixelMaterial } from './pixelSampling'
 import { landmarkSprites } from './landmarks'
@@ -265,6 +270,24 @@ export class HdScene {
   private landMaterial: THREE.MeshPhongMaterial | null = null
   /** 树根、灯杆、地标脚下的接触阴影，最后和房子一起烘进地面遮蔽图 */
   private readonly contacts: Contact[] = []
+  /** 草丛和花（见 grass.ts）、踩踏图（见 trail.ts）、环境里的小动静（见 fauna.ts） */
+  private readonly grass: Grass
+  private readonly trail: Trail
+  private readonly fauna: Fauna
+  /** 冒烟的烟囱口（世界坐标）：夜里飘火星 */
+  private readonly chimneyMouths: [number, number, number][] = []
+  /** 地面哪些像素是水：脚印落在水里是涟漪 */
+  private readonly groundWet: { wet: Uint8Array; width: number; height: number }
+  /** GPU 计时（见 perf.ts）：开发版浮层、「自动」画质跑不动时降档 */
+  private readonly gpu: GpuTimer
+  private overlay: PerfOverlay | null = null
+  /** 此刻用的画质档 */
+  private quality: Quality = 'high'
+  /** 「自动」画质从什么时候开始量、已经降过几档 */
+  private measureFrom = 0
+  private drops = 0
+  /** 画面想告诉玩家的一句话（降了画质），交给外壳放进事件栏 */
+  onNotice?: (text: string) => void
   /** 夜里亮灯的程度：日落前后从 0 升到 1，各盏灯按自己的门槛亮起 */
   private lit = 0
   /** 灯塔转动的光束（冰雪风格） */
@@ -343,6 +366,9 @@ export class HdScene {
     this.fog = new THREE.FogExp2(theme.light.sky.day, FOG_DENSITY * theme.light.fog)
     this.weather = new Weather3D(this.scene, this.flat, ground, seed)
     this.weather.reflectPuddles(this.reflection.uniforms)
+    this.trail = new Trail(ground.width, ground.height)
+    this.weather.useTrail(this.trail.uniforms)
+    this.groundWet = { wet: ground.wet, width: ground.width, height: ground.height }
     // 主镜头也看「不进倒影」的那一层（地面、海、积水、粒子）
     this.camera.layers.enable(REFLECTION_SKIP)
     this.horizon = new Horizon(
@@ -377,6 +403,31 @@ export class HdScene {
         groundOcclusion(ground.width, ground.height, this.houses, this.contacts)
       )
     this.waterGrid = waterGridOf(ground, theme.outer !== 'seabed')
+    // 草丛：冰雪里大多埋在雪下，废土里稀疏一些
+    const grassDensity = theme.outer === 'ice' ? 0.35 : theme.outer === 'seabed' ? 0.6 : 1
+    this.grass = new Grass(tuftsOf(decor, clear, seed, grassDensity), theme, this.tilt)
+    Object.assign(this.grass.uniforms, this.weather.windUniforms, this.trail.uniforms)
+    this.lightmap.shade(this.grass.surface, 'standee')
+    this.grass.group.traverse((o) => o.layers.set(REFLECTION_SKIP))
+    this.scene.add(this.grass.group)
+    this.upright.push((t) => this.grass.setTilt(t))
+    this.fauna = new Fauna(
+      {
+        box: { x0: fromPx(0), z0: fromPx(0), x1: fromPx(ground.width), z1: fromPx(ground.height) },
+        docks: ground.docks,
+        flowers: decor.vegetation.filter((v) => v.kind === 'flowers').map((v) => [v.x, v.y]),
+        shallows: theme.outer === 'sea' ? shallowsOf(ground) : [],
+        chimneys: this.chimneyMouths,
+        center: this.center,
+      },
+      theme,
+      seed,
+      this.tilt
+    )
+    // 鱼落水的地方起一圈涟漪
+    this.fauna.onSplash = (x, y) => this.trail.add([{ x, y, water: true }])
+    this.scene.add(this.fauna.group)
+    this.upright.push((t) => this.fauna.setTilt(t))
     this.motes = new Motes(clear, seed, theme.motes)
     this.motes.points.layers.set(REFLECTION_SKIP)
     this.scene.add(this.motes.points)
@@ -386,14 +437,21 @@ export class HdScene {
     this.composer = post.composer
     this.sceneDepth = post.sceneDepth
     // 画场景之前先画倒影：这时镜头已经按这一帧挪好
-    this.sceneDepth.prepare = (renderer) =>
-      this.reflection.render(
-        renderer,
-        this.scene,
-        this.camera,
-        this.viewTarget,
-        this.waterVisible || this.weather.wetLevel > 0.05
+    this.sceneDepth.prepare = (renderer) => {
+      this.gpu.time('踩踏图', () => {
+        this.trail.add(this.footprints())
+        this.trail.update(renderer, this.weather.snowFalling)
+      })
+      this.gpu.time('倒影', () =>
+        this.reflection.render(
+          renderer,
+          this.scene,
+          this.camera,
+          this.viewTarget,
+          this.waterVisible || this.weather.wetLevel > 0.05
+        )
       )
+    }
     this.sceneDepth.onResize = (w, h) => this.reflection.setSize(w, h)
     this.bloom = post.bloom
     this.bokeh = post.bokeh
@@ -404,6 +462,9 @@ export class HdScene {
     this.grade = post.grade
     this.finish = post.finish
     this.finish.uniforms.tLook.value = lookTexture(theme.light.look)
+    this.gpu = new GpuTimer(this.renderer)
+    this.timePasses(import.meta.env.DEV && new URLSearchParams(location.search).has('hd-perf'))
+    this.measureFrom = performance.now()
     const views = new MutationObserver(() => this.syncView())
     views.observe(svg, { attributes: true, attributeFilter: ['viewBox'] })
     const sizes = new ResizeObserver(() => this.resize())
@@ -525,6 +586,7 @@ export class HdScene {
     if (!this.reduceMotion.matches) {
       this.seaTime.value = t / 1000
       this.volumetric.uniforms.time.value = t / 1000
+      this.fauna.step(t / 1000)
       this.motes.step(t)
       this.horizon.step(t / 1000)
       for (const b of this.beams) b.rotation.y -= dt * 0.9
@@ -650,9 +712,19 @@ export class HdScene {
     this.sceneDepth.captureDepth = !low
     for (const p of this.tiltShift) p.enabled = mid
     this.bokeh.enabled = !low && !mid
-    // 倒影镜头和多重采样只在高档以上；中档海面只反射天色和日光路径
+    // 倒影镜头和多重采样只在高档以上；中档海面只反射天色和日光路径。
+    // 2 倍像素比的屏幕本身就够细，再开 4× 多重采样看不出差别、渲染目标却要多占几百兆，只在 1.5 倍以下开
     this.reflection.enabled = !low && !mid
-    this.sceneDepth.setSamples(!low && !mid ? 4 : 0)
+    this.sceneDepth.setSamples(!low && !mid && this.renderer.getPixelRatio() < 1.6 ? 4 : 0)
+    // 极致档：体积光和倒影更细、散景采样加倍
+    const ultra = quality === 'ultra'
+    this.bokeh.taps = ultra ? 48 : 24
+    this.volumetric.setDetail(ultra ? 0.5 : 0.25, ultra ? 20 : 12)
+    this.reflection.setScale(ultra ? 0.5 : 0.34)
+    // 草丛中档一半；踩踏和小动物低档不要
+    this.grass.setDensity(low ? 0 : mid ? 0.5 : 1)
+    this.trail.enabled = !low
+    this.quality = quality
     this.volumetric.enabled = !low && !mid
     this.finish.uniforms.grain.value = low ? 0 : mid ? 0.025 : 0.035
     this.finish.uniforms.aberration.value = low || mid ? 0 : 0.012
@@ -932,7 +1004,8 @@ export class HdScene {
       coast,
       this.horizon.haze,
       this.theme,
-      this.reflection.uniforms
+      this.reflection.uniforms,
+      this.trail.uniforms
     )
     // 海面也有云影，风和雨从天气里来
     this.weather.shade(material, { snow: 0, wet: 0 })
@@ -1116,8 +1189,10 @@ export class HdScene {
     cap.position.set(x, top - WALL_TEXEL, z)
     chimney.castShadow = cap.castShadow = chimney.receiveShadow = true
     group.add(chimney, cap)
-    if (look.smoke)
+    if (look.smoke) {
       this.smoke.add(group.position.x + x, top + WALL_TEXEL, group.position.z + z, house.seed)
+      this.chimneyMouths.push([group.position.x + x, top + WALL_TEXEL, group.position.z + z])
+    }
   }
 
   /** 功能类型的立体特征：门口的条纹雨棚、公所屋脊上的旗 */
@@ -1672,6 +1747,99 @@ export class HdScene {
     return false
   }
 
+  /** 新踩下的脚印；落在水里的是涟漪 */
+  private footprints() {
+    const { wet, width, height } = this.groundWet
+    return this.villagers.takeFootprints().map(([x, y]) => {
+      const px = toPx(x),
+        py = toPx(y)
+      const water = px >= 0 && py >= 0 && px < width && py < height && wet[py * width + px] === 1
+      return { x, y, water }
+    })
+  }
+
+  /** GPU 计时：开发版地址带 ?hd-perf 时按 pass 量、右上角显示；不然只在「自动」画质的测量期整帧量一次 */
+  private timePasses(perPass: boolean) {
+    const gpu = this.gpu
+    if (!gpu.available) return
+    if (perPass) {
+      gpu.on = true
+      this.overlay = new PerfOverlay(this.container, gpu)
+      const names = new Map<object, string>([
+        [this.volumetric, '体积光'],
+        [this.bokeh, '散景'],
+        [this.bloom, '泛光'],
+        [this.grade, '调色'],
+        [this.finish, 'LUT 颗粒'],
+      ])
+      for (const p of this.tiltShift) names.set(p, '移轴')
+      for (const pass of this.composer.passes) {
+        if (pass === this.sceneDepth) continue
+        const label = names.get(pass) ?? '色调映射'
+        const render = pass.render.bind(pass) as (...args: unknown[]) => void
+        pass.render = ((...args: unknown[]) =>
+          gpu.time(label, () => render(...args))) as typeof pass.render
+      }
+      // 场景：倒影和踩踏图先各量各的，再量场景本身（计时查询不能嵌套）
+      const scene = this.sceneDepth
+      const render = scene.render.bind(scene) as (...args: unknown[]) => void
+      scene.render = ((...args: unknown[]) => {
+        const prepare = scene.prepare
+        prepare?.(args[0] as THREE.WebGLRenderer)
+        scene.prepare = undefined
+        try {
+          gpu.time('场景', () => render(...args))
+        } finally {
+          scene.prepare = prepare
+        }
+      }) as typeof scene.render
+    }
+    const render = this.composer.render.bind(this.composer)
+    this.composer.render = (deltaTime?: number) => {
+      const measuring = !perPass && this.measuring()
+      if (!perPass) gpu.on = measuring
+      if (measuring) gpu.begin('整帧')
+      render(deltaTime)
+      if (measuring) gpu.end()
+      gpu.endFrame()
+      this.overlay?.update(performance.now())
+      this.checkBudget()
+    }
+  }
+
+  /** 画质选「自动」时，开头半分钟量帧耗时（最多降两档） */
+  private measuring() {
+    return (
+      storedQuality() === 'auto' && this.drops < 2 && performance.now() - this.measureFrom < 30000
+    )
+  }
+
+  /** 「自动」画质跑不动：最近 45 帧的平均 GPU 耗时超过本档预算两成就降一档，在事件栏说一声 */
+  private checkBudget() {
+    if (!this.measuring()) return
+    const avg = this.gpu.average(45)
+    if (avg === undefined) return
+    // 高档以上按 60 帧算，中档按节拍的 30 帧算
+    const budget = { ultra: 16.7, high: 16.7, mid: 33, low: Infinity }[this.quality]
+    if (avg <= budget * 1.2) return
+    const next: Quality | null =
+      this.quality === 'ultra'
+        ? 'high'
+        : this.quality === 'high'
+          ? 'mid'
+          : this.quality === 'mid'
+            ? 'low'
+            : null
+    if (!next) return
+    this.drops++
+    this.gpu.frames.length = 0
+    this.measureFrom = performance.now()
+    this.setQuality(next)
+    this.onNotice?.(
+      `画面有点吃力（每帧约 ${avg.toFixed(0)} 毫秒），这次先把画质降到「${qualityLabels[next]}」；设定 · 显示里可以改`
+    )
+  }
+
   /** 天上和空气里的东西跟着时段走：日月星辰、彩虹、闪电、海面的日光路径，体积光的雾和光柱 */
   private applySky(
     e: number,
@@ -1730,6 +1898,10 @@ export class HdScene {
     v.skyColor.value.copy(this.hemi.color).multiplyScalar(this.hemi.intensity)
     v.lampScatter.value = 0.025 + wet * 0.04 + rain * 0.03
     this.volumetric.setSun(this.sun)
+    // 小动物和草：白天、黄昏、夜里各有各的；积雪厚了草被埋住
+    this.fauna.setLight({ day, twilight, night, rain, wind: this.weather.windUniforms.uWind.value })
+    this.fauna.setEnabled(!this.reduceMotion.matches && this.quality !== 'low')
+    this.grass.uniforms.uSnow.value = this.weather.snowLevel
     // 有体积光时灯在雾里的光晕由它画，加色贴片淡一些
     const sprites = this.volumetric.enabled ? 0.55 : 1
     for (const g of this.glows) g.sprite.material.opacity *= sprites
@@ -1778,6 +1950,8 @@ export class HdScene {
     cam.updateProjectionMatrix()
     this.volumetric.setView(cam)
     this.viewTarget.copy(target)
+    this.grass.setScale(unitPx)
+    this.fauna.setScale(unitPx)
     this.reflection.uniforms.uReflStreak.value.set(-yawSin, -yawCos).multiplyScalar(6 * PIXEL)
     this.waterVisible = this.waterInView(target, w, h)
     this.updateTiltShift()
@@ -1825,6 +1999,11 @@ export class HdScene {
     })
     this.lightmap.dispose()
     this.reflection.dispose()
+    this.grass.dispose()
+    this.trail.dispose()
+    this.fauna.dispose()
+    this.gpu.dispose()
+    this.overlay?.dispose()
     ;(this.finish.uniforms.tLook.value as THREE.Texture | null)?.dispose()
     // composer.dispose 只释放它自己的两张渲染目标，泛光等各个 pass 的渲染目标和材质要逐个释放
     for (const pass of this.composer.passes) pass.dispose()

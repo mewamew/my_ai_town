@@ -78,6 +78,8 @@ export interface GameMap {
   setMapPitch?(degrees: number): void
   /** 画质：像素比与后期效果，只影响本机画面 */
   setRenderQuality?(quality: Quality): void
+  /** 画面想告诉玩家的一句话（比如画质「自动」跑不动、降了一档），外壳放进事件栏 */
+  onRenderNotice?: ((text: string) => void) | null
   /** 地图四边被面板盖住多少（CSS 像素）；跟随和「看这个人」会把目标放进露出来的那块 */
   setViewInsets?(insets: Insets): void
   /** 画面加载完（2D 的立体场景建好或退回平面图）；之前只有底色和地名 */

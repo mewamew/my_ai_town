@@ -35,6 +35,7 @@ export function startGameShell(
   document.title = `${selectedMap.name} · AI小镇`
   const listeners = new AbortController()
   const events = initEvents(game)
+  map.onRenderNotice = (text) => events.pushLocal(text)
   const audio = createGameAudio(
     query<HTMLButtonElement>(document, '#music-toggle'),
     query<HTMLButtonElement>(document, '#effects-toggle')

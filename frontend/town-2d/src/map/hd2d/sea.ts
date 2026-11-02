@@ -55,6 +55,7 @@ uniform vec2 uPathFrom;
 uniform vec2 uPathTo;
 uniform vec3 uSunGlint;
 uniform float uPathFade;
+// uTrail、uTrailOrigin、uTrailSize（踩踏图）由天气着色声明：海面也接了 weather.shade
 varying vec2 vSeaPos;
 ${hashNoise('sea')}
 ${REFLECTION_SAMPLE}
@@ -201,6 +202,14 @@ const COLOR = /* glsl */ `
     float keep = d < 1.5 ? (age < 0.25 ? 0.15 : 0.62) : (age < 0.1 ? 0.6 : 1.0);
     if (seaHash(cell + seaTick(3.0) * 13.0) > keep) c = mix(c, foam, d < 1.5 ? 1.0 : 0.6);
   }
+  // 浅水里走过、鱼落水的地方一圈圈涟漪：踩踏图的 B 边散边淡，按它的边缘画一圈亮线
+  if (d < 14.0) {
+    vec2 tuv = ((cell + 0.5) * uPixel - uTrailOrigin) / uTrailSize;
+    vec2 tx = vec2(1.0) / uTrailSize * uPixel * 2.0;
+    float rx = texture2D(uTrail, tuv + vec2(tx.x, 0.0)).b - texture2D(uTrail, tuv - vec2(tx.x, 0.0)).b;
+    float ry = texture2D(uTrail, tuv + vec2(0.0, tx.y)).b - texture2D(uTrail, tuv - vec2(0.0, tx.y)).b;
+    if (length(vec2(rx, ry)) > 0.05) c = mix(c, ripple, 0.6);
+  }
   // 池塘边一圈淡淡的水线
   if (!open && d < 1.5 && seaHash(cell + seaTick(2.0)) > 0.5) c = mix(c, foam, 0.5);
 
@@ -332,7 +341,8 @@ export function outerMaterial(
   coast: THREE.DataTexture,
   haze: HazeUniforms,
   theme: MapTheme,
-  reflection: Reflection['uniforms']
+  reflection: Reflection['uniforms'],
+  trail: Record<'uTrail' | 'uTrailOrigin' | 'uTrailSize', THREE.IUniform>
 ) {
   const { width: pw, height: ph } = coast.image
   const time = { value: 0 }
@@ -376,6 +386,7 @@ export function outerMaterial(
       uSparkle: sparkle,
       ...sunPath,
       ...reflection,
+      ...trail,
     })
     shader.vertexShader =
       'varying vec2 vSeaPos;\n' +

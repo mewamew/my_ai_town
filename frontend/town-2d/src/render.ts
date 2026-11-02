@@ -399,6 +399,7 @@ export class TownMap {
         this.hd.onVillagersMoved = () => this.followVillagers()
         this.hd.beforeDraw = this.frameHook ?? undefined
         this.hd.setLiveMotion(this.liveMotion())
+        this.hd.onNotice = (text) => this.onRenderNotice?.(text)
         this.syncFocus()
         this.applyTilt()
         if (this.viewInsets) this.hd.setFocusInsets(this.viewInsets.top, this.viewInsets.bottom)
@@ -1067,6 +1068,8 @@ export class TownMap {
     this.camera.setViewBox([cx - w / 2, cy - h / 2, w, h])
   }
   /** 立体场景的俯角；平面地图没有 */
+  /** 画面想告诉玩家的一句话（画质自动降档），外壳放进事件栏 */
+  onRenderNotice: ((text: string) => void) | null = null
   /** 地图画质（设定 · 显示） */
   setRenderQuality(quality: Quality) {
     this.hd?.setQuality(quality)

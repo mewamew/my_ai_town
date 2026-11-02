@@ -23,6 +23,8 @@ import {
 
 /** 走过多少地图单位换一帧 */
 const STRIDE = 3.2 * PIXEL
+/** 一步多远：每一步在踩踏图上落一个脚印 */
+const STEP = 2 * STRIDE
 /** 相邻两份名册离得比这远就直接放过去（进出门、换地点），不走过场 */
 const JUMP = 400
 /** 服务端一拍（毫秒），名册按这个间隔来 */
@@ -84,6 +86,9 @@ interface Villager {
   facing: [number, number]
   offset: [number, number]
   walked: number
+  /** 走到这么远时落下一个脚印（踩踏图用），左右脚交替 */
+  nextStep: number
+  leftFoot: boolean
   moving: boolean
   /** 玩家正在操控的人：位置按 LiveMotion 画 */
   live?: boolean
@@ -222,6 +227,7 @@ export class Villagers {
     if (d > 0.01) {
       if (v.moving) v.walked += d
       this.moveTo(v, x, y)
+      this.footfall(v)
       changed = true
     }
     return changed
@@ -245,6 +251,27 @@ export class Villagers {
       if (v.path.length > 1 || v.at[0] !== end.x || v.at[1] !== end.y) return true
     }
     return false
+  }
+
+  /** 新落下的脚印（地图坐标）：取走后清空。左右脚往两边错开一点 */
+  private readonly prints: [number, number][] = []
+  takeFootprints() {
+    return this.prints.splice(0)
+  }
+
+  /** 走过的距离够一步了：落一个脚印 */
+  private footfall(v: Villager) {
+    if (v.walked < v.nextStep || !v.mesh.visible) return
+    v.nextStep = v.walked + STEP
+    v.leftFoot = !v.leftFoot
+    const [fx, fy] = v.facing
+    const len = Math.hypot(fx, fy) || 1
+    const side = (v.leftFoot ? -1 : 1) * 1.2 * PIXEL
+    if (this.prints.length < 64)
+      this.prints.push([
+        v.at[0] + v.offset[0] - (fy / len) * side,
+        v.at[1] + v.offset[1] + (fx / len) * side,
+      ])
   }
 
   /** 立牌此刻站在哪（地图坐标，含避让家具和墙的偏移）；不在场或看不见时为 undefined */
@@ -294,6 +321,7 @@ export class Villagers {
       if (d > 0) {
         v.walked += d
         this.moveTo(v, x, y)
+        this.footfall(v)
         changed = true
       }
       if (this.frame(v)) changed = true
@@ -346,6 +374,8 @@ export class Villagers {
       facing: [0, 1],
       offset: p.offset ?? [0, 0],
       walked: 0,
+      nextStep: STEP,
+      leftFoot: false,
       moving: false,
     }
     this.moveTo(v, p.x, p.y)

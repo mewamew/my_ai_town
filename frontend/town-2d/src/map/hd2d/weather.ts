@@ -32,9 +32,24 @@ const COUNTS = {
   high: { rain: 3000, snow: 1800, splash: 500, leaves: 90 },
 }
 
+/** 风场：一阵阵风沿风向成片推过去，树、草、旗、雨丝和烟都按它倒。uWindSide 是风向在画面上
+ *  偏右多少（-1～1），立牌朝这边倒；风顺着镜头的视线吹时立牌看不出倒，只按原地摆 */
+export const WIND = /* glsl */ `
+uniform vec2 uWindDir;
+uniform float uWindSide;
+${hashNoise('wind')}
+// 阵风：0 平静，1 一阵风正好吹过这里；风团沿风向每秒推进约 250 个地图单位
+float windGust(vec2 xz) {
+  float along = dot(xz, uWindDir) / ${(120 * PIXEL).toFixed(1)} - uTime * 0.35;
+  float across = dot(xz, vec2(-uWindDir.y, uWindDir.x)) / ${(300 * PIXEL).toFixed(1)};
+  float g = windNoise(vec2(along, across)) * 0.7 + windNoise(vec2(along * 2.3, across * 1.7) + 7.0) * 0.3;
+  return smoothstep(0.38, 0.85, g);
+}`
+
 const COMMON = /* glsl */ `
 uniform float uTime;
 uniform float uWind;
+${WIND}
 uniform vec2 uCenter;
 uniform vec2 uSize;
 uniform float uUnitPx;
@@ -55,7 +70,7 @@ void main() {
   float r1 = rand(aSeed, 1.0), r2 = rand(aSeed, 2.0), r3 = rand(aSeed, 3.0);
   // 每滴下落速度、长短、浓淡都不同；斜度在风向上下浮动，风在空间上一阵阵不一样
   float y = ${f(TOP)} * (1.0 - fract(uTime * mix(0.9, 1.5, r1) + aSeed.z));
-  float gust = sin(g.x * 0.0015 + g.y * 0.001 + uTime * 0.8) * 0.12;
+  float gust = windGust(g) * 0.3 - 0.08;
   float slant = uWind * (0.35 + gust) + (r2 - 0.5) * 0.18;
   float len = uLength * mix(0.55, 1.4, r3);
   vec3 p = vec3(g.x - slant * y, y, g.y) + vec3(slant, 1.0, (r1 - 0.5) * 0.2) * len * aEnd;
@@ -136,7 +151,9 @@ varying vec3 vColor;
 void main() { gl_FragColor = vec4(vColor, vAlpha); }`
 
 /** 树冠随风摆的横向位移（世界单位）：根部为 0，越高摆得越多；树和树影共用 */
-const SWAY = /* glsl */ `sin(uTime * 1.4 + modelMatrix[3].x * 0.013 + modelMatrix[3].z * 0.007)
+/** 风里一根竖着的东西（树冠、旗、草）往旁边挪多少：原地的小摆加上阵风吹过时往下风方向倒 */
+const SWAY = /* glsl */ `(0.35 * sin(uTime * 1.4 + modelMatrix[3].x * 0.013 + modelMatrix[3].z * 0.007)
+    + windGust(modelMatrix[3].xz) * 1.1 * uWindSide)
   * (0.4 + uWind) * position.y * 0.03`
 
 /** 云影、积雪、湿润和摇摆：补进地面、屋顶、树的材质 */
@@ -144,11 +161,15 @@ const SHADE_VERTEX_HEAD = /* glsl */ `
 uniform float uTime;
 uniform float uWind;
 uniform float uSway;
+${WIND}
 varying vec3 vWeatherPos;
 varying float vWeatherUp;`
 const SHADE_FRAGMENT_HEAD = /* glsl */ `
 uniform float uTime;
 uniform float uSnowSparkle;
+uniform sampler2D uTrail;
+uniform vec2 uTrailOrigin;
+uniform vec2 uTrailSize;
 uniform float uWet;
 uniform float uSnow;
 uniform float uCloudShadow;
@@ -173,6 +194,9 @@ export class Weather3D {
   private readonly shared = {
     uTime: { value: 0 },
     uWind: { value: 0.3 },
+    /** 风往哪吹（世界坐标，往东略偏南，和雨丝、落叶、烟的方向一致） */
+    uWindDir: { value: new THREE.Vector2(0.98, 0.18).normalize() },
+    uWindSide: { value: 1 },
     uWet: { value: 0 },
     uSnow: { value: 0 },
     uCloudShadow: { value: 0 },
@@ -181,6 +205,10 @@ export class Weather3D {
     uRain: { value: 0 },
     /** 雪面闪光的多少：晴天白天多 */
     uSnowSparkle: { value: 0 },
+    /** 踩踏图（见 trail.ts）：雪地脚印用；没接上时是空的 */
+    uTrail: { value: null as THREE.Texture | null },
+    uTrailOrigin: { value: new THREE.Vector2() },
+    uTrailSize: { value: new THREE.Vector2(1, 1) },
   }
   private readonly particles: THREE.ShaderMaterial[] = []
   private readonly rain: THREE.LineSegments
@@ -280,6 +308,8 @@ export class Weather3D {
       uniforms: {
         uTime: this.shared.uTime,
         uWind: this.shared.uWind,
+        uWindDir: this.shared.uWindDir,
+        uWindSide: this.shared.uWindSide,
         uCenter: { value: new THREE.Vector2() },
         uSize: { value: new THREE.Vector2(1, 1) },
         uUnitPx: { value: 1 },
@@ -359,6 +389,9 @@ export class Weather3D {
       )
       m.uniforms.uUnitPx.value = unitPx
     }
+    // 风向在画面上偏右多少：立牌朝这边倒
+    this.shared.uWindSide.value =
+      this.shared.uWindDir.value.x * yawCos - this.shared.uWindDir.value.y * yawSin
     // 雨丝长度随视野放大，拉远时仍看得出是雨
     ;(this.rain.material as THREE.ShaderMaterial).uniforms.uLength.value = Math.max(
       8 * PIXEL,
@@ -416,6 +449,8 @@ export class Weather3D {
             snowUp = mix(snowUp, smoothstep(0.55, 0.75, vMapUv.y), uSway);
           #endif
           float snowed = step(snowLevel, uSnow * 1.05 - 0.05) * snowUp * uSnowFactor;
+          // 雪地上踩出的脚印露出底下（踩踏图的 G，按像素格取）
+          snowed *= 1.0 - step(0.3, texture2D(uTrail, ((snowP + 0.5) * ${f(PIXEL)} - uTrailOrigin) / uTrailSize).g);
           float under = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
           // 雪的深浅跟着底下的明暗和积雪厚薄走，薄处透出一点底色
           float depth = smoothstep(0.0, 0.25, uSnow * 1.05 - 0.05 - snowLevel);
@@ -439,6 +474,22 @@ export class Weather3D {
       `${beforeKey}|weather:${surface.snow}:${surface.wet}:${surface.sway ? 1 : 0}`
   }
 
+  /** 风和时间的 uniform：草丛和别的随风东西共用同一份 */
+  get windUniforms() {
+    const s = this.shared
+    return { uTime: s.uTime, uWind: s.uWind, uWindDir: s.uWindDir, uWindSide: s.uWindSide }
+  }
+
+  /** 接上踩踏图：雪地脚印。要在材质第一次画之前接 */
+  useTrail(trail: {
+    uTrail: { value: THREE.Texture }
+    uTrailOrigin: { value: THREE.Vector2 }
+    uTrailSize: { value: THREE.Vector2 }
+  }) {
+    // 踩踏图每帧换一张（来回两张），这里共用同一个 uniform 对象
+    Object.assign(this.shared, trail)
+  }
+
   /** 积水映出岸上的灯、窗和房子（见 reflection.ts） */
   reflectPuddles(uniforms: Reflection['uniforms']) {
     wetReflection(this.puddles.material as THREE.Material, uniforms, 'puddle')
@@ -451,9 +502,16 @@ export class Weather3D {
     const beforeKey = material.customProgramCacheKey()
     material.onBeforeCompile = (shader, renderer) => {
       before(shader, renderer)
-      Object.assign(shader.uniforms, { uTime: shared.uTime, uWind: shared.uWind })
+      Object.assign(shader.uniforms, {
+        uTime: shared.uTime,
+        uWind: shared.uWind,
+        uWindDir: shared.uWindDir,
+        uWindSide: shared.uWindSide,
+      })
       shader.vertexShader =
         'uniform float uTime;\nuniform float uWind;\n' +
+        WIND +
+        '\n' +
         shader.vertexShader.replace(
           '#include <begin_vertex>',
           `#include <begin_vertex>
@@ -461,6 +519,11 @@ export class Weather3D {
         )
     }
     material.customProgramCacheKey = () => `${beforeKey}|sway`
+  }
+
+  /** 此刻在下雪（雪地脚印很快被新雪盖上） */
+  get snowFalling() {
+    return this.now.snow > 0.1
   }
 
   /** 此刻雨下得多大（0～1） */
