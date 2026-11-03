@@ -15,6 +15,7 @@ import {
 } from './villagerRig'
 import { BEAT_MS, lantern, posed, scarf, umbrella, type PoseKind, type Posed } from './villagerPose'
 import { SIGNS, signMotion, type Shown } from './villagerSigns'
+import type { Quirk } from './villagerCues'
 
 // 村民此刻在演什么：呼吸、眨眼、看哪儿、走到哪一步、起步停步和转身，做事的姿势，说话的口型和比划，
 // 听人说话点头，脸上的表情，冒出来的热气、火星和「Z」，每帧合成一个 Frame 交给 villagerRig.ts 画。
@@ -195,7 +196,35 @@ export interface Moment {
   sign?: Shown
   /** 刚复活的时刻：先坐起来再站起来，身边往上飘羽毛 */
   revived?: number
+  /** 站着没事做时的个性小动作和开始的时刻 */
+  quirk?: { kind: Quirk; at: number }
+  /** 拉近到一格贴图不少于 3 个屏幕像素：眼睛多一格高光，眨眼多一帧 */
+  close?: boolean
+  /** 悬停（白边）、选中（金边） */
+  pick?: 'hover' | 'pick'
 }
+
+/** 按姿势演的小动作 */
+const POSE_QUIRKS = new Set<Quirk>([
+  'read',
+  'drink',
+  'knit',
+  'write',
+  'tend',
+  'busy',
+  'craft',
+  'cook',
+  'gaze',
+  'medic',
+])
+/** 招手：右手举到头边一摇一摇 */
+const WAVE = (a: boolean): Cells =>
+  [
+    [a ? 22 : 21, 9, 's'],
+    [a ? 21 : 20, 10, 'K'],
+    [21, 10, 's'],
+    ...[11, 12, 13, 14, 15, 16].flatMap((y) => [[20, y, 'K'] as const, [21, y, 't'] as const]),
+  ] as Cells
 
 export interface Body {
   injury: number
@@ -249,6 +278,8 @@ const glyph = (name: string, x: number, y: number): Cells =>
   )
 
 type Fx = NonNullable<Posed['fx']> | 'cough' | 'bubbles' | 'breath' | 'feathers'
+/** 小东西按多少毫秒一格地动 */
+const PARTICLE_STEP_MS = 80
 /** 各种小东西隔多久冒一次、一次飘多久（毫秒） */
 const FX_TIMING: Record<Fx, [number, number]> = {
   steam: [420, 1200],
@@ -264,7 +295,9 @@ const FX_TIMING: Record<Fx, [number, number]> = {
 
 /** 冒出来的小东西在第 now 毫秒的位置：按时间算，不存状态。(ax, ay) 是冒出来的地方（贴图上的画面坐标），
  *  face 是脸朝画面哪边（咳嗽、呵气往那边出） */
-function particles(fx: Fx, now: number, ax: number, ay: number, seed: number, face = 0): Cells {
+function particles(fx: Fx, at: number, ax: number, ay: number, seed: number, face = 0): Cells {
+  // 按 80 毫秒一格走：像素小点一秒动十来下就够，贴图也少重画
+  const now = at - (at % PARTICLE_STEP_MS)
   const out: (readonly [number, number, string])[] = []
   const [every, life] = FX_TIMING[fx]
   for (let n = Math.floor((now - life) / every) + 1; n * every <= now; n++) {
@@ -375,7 +408,7 @@ export class Acting {
     this.moving = m.moving
   }
 
-  private blink(now: number): Eyes {
+  private blink(now: number, close = false): Eyes {
     if (this.blinkAt < 0 && now >= this.nextBlink) {
       this.blinkAt = now
       this.double = this.random() < DOUBLE_BLINK
@@ -393,6 +426,8 @@ export class Acting {
         now + (BLINK_GAP_S[0] + this.random() * (BLINK_GAP_S[1] - BLINK_GAP_S[0])) * 1000
       return 'open'
     }
+    // 拉近时多一帧：半闭之后先耷拉一下再闭上
+    if (close && k >= BLINK[0] / 2 && k < BLINK[0]) return 'sleepy'
     return k < BLINK[0] || k >= BLINK[0] + BLINK[1] ? 'half' : 'closed'
   }
 
@@ -422,13 +457,23 @@ export class Acting {
     let [view, flip] = VIEW[m.dir]
     // 身体状况的姿势：死了倒在地上，倒下了坐在地上，刚复活先坐起来；饿了站着捂肚子，没伞淋雨抱头
     const rising = m.revived !== undefined && m.now - m.revived < 450
+    // 小动作：站着没事做时才演
+    const quirk = !m.moving && !body?.dead && !body?.down && m.lively ? m.quirk : undefined
+    const qk = quirk ? m.now - quirk.at : 0
+    const quirkPose: PoseKind | undefined = quirk
+      ? POSE_QUIRKS.has(quirk.kind)
+        ? (quirk.kind as PoseKind)
+        : quirk.kind === 'pickup' && qk < 900
+          ? 'sitGround'
+          : undefined
+      : undefined
     let pose: PoseKind | undefined = body?.dead
       ? 'lie'
       : body?.down || rising
         ? 'sitGround'
         : !m.moving
           ? (m.pose ??
-            (wear?.cover ? 'cover' : body?.hungry && !m.talk && !m.hear ? 'belly' : undefined))
+            (wear?.cover ? 'cover' : body?.hungry && !m.talk && !m.hear ? 'belly' : quirkPose))
           : undefined
     const still = body?.dead
     const lively = m.lively && !still
@@ -480,6 +525,13 @@ export class Acting {
       }
       if (lively && (m.now + this.breathPhase) % this.breathMs < this.breathMs * BREATH_DOWN)
         headDy = Math.max(headDy, bodyDy + 1)
+    }
+    // 小动作：跟着拍子点头、蹦一下
+    if (quirk?.kind === 'beat' && Math.floor(qk / 320) % 2) headDy = Math.max(headDy, bodyDy + 1)
+    if (quirk?.kind === 'hop' && qk % 450 < 140) {
+      stance = { ...stance, legs: stance.legs.map(([x, top, n]) => [x, top - 2, n] as const) }
+      bodyDy -= 2
+      headDy -= 2
     }
     // 生病：隔一阵咳一下，头一低
     const coughing =
@@ -549,11 +601,29 @@ export class Acting {
       names.push('cover')
       stance = { ...stance, arm: null }
     }
+    if (quirk?.kind === 'wave' && bodyView === 'down' && !wear?.umbrella) {
+      front.push(WAVE(Math.floor(qk / 250) % 2 === 1))
+      names.push(`wave${Math.floor(qk / 250) % 2}`)
+    }
     const props: Frame['props'] =
       names.length || posedNow?.back
         ? { key: names.join(','), back: posedNow?.back, front: front.flat() }
         : undefined
-    const face = this.face(m, posedNow, mouth, lively, still)
+    const quirkMood: Mood | undefined =
+      quirk?.kind === 'smile' || quirk?.kind === 'wave'
+        ? 'happy'
+        : quirk?.kind === 'yawn'
+          ? 'sleepy'
+          : quirk?.kind === 'stargaze'
+            ? 'bright'
+            : undefined
+    const face = this.face(
+      quirkMood && (m.mood ?? 'normal') === 'normal' ? { ...m, mood: quirkMood } : m,
+      posedNow,
+      mouth,
+      lively,
+      still
+    )
     const wind = lively ? m.wind : 0
     const sway = Math.max(-3, Math.min(3, Math.round(wind + trail)))
     const sparks: (readonly [number, number, string])[] = []
@@ -571,6 +641,8 @@ export class Acting {
           : [fx + PAD_X + OX, fy + PAD_TOP + OY + bodyDy]
         sparks.push(...particles(posedNow.fx, m.now, ax, ay, this.id))
       }
+      if (quirk?.kind === 'beat')
+        sparks.push(...particles('notes', qk, PAD_X + OX + 16, headTop + 6, this.id))
       if (body?.illness && bodyView !== 'up' && !posedNow?.lie)
         sparks.push(
           ...particles('cough', m.now + (this.id % 5200), mouthX, mouthY, this.id, facing || 1)
@@ -612,7 +684,14 @@ export class Acting {
       headDx,
       sway,
       bounce,
-      gaze: lively && view === 'down' && !turn && !posedNow?.eyes ? this.gaze(m) : 0,
+      gaze:
+        lively && view === 'down' && !turn && !posedNow?.eyes
+          ? quirk?.kind === 'scan'
+            ? Math.floor(qk / 520) % 2
+              ? 1
+              : -1
+            : this.gaze(m)
+          : 0,
       eyes: face.eyes,
       mouth: face.mouth,
       blush: face.blush,
@@ -624,6 +703,7 @@ export class Acting {
       snow: wear?.snow ?? 0,
       bandage: !!body?.injury && !body.dead,
       sign,
+      outline: m.pick,
     }
   }
 
@@ -682,10 +762,12 @@ export class Acting {
     }
     if (talking !== 'none' || m.talk) mouth = talking
     if (lively && (eyes === 'open' || eyes === 'bright' || eyes === 'wide')) {
-      const blink = this.blink(m.now)
+      const blink = this.blink(m.now, m.close)
       if (blink !== 'open') eyes = blink
       else if (eyes === 'open' && !m.look && m.sky && this.glance.up && !posedNow) eyes = 'bright'
     }
+    // 拉近了：睁着的眼睛里多一格高光
+    if (m.close && eyes === 'open') eyes = 'bright'
     return { eyes, mouth, blush }
   }
 }

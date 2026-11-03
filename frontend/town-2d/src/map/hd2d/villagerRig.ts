@@ -46,7 +46,8 @@ export type Tint = 'pale' | 'fever' | 'poison' | 'dead' | 'incap'
  *  props 是姿势带的道具（人物坐标，跟着身子挪）：back 先画、被身子挡住，front 最后画，key 用来比对；
  *  lie 是整个人躺下；sparks 是冒出来的小东西（贴图上的格子，画面坐标，左上为原点），最后画。
  *  tint 是身上的颜色，wet 是淋湿的档（衣服压深、头发多一道湿亮），snow 是头顶、帽檐、伞面积雪的档，
- *  bandage 是头上缠绷带；sign 是头顶的符号（画面坐标的左下角，alpha 按有序抖动淡出） */
+ *  bandage 是头上缠绷带；sign 是头顶的符号（画面坐标的左下角，alpha 按有序抖动淡出）；
+ *  outline 是外面一圈描边：悬停白边、选中金边（不受夜色压暗） */
 export interface Frame {
   view: View
   flip: boolean
@@ -69,6 +70,7 @@ export interface Frame {
   snow: 0 | 1 | 2 | 3
   bandage: boolean
   sign?: { name: Sign; x: number; y: number; alpha: number }
+  outline?: 'hover' | 'pick'
 }
 
 /** 帧的指纹：和上一次一样就不重画 */
@@ -77,7 +79,7 @@ export function frameKey(f: Frame) {
   const toes = f.stance.toes?.map((t) => t.join('.')).join('/') ?? ''
   const sparks = f.sparks?.map((s) => s.join('')).join(',') ?? ''
   const sign = f.sign ? `${f.sign.name}${f.sign.x}.${f.sign.y}.${f.sign.alpha.toFixed(2)}` : ''
-  return `${f.view}${+f.flip}${f.turn ? f.turn.view + +f.turn.mirror : ''}|${legs}|${toes}|${f.stance.arm}|${f.bodyDy}${f.headDy}${f.headDx}|${f.sway}${f.bounce}|${f.eyes}${f.gaze}${f.mouth}${f.blush}|${f.props?.key ?? ''}|${+f.lie}|${sparks}|${f.tint ?? ''}${f.wet}${f.snow}${+f.bandage}|${sign}`
+  return `${f.view}${+f.flip}${f.turn ? f.turn.view + +f.turn.mirror : ''}|${legs}|${toes}|${f.stance.arm}|${f.bodyDy}${f.headDy}${f.headDx}|${f.sway}${f.bounce}|${f.eyes}${f.gaze}${f.mouth}${f.blush}|${f.props?.key ?? ''}|${+f.lie}|${sparks}|${f.tint ?? ''}${f.wet}${f.snow}${+f.bandage}|${sign}|${f.outline ?? ''}`
 }
 
 /** 道具、天气、表情用到的颜色位（村民的调色板里没有的）：木头、饭菜、火苗、水、蓝、紫、雪 */
@@ -134,6 +136,44 @@ function mixPx(c: number, [r, g, b]: [number, number, number], k: number) {
 /** 有序抖动的门槛：淡出时一格格消失，保持像素感 */
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5]
 export const bayer = (x: number, y: number) => (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16
+/** 法线图里的材质（B 通道按 MATERIAL_STEP 一档）：0 透明和描边，1 头发，2 皮肤，3 眼睛，4 布和别的，
+ *  5 金属，6 冒出来的小东西和符号（平的），7 选中、悬停的描边（发光，不受光） */
+export const MATERIAL_STEP = 32
+const LOOSE = 1,
+  GLOW = 2,
+  LOOSE_MAT = 6,
+  GLOW_MAT = 7,
+  OUTLINE_MAT = 8
+/** 算法线时四周垫一圈的宽度 */
+const PW = RIG_W + 2
+const MATERIAL = new Uint8Array(128).fill(4)
+MATERIAL[0] = 0
+MATERIAL[code('K')] = 0
+for (const c of 'hHLw') MATERIAL[code(c)] = 1
+for (const c of 'sSJjvP') MATERIAL[code(c)] = 2
+MATERIAL[code('e')] = 3
+for (const c of 'YUM') MATERIAL[code(c)] = 5
+MATERIAL[LOOSE] = LOOSE_MAT
+MATERIAL[GLOW] = GLOW_MAT
+/** 量化好的法线：按左右、上下两边的高差（各 -3～3 格）查表，8 个方向 × 2 档倾斜；R、G 编成 0～255 */
+const NORMAL_R = new Uint8Array(49),
+  NORMAL_G = new Uint8Array(49)
+for (let gx = -3; gx <= 3; gx++)
+  for (let gy = -3; gy <= 3; gy++) {
+    const len = Math.hypot(gx, gy) / 3
+    let nx = 0,
+      ny = 0
+    if (len > 0.05) {
+      const a = Math.round(Math.atan2(gy, gx) / (Math.PI / 4)) * (Math.PI / 4)
+      const tilt = len > 0.4 ? 0.85 : 0.5
+      nx = Math.cos(a) * tilt
+      ny = Math.sin(a) * tilt
+    }
+    NORMAL_R[(gx + 3) * 7 + gy + 3] = Math.round(nx * 127 + 128)
+    NORMAL_G[(gx + 3) * 7 + gy + 3] = Math.round(ny * 127 + 128)
+  }
+const WHITE = rgba('#ffffff'),
+  GOLD = rgba('#ffd25a')
 const K = code('K'),
   E = code('e'),
   W = code('W'),
@@ -159,6 +199,10 @@ export class VillagerRig {
   private readonly color = new Uint32Array(RIG_W * RIG_H)
   private readonly ch = new Uint8Array(RIG_W * RIG_H)
   private readonly turned = new Uint32Array(RIG_W * RIG_H)
+  private readonly turnedCh = new Uint8Array(RIG_W * RIG_H)
+  // 画面上的一帧（翻转、躺下之后，自上而下）：颜色和颜色位，法线按它算
+  private readonly scr = new Uint32Array(RIG_W * RIG_H)
+  private readonly scrCh = new Uint8Array(RIG_W * RIG_H)
 
   constructor(key: string) {
     this.look = lookOf(key)
@@ -208,8 +252,9 @@ export class VillagerRig {
     return x < 0 || y < 0 || x >= RIG_W || y >= RIG_H ? 0 : this.ch[y * RIG_W + x]
   }
 
-  /** 画一帧到 data（RIG_W × RIG_H × 4，第一行是贴图最底下一行，直接交给 DataTexture） */
-  draw(f: Frame, data: Uint8Array) {
+  /** 画一帧到 data（RIG_W × RIG_H × 4，第一行是贴图最底下一行，直接交给 DataTexture）；
+   *  给了 normals 就同时画出法线和材质（见 normalsOf） */
+  draw(f: Frame, data: Uint8Array, normals?: Uint8Array) {
     this.color.fill(0)
     this.ch.fill(0)
     const x0 = OX + PAD_X,
@@ -251,41 +296,150 @@ export class VillagerRig {
     this.face(f, f.gaze * dir)
     if (f.snow && !f.lie) this.snowOn(f.snow)
     if (f.tint || f.wet) this.recolor(f.tint, f.wet)
-    // 填像素：躺下的先转过来，再翻转、自下而上
-    let color = this.color
+    // 画面上的一帧：躺下的先转过来，再翻转
+    let color = this.color,
+      ch = this.ch
     if (f.lie) {
       color = this.turned
+      ch = this.turnedCh
       color.fill(0)
+      ch.fill(0)
       for (let fy = 0; fy < FRAME_H; fy++)
         for (let fx = 0; fx < FRAME_W; fx++) {
-          const c = this.color[(fy + PAD_TOP) * RIG_W + fx + PAD_X]
-          if (c) color[(LIE_Y + FRAME_W - 1 - fx) * RIG_W + LIE_X + fy] = c
+          const i = (fy + PAD_TOP) * RIG_W + fx + PAD_X
+          if (!this.color[i]) continue
+          const j = (LIE_Y + FRAME_W - 1 - fx) * RIG_W + LIE_X + fy
+          color[j] = this.color[i]
+          ch[j] = this.ch[i]
         }
     }
-    const out = new Uint32Array(data.buffer, data.byteOffset, RIG_W * RIG_H)
+    const scr = this.scr,
+      scrCh = this.scrCh
     for (let y = 0; y < RIG_H; y++) {
-      const row = (RIG_H - 1 - y) * RIG_W,
-        src = y * RIG_W
-      if (f.flip) for (let x = 0; x < RIG_W; x++) out[row + x] = color[src + RIG_W - 1 - x]
-      else out.set(color.subarray(src, src + RIG_W), row)
+      const row = y * RIG_W
+      if (f.flip)
+        for (let x = 0; x < RIG_W; x++) {
+          scr[row + x] = color[row + RIG_W - 1 - x]
+          scrCh[row + x] = ch[row + RIG_W - 1 - x]
+        }
+      else {
+        scr.set(color.subarray(row, row + RIG_W), row)
+        scrCh.set(ch.subarray(row, row + RIG_W), row)
+      }
     }
-    for (const [x, y, c] of f.sparks ?? [])
-      if (x >= 0 && y >= 0 && x < RIG_W && y < RIG_H)
-        out[(RIG_H - 1 - y) * RIG_W + x] = this.lut[code(c)]
+    // 冒出来的小东西、头顶的符号：画面坐标，单算一种材质（平的，不鼓）
+    const dot = (x: number, y: number, c: string) => {
+      if (x < 0 || y < 0 || x >= RIG_W || y >= RIG_H) return
+      scr[y * RIG_W + x] = this.lut[code(c)]
+      scrCh[y * RIG_W + x] = LOOSE
+    }
+    for (const [x, y, c] of f.sparks ?? []) dot(x, y, c)
     if (f.sign) {
       const { name, x: sx, y: sy, alpha } = f.sign
       const rows = SIGNS[name]
       rows.forEach((row, j) => {
         const y = sy - rows.length + 1 + j
-        for (let i = 0; i < row.length; i++) {
-          const x = sx + i
-          if (row[i] === '.' || x < 0 || y < 0 || x >= RIG_W || y >= RIG_H) continue
-          if (alpha < 1 && bayer(x, y) >= alpha) continue
-          out[(RIG_H - 1 - y) * RIG_W + x] = this.lut[code(row[i])]
-        }
+        for (let i = 0; i < row.length; i++)
+          if (row[i] !== '.' && (alpha >= 1 || bayer(sx + i, y) < alpha)) dot(sx + i, y, row[i])
       })
     }
+    if (f.outline) this.outline(f.outline === 'pick' ? GOLD : WHITE)
+    const out = new Uint32Array(data.buffer, data.byteOffset, RIG_W * RIG_H)
+    for (let y = 0; y < RIG_H; y++)
+      out.set(scr.subarray(y * RIG_W, (y + 1) * RIG_W), (RIG_H - 1 - y) * RIG_W)
+    if (normals) this.normalsOf(normals)
   }
+
+  /** 外面一圈描边（悬停白、选中金）：透明格里挨着人（含斜角）的那些，单算「发光」材质，夜里不压暗 */
+  private outline(rgb: number) {
+    const scr = this.scr,
+      scrCh = this.scrCh
+    const edge: number[] = []
+    for (let y = 0; y < RIG_H; y++)
+      for (let x = 0; x < RIG_W; x++) {
+        if (scr[y * RIG_W + x]) continue
+        let near = false
+        for (let dy = -1; dy <= 1 && !near; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx,
+              ny = y + dy
+            if (nx < 0 || ny < 0 || nx >= RIG_W || ny >= RIG_H) continue
+            const j = ny * RIG_W + nx
+            if (scr[j] && scrCh[j] !== GLOW) {
+              near = true
+              break
+            }
+          }
+        if (near) edge.push(y * RIG_W + x)
+      }
+    for (const i of edge) {
+      scr[i] = rgb
+      scrCh[i] = GLOW
+    }
+  }
+
+  /** 材质图和像素法线（画面上的一帧，自下而上写进 out，和颜色同一种排法）：
+   *  按颜色位分头发、皮肤、眼睛、布、金属；每块按到透明处、描边和材质分界的距离（最多 3 格）鼓成「枕头」，
+   *  法线量化成 8 个方向 × 2 档倾斜，保持像素感。R、G 是法线的 x、y（画面右、上），B 是材质，
+   *  A 标出最外一圈（挨着透明处）。描边、透明处是平的。只算人所在的那一块 */
+  private normalsOf(out: Uint8Array) {
+    // 四周多垫一圈的数组：看邻格不用判断出界
+    const scr = this.scr,
+      chs = this.scrCh,
+      mat = this.padMat,
+      dist = this.padDist
+    out.fill(0)
+    mat.fill(0)
+    dist.fill(0)
+    let x0 = RIG_W,
+      y0 = RIG_H,
+      x1 = -1,
+      y1 = -1
+    for (let y = 0; y < RIG_H; y++)
+      for (let x = 0; x < RIG_W; x++) {
+        const i = y * RIG_W + x
+        if (!scr[i]) continue
+        // 描边是不透明的平面（OUTLINE），透明处是 0
+        const m = MATERIAL[chs[i]]
+        mat[(y + 1) * PW + x + 1] = m || OUTLINE_MAT
+        if (x < x0) x0 = x
+        if (x > x1) x1 = x
+        if (y < y0) y0 = y
+        if (y > y1) y1 = y
+      }
+    if (x1 < 0) return
+    // 到「边」的距离（四邻步数，最多 3）：透明处、描边、平的东西是 0，挨着别的材质是 1；正反两遍扫出来
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0, p = (y + 1) * PW + x0 + 1; x <= x1; x++, p++) {
+        const m = mat[p]
+        if (m === 0 || m >= LOOSE_MAT) continue
+        dist[p] =
+          mat[p - 1] !== m || mat[p + 1] !== m || mat[p - PW] !== m || mat[p + PW] !== m ? 1 : 3
+      }
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0, p = (y + 1) * PW + x0 + 1; x <= x1; x++, p++)
+        if (dist[p] > 1) dist[p] = Math.min(dist[p], dist[p - 1] + 1, dist[p - PW] + 1)
+    for (let y = y1; y >= y0; y--)
+      for (let x = x1, p = (y + 1) * PW + x1 + 1; x >= x0; x--, p--)
+        if (dist[p] > 1) dist[p] = Math.min(dist[p], dist[p + 1] + 1, dist[p + PW] + 1)
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0, p = (y + 1) * PW + x0 + 1; x <= x1; x++, p++) {
+        const m = mat[p]
+        if (!m) continue
+        const o = ((RIG_H - 1 - y) * RIG_W + x) * 4
+        // 画面上往右、往上为正：左高右低朝右，下高上低朝上
+        const n =
+          m >= LOOSE_MAT
+            ? 24
+            : (dist[p - 1] - dist[p + 1] + 3) * 7 + dist[p + PW] - dist[p - PW] + 3
+        out[o] = NORMAL_R[n]
+        out[o + 1] = NORMAL_G[n]
+        out[o + 2] = (m === OUTLINE_MAT ? 0 : m) * MATERIAL_STEP
+        out[o + 3] = !mat[p - 1] || !mat[p + 1] || !mat[p - PW] || !mat[p + PW] ? 128 : 255
+      }
+  }
+  private readonly padMat = new Uint8Array(PW * (RIG_H + 2))
+  private readonly padDist = new Uint8Array(PW * (RIG_H + 2))
 
   /** 积雪：每一列最上面那格（头顶、帽子、伞面、肩膀）落白，厚了往下多盖一格、往上堆一格 */
   private snowOn(level: 1 | 2 | 3) {

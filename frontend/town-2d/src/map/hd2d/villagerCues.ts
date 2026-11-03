@@ -156,3 +156,68 @@ const LIKES: Record<string, RegExp> = {
 export function likes(persona: string | undefined, text: string) {
   return !!persona && !!LIKES[persona]?.test(text)
 }
+
+/** 站着没事做时的个性小动作：按姿势演的（看书、喝咖啡、织毛线……），或者跟着拍子点头、蹦一下、
+ *  左看右看、蹲下捡东西、招手、笑、打哈欠、抬头看星星 */
+export type Quirk =
+  | 'read'
+  | 'drink'
+  | 'knit'
+  | 'write'
+  | 'tend'
+  | 'busy'
+  | 'craft'
+  | 'cook'
+  | 'gaze'
+  | 'medic'
+  | 'beat'
+  | 'hop'
+  | 'scan'
+  | 'pickup'
+  | 'wave'
+  | 'smile'
+  | 'yawn'
+  | 'stargaze'
+
+/** 内置村民的小动作（按村民库里的职业和性格写）：阿岚见人招呼，里德跟着拍子点头，阿婆针线不停，
+ *  露娜白天打哈欠、夜里抬头看星星，苔拉左看右看、蹲下捡石头，石头蹦蹦跳跳……；周伯走得慢 */
+const QUIRKS: Record<string, readonly Quirk[]> = {
+  builtin_alan: ['wave', 'smile'],
+  builtin_ashu: ['scan', 'read'],
+  builtin_finn: ['drink'],
+  builtin_hazel: ['read'],
+  builtin_iris: ['busy'],
+  builtin_june: ['cook'],
+  builtin_laozhou: ['craft'],
+  builtin_linxi: ['gaze', 'scan'],
+  builtin_luna: ['yawn'],
+  builtin_mira: ['smile', 'tend'],
+  builtin_noah: ['busy'],
+  builtin_po: ['knit'],
+  builtin_poppy: ['tend'],
+  builtin_reed: ['beat'],
+  builtin_sana: ['medic'],
+  builtin_stone: ['hop', 'scan'],
+  builtin_tan: ['gaze'],
+  builtin_theo: ['craft', 'busy'],
+  builtin_tilla: ['scan', 'pickup'],
+  builtin_xiaohe: ['tend'],
+  builtin_xiaoning: ['write'],
+  builtin_zhou: ['gaze'],
+}
+
+/** 走路比别人慢的人 */
+export const SLOW_WALKERS = new Set(['builtin_zhou'])
+
+/** 这个人的小动作：内置村民查表，露娜夜里换成看星星；捏出来的按外形挑（穿着书的看书，系围裙的手上忙，
+ *  别的左看右看） */
+export function quirksOf(
+  persona: string | undefined,
+  outfit: string,
+  night: boolean
+): readonly Quirk[] {
+  if (persona === 'builtin_luna' && night) return ['stargaze']
+  const known = persona && QUIRKS[persona]
+  if (known) return known
+  return outfit === 'book' ? ['read', 'scan'] : outfit === 'apron' ? ['busy', 'scan'] : ['scan']
+}

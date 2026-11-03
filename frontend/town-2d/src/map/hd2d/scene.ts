@@ -11,6 +11,7 @@ import type { Dock } from '../pixel/island'
 import { fbm, hash, rng } from '../pixel/noise'
 import { Motes } from './motes'
 import { Villagers, type LiveMotion, type VillagerPlacement } from './villagers'
+import { villagerLight } from './villagerLight'
 import { VILLAGER_HALF, VILLAGER_HEIGHT, VILLAGER_SCALE } from './villagerSprite'
 import { Weather3D } from './weather'
 import { DOORS } from '../buildings'
@@ -743,6 +744,8 @@ export class HdScene {
     // 草丛中档一半；踩踏和小动物低档不要
     this.grass.setDensity(low ? 0 : mid ? 0.5 : 1)
     this.trail.enabled = !low
+    // 村民按像素法线分明暗、头发高光、金属闪点：高档以上
+    villagerLight.uShape.value = low || mid ? 0 : 1
     this.quality = quality
     this.volumetric.enabled = !low && !mid
     this.finish.uniforms.grain.value = low ? 0 : mid ? 0.025 : 0.035
@@ -1604,6 +1607,12 @@ export class HdScene {
     return this.villagers.lag(id)
   }
 
+  /** 选中的人（金边、脚下光斑）、指着的人（白边） */
+  setPickedVillager(picked: string | null, hovered: string | null) {
+    this.villagers.setPicked(picked, hovered)
+    this.request()
+  }
+
   /** 头顶撑着的伞、冒着的符号高出头顶多少（地图单位）：气泡躲开 */
   villagerCrown(id: string) {
     return this.villagers.crown(id)
@@ -1741,6 +1750,10 @@ export class HdScene {
     const rim =
       (golden * 0.9 * Math.min(1, Math.abs(sx) * 1.2) + Math.max(0, -sz) * 0.6 * day) *
       (1 - cloud * 0.8)
+    // 村民的像素法线按太阳在画面上的方向分明暗；夜里给人一个最暗下限，偏一点蓝
+    villagerLight.uSunScreen.value.set(sx, sy, sz)
+    villagerLight.uSunUp.value = day
+    villagerLight.uFloorTint.value.setRGB(0.012, 0.018, 0.04).multiplyScalar(night)
     this.lightmap.setRim(
       new THREE.Vector2(sx, sy).normalize(),
       this.sun.color.clone().multiplyScalar(this.sun.intensity * rim * 0.6),
@@ -1993,6 +2006,9 @@ export class HdScene {
     this.grass.setScale(unitPx)
     this.fauna.setScale(unitPx)
     this.villagers.setTexelPx(unitPx * PIXEL * VILLAGER_SCALE)
+    // 看得见的地面范围（转过方位角时取外接框），外面留一圈：镜头外的人不重画贴图
+    const reach = (Math.abs(yawCos) + Math.abs(yawSin)) * Math.max(w, h) * 0.5 + VILLAGER_HEIGHT * 2
+    this.villagers.setView(vx - reach, vy - reach, vx + reach, vy + reach)
     this.reflection.uniforms.uReflStreak.value.set(-yawSin, -yawCos).multiplyScalar(6 * PIXEL)
     this.waterVisible = this.waterInView(target, w, h)
     this.updateTiltShift()

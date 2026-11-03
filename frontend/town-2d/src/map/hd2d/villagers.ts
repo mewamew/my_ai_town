@@ -6,9 +6,19 @@ import { pixelFilter, stand, standee } from './standee'
 import { contactTexture } from './ao'
 import { REFLECTION_SKIP } from './reflection'
 import { VILLAGER_HALF, VILLAGER_HEIGHT, VILLAGER_SCALE, type Direction } from './villagerSprite'
-import { RIG_H, RIG_W, VillagerRig, frameKey } from './villagerRig'
+import { RIG_H, RIG_W, VillagerRig, bayer, frameKey } from './villagerRig'
+import { shadeVillager } from './villagerLight'
 import { Acting, talkMs, type Mood, type Moment, type Wear } from './villagerActing'
-import { bodyOf, likes, moodOf, standingSigns, type Cue } from './villagerCues'
+import {
+  SLOW_WALKERS,
+  bodyOf,
+  likes,
+  moodOf,
+  quirksOf,
+  standingSigns,
+  type Cue,
+  type Quirk,
+} from './villagerCues'
 import { CYCLE, SIGN_RANK, type Shown, type Sign } from './villagerSigns'
 import { poseOf } from './villagerPose'
 
@@ -77,6 +87,10 @@ const SNOW_MIN = [4, 15, 30]
 const WET_MIN = [3, 12]
 /** 一阵子的符号留多久（毫秒） */
 const SIGN_MS = 2200
+/** 站着没事做多久才演小动作、演多久、两段之间歇多久（毫秒） */
+const QUIRK_AFTER_MS = 8000
+const QUIRK_MS = [2600, 4200]
+const QUIRK_REST_MS = [6000, 14000]
 /** 复活的光柱：落下、停住、淡掉（毫秒），多高（地图单位） */
 const BEAM_MS = [300, 1200, 1800]
 const BEAM_H = VILLAGER_HEIGHT * 6
@@ -106,6 +120,9 @@ interface Villager {
   /** 这个人的贴图：像素就在 data 里，画完一帧标记上传 */
   map: THREE.DataTexture
   data: Uint8Array
+  /** 法线和材质（见 villagerLight.ts），和颜色一起画、一起上传 */
+  normalMap: THREE.DataTexture
+  normals: Uint8Array
   rig: VillagerRig
   acting: Acting
   /** 上一帧的指纹：一样就不重画 */
@@ -146,6 +163,10 @@ interface Villager {
   crown: number
   /** 上一帧在走：天好时刚出门散步，偶尔哼一句 */
   strolling: boolean
+  /** 从什么时候起站着没事做；正在演的小动作；下一段最早什么时候 */
+  idleSince: number
+  quirk?: { kind: Quirk; at: number; until: number }
+  nextQuirk: number
   /** 此刻在看的方向（画面坐标）和下次重挑的时刻；上次因为看人转身的时刻 */
   gazeAt?: [number, number]
   nextLook: number
@@ -196,7 +217,9 @@ export class Villagers {
     private scene: THREE.Scene,
     private tilt: Tilt,
     private readonly prepare?: (material: THREE.Material) => void
-  ) {}
+  ) {
+    scene.add(this.spot)
+  }
 
   /** 俯角变了：所有人重新立好 */
   setTilt(tilt: Tilt) {
@@ -541,6 +564,7 @@ export class Villagers {
       this.frame(v, now)
       this.stepBeam(v, now)
     }
+    this.stepSpot(now)
     return changed
   }
 
@@ -606,9 +630,19 @@ export class Villagers {
     this.sway = sway
   }
 
-  /** 按此刻的朝向、走路、姿势、表情、呼吸眨眼和风合成这一帧；和上一帧不一样才重画、上传 */
+  /** 镜头看得见的范围（地图坐标，已留出一圈余量）：范围外的人不重画贴图 */
+  setView(x0: number, y0: number, x1: number, y1: number) {
+    this.view = [x0, y0, x1, y1]
+  }
+  private view: [number, number, number, number] = [-Infinity, -Infinity, Infinity, Infinity]
+
+  /** 按此刻的朝向、走路、姿势、表情、呼吸眨眼和风合成这一帧；和上一帧不一样才重画、上传。
+   *  镜头外的人不画 */
   private frame(v: Villager, now: number) {
     if (!v.mesh.visible) return
+    const [vx0, vy0, vx1, vy1] = this.view
+    const [px, py] = [v.at[0] + v.offset[0], v.at[1] + v.offset[1]]
+    if (px < vx0 || px > vx1 || py < vy0 || py > vy1) return
     // 天好时在外面刚迈开步，五个人里约有一个哼一句
     if (v.moving && !v.strolling && this.climate.fine && !v.cue.indoors && !v.cue.verb)
       if (hashString(`${v.id}${Math.floor(now / 20000)}`) % 5 === 0) this.signal(v, 'note', now)
@@ -633,16 +667,65 @@ export class Villagers {
       sign: this.signNow(v, now),
       revived: v.revived,
     }
-    // 没伞淋雨的人小跑：脚步比走过的路快
+    // 没伞淋雨的人小跑：脚步比走过的路快；走得慢的人步子慢
     if (m.wear?.cover) m.stride *= 1.4
+    else if (v.cue.persona && SLOW_WALKERS.has(v.cue.persona)) m.stride *= 0.75
+    m.quirk = this.quirkNow(v, now, m.lively)
+    m.close = this.texelPx >= 3
+    m.pick = v.id === this.picked ? 'pick' : v.id === this.hovered ? 'hover' : undefined
     const f = v.acting.frame(m)
     v.crown = (f.props?.key.includes('umbrella') ? 10 : f.sign ? 3 : 0) * PIXEL * VILLAGER_SCALE
     const key = frameKey(f)
     if (key === v.drawn) return
     v.drawn = key
-    v.rig.draw(f, v.data)
+    v.rig.draw(f, v.data, v.normals)
     v.map.needsUpdate = true
+    v.normalMap.needsUpdate = true
   }
+
+  /** 站着没事做（没在走、没用道具、没聊天、没倒下）超过 8 秒，隔一阵演一段自己的小动作 */
+  private quirkNow(v: Villager, now: number, lively: boolean) {
+    const c = v.cue
+    if (v.moving || c.verb || c.chat || c.dead || c.down || v.talk || !lively) {
+      v.idleSince = now
+      v.quirk = undefined
+      return undefined
+    }
+    if (v.quirk && now < v.quirk.until) return v.quirk
+    if (v.quirk) {
+      v.quirk = undefined
+      v.nextQuirk = now + between(QUIRK_REST_MS, hashString(`${v.id}${now | 0}`))
+    }
+    if (now - v.idleSince < QUIRK_AFTER_MS || now < v.nextQuirk) return undefined
+    const pick = hashString(`${v.id}:${Math.floor(now / 1000)}`)
+    const kinds = quirksOf(c.persona, v.rig.look.outfit, this.climate.lit > 0.5)
+    v.quirk = {
+      kind: kinds[pick % kinds.length],
+      at: now,
+      until: now + between(QUIRK_MS, pick >>> 8),
+    }
+    return v.quirk
+  }
+
+  /** 选中的人（金边，脚下一圈暖色光斑）、指着的人（白边） */
+  setPicked(picked: string | null, hovered: string | null) {
+    this.picked = picked
+    this.hovered = hovered
+  }
+  private picked: string | null = null
+  private hovered: string | null = null
+
+  /** 选中的人脚下的光斑：一张贴地的小图，不受夜色压暗，慢慢明暗起伏 */
+  private stepSpot(now: number) {
+    const v = this.picked ? this.all.get(this.picked) : undefined
+    const spot = this.spot
+    spot.visible = !!v?.mesh.visible
+    if (!v || !spot.visible) return
+    spot.position.set(v.at[0] + v.offset[0], 0.5, v.at[1] + v.offset[1])
+    const material = spot.material as THREE.MeshBasicMaterial
+    material.opacity = this.calm ? 0.75 : 0.62 + 0.18 * Math.sin(now / 420)
+  }
+  private readonly spot = selectionSpot()
 
   /** 天气落在这个人身上：下雨在外面的打伞（没伞的抱头），淋湿和积雪按在外面待的时间分档，
    *  冷天多数人围围巾、在外面呵白气，夜里一部分人提灯笼 */
@@ -736,6 +819,10 @@ export class Villagers {
     map.colorSpace = THREE.SRGBColorSpace
     const mesh = standee(map, { scale: VILLAGER_SCALE, frame: [RIG_W, RIG_H] })
     this.prepare?.(mesh.material as THREE.Material)
+    const normals = new Uint8Array(RIG_W * RIG_H * 4)
+    const normalMap = new THREE.DataTexture(normals, RIG_W, RIG_H)
+    normalMap.magFilter = normalMap.minFilter = THREE.NearestFilter
+    shadeVillager(mesh.material as THREE.Material, normalMap)
     this.scene.add(mesh)
     const contact = new THREE.Mesh(this.contactGeometry, this.contactMaterial)
     contact.layers.set(REFLECTION_SKIP)
@@ -747,6 +834,8 @@ export class Villagers {
       contact,
       map,
       data,
+      normalMap,
+      normals,
       rig,
       acting: new Acting(p.id),
       drawn: '',
@@ -757,6 +846,8 @@ export class Villagers {
       snowMin: 0,
       crown: 0,
       strolling: false,
+      idleSince: performance.now(),
+      nextQuirk: 0,
       look: p.look,
       at: [p.x, p.y],
       path: [{ t: this.latest, x: p.x, y: p.y }],
@@ -802,11 +893,16 @@ export class Villagers {
     v.mesh.geometry.dispose()
     ;(v.mesh.material as THREE.Material).dispose()
     v.map.dispose()
+    v.normalMap.dispose()
     this.all.delete(id)
   }
 
   dispose() {
     for (const id of [...this.all.keys()]) this.remove(id)
+    this.scene.remove(this.spot)
+    this.spot.geometry.dispose()
+    ;(this.spot.material as THREE.MeshBasicMaterial).map?.dispose()
+    ;(this.spot.material as THREE.Material).dispose()
     this.beamGeometry.dispose()
     this.beamTexture.dispose()
     this.contactGeometry.dispose()
@@ -843,4 +939,45 @@ function beamTexture() {
   const t = new THREE.CanvasTexture(c)
   t.colorSpace = THREE.SRGBColorSpace
   return t
+}
+
+/** 在 [a, b) 里按一个整数取一个数 */
+function between([a, b]: number[], n: number) {
+  return a + ((n % 1000) / 1000) * (b - a)
+}
+
+/** 选中的光斑：贴地的椭圆光圈，按有序抖动由里往外淡，像素感 */
+function selectionSpot() {
+  const w = 40,
+    h = 24
+  const c = document.createElement('canvas')
+  c.width = w
+  c.height = h
+  const ctx = c.getContext('2d')!
+  const img = ctx.createImageData(w, h)
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const d = Math.hypot((x + 0.5 - w / 2) / (w / 2), (y + 0.5 - h / 2) / (h / 2))
+      // 一圈亮边，里面淡淡一层
+      const a = d > 1 ? 0 : d > 0.78 ? 1 : 0.35 * (1 - d)
+      const keep = a >= 1 || bayer(x, y) < a
+      const i = (y * w + x) * 4
+      img.data[i] = 255
+      img.data[i + 1] = 214
+      img.data[i + 2] = 120
+      img.data[i + 3] = keep ? 255 : 0
+    }
+  ctx.putImageData(img, 0, 0)
+  const map = new THREE.CanvasTexture(c)
+  map.magFilter = map.minFilter = THREE.NearestFilter
+  map.colorSpace = THREE.SRGBColorSpace
+  const size = VILLAGER_HALF * 3.2
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(size, size * (h / w)).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ map, transparent: true, opacity: 0.7, depthWrite: false })
+  )
+  mesh.renderOrder = 1
+  mesh.layers.set(REFLECTION_SKIP)
+  mesh.visible = false
+  return mesh
 }

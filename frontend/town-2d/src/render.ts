@@ -201,6 +201,24 @@ export class TownMap {
   private facing = new Map<string, string>()
   /** 村民编号 → 村民库模板编号：内置村民的喜好和小动作按它查 */
   private templates = new Map<string, string | undefined>()
+  /** 指针指着的村民：立牌外面一圈白边 */
+  private hoveredId: string | null = null
+  /** 指到村民（他的头像、身形框、名字）时立牌描白边，离开时去掉 */
+  private hoverVillagers() {
+    const villager = (target: EventTarget | null) =>
+      (target as Element | null)?.closest?.('[data-vid]')?.getAttribute('data-vid') ?? null
+    this.svg.addEventListener('pointerover', (e) => {
+      const id = villager(e.target)
+      if (id === this.hoveredId) return
+      this.hoveredId = id
+      this.hd?.setPickedVillager(this.selectedId, id)
+    })
+    this.svg.addEventListener('pointerout', (e) => {
+      if (!this.hoveredId || villager(e.relatedTarget) === this.hoveredId) return
+      this.hoveredId = null
+      this.hd?.setPickedVillager(this.selectedId, null)
+    })
+  }
   private motionId: string | null = null
   /** 给立体场景的本地预测：米制位置换成地图坐标 */
   private liveMotion(): LiveMotion | null {
@@ -328,6 +346,7 @@ export class TownMap {
       this.prompts.layer
     )
     this.nameHoveredProps()
+    this.hoverVillagers()
     container.appendChild(this.svg)
     this.svg.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return
@@ -403,6 +422,7 @@ export class TownMap {
         this.hd.beforeDraw = this.frameHook ?? undefined
         this.hd.setLiveMotion(this.liveMotion())
         this.hd.onNotice = (text) => this.onRenderNotice?.(text)
+        this.hd.setPickedVillager(this.selectedId, this.hoveredId)
         this.syncFocus()
         this.applyTilt()
         if (this.viewInsets) this.hd.setFocusInsets(this.viewInsets.top, this.viewInsets.bottom)
@@ -1096,6 +1116,7 @@ export class TownMap {
   setSelected(id: string | null) {
     this.selectedId = id
     this.residents.setSelected(id)
+    this.hd?.setPickedVillager(id, this.hoveredId)
     const pos = id && this.rosters === 1 ? this.residents.getMemberPos(id) : undefined
     if (pos) {
       this.camera.lookAt(pos[0], pos[1])
