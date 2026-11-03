@@ -96,7 +96,7 @@ impl Runtime {
         {
             Ok(())
         } else {
-            Err(AvatarFailure::ControlLost("控制权已失效，请重新进入"))
+            Err(AvatarFailure::ControlLost("你离开了一会儿，已自动退出控制"))
         }
     }
 

@@ -859,8 +859,9 @@ class AvatarController {
     }
     if (message.type === 'avatar_result') {
       const p = this.commands.settle(message.request_id, message.ok)
+      // 离开太久被收回控制是正常情况：用普通提示，不当作出错
       if (message.message && !(p?.silent && !message.ok))
-        this.ui.showToast(message.message, !message.ok)
+        this.ui.showToast(message.message, !message.ok && message.code !== 'control_lost')
     }
     return true
   }
