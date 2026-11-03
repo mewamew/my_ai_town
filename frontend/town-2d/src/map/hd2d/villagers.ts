@@ -6,7 +6,9 @@ import { contactTexture } from './ao'
 import { REFLECTION_SKIP } from './reflection'
 import { VILLAGER_HALF, VILLAGER_SCALE, type Direction } from './villagerSprite'
 import { RIG_H, RIG_W, VillagerRig, frameKey } from './villagerRig'
-import { Acting, type Moment } from './villagerActing'
+import { Acting, talkMs, type Mood, type Moment } from './villagerActing'
+import { likes, moodOf, type Cue } from './villagerCues'
+import { poseOf } from './villagerPose'
 
 // 村民立牌：位置跟着名册走。名册每拍（100 毫秒）来一次，立牌比最新一份晚一到两拍，在相邻两份
 // 之间匀速走过去：每份名册记作比上一份晚一拍，播放按真实时间走；每来一份按缓冲多少把播放稍微调快
@@ -51,10 +53,10 @@ export interface VillagerPlacement {
   condition: 'normal' | 'incapacitated' | 'dead'
   /** 玩家正在操控的人：不缓冲，按本地预测画（见 LiveMotion） */
   live?: boolean
-  /** 站着时转身朝向这一点（被玩家邀请、正和玩家聊天的人朝向玩家） */
+  /** 站着时转身朝向这一点（被玩家邀请、正和玩家聊天的人朝向玩家，聊天的人朝向对方） */
   faceToward?: [number, number]
-  /** 在用道具、在聊天：有人走过只拿眼睛看，不转身 */
-  busy?: boolean
+  /** 名册里和表演有关的那几项（见 villagerCues.ts） */
+  cue?: Cue
 }
 
 const TINT = { normal: '#ffffff', incapacitated: '#a8a0a0', dead: '#6f6f78' }
@@ -105,7 +107,11 @@ interface Villager {
   live?: boolean
   /** 站着时朝向的点 */
   faceToward?: [number, number]
-  busy?: boolean
+  cue: Cue
+  /** 在说的一句（开口的时刻）、在听的一句；一阵子的表情（刚聊完高兴、刚复活先惊后喜） */
+  talk?: { at: number; text: string; liked: boolean }
+  hear?: { at: number; ms: number; liked: boolean }
+  react: { mood: Mood; until: number }[]
   /** 此刻在看的方向（画面坐标）和下次重挑的时刻；上次因为看人转身的时刻 */
   gazeAt?: [number, number]
   nextLook: number
@@ -206,7 +212,7 @@ export class Villagers {
       if (v.faceToward?.[0] !== p.faceToward?.[0] || v.faceToward?.[1] !== p.faceToward?.[1])
         changed = true
       v.faceToward = p.faceToward
-      v.busy = p.busy
+      this.cue(v, p.cue ?? {})
       if (p.live) {
         // 时间轴上只留名册的最新位置：名字、心声泡按它和立牌的差跟着立牌（见 lag）
         v.live = true
@@ -236,7 +242,45 @@ export class Villagers {
         this.remove(id)
         changed = true
       }
+    // 同一场聊天里，有人开口：别的人在听，说到喜欢的话题眼睛发亮
+    const chats = new Set([...this.all.values()].map((v) => v.cue.chat))
+    for (const id of this.heard.keys()) if (!chats.has(id)) this.heard.delete(id)
+    for (const v of this.all.values()) {
+      if (!v.talk || !v.cue.chat || this.heard.get(v.cue.chat) === v.talk) continue
+      this.heard.set(v.cue.chat, v.talk)
+      for (const o of this.all.values())
+        if (o !== v && o.cue.chat === v.cue.chat)
+          o.hear = {
+            at: v.talk.at,
+            ms: talkMs(v.talk.text),
+            liked: likes(o.cue.persona, v.talk.text),
+          }
+    }
     return changed
+  }
+
+  /** 每场聊天最近开口的那一句：一句只分给听的人一次 */
+  private readonly heard = new Map<string, Villager['talk']>()
+
+  /** 换上新的线索：新说出口的一句开始动嘴；聊完了高兴一阵；刚被治好、复活的先惊讶再高兴 */
+  private cue(v: Villager, cue: Cue) {
+    const before = v.cue
+    v.cue = cue
+    const now = performance.now()
+    if (cue.speech && cue.speech.key !== before.speech?.key)
+      v.talk = { at: now, text: cue.speech.text, liked: likes(cue.persona, cue.speech.text) }
+    if (before.chat && !cue.chat) v.react = [{ mood: 'happy', until: now + 2500 }]
+    if (cue.revived && cue.revived.at !== before.revived?.at)
+      v.react = [
+        { mood: 'surprised', until: now + 900 },
+        { mood: 'happy', until: now + 3500 },
+      ]
+  }
+
+  /** 此刻的心情：一阵子的表情优先，过了就按身体和需求 */
+  private moodNow(v: Villager, now: number): Mood {
+    while (v.react.length && v.react[0].until <= now) v.react.shift()
+    return v.react[0]?.mood ?? moodOf(v.cue)
   }
 
   /** 操控中的人：画到本地预测的位置，按走过的距离换走路帧；还不知道预测位置时按名册 */
@@ -387,7 +431,7 @@ export class Villagers {
     const sx = dx * this.tilt.yawCos - dy * this.tilt.yawSin
     const sy = dx * this.tilt.yawSin + dy * this.tilt.yawCos
     v.gazeAt = [sx, sy]
-    if (v.faceToward || v.busy || now - v.turnedAt < TURN_HOLD_MS) return
+    if (v.faceToward || v.cue.verb || v.cue.chat || now - v.turnedAt < TURN_HOLD_MS) return
     const want: Direction =
       Math.abs(sx) > Math.abs(sy) ? (sx > 0 ? 'right' : 'left') : sy > 0 ? 'down' : 'up'
     if (want === 'up' || want === v.dir) return
@@ -419,9 +463,11 @@ export class Villagers {
     this.sway = sway
   }
 
-  /** 按此刻的朝向、走路、呼吸眨眼和风合成这一帧；和上一帧不一样才重画、上传 */
+  /** 按此刻的朝向、走路、姿势、表情、呼吸眨眼和风合成这一帧；和上一帧不一样才重画、上传 */
   private frame(v: Villager, now: number) {
     if (!v.mesh.visible) return
+    if (v.talk && now - v.talk.at > talkMs(v.talk.text)) v.talk = undefined
+    if (v.hear && now - v.hear.at > v.hear.ms) v.hear = undefined
     const m: Moment = {
       now,
       dir: v.dir,
@@ -431,6 +477,10 @@ export class Villagers {
       wind: this.sway(v.mesh.position.x, v.mesh.position.z),
       look: v.gazeAt,
       sky: this.sky,
+      pose: v.cue.verb ? poseOf(v.cue.verb) : undefined,
+      mood: this.moodNow(v, now),
+      talk: v.talk,
+      hear: v.hear,
     }
     const f = v.acting.frame(m)
     const key = frameKey(f)
@@ -466,6 +516,8 @@ export class Villagers {
       rig,
       acting: new Acting(p.id),
       drawn: '',
+      cue: p.cue ?? {},
+      react: [],
       look: p.look,
       at: [p.x, p.y],
       path: [{ t: this.latest, x: p.x, y: p.y }],

@@ -1,10 +1,21 @@
 import { hashString } from '../pixel/noise'
-import type { Direction, HeadTurn, Stance, View } from './villagerSprite'
-import type { Eyes, Frame } from './villagerRig'
+import { OX, OY, type Direction, type HeadTurn, type Stance, type View } from './villagerSprite'
+import {
+  LIE_X,
+  LIE_Y,
+  PAD_TOP,
+  PAD_X,
+  type Cells,
+  type Eyes,
+  type Frame,
+  type Mouth,
+} from './villagerRig'
+import { BEAT_MS, posed, type PoseKind, type Posed } from './villagerPose'
 
-// 村民此刻在演什么：呼吸、眨眼、看哪儿、走到哪一步、起步停步和转身，每帧合成一个 Frame 交给
-// villagerRig.ts 画。节奏按编号错开，一群人站着不会一起动。要求减少动画、或者拉得太远一格不到
-// 一个屏幕像素时，呼吸、眨眼、眼珠和头发都停，走路照常换步。
+// 村民此刻在演什么：呼吸、眨眼、看哪儿、走到哪一步、起步停步和转身，做事的姿势，说话的口型和比划，
+// 听人说话点头，脸上的表情，冒出来的热气、火星和「Z」，每帧合成一个 Frame 交给 villagerRig.ts 画。
+// 节奏按编号错开，一群人站着不会一起动。要求减少动画、或者拉得太远一格不到一个屏幕像素时，呼吸、眨眼、
+// 眼珠、头发、手上的动作和冒出来的东西都停，姿势和表情留静止的一帧，走路照常换步。
 
 /** 呼吸一个来回的秒数：3～4 秒，每人不同 */
 const BREATH_S = [3.1, 4]
@@ -23,6 +34,16 @@ const LEAN_MS = 120
 const SETTLE_MS = 260
 /** 随便看看：眼珠停在一边的秒数 */
 const GLANCE_S = [1.5, 4.5]
+/** 说话：一个字张嘴一次，标点处停一下；一句最多演这么久（和气泡留的时间差不多） */
+const SYLLABLE_MS = 135
+const PAUSE_MS = 240
+const TALK_MAX_MS = 6000
+const PAUSES = /[，。！？、；：…,.!?;:～~\s]/
+/** 听的人在别人说到一半时点一下头 */
+const NOD_MS = 220
+/** 犯困的人隔一阵打个哈欠 */
+const YAWN_EVERY_MS = 7000
+const YAWN_MS = 1400
 
 /** 八帧走路：着地、下沉、过渡、腾起，左右脚各一遍。身子按 0、+1、0、−1 起伏（往下为正）；
  *  头比身子晚一拍，垂下来的头发再晚一拍，只往下晚：头往上晚会和身子脱开一道缝。侧面手臂前后摆 */
@@ -136,14 +157,18 @@ const MIDWAY: Partial<Record<`${Direction}${Direction}`, Direction>> = {
   updown: 'right',
 }
 
-/** 这一帧的外部条件：朝向、走没走、走了多远，能不能动小动作，风，看的方向（画面坐标，右、下为正） */
+/** 有据可查的心情：平常、高兴、惊讶、眼睛发亮、犯困、难受、低头 */
+export type Mood = 'normal' | 'happy' | 'surprised' | 'bright' | 'sleepy' | 'pained' | 'down'
+
+/** 这一帧的外部条件：朝向、走没走、走了多远，能不能动小动作，风，看的方向（画面坐标，右、下为正），
+ *  站着时的姿势，心情，在说的话、在听的话 */
 export interface Moment {
   now: number
   dir: Direction
   moving: boolean
   /** 走过的距离按步长折算的帧数：八帧走路按它换步 */
   stride: number
-  /** 可以做呼吸、眨眼、眼珠、头发这些小动作 */
+  /** 可以做呼吸、眨眼、眼珠、头发、手上的动作这些小动作 */
   lively: boolean
   /** 最软的头发此刻往画面右边摆几格（小数，负数往左） */
   wind: number
@@ -151,6 +176,94 @@ export interface Moment {
   look?: [number, number]
   /** 天上有东西可看（晴夜的星星、飘下来的雪）：随便看看时偶尔抬头，眼里多一格高光 */
   sky?: boolean
+  /** 站着时在做的事：道具动作、身体状况的姿势 */
+  pose?: PoseKind
+  mood?: Mood
+  /** 在说话：开口的时刻和这句台词；liked 是说的正是自己喜欢的话题 */
+  talk?: { at: number; text: string; liked: boolean }
+  /** 在听别人说：那句开口的时刻、要说多久；liked 是说到了这个人喜欢的话题 */
+  hear?: { at: number; ms: number; liked: boolean }
+}
+
+/** 一句话要说多久（毫秒）：一个字一下，标点停一下，最多 TALK_MAX_MS */
+export function talkMs(text: string) {
+  let t = 0
+  for (const ch of text) t += PAUSES.test(ch) ? PAUSE_MS : SYLLABLE_MS
+  return Math.min(t, TALK_MAX_MS)
+}
+
+/** 说到第 k 毫秒时嘴的样子：每个字前半张开（每三个字有一个圆口），后半合上；标点处闭嘴。说完返回 null */
+function mouthAt(text: string, k: number): Mouth | null {
+  if (k >= TALK_MAX_MS) return null
+  let t = 0,
+    i = 0
+  for (const ch of text) {
+    const pause = PAUSES.test(ch)
+    const len = pause ? PAUSE_MS : SYLLABLE_MS
+    if (k < t + len) return pause || k - t > len * 0.55 ? 'none' : i % 3 === 2 ? 'o' : 'open'
+    t += len
+    i++
+  }
+  return null
+}
+
+/** 小东西的形状：Z、音符 */
+const GLYPHS: Record<string, readonly string[]> = {
+  z: ['WWW', '.W.', 'WWW'],
+  note: ['.YY', '.Y.', 'YY.', 'YY.'],
+}
+const glyph = (name: string, x: number, y: number): Cells =>
+  GLYPHS[name].flatMap((row, j) =>
+    [...row].flatMap((c, i) => (c === '.' ? [] : [[x + i, y + j, c] as const]))
+  )
+
+/** 冒出来的小东西（热气、火星、Z、音符、水点）在第 now 毫秒的位置：按时间算，不存状态。
+ *  (ax, ay) 是冒出来的地方（贴图上的画面坐标） */
+function particles(
+  fx: NonNullable<Posed['fx']>,
+  now: number,
+  ax: number,
+  ay: number,
+  seed: number
+): Cells {
+  const out: (readonly [number, number, string])[] = []
+  const every = fx === 'zzz' ? 1600 : fx === 'notes' ? 1100 : fx === 'sparks' ? 380 : 420
+  const life = fx === 'zzz' ? 2400 : fx === 'notes' ? 1800 : fx === 'sparks' ? 300 : 1200
+  for (let n = Math.floor((now - life) / every) + 1; n * every <= now; n++) {
+    const k = (now - n * every) / life
+    if (k < 0 || k >= 1) continue
+    const r = ((n * 2654435761 + seed) >>> 0) / 0x100000000
+    switch (fx) {
+      case 'steam': {
+        // 热气：一缕往上飘，左右晃一格，越往上越稀
+        const y = Math.round(ay - k * 7)
+        const x = ax + Math.round(Math.sin(k * 6 + r * 6) * 1.2) + (r < 0.5 ? -1 : 1)
+        if (k < 0.75 || (x + y) % 2) out.push([x, y, 'W'])
+        break
+      }
+      case 'sparks':
+        // 火星：锤子落下时往两边溅三颗
+        for (let j = 0; j < 3; j++) {
+          const dx = (j - 1) * 2 + (r < 0.5 ? 0 : 1)
+          out.push([
+            ax + Math.round(dx * k * 2),
+            Math.round(ay - k * 3 + k * k * 4),
+            j === 1 ? 'Y' : 'k',
+          ])
+        }
+        break
+      case 'drops':
+        out.push([ax + Math.round((r - 0.5) * 4), Math.round(ay + k * 4), 'l'])
+        break
+      case 'zzz':
+        out.push(...glyph('z', ax + Math.round(k * 5), Math.round(ay - k * 9)))
+        break
+      case 'notes':
+        out.push(...glyph('note', ax + Math.round(k * 4 + r * 2), Math.round(ay - k * 8)))
+        break
+    }
+  }
+  return out
 }
 
 const between = (seed: number, [a, b]: number[]) => a + ((seed % 1000) / 1000) * (b - a)
@@ -159,6 +272,7 @@ const between = (seed: number, [a, b]: number[]) => a + ((seed % 1000) / 1000) *
 export class Acting {
   private readonly breathMs: number
   private readonly breathPhase: number
+  private readonly id: number
   private seed: number
   private nextBlink: number
   private blinkAt = -1
@@ -175,7 +289,7 @@ export class Acting {
   private stopAt = -1e9
 
   constructor(id: string) {
-    this.seed = hashString(id)
+    this.seed = this.id = hashString(id)
     this.breathMs = between(this.seed, BREATH_S) * 1000
     this.breathPhase = (this.seed >>> 10) % this.breathMs
     this.nextBlink = performance.now() + between(this.seed >>> 4, BLINK_GAP_S) * 1000
@@ -237,7 +351,10 @@ export class Acting {
 
   frame(m: Moment): Frame {
     this.track(m)
-    const [view, flip] = VIEW[m.dir]
+    let [view, flip] = VIEW[m.dir]
+    // 做事的姿势按正面画：在用道具的人站在道具跟前、面朝镜头（说着话的照旧面朝对方）
+    const pose = !m.moving && m.pose ? m.pose : undefined
+    if (pose && !m.talk && !m.hear) [view, flip] = ['down', false]
     const forward = view === 'side' ? (flip ? -1 : 1) : 0
     let stance = STAND[view],
       bodyDy = 0,
@@ -245,6 +362,7 @@ export class Acting {
       headDx = 0,
       bounce = 0,
       trail = 0
+    let posedNow: Posed | undefined
     if (m.moving) {
       const w = walk8(view, Math.floor(m.stride) % 8)
       stance = w.stance
@@ -266,14 +384,23 @@ export class Acting {
         if (forward) trail = swing * forward
         else bounce = swing > 0 ? 1 : 0
       }
+      if (pose) {
+        // 手上的动作按各自的拍子换；减少动画时停在第一拍
+        const beat = BEAT_MS[pose]
+        const phase = beat && m.lively ? Math.floor((m.now + (this.id % 997)) / beat) : 0
+        posedNow = posed(pose, phase)
+        stance = posedNow.stance
+        bodyDy = posedNow.bodyDy
+        headDy = posedNow.headDy
+      }
       if (m.lively && (m.now + this.breathPhase) % this.breathMs < this.breathMs * BREATH_DOWN)
-        headDy = 1
+        headDy = Math.max(headDy, bodyDy + 1)
     }
     // 转身：头先转，身子按原来的朝向再画一会儿
     let bodyView = view,
       bodyFlip = flip,
       turn: HeadTurn | undefined
-    if (this.turn && m.now - this.turn.at < TURN_MS) {
+    if (!posedNow && this.turn && m.now - this.turn.at < TURN_MS) {
       const [fromView, fromFlip] = VIEW[this.turn.from]
       const mid = MIDWAY[`${this.turn.from}${m.dir}`]
       const [headView, headFlip] = mid ? VIEW[mid] : [view, flip]
@@ -281,10 +408,42 @@ export class Acting {
       bodyFlip = fromFlip
       stance = m.moving ? walk8(fromView, Math.floor(m.stride) % 8).stance : STAND[fromView]
       turn = { view: headView, mirror: headFlip !== fromFlip }
-    } else this.turn = null
+    } else if (!this.turn || m.now - this.turn.at >= TURN_MS) this.turn = null
+    // 说话：嘴按字一张一合，说到一半抬手比划；听的人在对方说到一半时点一下头
+    let mouth: Mouth = posedNow?.mouth ?? 'none'
+    let props: Frame['props'] = posedNow && {
+      key: `${pose}${posedNow.front?.length ?? 0}.${posedNow.front?.[0]?.join('') ?? ''}`,
+      back: posedNow.back,
+      front: posedNow.front,
+    }
+    if (m.talk) {
+      const k = m.now - m.talk.at
+      const open = mouthAt(m.talk.text, k)
+      if (open !== null) {
+        mouth = m.lively ? open : 'dot'
+        const len = talkMs(m.talk.text)
+        if (m.lively && len > 1500 && k > len * 0.35 && k < len * 0.65 && !posedNow) {
+          if (bodyView === 'side') stance = { ...stance, arm: 1 }
+          else props = { key: 'gesture', front: GESTURE }
+        }
+      }
+    }
+    if (m.hear && m.lively && !m.moving) {
+      const k = m.now - m.hear.at - m.hear.ms * 0.5
+      if (k >= 0 && k < NOD_MS) headDy = Math.max(headDy, bodyDy + 1)
+    }
+    const face = this.face(m, posedNow, mouth)
     const wind = m.lively ? m.wind : 0
     const sway = Math.max(-3, Math.min(3, Math.round(wind + trail)))
-    const blink = m.lively ? this.blink(m.now) : 'open'
+    let sparks: Cells | undefined
+    if (posedNow?.fx && m.lively) {
+      // 躺着的人从头顶冒「Z」；别的从姿势给的地方冒
+      const [fx, fy] = posedNow.fxAt ?? [10, 18]
+      const [ax, ay] = posedNow.lie
+        ? [LIE_X + 14, LIE_Y + 1]
+        : [fx + PAD_X + OX, fy + PAD_TOP + OY + bodyDy]
+      sparks = particles(posedNow.fx, m.now, ax, ay, this.id)
+    }
     return {
       view: bodyView,
       flip: bodyFlip,
@@ -295,8 +454,76 @@ export class Acting {
       headDx,
       sway,
       bounce,
-      gaze: m.lively && view === 'down' && !turn ? this.gaze(m) : 0,
-      eyes: m.lively && blink === 'open' && !m.look && m.sky && this.glance.up ? 'bright' : blink,
+      gaze: m.lively && view === 'down' && !turn && !posedNow?.eyes ? this.gaze(m) : 0,
+      eyes: face.eyes,
+      mouth: face.mouth,
+      blush: face.blush,
+      props,
+      lie: !!posedNow?.lie,
+      sparks,
     }
   }
+
+  /** 脸：心情给眼神、嘴和腮红，没有心情时按手上的事（看书往下看），在说话时嘴按口型；
+   *  睁着的眼睛照常眨，抬头看天时眼里一格高光 */
+  private face(m: Moment, posedNow: Posed | undefined, talking: Mouth) {
+    let eyes: Eyes = 'open',
+      mouth: Mouth = 'none',
+      blush: 0 | 1 | 2 = 0
+    switch (m.mood ?? 'normal') {
+      case 'happy':
+        eyes = 'happy'
+        mouth = 'smile'
+        blush = 1
+        break
+      case 'surprised':
+        eyes = 'wide'
+        mouth = 'o'
+        break
+      case 'bright':
+        eyes = 'bright'
+        blush = 1
+        break
+      case 'sleepy': {
+        eyes = 'sleepy'
+        // 隔一阵打个哈欠：闭眼张大嘴
+        const k = (m.now + (this.id % YAWN_EVERY_MS)) % YAWN_EVERY_MS
+        if (m.lively && k < YAWN_MS) {
+          eyes = 'closed'
+          mouth = 'yawn'
+        }
+        break
+      }
+      case 'pained':
+        eyes = 'pained'
+        mouth = 'frown'
+        break
+      case 'down':
+        eyes = 'down'
+        break
+      default:
+        if (posedNow?.eyes) eyes = posedNow.eyes
+        // 说到、听到喜欢的话题：眼睛发亮
+        if (m.hear?.liked || m.talk?.liked) {
+          eyes = 'bright'
+          blush = 1
+        }
+    }
+    if (talking !== 'none' || m.talk) mouth = talking
+    if (m.lively && (eyes === 'open' || eyes === 'bright' || eyes === 'wide')) {
+      const blink = this.blink(m.now)
+      if (blink !== 'open') eyes = blink
+      else if (eyes === 'open' && !m.look && m.sky && this.glance.up && !posedNow) eyes = 'bright'
+    }
+    return { eyes, mouth, blush }
+  }
 }
+
+/** 说到一半抬手比划：正面右手抬到胸前 */
+const GESTURE: Cells = [
+  [15, 16, 's'],
+  [15, 17, 'K'],
+  [16, 17, 's'],
+  [15, 18, 'K'],
+  [16, 18, 't'],
+]

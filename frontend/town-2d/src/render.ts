@@ -18,6 +18,7 @@ import { groundOf, paintGround, type Ground } from './map/pixel/terrain'
 import type { DecorPlan } from './map/decor'
 import type { HdScene } from './map/hd2d/scene'
 import type { LiveMotion, VillagerPlacement } from './map/hd2d/villagers'
+import { cueOf } from './map/hd2d/villagerCues'
 import { AvatarMotion } from './map/avatarMotion'
 import { PropPositions } from './map/propPositions'
 import { RoomCovers } from './map/rooms'
@@ -198,6 +199,8 @@ export class TownMap {
   }
   /** 转身朝向谁：村民编号 → 玩家操控的人 */
   private facing = new Map<string, string>()
+  /** 村民编号 → 村民库模板编号：内置村民的喜好和小动作按它查 */
+  private templates = new Map<string, string | undefined>()
   private motionId: string | null = null
   /** 给立体场景的本地预测：米制位置换成地图坐标 */
   private liveMotion(): LiveMotion | null {
@@ -593,8 +596,14 @@ export class TownMap {
     }
   }
 
-  private faceToward(id: string): [number, number] | undefined {
-    const other = this.facing.get(id)
+  /** 站着时朝向谁：被玩家邀请、正和玩家聊的人朝向玩家；聊天的人朝向正在说话的人，自己在说就朝向对方 */
+  private faceToward(member: ResidentEntry['member']): [number, number] | undefined {
+    const other =
+      this.facing.get(member.id) ??
+      (member.chat &&
+        (member.chat.turn && member.chat.turn !== member.id
+          ? member.chat.turn
+          : member.chat.participants.find((p) => p !== member.id)))
     return other ? this.residents.getMemberPos(other) : undefined
   }
 
@@ -610,8 +619,8 @@ export class TownMap {
               y: p[1],
               visible: !covered(p),
               live: member.id === this.motionId,
-              faceToward: this.faceToward(member.id),
-              busy: member.verb_kind === 'prop' || !!member.chat,
+              faceToward: this.faceToward(member),
+              cue: cueOf(member, this.lastRoster?.sim_minutes ?? 0, this.templates.get(member.id)),
               condition:
                 member.body?.life === 'dead'
                   ? ('dead' as const)
@@ -930,6 +939,7 @@ export class TownMap {
       this.hd?.setClock(...this.clock)
     }
     if (msg.type === 'population') {
+      this.templates = new Map(msg.population.residents.map((r) => [r.id, r.template_id]))
       this.residents.setPopulation(msg.population.residents)
       this.refreshRooms()
     }

@@ -1,3 +1,4 @@
+import { mixHex } from '../pixel/noise'
 import {
   FRAME_H,
   FRAME_W,
@@ -14,7 +15,7 @@ import {
 
 // 村民立牌的一帧：按此刻的姿势、表情和天气，把分层的笔画（villagerSprite.ts 的 sketch）叠进一块
 // 带留白的小贴图。笔画按身子朝向、头的朝向和手臂缓存；每帧只挪组（呼吸时头沉一格、走路时身子起伏）、
-// 摆头发、改眼睛，再按定好的颜色填像素。所有变化都是整格的，保持像素感。
+// 摆头发，叠上手里的道具，改眼睛、嘴和腮红，再按定好的颜色填像素。所有变化都是整格的，保持像素感。
 
 /** 一帧四周的留白：两边给伞、躺下和头边的符号，头顶给伞面和往上飘的小东西 */
 export const PAD_X = 8
@@ -22,14 +23,25 @@ export const PAD_TOP = 12
 /** 立牌贴图的尺寸（贴图像素） */
 export const RIG_W = FRAME_W + 2 * PAD_X
 export const RIG_H = FRAME_H + PAD_TOP
+/** 躺下时整帧转 90°（头朝左）：帧的左上角落在贴图的这里，身子贴着贴图底边 */
+export const LIE_X = Math.floor((RIG_W - FRAME_H) / 2)
+export const LIE_Y = RIG_H - FRAME_W + OX
 
-/** 眼睛：睁、半闭、闭（眨眼），亮（抬头看天，眼里一格高光） */
-export type Eyes = 'open' | 'half' | 'closed' | 'bright'
+/** 眼睛：睁、半闭、闭（眨眼）；亮（眼里一格高光）、笑（弯成 ^）、疼（> <）、惊（睁大）、
+ *  往下看、困（眼皮耷拉） */
+export type Eyes =
+  'open' | 'half' | 'closed' | 'bright' | 'happy' | 'pained' | 'wide' | 'down' | 'sleepy'
+/** 嘴：平时不画；说话一张一合，笑、惊讶、撇嘴、打哈欠 */
+export type Mouth = 'none' | 'dot' | 'open' | 'smile' | 'o' | 'frown' | 'yawn'
+/** 一组格子 [x, y, 颜色位] */
+export type Cells = readonly (readonly [number, number, string])[]
 
 /** 一帧怎么画：view 和 flip 是身子的朝向（朝左时整张翻过来），turn 是头另外的朝向（转身时头先转）；
  *  bodyDy、headDy 是身子和头往下挪几格（头只比身子低、不比身子高，不然脖子露缝），headDx 是头往前探
  *  几格（画面方向）；sway 是最软的头发往画面右边摆几格（负数往左），bounce 是垂下来的头发往下甩几格
- *  （只往下，拉长一格）；gaze 是眼珠往画面哪边挪一格 */
+ *  （只往下，拉长一格）；gaze 是眼珠往画面哪边挪一格。
+ *  props 是姿势带的道具（人物坐标，跟着身子挪）：back 先画、被身子挡住，front 最后画，key 用来比对；
+ *  lie 是整个人躺下；sparks 是冒出来的小东西（贴图上的格子，画面坐标，左上为原点），最后画 */
 export interface Frame {
   view: View
   flip: boolean
@@ -42,13 +54,32 @@ export interface Frame {
   bounce: number
   eyes: Eyes
   gaze: -1 | 0 | 1
+  mouth: Mouth
+  blush: 0 | 1 | 2
+  props?: { key: string; back?: Cells; front?: Cells }
+  lie: boolean
+  sparks?: Cells
 }
 
 /** 帧的指纹：和上一次一样就不重画 */
 export function frameKey(f: Frame) {
   const legs = f.stance.legs.map((l) => l.join('.')).join('/')
   const toes = f.stance.toes?.map((t) => t.join('.')).join('/') ?? ''
-  return `${f.view}${+f.flip}${f.turn ? f.turn.view + +f.turn.mirror : ''}|${legs}|${toes}|${f.stance.arm}|${f.bodyDy}${f.headDy}${f.headDx}|${f.sway}${f.bounce}|${f.eyes}${f.gaze}`
+  const sparks = f.sparks?.map((s) => s.join('')).join(',') ?? ''
+  return `${f.view}${+f.flip}${f.turn ? f.turn.view + +f.turn.mirror : ''}|${legs}|${toes}|${f.stance.arm}|${f.bodyDy}${f.headDy}${f.headDx}|${f.sway}${f.bounce}|${f.eyes}${f.gaze}${f.mouth}${f.blush}|${f.props?.key ?? ''}|${+f.lie}|${sparks}`
+}
+
+/** 道具、天气、表情用到的颜色位（村民的调色板里没有的）：木头、饭菜、火苗、水、蓝、紫、雪 */
+const EXTRA: Record<string, string> = {
+  m: '#b98250',
+  d: '#7a5230',
+  u: '#f4d48a',
+  k: '#e0582c',
+  l: '#8ed0f4',
+  B: '#3e78d8',
+  V: '#9a6ad0',
+  '~': '#f4f8ff',
+  '-': '#c6d4e6',
 }
 
 /** 缓存的一组笔画：并排的数组，叠的时候不用一笔笔建对象 */
@@ -66,6 +97,9 @@ const code = (ch: string) => ch.charCodeAt(0)
 const K = code('K'),
   E = code('e'),
   W = code('W'),
+  X = code('X'),
+  J = code('J'),
+  CHEEK = code('j'),
   SKIN = new Set([...'sSJjv'].map(code))
 
 /** '#rrggbb' → 小端 RGBA 像素（不透明） */
@@ -76,19 +110,22 @@ function rgba(hex: string) {
 
 /** 一个人的画法：长相、调色板和缓存的笔画；每帧按 Frame 画进 data（RIG_W × RIG_H 的 RGBA，自下而上） */
 export class VillagerRig {
-  private readonly look: Look
+  readonly look: Look
   private readonly pal: Record<string, string>
-  /** 颜色位 → 像素颜色：改眼睛这类后改的格子按它上色 */
+  /** 颜色位 → 像素颜色：道具和后改的格子（眼睛、嘴）按它上色 */
   private readonly lut = new Uint32Array(128)
   private readonly cache = new Map<string, Built>()
   // 叠出来的一帧：每格的颜色和颜色位（按身子的朝向，翻转在填像素时做）
   private readonly color = new Uint32Array(RIG_W * RIG_H)
   private readonly ch = new Uint8Array(RIG_W * RIG_H)
+  private readonly turned = new Uint32Array(RIG_W * RIG_H)
 
   constructor(key: string) {
     this.look = lookOf(key)
     this.pal = palette(this.look)
-    for (const [k, v] of Object.entries(this.pal)) this.lut[code(k)] = rgba(v)
+    const accent = this.pal.x
+    const colors = { ...EXTRA, ...this.pal, C: accent, f: mixHex(accent, '#2a2230', 0.3) }
+    for (const [k, v] of Object.entries(colors)) this.lut[code(k)] = rgba(v)
   }
 
   private built(view: View, arm: Stance['arm'], turn?: HeadTurn): Built {
@@ -120,26 +157,31 @@ export class VillagerRig {
     return b
   }
 
+  private put(x: number, y: number, c: number, col = this.lut[c]) {
+    if (x < 0 || y < 0 || x >= RIG_W || y >= RIG_H) return
+    const i = y * RIG_W + x
+    this.ch[i] = c
+    this.color[i] = col
+  }
+
+  private at(x: number, y: number) {
+    return x < 0 || y < 0 || x >= RIG_W || y >= RIG_H ? 0 : this.ch[y * RIG_W + x]
+  }
+
   /** 画一帧到 data（RIG_W × RIG_H × 4，第一行是贴图最底下一行，直接交给 DataTexture） */
   draw(f: Frame, data: Uint8Array) {
-    const color = this.color,
-      ch = this.ch
-    color.fill(0)
-    ch.fill(0)
-    const put = (x: number, y: number, c: number, col: number) => {
-      if (x < 0 || y < 0 || x >= RIG_W || y >= RIG_H) return
-      const i = y * RIG_W + x
-      ch[i] = c
-      color[i] = col
-    }
+    this.color.fill(0)
+    this.ch.fill(0)
+    const x0 = OX + PAD_X,
+      y0 = OY + PAD_TOP
     // 腿：两格宽的黑块，不跟身子挪
-    const black = this.lut[K]
     for (const [x, top, n] of f.stance.legs)
       for (let y = top; y < top + n; y++) {
-        put(x + OX + PAD_X, y + OY + PAD_TOP, K, black)
-        put(x + OX + 1 + PAD_X, y + OY + PAD_TOP, K, black)
+        this.put(x + x0, y + y0, K)
+        this.put(x + x0 + 1, y + y0, K)
       }
-    for (const [x, y] of f.stance.toes ?? []) put(x + OX + PAD_X, y + OY + PAD_TOP, K, black)
+    for (const [x, y] of f.stance.toes ?? []) this.put(x + x0, y + y0, K)
+    for (const [x, y, c] of f.props?.back ?? []) this.put(x + x0, y + y0 + f.bodyDy, code(c))
     // 身子和头：按组挪，软的头发再摆；画面方向的偏移在翻转的帧里反过来
     const b = this.built(f.view, f.stance.arm, f.turn)
     const dir = f.flip ? -1 : 1
@@ -159,14 +201,25 @@ export class VillagerRig {
         x += Math.round(sway * flex)
         // 往下甩时原处也留一笔：头发拉长一格，不和发根脱开
         if (flex > 0.3 && f.bounce > 0) {
-          put(x, y, b.ch[i], b.color[i])
+          this.put(x, y, b.ch[i], b.color[i])
           y += f.bounce
         }
       }
-      put(x, y, b.ch[i], b.color[i])
+      this.put(x, y, b.ch[i], b.color[i])
     }
+    for (const [x, y, c] of f.props?.front ?? []) this.put(x + x0, y + y0 + f.bodyDy, code(c))
     this.face(f, f.gaze * dir)
-    // 填像素：翻转、自下而上
+    // 填像素：躺下的先转过来，再翻转、自下而上
+    let color = this.color
+    if (f.lie) {
+      color = this.turned
+      color.fill(0)
+      for (let fy = 0; fy < FRAME_H; fy++)
+        for (let fx = 0; fx < FRAME_W; fx++) {
+          const c = this.color[(fy + PAD_TOP) * RIG_W + fx + PAD_X]
+          if (c) color[(LIE_Y + FRAME_W - 1 - fx) * RIG_W + LIE_X + fy] = c
+        }
+    }
     const out = new Uint32Array(data.buffer, data.byteOffset, RIG_W * RIG_H)
     for (let y = 0; y < RIG_H; y++) {
       const row = (RIG_H - 1 - y) * RIG_W,
@@ -174,54 +227,151 @@ export class VillagerRig {
       if (f.flip) for (let x = 0; x < RIG_W; x++) out[row + x] = color[src + RIG_W - 1 - x]
       else out.set(color.subarray(src, src + RIG_W), row)
     }
+    for (const [x, y, c] of f.sparks ?? [])
+      if (x >= 0 && y >= 0 && x < RIG_W && y < RIG_H)
+        out[(RIG_H - 1 - y) * RIG_W + x] = this.lut[code(c)]
   }
 
-  /** 眼睛：每只眼是一竖条「描边、描边、瞳色」，e 在最下面。按状态重画，gaze 让眼珠往一边挪一格 */
+  /** 改脸：眼睛按状态重画（每只眼是一竖条「描边、描边、瞳色」，e 在最下面），眼珠往一边挪一格，
+   *  画嘴、腮红。都只改皮肤上的格子：墨镜盖住眼睛就不动眼睛，胡子、猪鼻子盖住嘴就不画嘴 */
   private face(f: Frame, gaze: number) {
-    if (f.eyes === 'open' && !gaze) return
-    const ch = this.ch,
-      color = this.color
-    const at = (x: number, y: number) =>
-      x < 0 || y < 0 || x >= RIG_W || y >= RIG_H ? 0 : ch[y * RIG_W + x]
-    const set = (x: number, y: number, c: number) => {
-      if (x < 0 || y < 0 || x >= RIG_W || y >= RIG_H) return
-      const i = y * RIG_W + x
-      ch[i] = c
-      color[i] = this.lut[c]
-    }
-    // 眼睛只在头那几行：人物的 8～18 行
+    if (f.eyes === 'open' && !gaze && f.mouth === 'none' && !f.blush) return
+    const set = (x: number, y: number, c: number) => this.put(x, y, c)
+    const skin = (x: number, y: number) => SKIN.has(this.at(x, y))
+    // 眼睛只在头那几行：人物的 8～20 行（坐下、低头时头会往下挪）
     const eyes: [number, number][] = []
-    for (let y = PAD_TOP + OY + 8; y < PAD_TOP + OY + 19; y++)
-      for (let x = 0; x < RIG_W; x++) if (ch[y * RIG_W + x] === E) eyes.push([x, y])
+    for (let y = PAD_TOP + OY + 8; y < PAD_TOP + OY + 21; y++)
+      for (let x = 0; x < RIG_W; x++) if (this.ch[y * RIG_W + x] === E) eyes.push([x, y])
     if (!eyes.length || eyes.length > 2) return
-    const skin = code('s')
+    const side = eyes.length === 1 || f.view === 'side' || f.turn?.view === 'side'
     // 侧面不挪眼珠：只有一只眼，贴着脸的前沿。两只眼一起挪，有一只挪不过去（挨着头发）就都不挪
-    let shift = f.view === 'down' && f.turn?.view !== 'side' ? gaze : 0
-    for (const [x, y] of eyes)
-      if (!SKIN.has(at(x + shift, y)) || !SKIN.has(at(x + shift, y - 2))) shift = 0
+    let shift = f.view === 'down' && !side ? gaze : 0
+    for (const [x, y] of eyes) if (!skin(x + shift, y) || !skin(x + shift, y - 2)) shift = 0
     const mid = eyes.length === 2 ? (eyes[0][0] + eyes[1][0]) / 2 : -1
-    for (const [x, y] of eyes) {
-      // 往脸中间那一边：闭眼画成两格宽的一道
-      const inward = mid < 0 ? -1 : x < mid ? 1 : -1
-      const top = at(x, y - 2) === K ? y - 2 : y - 1
-      for (let k = top; k <= y; k++) set(x, k, skin)
-      const ex = x + shift
-      switch (f.eyes) {
+    const s = code('s')
+    if (f.eyes !== 'open' || shift)
+      for (const [x, y] of eyes) {
+        // 往脸中间那一边：闭眼、睁大画成两格宽
+        const inward = mid < 0 ? -1 : x < mid ? 1 : -1
+        const top = this.at(x, y - 2) === K ? y - 2 : y - 1
+        for (let k = top; k <= y; k++) set(x, k, s)
+        const ex = x + shift
+        switch (f.eyes) {
+          case 'open':
+          case 'bright':
+            set(ex, y - 2, f.eyes === 'bright' ? W : K)
+            set(ex, y - 1, K)
+            set(ex, y, E)
+            break
+          case 'wide':
+            set(ex, y - 2, W)
+            set(ex, y - 1, E)
+            set(ex, y, E)
+            if (skin(ex + inward, y - 2)) {
+              set(ex + inward, y - 2, K)
+              set(ex + inward, y - 1, K)
+              set(ex + inward, y, K)
+            }
+            break
+          case 'half':
+            set(ex, y - 1, K)
+            set(ex, y, E)
+            break
+          case 'sleepy':
+            set(ex, y - 1, J)
+            set(ex, y, K)
+            if (skin(ex + inward, y)) set(ex + inward, y, K)
+            break
+          case 'closed':
+            set(ex, y, K)
+            if (skin(ex + inward, y)) set(ex + inward, y, K)
+            break
+          case 'down':
+            set(ex, y - 1, J)
+            set(ex, y, K)
+            break
+          case 'happy':
+            set(ex, y - 1, K)
+            if (skin(ex - 1, y)) set(ex - 1, y, K)
+            if (skin(ex + 1, y)) set(ex + 1, y, K)
+            break
+          case 'pained': {
+            // 正面左眼「>」、右眼「<」；侧面朝前那只按「<」
+            const o = mid < 0 ? 1 : x < mid ? -1 : 1
+            set(ex + o, y - 2, K)
+            set(ex, y - 1, K)
+            set(ex + o, y, K)
+            break
+          }
+        }
+      }
+    if (f.mouth !== 'none' && f.view !== 'up') this.mouth(f.mouth, eyes, side)
+    if (f.blush) this.blush(f.blush, eyes[0][1])
+  }
+
+  /** 嘴：正面在两眼中间、眼睛下面两行；侧面贴着脸的前沿 */
+  private mouth(kind: Mouth, eyes: [number, number][], side: boolean) {
+    const set = (x: number, y: number, c: number) => {
+      if (SKIN.has(this.at(x, y))) this.put(x, y, c)
+    }
+    const [ex, ey] = eyes[0]
+    const y = ey + 2
+    if (!side && eyes.length === 2) {
+      const x = Math.round((eyes[0][0] + eyes[1][0]) / 2)
+      // 嘴那一格不是皮肤（胡子、鼻子、面具盖着）就不画
+      if (!SKIN.has(this.at(x, y))) return
+      switch (kind) {
+        case 'dot':
+          set(x, y, K)
+          break
         case 'open':
-        case 'bright':
-          set(ex, y - 2, f.eyes === 'bright' ? W : K)
-          set(ex, y - 1, K)
-          set(ex, y, E)
+          set(x, y, X)
+          set(x - 1, y, K)
+          set(x + 1, y, K)
           break
-        case 'half':
-          set(ex, y - 1, K)
-          set(ex, y, E)
+        case 'o':
+        case 'yawn':
+          set(x, y, X)
+          set(x, y - 1, K)
+          if (kind === 'yawn') {
+            set(x - 1, y, K)
+            set(x + 1, y, K)
+          }
           break
-        case 'closed':
-          set(ex, y, K)
-          if (SKIN.has(at(ex + inward, y))) set(ex + inward, y, K)
+        case 'smile':
+          set(x - 1, y - 1, K)
+          set(x, y, K)
+          set(x + 1, y - 1, K)
+          break
+        case 'frown':
+          set(x - 1, y, K)
+          set(x, y - 1, K)
+          set(x + 1, y, K)
           break
       }
+      return
     }
+    // 侧面：从眼睛往前找到脸的前沿
+    let fx = ex + 1
+    while (fx < RIG_W - 1 && SKIN.has(this.at(fx + 1, y))) fx++
+    if (!SKIN.has(this.at(fx, y))) return
+    if (kind === 'open' || kind === 'o' || kind === 'yawn') {
+      this.put(fx, y, X)
+      if (this.at(fx + 1, y) === K) this.put(fx + 1, y, X)
+      if (kind === 'yawn') set(fx, y - 1, X)
+    } else set(fx, y, K)
+  }
+
+  /** 腮红：脸颊上的粉格加深，红透了再往外补一格 */
+  private blush(level: 1 | 2, ey: number) {
+    const pink = code('P'),
+      red = code('r')
+    for (let y = ey - 2; y <= ey + 3; y++)
+      for (let x = 0; x < RIG_W; x++) {
+        if (this.at(x, y) !== CHEEK) continue
+        this.put(x, y, level === 2 ? red : pink)
+        if (level === 2)
+          for (const dx of [-1, 1]) if (SKIN.has(this.at(x + dx, y))) this.put(x + dx, y, pink)
+      }
   }
 }
