@@ -190,6 +190,9 @@ pub struct Streaks {
     /// 连续模型请求失败数；成功一次即清零。
     #[serde(default)]
     pub model_failures: u32,
+    /// 生活轮次模型请求失败后，最早再发请求的现实时刻（unix 秒）。只在内存里：重启后直接重试。
+    #[serde(skip)]
+    pub retry_at: u64,
 }
 
 /// 折叠后的历史与精确计数的前缀。

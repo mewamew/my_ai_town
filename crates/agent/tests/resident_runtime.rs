@@ -61,8 +61,12 @@ fn outdated_replies_are_counted_and_two_revision_conflicts_in_a_row_stop_only_th
 fn repeated_model_failures_pause_the_town_after_bounded_retries() {
     let mut w = world();
     let mut r = runtime(&mut w, Limits::default());
+    // 重试按现实时间隔开（poll_at 给定现实时刻），和世界走了几分钟无关。
+    let mut now = 1_000;
     for attempt in 1..=3 {
-        let q = request(&mut r, &mut w);
+        let mut requests = r.poll_at(&mut w, true, now);
+        assert_eq!(requests.len(), 1, "到了重试时刻就再发");
+        let q = requests.remove(0);
         assert!(r.on_reply(
             &mut w,
             "r1",
@@ -77,9 +81,12 @@ fn repeated_model_failures_pause_the_town_after_bounded_retries() {
         let s = r.session("r1").unwrap();
         assert_eq!(s.streaks.model_failures, attempt);
         if attempt < 3 {
-            assert!(s.pause_reason().is_none(), "前两次按 30 分钟搁置重试");
-            assert!(s.sleep().is_some());
-            w.step(31.0);
+            assert!(s.pause_reason().is_none(), "前两次隔一阵重试");
+            assert!(s.sleep().is_none(), "不按模拟时间搁置");
+            let wait = 20 * u64::from(attempt);
+            w.step(60.0);
+            assert!(r.poll_at(&mut w, true, now + wait - 1).is_empty());
+            now += wait;
         }
     }
     let s = r.session("r1").unwrap();

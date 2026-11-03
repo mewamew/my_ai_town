@@ -88,6 +88,10 @@ fn state_label(world: &World, s: &Session, a: &Actor) -> (AgentState, String) {
         }
         None => {}
     }
+    if s.streaks.model_failures > 0 && s.streaks.retry_at > 0 {
+        let text = format!("模型请求失败 {} 次，稍后自动重试", s.streaks.model_failures);
+        return (AgentState::Waiting, text);
+    }
     if let Some(sleep) = s.sleep() {
         let text = format!(
             "{} · {} 再看",

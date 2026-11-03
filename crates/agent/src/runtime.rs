@@ -259,7 +259,7 @@ impl ResidentRuntime {
     }
 
     /// 公平轮转；同时在途数量有上限，等待世界时不占模型计算名额。
-    /// `unix_now` 只写进台账的发出时间，不参与任何决策。
+    /// `unix_now` 写进台账的发出时间，也用来隔开模型失败后的重试；别的决策只看模拟时间。
     pub fn poll_at(
         &mut self,
         world: &mut World,
@@ -320,7 +320,7 @@ impl ResidentRuntime {
     }
 
     fn awake(&mut self, world: &World, s: &mut Session) -> bool {
-        if !due(world, s) {
+        if !due(world, s) || self.retry_pending(world, s) {
             return false;
         }
         if s.sleep().is_some() {
@@ -336,9 +336,14 @@ impl ResidentRuntime {
         self.state.sessions.values().any(|s| {
             let due = due(world, s);
             s.in_flight.is_some()
-                || (s.streaks.model_failures > 0 && !due)
+                || (s.streaks.model_failures > 0 && (!due || self.retry_pending(world, s)))
                 || (due && wants_request(world, s))
         })
+    }
+
+    /// 生活轮次的模型请求刚失败、还没到现实的重试时刻。轮到发言不等：交谈有自己的重试规则。
+    fn retry_pending(&self, world: &World, s: &Session) -> bool {
+        self.wall_clock < s.streaks.retry_at && !world.chat_turn(&s.actor_id)
     }
 
     fn docs(&mut self, world: &World, s: &Session) -> Rc<Documents> {

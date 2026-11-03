@@ -12,7 +12,7 @@ use crate::{
 use kernel::World;
 use serde_json::json;
 
-/// 搁置：一次醒来用满请求、模型请求失败、相同问题连续失败或一次思考结束后，过这么多模拟分钟再看。
+/// 搁置：一次醒来用满请求、相同问题连续失败或一次思考结束后，过这么多模拟分钟再看。
 pub(crate) const POSTPONE_MINUTES: f64 = 30.0;
 /// 相同问题连续失败达到这个次数就搁置。回应邀请连续格式错误也按它，host 据此提示「暂缓后会重试」。
 pub const SAME_FAILURE_BEFORE_POSTPONE: u32 = 2;
@@ -27,6 +27,11 @@ const CONTEXT_SHRINK: (u64, u64) = (3, 4);
 pub(crate) const CHAT_ATTEMPTS_BEFORE_LISTEN: u32 = 2;
 /// 整理失败后的等待按整理间隔成倍增加，最多翻这么多次倍。
 const REFLECTION_BACKOFF_DOUBLINGS: u32 = 3;
+/// 生活轮次模型请求失败后隔多少现实秒再试，连续第 n 次失败等 n 倍，最多 MODEL_RETRY_MAX_SECONDS。
+/// 按现实时间算：服务恢复看的是现实时间。按模拟分钟算的话，走得慢的地图上一次 503
+/// 就要站好几分钟，等他回话的人也跟着干等。
+const MODEL_RETRY_SECONDS: u64 = 20;
+const MODEL_RETRY_MAX_SECONDS: u64 = 120;
 
 /// 搁置到 POSTPONE_MINUTES 之后；`wake_on_notice` 为真时重要通知会提前唤醒。
 pub(super) fn postpone(
@@ -80,7 +85,7 @@ impl ResidentRuntime {
     }
 
     /// 模型请求失败（上下文超长另行处理）：连续失败达到额度里的次数就故障停止；
-    /// 交谈轮次算一次没交出发言权；生活轮次搁置后再试。
+    /// 交谈轮次算一次没交出发言权；生活轮次隔一阵现实时间再试。
     pub(super) fn note_model_failure(
         &mut self,
         world: &mut World,
@@ -103,15 +108,14 @@ impl ResidentRuntime {
             self.spend_chat_attempt(world, s, round);
             return;
         }
-        self.note_failure(world, s, "model", error);
-        let cursor = world.actor(&s.actor_id).map_or(0, |a| a.journal.cursor());
-        postpone(
-            s,
-            world.minutes(),
-            format!("模型请求失败：{error}"),
-            false,
-            cursor,
-        );
+        let wait = (MODEL_RETRY_SECONDS * u64::from(s.streaks.model_failures))
+            .min(MODEL_RETRY_MAX_SECONDS);
+        s.streaks.retry_at = self.wall_clock + wait;
+        // 失败的请求什么也没做成，不占这次唤醒的调用数
+        s.restart_wake_count();
+        let data =
+            json!({"error":error,"failures":s.streaks.model_failures,"retry_in_seconds":wait});
+        self.record(world, s, Trace::new("model_retry", data).request(round.id));
     }
 
     /// 同一次轮到本人发言又有一次回复没交出发言权；次数用满仍轮到本人就代为倾听，不让整场交谈卡住。
