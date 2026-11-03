@@ -67,14 +67,14 @@ const cells = (x0: number, y0: number, rows: readonly string[]): Cells =>
   )
 
 /** 一种姿势的一帧：腿、身子和头往下挪几格，侧面手臂；back 画在身子后面，front 画在最上面；
- *  eyes 是做这件事时的眼神（看书往下看，睡觉闭眼）；lie 是整个人躺下；fx 是冒出来的小东西 */
+ *  eyes 只有睡觉时闭眼（做别的事眼睛保持原样，竖着三格的眼睛一改就成了小点）；lie 是整个人躺下；fx 是冒出来的小东西 */
 export interface Posed {
   stance: Stance
   bodyDy: number
   headDy: number
   back?: Cells
   front?: Cells
-  eyes?: 'down' | 'closed' | 'half'
+  eyes?: 'closed'
   mouth?: 'open' | 'o'
   lie?: boolean
   fx?: 'steam' | 'sparks' | 'zzz' | 'notes' | 'drops'
@@ -114,7 +114,6 @@ export function posed(kind: PoseKind, phase: number): Posed {
         stance: STAND,
         bodyDy: 0,
         headDy: 1,
-        eyes: 'down',
         front: [
           ...cells(5, 19, [
             'KKKKKKKKKKK',
@@ -132,7 +131,6 @@ export function posed(kind: PoseKind, phase: number): Posed {
         stance: STAND,
         bodyDy: 0,
         headDy: 1,
-        eyes: 'down',
         front: [
           ...cells(5, 20, ['KKKKKKKKK', 'KWWWWWWWK', 'KWggWgWWK', 'KWWWWWWWK', 'KKKKKKKKK']),
           ...cells(a ? 9 : 11, 18, ['.n', 'n.', 's.']),
@@ -191,7 +189,6 @@ export function posed(kind: PoseKind, phase: number): Posed {
         stance: STAND,
         bodyDy: 0,
         headDy: a ? 1 : 0,
-        eyes: 'down',
         fx: a ? 'sparks' : undefined,
         fxAt: [12, 21],
         front: a
@@ -204,7 +201,6 @@ export function posed(kind: PoseKind, phase: number): Posed {
         stance: STAND,
         bodyDy: 0,
         headDy: 1,
-        eyes: 'down',
         fx: 'steam',
         fxAt: [10, 18],
         front: [
@@ -218,7 +214,6 @@ export function posed(kind: PoseKind, phase: number): Posed {
         stance: STAND,
         bodyDy: 0,
         headDy: 1,
-        eyes: 'down',
         fx: 'drops',
         fxAt: [10, 19],
         front: [
@@ -232,7 +227,6 @@ export function posed(kind: PoseKind, phase: number): Posed {
         stance: STAND,
         bodyDy: 0,
         headDy: 1,
-        eyes: 'down',
         front: [
           ...cells(a ? 7 : 8, 19, ['.P.Y.', 'PxYxP', '.KgK.', '..g..']),
           ...hands(a ? 6 : 7, a ? 12 : 13, 21),
@@ -244,7 +238,6 @@ export function posed(kind: PoseKind, phase: number): Posed {
         stance: STAND,
         bodyDy: 0,
         headDy: 1,
-        eyes: 'down',
         front: [
           ...cells(6, 20, ['KKKKKKKK', 'KWWrrWWK', 'KWrrrrWK', 'KWWrrWWK', 'KKKKKKKK']),
           ...hands(5, 14, 21),
@@ -291,7 +284,6 @@ export function posed(kind: PoseKind, phase: number): Posed {
         stance: STAND,
         bodyDy: 0,
         headDy: 1,
-        eyes: 'down',
         fx: 'drops',
         fxAt: [20, 24],
         front: [
@@ -335,7 +327,6 @@ export function posed(kind: PoseKind, phase: number): Posed {
         stance: STAND,
         bodyDy: 0,
         headDy: 0,
-        eyes: 'half',
         front: cells(14, 8, [
           'KKKKKK.',
           'ssssssK',
@@ -355,7 +346,6 @@ export function posed(kind: PoseKind, phase: number): Posed {
         stance: SIT_GROUND,
         bodyDy: 2,
         headDy: 3,
-        eyes: 'down',
         front: [
           ...cells(
             6,
@@ -373,7 +363,6 @@ export function posed(kind: PoseKind, phase: number): Posed {
         stance: STAND,
         bodyDy: 0,
         headDy: 1,
-        eyes: 'down',
         front: [...hands(a ? 6 : 7, a ? 13 : 14, a ? 21 : 20), [a ? 9 : 10, 21, 'g']],
       }
     case 'belly':
@@ -389,7 +378,7 @@ export function posed(kind: PoseKind, phase: number): Posed {
       }
     case 'rest':
     case 'sitGround':
-      return { stance: SIT_GROUND, bodyDy: 2, headDy: 2 + (a ? 1 : 0), eyes: 'half' }
+      return { stance: SIT_GROUND, bodyDy: 2, headDy: 2 + (a ? 1 : 0) }
     case 'sleep':
     case 'lie':
       return {

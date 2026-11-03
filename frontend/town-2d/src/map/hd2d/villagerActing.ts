@@ -611,6 +611,8 @@ export class Acting {
       names.length || posedNow?.back
         ? { key: names.join(','), back: posedNow?.back, front: front.flat() }
         : undefined
+    // 低头：心情低落时头也低下一格（眼睛跟着头往下挪一格，见 villagerRig.ts）
+    if ((m.mood ?? 'normal') === 'down' && !m.moving) headDy = Math.max(headDy, bodyDy + 1)
     const quirkMood: Mood | undefined =
       quirk?.kind === 'smile' || quirk?.kind === 'wave'
         ? 'happy'

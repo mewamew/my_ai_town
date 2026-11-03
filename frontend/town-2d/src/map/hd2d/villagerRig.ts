@@ -541,17 +541,26 @@ export class VillagerRig {
             set(ex, y, E)
             break
           case 'sleepy':
-            set(ex, y - 1, J)
-            set(ex, y, K)
-            if (skin(ex + inward, y)) set(ex + inward, y, K)
+            // 犯困：最上面那格换成耷拉下来的眼皮，下面照样露出描边和瞳色
+            set(ex, y - 2, J)
+            set(ex, y - 1, K)
+            set(ex, y, E)
             break
           case 'closed':
             set(ex, y, K)
             if (skin(ex + inward, y)) set(ex + inward, y, K)
             break
           case 'down':
-            set(ex, y - 1, J)
-            set(ex, y, K)
+            // 低头：整只眼往下挪一格，竖着三格的样子不变；下面不是皮肤（胡子、面具）就不挪
+            if (skin(ex, y + 1)) {
+              set(ex, y - 1, K)
+              set(ex, y, K)
+              set(ex, y + 1, E)
+            } else {
+              set(ex, y - 2, K)
+              set(ex, y - 1, K)
+              set(ex, y, E)
+            }
             break
           case 'happy':
             set(ex, y - 1, K)
