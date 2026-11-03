@@ -198,7 +198,7 @@ export interface Moment {
   revived?: number
   /** 站着没事做时的个性小动作和开始的时刻 */
   quirk?: { kind: Quirk; at: number }
-  /** 拉近到一格贴图不少于 3 个屏幕像素：眼睛多一格高光，眨眼多一帧 */
+  /** 拉近到一格贴图不少于 3 个屏幕像素：眨眼多一帧（眼睛的样子不变） */
   close?: boolean
   /** 悬停（白边）、选中（金边） */
   pick?: 'hover' | 'pick'
@@ -768,8 +768,6 @@ export class Acting {
       if (blink !== 'open') eyes = blink
       else if (eyes === 'open' && !m.look && m.sky && this.glance.up && !posedNow) eyes = 'bright'
     }
-    // 拉近了：睁着的眼睛里多一格高光
-    if (m.close && eyes === 'open') eyes = 'bright'
     return { eyes, mouth, blush }
   }
 }

@@ -28,7 +28,7 @@ export const RIG_H = FRAME_H + PAD_TOP
 export const LIE_X = Math.floor((RIG_W - FRAME_H) / 2)
 export const LIE_Y = RIG_H - FRAME_W + OX
 
-/** 眼睛：睁、半闭、闭（眨眼）；亮（眼里一格高光）、笑（弯成 ^）、疼（> <）、惊（睁大）、
+/** 眼睛：睁、半闭、闭（眨眼）；亮（瞳色亮一档）、笑（弯成 ^）、疼（> <）、惊（睁大）、
  *  往下看、困（眼皮耷拉） */
 export type Eyes =
   'open' | 'half' | 'closed' | 'bright' | 'happy' | 'pained' | 'wide' | 'down' | 'sleepy'
@@ -152,6 +152,7 @@ MATERIAL[code('K')] = 0
 for (const c of 'hHLw') MATERIAL[code(c)] = 1
 for (const c of 'sSJjvP') MATERIAL[code(c)] = 2
 MATERIAL[code('e')] = 3
+MATERIAL[code('%')] = 3
 for (const c of 'YUM') MATERIAL[code(c)] = 5
 MATERIAL[LOOSE] = LOOSE_MAT
 MATERIAL[GLOW] = GLOW_MAT
@@ -176,7 +177,8 @@ const WHITE = rgba('#ffffff'),
   GOLD = rgba('#ffd25a')
 const K = code('K'),
   E = code('e'),
-  W = code('W'),
+  /** 发亮的瞳色 */
+  SHINE = code('%'),
   X = code('X'),
   J = code('J'),
   CHEEK = code('j'),
@@ -208,7 +210,13 @@ export class VillagerRig {
     this.look = lookOf(key)
     this.pal = palette(this.look)
     const accent = this.pal.x
-    const colors = { ...EXTRA, ...this.pal, C: accent, f: mixHex(accent, '#2a2230', 0.3) }
+    const colors = {
+      ...EXTRA,
+      ...this.pal,
+      C: accent,
+      f: mixHex(accent, '#2a2230', 0.3),
+      '%': mixHex(this.pal.e, '#ffffff', 0.5),
+    }
     for (const [k, v] of Object.entries(colors)) this.lut[code(k)] = rgba(v)
   }
 
@@ -512,12 +520,14 @@ export class VillagerRig {
         switch (f.eyes) {
           case 'open':
           case 'bright':
-            set(ex, y - 2, f.eyes === 'bright' ? W : K)
+            // 眼睛发亮只把瞳色调亮一档，竖着三格的样子不变（浅肤色上换白格会像眼睛缩了一截）
+            set(ex, y - 2, K)
             set(ex, y - 1, K)
-            set(ex, y, E)
+            set(ex, y, f.eyes === 'bright' ? SHINE : E)
             break
           case 'wide':
-            set(ex, y - 2, W)
+            // 睁大：瞳色占两格，往脸中间加一道描边
+            set(ex, y - 2, K)
             set(ex, y - 1, E)
             set(ex, y, E)
             if (skin(ex + inward, y - 2)) {
