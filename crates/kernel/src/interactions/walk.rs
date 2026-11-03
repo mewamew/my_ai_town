@@ -612,6 +612,15 @@ pub(crate) fn check_walk(
             w.topo.place_of(dest).is_some(),
             KernelError::interaction(format!("目的地 {dest} 不是已知地点"))
         );
+        // 两人都已在那儿：同行一开始就算到了，交谈跟着结束，什么也没走
+        let there = |id: &str| w.actors.get(id).is_some_and(|a| a.locus.locale == dest);
+        ensure!(
+            !(there(actor) && there(partner)),
+            KernelError::interaction(format!(
+                "两人已经都在{}，同行要选别的地点",
+                w.topo.locale_name(dest)
+            ))
+        );
     }
     for id in [actor, partner] {
         // 带路人正在带别人：同一个目的地（或不写）就并进那一场，多人同行
