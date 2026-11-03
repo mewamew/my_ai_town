@@ -18,8 +18,8 @@ impl World {
             .map(|a| {
                 let place = a
                     .present()
-                    .then(|| a.locus.locale.clone())
-                    .filter(|l| self.topo.place_of(l).is_some());
+                    .then(|| self.enclosing_place(&a.locus.locale))
+                    .flatten();
                 (a.id.clone(), place)
             })
             .collect();
@@ -44,6 +44,25 @@ impl World {
                 self.tell_place(&id, new, ARRIVED, text);
             }
         }
+    }
+
+    /// 处所算在哪个已知地点里：地点本身；两头都只通到同一个地点的路段（走到地点里道具跟前的
+    /// 通道）也算在那个地点里，在广场上走到公告栏跟前不算离开了广场。街道和别的路段不算。
+    fn enclosing_place(&self, locale: &str) -> Option<String> {
+        if self.topo.place_of(locale).is_some() {
+            return Some(locale.into());
+        }
+        let mut ends = self.topo.passages.iter().filter_map(|p| {
+            if p.a == locale {
+                Some(&p.b)
+            } else if p.b == locale {
+                Some(&p.a)
+            } else {
+                None
+            }
+        });
+        let first = ends.next()?;
+        (self.topo.place_of(first).is_some() && ends.all(|e| e == first)).then(|| first.clone())
     }
 
     /// 「何青往苏晴家去了」「陈默跟着旅人走了」「旅人离开了小广场」。
