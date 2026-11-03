@@ -26,6 +26,9 @@ pub(super) struct ResidentStore {
     root: PathBuf,
     verified: BTreeSet<String>,
     published: Option<Residents>,
+    /// 上次暂存的每份文件（村民、路径）的正文与版本。存档每秒一次，记忆一多就是上千份、十几兆，
+    /// 正文没变就沿用版本，不再整份重算 SHA-256；调试版里重算能占满主循环，世界时间跟着变慢。
+    staged: BTreeMap<(String, String), (String, FileVersion)>,
 }
 
 fn hash(bytes: &[u8]) -> String {
@@ -108,6 +111,7 @@ impl ResidentStore {
             root: save.parent().unwrap().join(folder),
             verified: BTreeSet::new(),
             published: None,
+            staged: BTreeMap::new(),
         }
     }
     fn prepare(&self) -> Result<(), HostError> {
@@ -212,6 +216,7 @@ impl ResidentStore {
         };
         self.prepare()?;
         let mut manifest = BTreeMap::new();
+        let mut staged = BTreeMap::new();
         for (actor, s) in &mut saved.runtime.sessions {
             let mut docs = agent::notebook::documents(world, s);
             for record in std::mem::take(&mut s.memory.records) {
@@ -241,10 +246,17 @@ impl ResidentStore {
             }
             let mut files = BTreeMap::new();
             for (path, text) in docs {
-                files.insert(path, self.put(text.as_bytes())?);
+                let key = (actor.clone(), path);
+                let version = match self.staged.remove(&key) {
+                    Some((old, version)) if old == text => version,
+                    _ => self.put(text.as_bytes())?,
+                };
+                files.insert(key.1.clone(), version.clone());
+                staged.insert(key, (text, version));
             }
             manifest.insert(actor.clone(), files);
         }
+        self.staged = staged;
         Ok(manifest)
     }
     pub(super) fn hydrate(
