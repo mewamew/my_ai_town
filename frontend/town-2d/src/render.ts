@@ -787,7 +787,7 @@ export class TownMap {
       })()
     this.svg.classList.toggle('walk-blocked', blocked)
   }
-  /** 挡路的就是画在图上的道具；拿走或收进容器的本来就不画。
+  /** 挡路的是立在图上的道具（见 applyProps 里的 routeMarks）。
    *  有三维数据时道具按自己的占地算，树木也一并算上，与 maps/walk.rs 一致。 */
   private applyRouteObstacles() {
     const footprints = new Map(this.spatial?.props.map((p) => [p.id, p.footprint]))
@@ -989,7 +989,12 @@ export class TownMap {
     this.rooms.reset()
     this.refreshRooms()
     this.standLabels()
-    this.routeMarks = this.placed.map(({ id, at }) => ({ id, at }))
+    // 和后端 avatar_obstacles 一样只算立着的道具：有物品位置的（放在地上、拿在手里、收在容器里）不挡路。
+    // 放在屋里地上的物品画在房间的落脚点上，那一点常常就在门口，算成障碍会把门堵死、整间屋都选不出路
+    const loose = new Set(props.filter((p) => p.location).map((p) => p.id))
+    this.routeMarks = this.placed
+      .filter(({ id }) => !loose.has(id))
+      .map(({ id, at }) => ({ id, at }))
     this.applyRouteObstacles()
   }
 
