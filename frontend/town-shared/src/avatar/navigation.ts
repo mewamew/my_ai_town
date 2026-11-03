@@ -38,11 +38,13 @@ const CHASE_CHECK_MS = 300
 const FOLLOW_START = 2.4
 const FOLLOW_STOP = 1.4
 
-/** 自己跟着别人走时，同行里带路的人；不在同行里或自己带路时为空 */
-function walkLeader(state: AvatarState | null): string | undefined {
+/** 自己跟着别人走的同行：编号和带路的人；不在同行里或自己带路时为空 */
+function followedWalk(state: AvatarState | null): { id: string; leader: string } | undefined {
   const walk = state?.interactions?.find((i) => i.status === 'running' && i.kind.kind === 'walk')
   const kind = walk?.kind
-  return kind?.kind === 'walk' && kind.leader !== state?.actor?.id ? kind.leader : undefined
+  return walk && kind?.kind === 'walk' && kind.leader !== state?.actor?.id
+    ? { id: walk.id, leader: kind.leader }
+    : undefined
 }
 
 /** 行走输入、点击目标的路线与到达后的互动。 */
@@ -124,8 +126,12 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
   let arriveAct: (() => void) | null = null
   /** 正在走向的人：他走开（出门、进屋、换地方）时路线跟着改，不扑空到他原来站的地方 */
   let chasing: { id: string; at: WalkTarget; checked: number } | null = null
-  /** 跟着村民走时打开的自动跟随：他走到哪就跟到哪。自己按方向走、同行结束时关掉 */
+  /** 跟着村民走时的自动跟随：他走到哪就跟到哪。世界不带着玩家操控的人走（见 kernel 的
+   *  interactions/walk.rs），答应跟着走就由这里跟上；自己走动（按方向、点地图、点人或东西）、
+   *  在操作条上关掉或同行结束时停下 */
   let autoFollow: string | null = null
+  /** 已经替玩家打开过自动跟随的那场同行：每场只自动开一次，玩家关掉或自己走开后不再打开 */
+  let autoFollowWalk: string | null = null
   // 路线经过门时化身自己发开门命令，这一下不算用户改主意，不该清掉路线
   let autoPortal = false
   /** 选一条绕开障碍的路线；地图没有选路能力时退回直线 */
@@ -211,6 +217,8 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
       return
     }
     if (!stickDirection) {
+      // 和按方向键一样：推摇杆就放弃点击的目标和自动跟随
+      autoFollow = null
       walk.clear()
       stickTimer = window.setInterval(() => {
         if (stickDirection) emitManualDirection(stickDirection)
@@ -259,6 +267,8 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
     }
     arriveAction = object
     arriveAct = act
+    // 自己选了要去的地方：不再自动跟着带路的人，不然下一拍就被拉回他身后
+    autoFollow = null
     walk.set(route, radius)
     // 圈画在实际要去的地方：点到站不了的地方时，选路换成了附近能站的一点
     map.setAvatarDestination?.(route[route.length - 1].point)
@@ -309,10 +319,16 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
     walk.set(route, 1.4)
     map.setAvatarDestination?.(route[route.length - 1].point)
   }
-  /** 自动跟随：同行还在、他还在带路就追上去，到了身后就停；同行结束就关掉 */
+  /** 自动跟随：同行还在、他还在带路就追上去，到了身后就停；同行结束就关掉。
+   *  新的一场同行里自己是跟着走的人（答应了别人带路、跟上了路过的同行）时先替玩家打开 */
   function keepFollowing() {
+    const followed = followedWalk(getState())
+    if (followed && followed.id !== autoFollowWalk) {
+      autoFollowWalk = followed.id
+      autoFollow = followed.leader
+    }
     if (!autoFollow) return
-    if (walkLeader(getState()) !== autoFollow) {
+    if (followed?.leader !== autoFollow) {
       autoFollow = null
       return
     }
@@ -334,10 +350,7 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
     walk.tick()
   }
   map.onAvatarWalkTo = (target) => {
-    if (owned() && startWalk(target, 0.5, null)) {
-      chasing = null
-      autoFollow = null
-    }
+    if (owned() && startWalk(target, 0.5, null)) chasing = null
   }
   signal.addEventListener('abort', () => {
     map.onAvatarWalkTo = null

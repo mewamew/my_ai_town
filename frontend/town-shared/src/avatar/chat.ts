@@ -237,7 +237,7 @@ function proposalCard(v: ChatView, talk: AvatarInteraction) {
           ? '答应后双方照常活动，到点前会提醒'
           : lead
             ? '答应后交谈结束，他跟在你身后'
-            : '答应后跟着他走，可以开自动跟随'
+            : '答应后自动跟着他走'
       )
     )
     const yes = panelButton(
@@ -305,7 +305,7 @@ function talkLog(v: ChatView, talk: AvatarInteraction) {
         'p',
         walk.leading
           ? '你走到哪他们跟到哪，在一个地方停下一会儿就算到了；带着人时走得慢一些'
-          : '到了地方同行会自动结束；可以在操作条上开自动跟随'
+          : '自动跟着他走，到了地方同行自动结束；自己走动就不再自动跟，操作条上可以再打开'
       )
     )
   }
