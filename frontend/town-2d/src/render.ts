@@ -21,7 +21,7 @@ import type { LiveMotion, VillagerPlacement } from './map/hd2d/villagers'
 import { cueOf } from './map/hd2d/villagerCues'
 import { AvatarMotion } from './map/avatarMotion'
 import { PropPositions } from './map/propPositions'
-import { RoomCovers } from './map/rooms'
+import { RoomCovers, RoomPeek } from './map/rooms'
 import { MapCamera, type CameraArea } from './map/camera'
 import { DEFAULT_PITCH, PITCH_MAX } from './map/hd2d/layout'
 import { standUpright, uprightRatio } from './map/upright'
@@ -80,6 +80,8 @@ export class TownMap {
   private zoom = 1
   setAvatarActive(active: boolean) {
     this.avatarActive = active
+    // 操控化身时鼠标是用来挑去处的，房子不跟着指针开合，指着、钉住的都盖回；化身所在的屋子本来就掀开
+    if (active) this.peek.pin(null)
     // 控制化身时连点两下是在走路，不放大
     this.camera.doubleClickZoom = !active
     this.svg.classList.toggle('avatar-mode', active)
@@ -272,6 +274,14 @@ export class TownMap {
   private placed: PlacedProp[]
   /** 立体场景里哪些房子掀开屋顶 */
   private readonly rooms: RoomCovers
+  /** 地图挂在容器上的监听，销毁时一起撤掉 */
+  private readonly abort = new AbortController()
+  /** 旁观时指着、点着掀开的房子 */
+  private readonly peek = new RoomPeek(() => this.refreshRooms())
+  /** 旁观时鼠标在屏幕上的位置（离开地图为 null）；画面动了也要重新看指着哪栋 */
+  private pointerAt: [number, number] | null = null
+  /** 这一帧要重新看指针指着哪栋房子；moving 是期间画面动过 */
+  private peekCheck: { moving: boolean } | null = null
   /** 立体像素场景；WebGL 不可用或还没加载完时为空，地图退回平面像素图 */
   private hd?: HdScene
   private disposed = false
@@ -369,12 +379,19 @@ export class TownMap {
         this.applyMarkerScale()
         if (zoomed) this.residents.relayout()
         this.refreshRooms()
+        this.checkPeek(true)
       },
       (id) => this.onVillagerClick?.(id),
       (id) => this.onPropClick?.(id),
       (id) => this.onPromptClick?.(id),
       (point, client) => {
         if (this.placing) return this.onPlaceClick?.(client)
+        if (!this.avatarActive) {
+          // 旁观时点到房子是让它一直开着，不当作点空地（不取消选中）；点空地盖回
+          const house = this.houseAt(this.camera.project(point), true) ?? null
+          this.peek.pin(house)
+          if (house) return
+        }
         if (this.onAvatarWalkTo) this.onAvatarWalkTo(this.walkTargetAt(point))
         this.onGroundClick?.()
       },
@@ -395,6 +412,31 @@ export class TownMap {
         })
       hover = { client: [e.clientX, e.clientY], target: e.target }
     })
+    // 旁观时指针指着哪栋房子（见 RoomPeek）；手指没有悬停，只靠点。听在容器上：拖动地图时指针被容器捕获，
+    // 地图上收不到移动，还会先收到一次离开。指到容器里的按钮、面板上算离开了地图
+    const leave = () => {
+      this.pointerAt = null
+      if (!this.avatarActive) this.peek.point(null)
+    }
+    const signal = this.abort.signal
+    container.addEventListener(
+      'pointermove',
+      (e) => {
+        if (e.pointerType === 'touch') return
+        if (e.target !== container && !(e.target instanceof Node && this.svg.contains(e.target)))
+          return leave()
+        this.pointerAt = [e.clientX, e.clientY]
+        this.checkPeek(false)
+      },
+      { signal }
+    )
+    container.addEventListener(
+      'pointerleave',
+      (e) => {
+        if (e.pointerType !== 'touch') leave()
+      },
+      { signal }
+    )
     this.svg.classList.add('map-loading')
     this.ready = new Promise((resolve) => (this.markReady = resolve))
     this.startHd(atlas)
@@ -417,6 +459,9 @@ export class TownMap {
         this.applyMarkerScale()
         if (this.clock) this.hd.setClock(...this.clock)
         this.rooms.attach(this.svg, this.hd.houses)
+        this.hd.onRoomsClosed = (ids) => {
+          if (this.rooms.closed(ids)) this.refreshRooms()
+        }
         this.hd.onTilt = () => this.applyTilt()
         this.hd.onVillagersMoved = () => this.followVillagers()
         this.hd.beforeDraw = this.frameHook ?? undefined
@@ -563,11 +608,14 @@ export class TownMap {
     if (!hd) return
     const avatar = this.entries.find((e) => e.member.kind === 'avatar')
     const [x, y, w, h] = this.zoom >= 1.5 ? (this.camera?.getViewBox() ?? []) : []
-    const changed = this.rooms.update([
-      this.selectedId ? this.residents.getMemberAnchor(this.selectedId) : undefined,
-      avatar && this.residents.getMemberAnchor(avatar.member.id),
-      w ? this.camera.unproject([x + w / 2, y + h / 2]) : undefined,
-    ])
+    const changed = this.rooms.update(
+      [
+        this.selectedId ? this.residents.getMemberAnchor(this.selectedId) : undefined,
+        avatar && this.residents.getMemberAnchor(avatar.member.id),
+        w ? this.camera.unproject([x + w / 2, y + h / 2]) : undefined,
+      ],
+      [this.peek.peeked, this.peek.pinned]
+    )
     const covered = this.rooms.covered
     this.residents.setCovered(covered)
     hd.setVillagers(this.villagerPlacements(covered), fresh)
@@ -740,15 +788,34 @@ export class TownMap {
     return door?.inside ?? this.walkTarget(point)
   }
 
-  /** 立体场景里一点（视图坐标）落在哪栋房子的墙和屋顶上：房子立起来后遮住了它后面的地面，
-   *  点在那里是点房子，不是点房子后面的地。点在掀开屋顶的房间地面上不算。重叠时取离镜头近的 */
-  private houseAt([vx, vy]: [number, number]): string | undefined {
+  /** 旁观时重新看指针指着哪栋房子，每帧最多一次：指针动了、画面动了（moving，没掀开的重新计时） */
+  private checkPeek(moving: boolean) {
+    if (!this.pointerAt || this.avatarActive || !this.hd) return
+    if (this.peekCheck) {
+      this.peekCheck.moving ||= moving
+      return
+    }
+    const check = (this.peekCheck = { moving })
+    requestAnimationFrame(() => {
+      this.peekCheck = null
+      if (this.disposed || !this.pointerAt || this.avatarActive) return
+      const point = this.camera.groundAt(...this.pointerAt)
+      this.peek.point(this.houseAt(this.camera.project(point), true) ?? null, check.moving)
+    })
+  }
+
+  /** 立体场景里一点（视图坐标）落在哪栋房子上：房子立起来后遮住了它后面的地面，点在墙和屋顶上是点房子，
+   *  不是点房子后面的地。掀开屋顶的房间只剩矮墙，地面算不算这栋由 floor 定：旁观时指着、点着屋里是看这栋，
+   *  操控化身时点屋里的地是走到那一点。旁观时指着、钉住的那栋一直按盖着屋顶的轮廓算：掀开后轮廓只到墙顶，
+   *  指针停在屋顶那块会落到外面又盖回去，接着点刚才看到屋顶的地方也会落到房子后面。重叠时取离镜头近的 */
+  private houseAt([vx, vy]: [number, number], floor = false): string | undefined {
     const hd = this.hd
     if (!hd) return
     let best: { id: string; front: number } | undefined
     for (const house of hd.houses) {
       const centre: [number, number] = [house.x + house.w / 2, house.y + house.h / 2]
-      const open = !this.rooms.covered(centre)
+      const held = house.id === this.peek.peeked || house.id === this.peek.pinned
+      const open = !held && !this.rooms.covered(centre)
       const foot = (
         [
           [house.x, house.y],
@@ -763,8 +830,7 @@ export class TownMap {
         : house.y + (house.alongX ? house.h / 2 : 0) - hd.roofTop(house)
       const outline = hull([...foot, ...foot.map(([x, y]) => [x, y - rise] as [number, number])])
       if (!inside(outline, [vx, vy])) continue
-      // 掀开的房间：点在地面上就是走到屋里那一点
-      if (open && inside(foot, [vx, vy])) continue
+      if (open && !floor && inside(foot, [vx, vy])) continue
       const front = Math.max(...foot.map((p) => p[1]))
       if (!best || front > best.front) best = { id: house.id, front }
     }
@@ -971,6 +1037,8 @@ export class TownMap {
   }
   dispose() {
     this.disposed = true
+    this.abort.abort()
+    this.peek.stop()
     this.markReady()
     this.hd?.dispose()
     this.weather?.dispose()

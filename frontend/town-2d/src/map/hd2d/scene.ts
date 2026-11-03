@@ -67,6 +67,7 @@ import { interior, interiorTop, keepInside } from './interior'
 import type { Partition } from './partition'
 import { PROP_BASE, PropStandees, type PropPlacement } from './props'
 import { colonnadeFront, lighthouseTower, vaultRoof } from './structures'
+import { dissolvable } from './dissolve'
 import { onStandee, stand, standee, texture } from './standee'
 import type { MapTheme } from '../themes/types'
 import { effectiveQuality, pixelRatioCap, type Quality } from 'town-shared/quality'
@@ -106,6 +107,8 @@ const TILT_SHIFT_VIEW_HEIGHT = 2000
 const LAMP_REACH = 64 * PIXEL
 const DOOR_REACH = 16 * PIXEL
 const WINDOW_REACH = 22 * PIXEL
+/** 屋顶从盖严到全掀开（或反过来）按像素格溶解的时长（毫秒） */
+const DISSOLVE_MS = 160
 
 function storedPitch() {
   try {
@@ -234,6 +237,20 @@ export class HdScene {
   private readonly houseGroups = new Map<string, THREE.Group>()
   /** 掀开后的室内墙，和房子外壳一一对应 */
   private readonly rooms = new Map<string, THREE.Group>()
+  /** 每栋房子的开合（见 setOpenRooms）：amount 是外壳去掉的比例，open 是要掀开还是盖回，
+   *  from、at 是这次开合起步时的比例和时刻，moving 是还没走完 */
+  private readonly reveals = new Map<
+    string,
+    { amount: { value: number }; open: boolean; from: number; at: number; moving: boolean }
+  >()
+  /** 溶解的一格多大（画布像素）：画面上一个地图像素 */
+  private readonly dissolveCell = { value: 1 }
+  /** 有房子正在开合：每帧都画 */
+  private roomsMoving = false
+  /** 屋里的灯亮着的房子：溶解过半时换 */
+  private litRooms = ''
+  /** 屋顶刚盖严的房子：地图这时才把屋里的人和道具藏起来、房间名挪回屋顶上方 */
+  onRoomsClosed: ((ids: string[]) => void) | null = null
   private readonly partitions = new Map<string, Partition | undefined>()
   private pitchDegrees = storedPitch()
   private yawDegrees = storedYaw()
@@ -581,7 +598,12 @@ export class HdScene {
    *  不然每秒约 30 拍（60Hz 屏隔一帧一拍），环境变化只在拍上画。帧距均匀，走路才匀；一帧最多画一遍 */
   private loop = (t: number) => {
     this.ticker = requestAnimationFrame(this.loop)
-    const fast = this.dirty || this.cameraMoving || this.focusMoving || this.villagers.liveActive()
+    const fast =
+      this.dirty ||
+      this.cameraMoving ||
+      this.focusMoving ||
+      this.roomsMoving ||
+      this.villagers.liveActive()
     if (fast ? t - this.lastDraw >= MOTION_MS : t - this.lastTick >= BEAT_MS) this.tick(t, fast)
   }
 
@@ -591,6 +613,7 @@ export class HdScene {
     const dt = Math.min(0.1, (t - this.lastTick) / 1000)
     this.lastTick = t
     if (document.hidden || !this.container.clientWidth) return
+    if (this.roomsMoving) this.stepRooms(t)
     let changed = fast || this.villagers.active() || this.villagers.pending()
     const weather = this.weather.step(dt, t / 1000, this.day)
     // 闪电：在外面的人吓一跳
@@ -1066,6 +1089,16 @@ export class HdScene {
     this.addChimney(group, house)
     this.flat.add(group)
     this.houseGroups.set(house.id, group)
+    // 外壳的材质都是这栋自己的（看不见的底面除外），共用一个溶解程度
+    const amount = { value: 0 }
+    const materials = new Set<THREE.Material>()
+    group.traverse((o) => {
+      if (o instanceof THREE.Mesh)
+        for (const m of [o.material].flat() as THREE.Material[]) if (m !== HIDDEN) materials.add(m)
+    })
+    for (const m of materials)
+      dissolvable(m, { uDissolve: amount, uDissolveCell: this.dissolveCell })
+    this.reveals.set(house.id, { amount, open: false, from: 0, at: 0, moving: false })
     const room = interior(house, door, points)
     this.flat.add(room.group)
     this.rooms.set(house.id, room.group)
@@ -1640,12 +1673,46 @@ export class HdScene {
     }))
   }
 
-  /** 这些房间去掉整栋房子，立起室内的墙，露出地面上画的地板 */
+  /** 这些房间去掉整栋房子，立起室内的墙，露出地面上画的地板；其余的盖回去。
+   *  开合时外壳按像素格溶解（DISSOLVE_MS，要求减少动画时直接换），中途反悔从当时的样子往回走 */
   setOpenRooms(open: ReadonlySet<string>) {
-    for (const [id, group] of this.houseGroups) group.visible = !open.has(id)
-    for (const [id, group] of this.rooms) group.visible = open.has(id)
-    this.lightmap.setOpenRooms(open)
+    const now = performance.now()
+    for (const [id, r] of this.reveals) {
+      if (open.has(id) === r.open) continue
+      r.open = open.has(id)
+      r.from = r.amount.value
+      r.at = now
+      r.moving = this.roomsMoving = true
+    }
     this.request()
+  }
+
+  /** 开合中的房子走到这一帧：室内的墙从开始掀到屋顶盖严一直立着，外壳全去掉了才藏起来，
+   *  屋里的灯和窗光在溶解过半时换。走完盖回的告诉地图（刚要掀又盖回、还没动过的也算） */
+  private stepRooms(t: number) {
+    const span = this.reduceMotion.matches ? 0 : DISSOLVE_MS
+    const closed: string[] = []
+    let moving = false
+    for (const [id, r] of this.reveals) {
+      if (!r.moving) continue
+      const step = span ? Math.max(0, t - r.at) / span : 1
+      const v = r.open ? Math.min(1, r.from + step) : Math.max(0, r.from - step)
+      r.amount.value = v
+      this.houseGroups.get(id)!.visible = v < 1
+      this.rooms.get(id)!.visible = v > 0 || r.open
+      if (v === (r.open ? 1 : 0)) {
+        r.moving = false
+        if (!r.open) closed.push(id)
+      } else moving = true
+    }
+    this.roomsMoving = moving
+    const lit = [...this.reveals].filter(([, r]) => r.amount.value >= 0.5).map(([id]) => id)
+    const key = lit.join('|')
+    if (key !== this.litRooms) {
+      this.litRooms = key
+      this.lightmap.setOpenRooms(new Set(lit))
+    }
+    if (closed.length) this.onRoomsClosed?.(closed)
   }
 
   /** 按太阳高度分四段：白天、金色时刻、蓝调时刻（日落后天没黑透、环境光发蓝、灯已亮）、夜，
@@ -1988,6 +2055,7 @@ export class HdScene {
     const target = new THREE.Vector3(yawCos * vx + yawSin * vy, 0, -yawSin * vx + yawCos * vy)
     this.viewHeight = screenH
     const unitPx = this.renderer.domElement.width / w
+    this.dissolveCell.value = Math.max(1, unitPx * PIXEL)
     this.motes.setScale(unitPx)
     this.weather.setView(target.x, target.z, w, h, screenH, unitPx, sin, cos, yawSin, yawCos)
     this.horizon.setView(target.x, target.z, w)
