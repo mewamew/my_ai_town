@@ -13,6 +13,8 @@ const EARLY: f64 = 60.0;
 const GRACE: f64 = 30.0;
 /// 约定至少要在这么多分钟以后，最多约到一天之内（存档里互动时长不超过一天）。
 const MIN_LEAD: f64 = 10.0;
+/// 一人在约好的地点里、另一人在他身边这么近（米）以内（比如站在入口的路面上），也算见上了。
+const MEET_REACH: f64 = 3.0;
 
 /// 约定的时间和地点规则：只给检查互动内容用。返回存档里的时长（到爽约判定为止）。
 pub(crate) fn check_appointment(w: &World, locale: &str, at: f64) -> Result<f64> {
@@ -76,12 +78,22 @@ impl World {
             if t0 < remind && remind <= now + 1e-9 && item.started_at.is_some_and(|s| s < remind) {
                 self.remind(&item, &locale, at);
             }
-            let both_there = [&item.initiator, &item.partner].iter().all(|p| {
+            let there = |p: &str| {
                 self.actors
-                    .get(*p)
+                    .get(p)
                     .is_some_and(|a| a.present() && a.locus.locale == locale)
-            });
-            if both_there && now >= at - EARLY {
+            };
+            let (a, b) = (item.initiator.as_str(), item.partner.as_str());
+            let reach = crate::avatar::Reach::new(self);
+            let side_by_side = reach
+                .talk_spot(a)
+                .zip(reach.talk_spot(b))
+                .is_some_and(|(p, q)| {
+                    p.space == q.space
+                        && crate::avatar::distance(p.position, q.position) <= MEET_REACH
+                });
+            let met = (there(a) && there(b)) || ((there(a) || there(b)) && side_by_side);
+            if met && now >= at - EARLY {
                 self.interactions
                     .end(&mut self.actors, now, &id, Status::Succeeded, None);
                 continue;

@@ -78,7 +78,7 @@ fn open_world(residents: &[(&str, &str, &str)]) -> World {
             .collect(),
         stations: [
             ("st_a".into(), outdoor("loc_a", 2.)),
-            ("st_b".into(), outdoor("loc_b", 18.)),
+            ("st_b".into(), outdoor("loc_b", 11.)),
         ]
         .into(),
         ..Default::default()
@@ -549,4 +549,49 @@ fn a_follower_a_few_steps_behind_at_the_entrance_still_arrives_inside() {
     }
     assert_eq!(status(&w, "walk"), InteractionStatus::Succeeded);
     assert_eq!(w.actor("a").unwrap().locus.locale, "loc_b", "挪进了广场");
+}
+
+/// 约好在广场见：村民站在广场入口的落脚点，玩家站在他身边的路面上（还没跨进广场），也算见上了。
+#[test]
+fn meeting_side_by_side_at_the_entrance_keeps_the_appointment() {
+    let mut w = open_world(&[("a", "老周", "loc_a")]);
+    enter(&mut w);
+    let at = w.minutes() + 20.;
+    act(
+        &mut w,
+        ID,
+        "meet",
+        Cmd::Offer {
+            partner_id: "a".into(),
+            interaction: InteractionKind::Appointment {
+                locale: "loc_b".into(),
+                at,
+            },
+            message: "过一会儿广场见？".into(),
+        },
+    );
+    act(
+        &mut w,
+        "a",
+        "meet-yes",
+        Cmd::Reply {
+            interaction_id: "meet".into(),
+            accept: true,
+            message: "行。".into(),
+        },
+    );
+    common::run(
+        &mut w,
+        "a",
+        "go",
+        json!({"intent":{"verb":"前往","locale":"loc_b"}}),
+    )
+    .unwrap();
+    common::finish(&mut w, "a", "go");
+    // 化身从 x=2 走到 x≈9.5，还在路上（甲处）
+    let pace = w.avatar_walk().unwrap().metres_per_minute;
+    walk_avatar(&mut w, [1., 0.], 7.5 / pace);
+    assert_eq!(w.avatar().unwrap().locus.locale, "loc_a");
+    w.step(30.);
+    assert_eq!(status(&w, "meet"), InteractionStatus::Succeeded);
 }
