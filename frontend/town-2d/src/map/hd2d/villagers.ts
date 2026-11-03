@@ -1,30 +1,25 @@
 import * as THREE from 'three'
 import { PIXEL } from '../grid'
 import type { Tilt } from './layout'
-import { stand, standee, texture } from './standee'
+import { pixelFilter, stand, standee } from './standee'
 import { contactTexture } from './ao'
 import { REFLECTION_SKIP } from './reflection'
-import {
-  DIRECTIONS,
-  FRAME_H,
-  FRAME_W,
-  VILLAGER_HALF,
-  VILLAGER_SCALE,
-  villagerAtlas,
-  type Direction,
-} from './villagerSprite'
+import { VILLAGER_HALF, VILLAGER_SCALE, type Direction } from './villagerSprite'
+import { RIG_H, RIG_W, VillagerRig, frameKey } from './villagerRig'
+import { Acting, type Moment } from './villagerActing'
 
 // 村民立牌：位置跟着名册走。名册每拍（100 毫秒）来一次，立牌比最新一份晚一到两拍，在相邻两份
 // 之间匀速走过去：每份名册记作比上一份晚一拍，播放按真实时间走；每来一份按缓冲多少把播放稍微调快
 // 或调慢，一份之内速度不变，名册早到晚到、主线程卡一下都不会让人忽快忽慢。
-// 按这一段路的方向选朝向、按走过的距离换走路帧。
+// 按这一段路的方向选朝向、按走过的距离换走路帧。每人一块小贴图，按此刻的姿势、呼吸、眨眼和
+// 风现画（见 villagerRig.ts、villagerActing.ts），画面变了才重画、上传。
 // 玩家正在操控的人不缓冲：位置由本地预测给出（见 ../avatarMotion.ts），每帧照着发出去的方向和步速走，
 // 按下去马上就动，不比别人晚两拍，也不随名册早到晚到一顿一顿。
 
-/** 走过多少地图单位换一帧 */
-const STRIDE = 3.2 * PIXEL
+/** 走过多少地图单位换一帧（八帧走路，两步一个来回） */
+const STRIDE = 1.6 * PIXEL
 /** 一步多远：每一步在踩踏图上落一个脚印 */
-const STEP = 2 * STRIDE
+const STEP = 4 * STRIDE
 /** 相邻两份名册离得比这远就直接放过去（进出门、换地点），不走过场 */
 const JUMP = 400
 /** 服务端一拍（毫秒），名册按这个间隔来 */
@@ -35,6 +30,13 @@ const DELAY_MS = 200
 const RESYNC_MS = 600
 /** 追赶缓冲时最多快慢一成，看不出变速 */
 const MAX_DRIFT = 0.1
+/** 站着的人多久重新挑一次看谁（毫秒），各人错开 */
+const LOOK_MS = 500
+/** 这么近走过的人会被看一眼；玩家操控的人走得更远也看（地图单位） */
+const LOOK_NEAR = 40 * PIXEL
+const LOOK_AVATAR = 90 * PIXEL
+/** 看人转身后至少这么久不再转（毫秒），不来回扭 */
+const TURN_HOLD_MS = 1500
 
 export interface VillagerPlacement {
   id: string
@@ -51,6 +53,8 @@ export interface VillagerPlacement {
   live?: boolean
   /** 站着时转身朝向这一点（被玩家邀请、正和玩家聊天的人朝向玩家） */
   faceToward?: [number, number]
+  /** 在用道具、在聊天：有人走过只拿眼睛看，不转身 */
+  busy?: boolean
 }
 
 const TINT = { normal: '#ffffff', incapacitated: '#a8a0a0', dead: '#6f6f78' }
@@ -73,10 +77,17 @@ interface Sample {
 }
 
 interface Villager {
+  id: string
   mesh: THREE.Mesh
   /** 脚下的像素暗斑 */
   contact: THREE.Mesh
-  map: THREE.Texture
+  /** 这个人的贴图：像素就在 data 里，画完一帧标记上传 */
+  map: THREE.DataTexture
+  data: Uint8Array
+  rig: VillagerRig
+  acting: Acting
+  /** 上一帧的指纹：一样就不重画 */
+  drawn: string
   look: string
   at: [number, number]
   /** 还没走完的几份名册位置，第一份在播放时刻之前（或就是最后一份） */
@@ -94,6 +105,11 @@ interface Villager {
   live?: boolean
   /** 站着时朝向的点 */
   faceToward?: [number, number]
+  busy?: boolean
+  /** 此刻在看的方向（画面坐标）和下次重挑的时刻；上次因为看人转身的时刻 */
+  gazeAt?: [number, number]
+  nextLook: number
+  turnedAt: number
 }
 
 /** 脚下暗斑的大小（地图单位）：比人略宽，平放在地上 */
@@ -111,7 +127,16 @@ export class Villagers {
     opacity: 0.42,
     depthWrite: false,
   })
-  private readonly atlases = new Map<string, THREE.Texture>()
+  /** 同一个长相共用一份画法（缓存的笔画） */
+  private readonly rigs = new Map<string, VillagerRig>()
+  /** 一格贴图像素在屏幕上有几个设备像素：不到 1 个时小动作不做 */
+  private texelPx = 2
+  /** 要求减少动画 */
+  private calm = false
+  /** 风：立牌上最软的东西在 (x, z) 此刻往画面右边摆几格 */
+  private sway: (x: number, z: number) => number = () => 0
+  /** 天上有东西可看（晴夜的星星、飘下来的雪） */
+  private sky = false
   /** 最新一份名册在时间轴上的时刻（毫秒），每来一份加一拍 */
   private latest = 0
   /** 播放到的时刻：立牌画的是这一刻的位置 */
@@ -181,6 +206,7 @@ export class Villagers {
       if (v.faceToward?.[0] !== p.faceToward?.[0] || v.faceToward?.[1] !== p.faceToward?.[1])
         changed = true
       v.faceToward = p.faceToward
+      v.busy = p.busy
       if (p.live) {
         // 时间轴上只留名册的最新位置：名字、心声泡按它和立牌的差跟着立牌（见 lag）
         v.live = true
@@ -223,14 +249,14 @@ export class Villagers {
     v.moving = !!this.motion?.walking()
     if (v.moving && d > 0.01) v.facing = [dx, dy]
     if (!v.moving) this.turnToward(v)
-    let changed = this.face(v)
+    this.face(v)
     if (d > 0.01) {
       if (v.moving) v.walked += d
       this.moveTo(v, x, y)
       this.footfall(v)
-      changed = true
+      return true
     }
-    return changed
+    return false
   }
 
   /** 玩家操控的人还在动（在走，或在和服务端校正）：场景要每帧都画，不等节拍 */
@@ -291,8 +317,8 @@ export class Villagers {
     ]
   }
 
-  /** 每帧画之前调用（now 是这一帧的时刻）：摆到播放时刻的位置，更新朝向与走路帧；
-   *  有人走动或换了帧时返回 true */
+  /** 每帧画之前调用（now 是这一帧的时刻）：摆到播放时刻的位置，更新朝向，画好每人这一帧；
+   *  有人走动时返回 true */
   step(now: number) {
     const dt = Math.min(100, Math.max(0, now - this.last))
     this.last = now
@@ -301,7 +327,7 @@ export class Villagers {
     for (const v of this.all.values()) {
       if (v.live) {
         if (this.stepLive(v, now)) changed = true
-        if (this.frame(v)) changed = true
+        this.frame(v, now)
         continue
       }
       while (v.path.length > 1 && v.path[1].t <= this.play) v.path.shift()
@@ -315,18 +341,58 @@ export class Villagers {
         sy = b ? b.y - a.y : 0
       v.moving = Math.hypot(sx, sy) > 0.01
       if (v.moving) v.facing = [sx, sy]
-      else this.turnToward(v)
-      const directionChanged = this.face(v)
-      if (directionChanged) changed = true
+      else {
+        this.turnToward(v)
+        this.lookAround(v, now)
+      }
+      this.face(v)
       if (d > 0) {
         v.walked += d
         this.moveTo(v, x, y)
         this.footfall(v)
         changed = true
       }
-      if (this.frame(v)) changed = true
+      this.frame(v, now)
     }
     return changed
+  }
+
+  /** 站着的人隔一会儿挑一个看的对象：朝着的人（和玩家说话、被玩家邀请），其次玩家操控的人，
+   *  再次身边走过的人；都没有就随便看看。对象到了身侧（画面上偏过 45°）整个人转过去，
+   *  在身后就只看不转，免得背对镜头；在用道具、在聊天的人只拿眼睛看 */
+  private lookAround(v: Villager, now: number) {
+    if (now < v.nextLook) return
+    v.nextLook = now + LOOK_MS
+    let target = v.faceToward
+    if (!target) {
+      let best = Infinity
+      for (const o of this.all.values()) {
+        if (o === v || !o.mesh.visible) continue
+        const d = Math.hypot(o.at[0] - v.at[0], o.at[1] - v.at[1])
+        const reach = o.live ? LOOK_AVATAR : o.moving ? LOOK_NEAR : 0
+        const score = o.live ? d / 2 : d
+        if (d < reach && score < best) {
+          best = score
+          target = o.at
+        }
+      }
+    }
+    if (!target) {
+      v.gazeAt = undefined
+      return
+    }
+    const dx = target[0] - v.at[0],
+      dy = target[1] - v.at[1]
+    if (Math.hypot(dx, dy) < 1) return
+    const sx = dx * this.tilt.yawCos - dy * this.tilt.yawSin
+    const sy = dx * this.tilt.yawSin + dy * this.tilt.yawCos
+    v.gazeAt = [sx, sy]
+    if (v.faceToward || v.busy || now - v.turnedAt < TURN_HOLD_MS) return
+    const want: Direction =
+      Math.abs(sx) > Math.abs(sy) ? (sx > 0 ? 'right' : 'left') : sy > 0 ? 'down' : 'up'
+    if (want === 'up' || want === v.dir) return
+    v.facing = [dx, dy]
+    v.turnedAt = now
   }
 
   /** 站着的人转身朝向要看的人 */
@@ -337,26 +403,54 @@ export class Villagers {
     if (Math.hypot(dx, dy) > 1) v.facing = [dx, dy]
   }
 
-  /** 按朝向和走过的距离选走路帧；换了帧返回 true */
-  private frame(v: Villager) {
-    const frame = v.moving ? Math.floor(v.walked / STRIDE) % 4 : 0
-    const fx = frame / 4,
-      fy = 1 - (DIRECTIONS.indexOf(v.dir) + 1) / 4
-    if (v.map.offset.x === fx && v.map.offset.y === fy) return false
-    v.map.offset.set(fx, fy)
-    return true
+  /** 一格贴图像素在屏幕上占几个设备像素（随缩放变） */
+  setTexelPx(px: number) {
+    this.texelPx = px
+  }
+
+  /** 天上有没有值得抬头看的（晴夜的星星、下雪） */
+  setSky(sky: boolean) {
+    this.sky = sky
+  }
+
+  /** 每帧画之前：要不要减少动画、风在每处往哪边吹 */
+  setAir(calm: boolean, sway: (x: number, z: number) => number) {
+    this.calm = calm
+    this.sway = sway
+  }
+
+  /** 按此刻的朝向、走路、呼吸眨眼和风合成这一帧；和上一帧不一样才重画、上传 */
+  private frame(v: Villager, now: number) {
+    if (!v.mesh.visible) return
+    const m: Moment = {
+      now,
+      dir: v.dir,
+      moving: v.moving,
+      stride: v.walked / STRIDE,
+      lively: !this.calm && this.texelPx >= 1,
+      wind: this.sway(v.mesh.position.x, v.mesh.position.z),
+      look: v.gazeAt,
+      sky: this.sky,
+    }
+    const f = v.acting.frame(m)
+    const key = frameKey(f)
+    if (key === v.drawn) return
+    v.drawn = key
+    v.rig.draw(f, v.data)
+    v.map.needsUpdate = true
   }
 
   private create(p: VillagerPlacement): Villager {
-    let atlas = this.atlases.get(p.look)
-    if (!atlas) {
-      atlas = texture(villagerAtlas(p.look))
-      this.atlases.set(p.look, atlas)
+    let rig = this.rigs.get(p.look)
+    if (!rig) {
+      rig = new VillagerRig(p.look)
+      this.rigs.set(p.look, rig)
     }
-    // 每人一份贴图对象，共用同一张图集，只是偏移不同
-    const map = atlas.clone()
-    map.repeat.set(1 / 4, 1 / 4)
-    const mesh = standee(map, { scale: VILLAGER_SCALE, frame: [FRAME_W, FRAME_H] })
+    // 每人一块小贴图，像素直接写进 data
+    const data = new Uint8Array(RIG_W * RIG_H * 4)
+    const map = pixelFilter(new THREE.DataTexture(data, RIG_W, RIG_H)) as THREE.DataTexture
+    map.colorSpace = THREE.SRGBColorSpace
+    const mesh = standee(map, { scale: VILLAGER_SCALE, frame: [RIG_W, RIG_H] })
     this.prepare?.(mesh.material as THREE.Material)
     this.scene.add(mesh)
     const contact = new THREE.Mesh(this.contactGeometry, this.contactMaterial)
@@ -364,9 +458,14 @@ export class Villagers {
     contact.renderOrder = 1
     this.scene.add(contact)
     const v: Villager = {
+      id: p.id,
       mesh,
       contact,
       map,
+      data,
+      rig,
+      acting: new Acting(p.id),
+      drawn: '',
       look: p.look,
       at: [p.x, p.y],
       path: [{ t: this.latest, x: p.x, y: p.y }],
@@ -377,9 +476,12 @@ export class Villagers {
       nextStep: STEP,
       leftFoot: false,
       moving: false,
+      nextLook: 0,
+      turnedAt: -TURN_HOLD_MS,
     }
     this.moveTo(v, p.x, p.y)
     this.face(v)
+    this.frame(v, performance.now())
     this.all.set(p.id, v)
     return v
   }
@@ -395,11 +497,7 @@ export class Villagers {
     const [x, y] = v.facing
     const sx = x * this.tilt.yawCos - y * this.tilt.yawSin
     const sy = x * this.tilt.yawSin + y * this.tilt.yawCos
-    const dir = Math.abs(sx) > Math.abs(sy) ? (sx > 0 ? 'right' : 'left') : sy > 0 ? 'down' : 'up'
-    const changed = dir !== v.dir
-    v.dir = dir
-    v.map.offset.y = 1 - (DIRECTIONS.indexOf(dir) + 1) / 4
-    return changed
+    v.dir = Math.abs(sx) > Math.abs(sy) ? (sx > 0 ? 'right' : 'left') : sy > 0 ? 'down' : 'up'
   }
 
   private remove(id: string) {
@@ -414,7 +512,6 @@ export class Villagers {
 
   dispose() {
     for (const id of [...this.all.keys()]) this.remove(id)
-    for (const a of this.atlases.values()) a.dispose()
     this.contactGeometry.dispose()
     this.contactMaterial.map?.dispose()
     this.contactMaterial.dispose()

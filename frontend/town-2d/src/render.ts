@@ -611,6 +611,7 @@ export class TownMap {
               visible: !covered(p),
               live: member.id === this.motionId,
               faceToward: this.faceToward(member.id),
+              busy: member.verb_kind === 'prop' || !!member.chat,
               condition:
                 member.body?.life === 'dead'
                   ? ('dead' as const)

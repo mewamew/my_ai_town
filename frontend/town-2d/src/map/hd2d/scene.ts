@@ -11,7 +11,7 @@ import type { Dock } from '../pixel/island'
 import { fbm, hash, rng } from '../pixel/noise'
 import { Motes } from './motes'
 import { Villagers, type LiveMotion, type VillagerPlacement } from './villagers'
-import { VILLAGER_HALF, VILLAGER_HEIGHT } from './villagerSprite'
+import { VILLAGER_HALF, VILLAGER_HEIGHT, VILLAGER_SCALE } from './villagerSprite'
 import { Weather3D } from './weather'
 import { DOORS } from '../buildings'
 import type { WeatherKind } from 'town-shared/weather/types'
@@ -340,6 +340,7 @@ export class HdScene {
   private readonly villagers = new Villagers(this.scene, this.tilt, (m) =>
     this.lightmap.shade(m, 'standee')
   )
+  private readonly swayAt = (x: number, z: number) => this.weather.swayAt(x, z)
   private readonly props = new PropStandees(
     this.scene,
     this.tilt,
@@ -602,6 +603,8 @@ export class HdScene {
   private draw(t: number) {
     this.lastDraw = t
     this.lightmap.render(this.renderer)
+    // 人的头发跟着风场摆，要求减少动画时呼吸、眨眼这些小动作也停
+    this.villagers.setAir(this.weather.calm, this.swayAt)
     if (this.villagers.step(t)) this.onVillagersMoved?.()
     this.cameraMoving = this.beforeDraw?.(t) ?? false
     this.stepFocus(t)
@@ -1900,6 +1903,8 @@ export class HdScene {
     this.volumetric.setSun(this.sun)
     // 小动物和草：白天、黄昏、夜里各有各的；积雪厚了草被埋住
     this.fauna.setLight({ day, twilight, night, rain, wind: this.weather.windUniforms.uWind.value })
+    // 晴夜有星星、下雪时有雪花：站着的人偶尔抬头看
+    this.villagers.setSky(night * clear * (1 - rain) > 0.5 || this.weather.snowFalling)
     this.fauna.setEnabled(!this.reduceMotion.matches && this.quality !== 'low')
     this.grass.uniforms.uSnow.value = this.weather.snowLevel
     // 有体积光时灯在雾里的光晕由它画，加色贴片淡一些
@@ -1952,6 +1957,7 @@ export class HdScene {
     this.viewTarget.copy(target)
     this.grass.setScale(unitPx)
     this.fauna.setScale(unitPx)
+    this.villagers.setTexelPx(unitPx * PIXEL * VILLAGER_SCALE)
     this.reflection.uniforms.uReflStreak.value.set(-yawSin, -yawCos).multiplyScalar(6 * PIXEL)
     this.waterVisible = this.waterInView(target, w, h)
     this.updateTiltShift()

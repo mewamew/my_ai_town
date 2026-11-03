@@ -46,6 +46,31 @@ float windGust(vec2 xz) {
   return smoothstep(0.38, 0.85, g);
 }`
 
+/** 和着色器里 windGust 同一个阵风（0～1），给在 CPU 上画的随风东西用（村民的头发、辫子）：
+ *  同一个噪声、同样的尺度和推进速度，一阵风吹过草和树也吹到人身上 */
+function gustAt(x: number, z: number, time: number, dir: THREE.Vector2) {
+  const hash = (px: number, py: number) => {
+    const h = Math.sin(px * 127.1 + py * 311.7) * 43758.5453
+    return h - Math.floor(h)
+  }
+  const noise = (px: number, py: number) => {
+    const ix = Math.floor(px),
+      iy = Math.floor(py)
+    let fx = px - ix,
+      fy = py - iy
+    fx = fx * fx * (3 - 2 * fx)
+    fy = fy * fy * (3 - 2 * fy)
+    const a = hash(ix, iy) + (hash(ix + 1, iy) - hash(ix, iy)) * fx
+    const b = hash(ix, iy + 1) + (hash(ix + 1, iy + 1) - hash(ix, iy + 1)) * fx
+    return a + (b - a) * fy
+  }
+  const along = (x * dir.x + z * dir.y) / (120 * PIXEL) - time * 0.35
+  const across = (-x * dir.y + z * dir.x) / (300 * PIXEL)
+  const g = noise(along, across) * 0.7 + noise(along * 2.3 + 7, across * 1.7 + 7) * 0.3
+  const k = Math.max(0, Math.min(1, (g - 0.38) / (0.85 - 0.38)))
+  return k * k * (3 - 2 * k)
+}
+
 const COMMON = /* glsl */ `
 uniform float uTime;
 uniform float uWind;
@@ -519,6 +544,20 @@ export class Weather3D {
         )
     }
     material.customProgramCacheKey = () => `${beforeKey}|sway`
+  }
+
+  /** 立牌上最软的东西（垂下来的头发）此刻往画面右边摆几格：风力乘上这里的阵风，
+   *  按风向在画面上偏哪边。减少动画时为 0 */
+  swayAt(x: number, z: number) {
+    const s = this.shared
+    if (!s.uTime.value) return 0
+    const gust = gustAt(x, z, s.uTime.value, s.uWindDir.value)
+    return s.uWind.value * (0.6 + 1.6 * gust) * 2 * s.uWindSide.value
+  }
+
+  /** 要求减少动画（设定里或系统里）：人的小动作也停 */
+  get calm() {
+    return this.prefs.reduceMotion || this.reduceMotion.matches
   }
 
   /** 此刻在下雪（雪地脚印很快被新雪盖上） */

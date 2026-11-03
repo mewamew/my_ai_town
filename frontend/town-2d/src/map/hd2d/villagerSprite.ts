@@ -9,12 +9,13 @@ import { PIXEL } from '../grid'
 // 像素村民：Q 版画法。
 // 人物占 21×29 格：头 0～16 行，身子 17～25 行，腿 26～27 行是两个 2×2 黑块。
 // 一帧 25×34，人物放在 (2, 6)：头顶留 6 行给发髻、帽子和大葱头这种往上竖的头发，两边留给辫子。
-// 图集 4 列帧 × 4 行朝向（下、右、上、左）。
+// 朝向分下、右、上、左；场景里每人一块小画布，按此刻的姿势和表情现画（见 villagerRig.ts）。
 // 描边 K 直接画在格子里，色块平涂。正面、背面只写左半边 11 列（第 10 列是中线）再镜像；
 // 侧面按朝右整行写，朝左整张翻过来。
 
-const OX = 2
-const OY = 6
+/** 人物在一帧里的位置：左边留 2 列给辫子，头顶留 6 行给发髻和帽子 */
+export const OX = 2
+export const OY = 6
 export const FRAME_W = 25
 export const FRAME_H = OY + 28
 /** 一个人物像素约等于 2/3 个地图像素，人比门矮一点 */
@@ -26,7 +27,7 @@ export const VILLAGER_HALF = (19 / 2) * PIXEL * VILLAGER_SCALE
 export const DIRECTIONS = ['down', 'right', 'up', 'left'] as const
 export type Direction = (typeof DIRECTIONS)[number]
 
-type View = 'down' | 'up' | 'side'
+export type View = 'down' | 'up' | 'side'
 type Rows = readonly string[]
 type Patch = readonly (readonly [number, number, string])[]
 
@@ -2121,7 +2122,7 @@ function villagerLook(l: Look): VillagerLook {
   }
 }
 
-function lookOf(key: string): Look {
+export function lookOf(key: string): Look {
   const custom = decodeLookKey(key)
   if (custom) return spriteLook(custom)
   const known = BUILTIN[key] ?? avatarLook(key)
@@ -2153,7 +2154,7 @@ const DEFAULT_ACCENT = '#e44a4e'
 /** 暗面压暗的比例：上衣、下装 */
 const TOP_SHADE = 0.2
 const BOTTOM_SHADE = 0.25
-function palette(look: Look): Record<string, string> {
+export function palette(look: Look): Record<string, string> {
   const o = look.o ?? look.t
   return {
     K: '#141014',
@@ -2202,96 +2203,219 @@ function palette(look: Look): Record<string, string> {
   }
 }
 
-/** 拼一帧的格子。f：0 站、1 迈一只脚、2 站、3 迈另一只脚。迈步时身子上移一格，着地的腿长一格、抬起的腿短一格 */
-function compose(look: Look, view: View, f: number) {
-  const g: (string | null)[][] = Array.from({ length: FRAME_H }, () => Array(FRAME_W).fill(null))
-  const put = (x: number, y: number, ch: string) => {
-    const gx = x + OX,
-      gy = y + OY
-    if (ch !== '.' && gx >= 0 && gy >= 0 && gx < FRAME_W && gy < FRAME_H) g[gy][gx] = ch
-  }
-  const stamp = (rows: Rows, y0: number) =>
-    rows.forEach((row, j) => [...row].forEach((ch, i) => put(i, y0 + j, ch)))
-  const apply = (patch: Patch | undefined, dy: number) => {
-    for (const [x, y, ch] of patch ?? []) put(x, y + dy, ch)
-  }
-  const leg = (x: number, top: number, n: number) => {
-    for (let y = top; y < top + n; y++) {
-      put(x, y, 'K')
-      put(x + 1, y, 'K')
-    }
-  }
+// ---- 分层合成 ----
+// 一帧由一笔笔格子叠成，分腿、身子、头三组，每一笔记下属于哪一层、哪一组，颜色按调色板、渐变发和花纹
+// 当场定好。动画按组挪（呼吸时头沉一格，走路时身子起伏、头晚一拍，转身时头先转），垂下来的头发和辫子
+// 按离发根远近有一个软度，随风和走路摆（见 villagerRig.ts）。头像和捏人界面也走这里，画出来和以前一样。
+
+/** 一笔属于哪一层，按画的先后排 */
+export type Layer =
+  | 'legs'
+  | 'heldBack'
+  | 'body'
+  | 'arm'
+  | 'heldMid'
+  | 'hairBack'
+  | 'gearBack'
+  | 'head'
+  | 'hairExtra'
+  | 'ahoge'
+  | 'beard'
+  | 'clip'
+  | 'face'
+  | 'hat'
+  | 'heldFront'
+
+/** 一笔：帧坐标 (x, y)、颜色位 ch 和定好的颜色。group 0 是腿，1 是身子（连手里拿的），
+ *  2 是头（连头发、帽子、脸上戴的）；flex 是随风摆的软度，0 不动、1 最软 */
+export interface Stroke {
+  x: number
+  y: number
+  ch: string
+  color: string
+  layer: Layer
+  group: 0 | 1 | 2
+  flex: number
+}
+
+/** 腿和手臂怎么摆。腿是 2 格宽的黑块 [x, 顶行, 行数]（人物坐标），toes 是另加的单格（侧面迈步时后脚的脚尖）；
+ *  arm 是侧面的手臂：0 垂下、1 往前、2 往后，null 不画（两手在胸前拿着东西） */
+export interface Stance {
+  legs: readonly (readonly [number, number, number])[]
+  toes?: readonly (readonly [number, number])[]
+  arm: 0 | 1 | 2 | null
+}
+
+/** 原来的四帧走路：0 站、1 迈一只脚、2 站、3 迈另一只脚。迈步时身子和头上移一格（bob 为 -1），
+ *  着地的腿长一格、抬起的腿短一格。头像和捏人界面用 */
+function walk4(view: View, f: number): Stance & { bob: number } {
   const step = f % 2 === 1
   const bob = step ? -1 : 0
   if (view !== 'side') {
-    leg(f === 3 ? 11 : 8, step ? 25 : 26, step ? 3 : 2)
-    leg(f === 3 ? 8 : 11, step ? 25 : 26, 2)
-  } else if (!step) {
-    leg(10, 26, 2)
-    leg(11, 26, 2)
-  } else {
-    leg(12, 25, 3)
-    leg(9, 25, 2)
-    put(8, 26, 'K')
+    const legs = [
+      [f === 3 ? 11 : 8, step ? 25 : 26, step ? 3 : 2],
+      [f === 3 ? 8 : 11, step ? 25 : 26, 2],
+    ] as const
+    return { legs, arm: 0, bob }
   }
+  if (!step)
+    return {
+      legs: [
+        [10, 26, 2],
+        [11, 26, 2],
+      ],
+      arm: 0,
+      bob,
+    }
+  return {
+    legs: [
+      [12, 25, 3],
+      [9, 25, 2],
+    ],
+    toes: [[8, 26]],
+    arm: f === 1 ? 1 : 2,
+    bob,
+  }
+}
+
+/** 头的朝向：转身时头先转过去，和身子不同；mirror 表示头和身子一个朝左一个朝右（朝左的帧最后整张翻过来） */
+export interface HeadTurn {
+  view: View
+  mirror: boolean
+}
+
+/** 按画的先后叠成一张字母格（帧坐标），只看头那几层：找眼睛、认头发 */
+function layOut(strokes: readonly Stroke[]) {
+  const g: (string | null)[][] = Array.from({ length: FRAME_H }, () => Array(FRAME_W).fill(null))
+  for (const s of strokes)
+    if (s.x >= 0 && s.y >= 0 && s.x < FRAME_W && s.y < FRAME_H) g[s.y][s.x] = s.ch
+  return g
+}
+
+/** 垂下来的头发有多软：0 不动，1 最软。辫子、马尾按离发根的远近，长发、齐耳短发只算下巴以下那截
+ *  （脸两边的头发一摆就和脸脱开）；发髻、爆炸头、竖起来的冠不动。坐标是人物坐标 */
+function flexOf(layer: Layer, ch: string, y: number, look: Look) {
+  // 呆毛只有两格高，摆多了就飞了：最多一格
+  if (layer === 'ahoge') return 0.34
+  if (!'hHLKxw'.includes(ch) || STIFF.has(look.hair)) return 0
+  const k = (v: number) => Math.max(0, Math.min(1, v))
+  if (layer === 'hairExtra') return k((y - 6) / 12)
+  if (layer === 'hairBack') return k((y - 10) / 12)
+  if (layer === 'head' && y >= 17) return Math.min(1, 0.45 + (y - 17) / 8)
+  return 0
+}
+const STIFF = new Set<HairStyle>(['afro', 'bun', 'twin_buns', 'curls', 'mohawk', 'spiky'])
+
+/** 一帧的笔画：先腿，再身子、头，最后手里拿的兵器头和扇子。view 是身子的朝向，turn 是头另外的朝向 */
+export function sketch(
+  look: Look,
+  pal: Record<string, string>,
+  view: View,
+  stance: Stance,
+  turn?: HeadTurn
+): Stroke[] {
+  const out: Stroke[] = []
+  const put = (x: number, y: number, ch: string, layer: Layer, group: Stroke['group']) => {
+    if (ch !== '.') out.push({ x: x + OX, y: y + OY, ch, color: '', layer, group, flex: 0 })
+  }
+  const stamp = (rows: Rows, y0: number, layer: Layer, group: Stroke['group']) =>
+    rows.forEach((row, j) => [...row].forEach((ch, i) => put(i, y0 + j, ch, layer, group)))
+  const apply = (patch: Patch | undefined, layer: Layer, group: Stroke['group'], dy = 0) => {
+    for (const [x, y, ch] of patch ?? []) put(x, y + dy, ch, layer, group)
+  }
+  for (const [x, top, n] of stance.legs)
+    for (let y = top; y < top + n; y++) {
+      put(x, y, 'K', 'legs', 0)
+      put(x + 1, y, 'K', 'legs', 0)
+    }
+  for (const [x, y] of stance.toes ?? []) put(x, y, 'K', 'legs', 0)
   const held = look.held ? HELD[look.held] : undefined
-  apply(held?.back?.[view], bob)
+  apply(held?.back?.[view], 'heldBack', 1)
   const body = BODIES[look.outfit]
-  stamp(body.rows[view], 17 + bob)
-  if (view === 'side' && body.arm) apply(body.arm[step ? (f === 1 ? 1 : 2) : 0], 17 + bob)
-  apply(held?.mid?.[view], bob)
+  stamp(body.rows[view], 17, 'body', 1)
+  if (view === 'side' && body.arm && stance.arm !== null) apply(body.arm[stance.arm], 'arm', 1, 17)
+  apply(held?.mid?.[view], 'heldMid', 1)
+  // 头按自己的朝向画（转身时头先转）
+  const hv = turn?.view ?? view
+  const from = out.length
   const hair = HAIR[look.hair]
   const gear = look.headwear ? HEADWEAR[look.headwear] : undefined
   // 戴帽子时头顶 0～4 行被帽子盖住：头发只从第 5 行画起，发髻、呆毛不画，垂到帽檐下的辫子照画
   const covered = !!look.hat || !!gear?.covers
   const below = (patch?: Patch) => (covered ? patch?.filter(([, y]) => y >= 5) : patch)
-  apply(below(hair.back?.[view]), bob)
-  if (gear?.back) apply(gear.back, bob)
-  stamp(covered ? hair.rows[view].slice(5) : hair.rows[view], covered ? 5 + bob : bob)
-  apply(below(hair.extra?.[view]), bob)
-  if (look.ahoge && !covered) apply(AHOGE[view], bob)
+  apply(below(hair.back?.[hv]), 'hairBack', 2)
+  if (gear?.back) apply(gear.back, 'gearBack', 2)
+  stamp(covered ? hair.rows[hv].slice(5) : hair.rows[hv], covered ? 5 : 0, 'head', 2)
+  apply(below(hair.extra?.[hv]), 'hairExtra', 2)
+  if (look.ahoge && !covered) apply(AHOGE[hv], 'ahoge', 2)
   // 渐变只染头发：这时候画上的 h/H/L 才是头发，后面的胡子、猴脸毛色不算
-  const hairCells = g.map((row) => row.map((ch) => !!ch && 'hHL'.includes(ch)))
-  if (look.band)
-    for (const row of hair.band) {
-      const line = g[row + bob + OY]
-      for (let x = 0; x < FRAME_W; x++) if ('hHL'.includes(line[x] ?? '.')) line[x] = 'w'
-    }
-  if (look.beard) apply(BEARD[view], bob)
-  if (look.beardStyle) apply(BEARDS[look.beardStyle][view], bob)
-  if (look.clip) apply(CLIP[view], bob)
-  if (gear?.band)
-    hair.band.forEach((row, i) => {
-      const line = g[row + bob + OY]
-      for (let x = 0; x < FRAME_W; x++)
-        if ('hHLsSv'.includes(line[x] ?? '.')) line[x] = gear.band![i]
-    })
-  const at = (x: number, y: number) => g[y + OY]?.[x + OX] ?? null
-  if (look.face) apply(faceGear(look.face, view, eyesOf(g), at), 0)
-  if (look.hat) apply(HAT[view], bob)
-  else if (gear) apply(gear.patch[view], bob)
-  apply(held?.front?.[view], bob)
-  return { g, hairCells }
+  const mask = layOut(out.slice(from)).map((row) => row.map((ch) => !!ch && 'hHL'.includes(ch)))
+  const recolor = (row: number, chars: string, to: string) => {
+    for (let i = from; i < out.length; i++)
+      if (out[i].y === row + OY && chars.includes(out[i].ch)) out[i].ch = to
+  }
+  if (look.band) for (const row of hair.band) recolor(row, 'hHL', 'w')
+  if (look.beard) apply(BEARD[hv], 'beard', 2)
+  if (look.beardStyle) apply(BEARDS[look.beardStyle][hv], 'beard', 2)
+  if (look.clip) apply(CLIP[hv], 'clip', 2)
+  if (gear?.band) hair.band.forEach((row, i) => recolor(row, 'hHLsSv', gear.band![i]))
+  if (look.face) {
+    const g = layOut(out.slice(from))
+    const at = (x: number, y: number) => g[y + OY]?.[x + OX] ?? null
+    apply(faceGear(look.face, hv, eyesOf(g), at), 'face', 2)
+  }
+  if (look.hat) apply(HAT[hv], 'hat', 2)
+  else if (gear) apply(gear.patch[hv], 'hat', 2)
+  // 记下哪些笔是头发（渐变按它染）、垂下来的头发有多软，再把头翻到身子的朝向
+  const hairy = new Set<Stroke>()
+  for (let i = from; i < out.length; i++) {
+    const s = out[i]
+    if (mask[s.y]?.[s.x] && 'hHL'.includes(s.ch)) hairy.add(s)
+    s.flex = flexOf(s.layer, s.ch, s.y - OY, look)
+    if (turn?.mirror) s.x = FRAME_W - 1 - s.x
+  }
+  apply(held?.front?.[view], 'heldFront', 1)
+  paintStrokes(look, pal, out, hairy)
+  return out
+}
+
+/** 给每一笔定颜色：花纹、渐变发、调色板依次看 */
+function paintStrokes(
+  look: Look,
+  pal: Record<string, string>,
+  strokes: Stroke[],
+  hairy: Set<Stroke>
+) {
+  const tipped = tipColors(look, strokes, hairy)
+  const pattern = look.pattern
+  const shade =
+    pattern && mixHex(pattern.color, SHADE, pattern.target === 't' ? TOP_SHADE : BOTTOM_SHADE)
+  for (const s of strokes)
+    s.color =
+      (pattern && shade && patternAt(pattern, shade, s.ch, s.x, s.y)) ||
+      (hairy.has(s) ? tipped?.(s.y, s.ch) : undefined) ||
+      (pal[s.ch] ?? '#ff00ff')
 }
 
 /** 渐变发从发根往发梢分几档 */
 const TIP_STEPS = 3
 /** 发根这一段不变色（按头发的高度算） */
 const TIP_FROM = 0.3
-/** 渐变发每一格的颜色：从发根到发梢分档混进发梢色，高光跟着变；往上竖的发型发梢在上面。
- *  没有发梢色时返回 undefined */
-function tipColors(look: Look, g: (string | null)[][], hairCells: boolean[][]) {
+/** 渐变发每一笔的颜色：从发根到发梢分档混进发梢色，高光跟着变；往上竖的发型发梢在上面。
+ *  发根发梢的范围按最后叠出来、最上面一笔还是头发的格子算。没有发梢色时返回 undefined */
+function tipColors(look: Look, strokes: readonly Stroke[], hairy: Set<Stroke>) {
   const tip = look.tip
   if (!tip) return undefined
+  const shown = new Map<number, Stroke>()
+  for (const s of strokes)
+    if (s.x >= 0 && s.y >= 0 && s.x < FRAME_W && s.y < FRAME_H) shown.set(s.y * FRAME_W + s.x, s)
   let top = FRAME_H,
     bottom = -1
-  g.forEach((row, y) =>
-    row.forEach((ch, x) => {
-      if (!hairCells[y][x] || !ch || !'hHL'.includes(ch)) return
-      top = Math.min(top, y)
-      bottom = Math.max(bottom, y)
-    })
-  )
+  for (const s of shown.values()) {
+    if (!hairy.has(s)) continue
+    top = Math.min(top, s.y)
+    bottom = Math.max(bottom, s.y)
+  }
   if (bottom <= top) return undefined
   const up = HAIR[look.hair].up
   const shades = Array.from({ length: TIP_STEPS + 1 }, (_, k) => {
@@ -2301,9 +2425,9 @@ function tipColors(look: Look, g: (string | null)[][], hairCells: boolean[][]) {
       string
     >
   })
-  return (x: number, y: number, ch: string) => {
-    if (!hairCells[y][x] || !'hHL'.includes(ch)) return undefined
-    const t = (up ? bottom - y : y - top) / (bottom - top)
+  // 被盖住的笔（摆头发时会露出来）可能在范围外，按最近的一头算
+  return (y: number, ch: string) => {
+    const t = Math.min(1, (up ? bottom - y : y - top) / (bottom - top))
     return shades[Math.round(Math.max(0, (t - TIP_FROM) / (1 - TIP_FROM)) * TIP_STEPS)][ch]
   }
 }
@@ -2326,6 +2450,7 @@ function patternAt(p: Pattern, shade: string, ch: string, x: number, y: number) 
   return ch === p.target ? p.color : shade
 }
 
+/** 头像和捏人界面画的一帧：站姿和原来的四帧走路，flip 是朝左时整张翻过来 */
 function drawFrame(
   ctx: CanvasRenderingContext2D,
   ox: number,
@@ -2336,37 +2461,19 @@ function drawFrame(
   f: number,
   flip: boolean
 ) {
-  const { g, hairCells } = compose(look, view, f)
-  const tipped = tipColors(look, g, hairCells)
-  const pattern = look.pattern
-  const shade =
-    pattern && mixHex(pattern.color, SHADE, pattern.target === 't' ? TOP_SHADE : BOTTOM_SHADE)
-  const bob = f % 2 === 1 ? -1 : 0
+  const stance = walk4(view, f)
+  const g: (string | null)[] = Array(FRAME_W * FRAME_H).fill(null)
+  for (const s of sketch(look, pal, view, stance)) {
+    const y = s.group ? s.y + stance.bob : s.y
+    if (s.x >= 0 && y >= 0 && s.x < FRAME_W && y < FRAME_H) g[y * FRAME_W + s.x] = s.color
+  }
   for (let y = 0; y < FRAME_H; y++)
     for (let x = 0; x < FRAME_W; x++) {
-      const sx = flip ? FRAME_W - 1 - x : x
-      const ch = g[y][sx]
-      if (!ch) continue
-      const patterned = pattern && shade && patternAt(pattern, shade, ch, sx, y - bob)
-      ctx.fillStyle = patterned || tipped?.(sx, y, ch) || (pal[ch] ?? '#ff00ff')
+      const color = g[y * FRAME_W + (flip ? FRAME_W - 1 - x : x)]
+      if (!color) continue
+      ctx.fillStyle = color
       ctx.fillRect(ox + x, oy + y, 1, 1)
     }
-}
-
-/** 一个村民的走路图集：4 列帧 × 4 行朝向（下、右、上、左）。key 是头像用的模板编号 */
-export function villagerAtlas(key: string): HTMLCanvasElement {
-  const look = lookOf(key)
-  const pal = palette(look)
-  const canvas = document.createElement('canvas')
-  canvas.width = FRAME_W * 4
-  canvas.height = FRAME_H * 4
-  const ctx = canvas.getContext('2d')!
-  DIRECTIONS.forEach((dir, row) => {
-    const view: View = dir === 'down' || dir === 'up' ? dir : 'side'
-    for (let f = 0; f < 4; f++)
-      drawFrame(ctx, f * FRAME_W, row * FRAME_H, look, pal, view, f, dir === 'left')
-  })
-  return canvas
 }
 
 /** 头像：正面站姿的头和肩，23×23 格放大 4 倍；从头顶上方 3 行裁起（大葱头的叶尖裁掉一截） */
