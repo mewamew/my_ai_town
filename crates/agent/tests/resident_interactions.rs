@@ -610,9 +610,8 @@ fn chat_turn_fallbacks_yield_the_turn_without_speaking_for_the_resident() {
     );
 }
 
-/// 答应同行后跟着走的村民一路不请求模型，到了地方才醒来，观察里写着到了哪儿。
-#[test]
-fn following_resident_stays_quiet_until_the_walk_arrives() {
+/// 甲乙两处各是一间屋，甲处 (5,2) 有门通到乙处 (2,2)；化身从甲处落脚点进场。
+fn two_rooms() -> kernel::World {
     use kernel::avatar::{Area, Portal, Spot, Surface, WalkMap};
     let spot = |locale: &str, x: f64, y: f64| Spot {
         locale: locale.into(),
@@ -620,6 +619,8 @@ fn following_resident_stays_quiet_until_the_walk_arrives() {
         position: [x, y],
     };
     let mut w = world();
+    w.topo.entry =
+        Some(serde_json::from_value(json!({"locale":"loc_a","station":"st_a"})).unwrap());
     w.walk_map = Some(std::sync::Arc::new(WalkMap {
         version: 1,
         svg_units_per_metre: 12.,
@@ -648,6 +649,13 @@ fn following_resident_stays_quiet_until_the_walk_arrives() {
         }],
         ..Default::default()
     }));
+    w
+}
+
+/// 答应同行后跟着走的村民一路不请求模型，到了地方才醒来，观察里写着到了哪儿。
+#[test]
+fn following_resident_stays_quiet_until_the_walk_arrives() {
+    let mut w = two_rooms();
     let mut r = runtime(&mut w, Limits::default());
     w.spawn("r2", "何青", "loc_a").unwrap();
     w.enable_agent("r2").unwrap();
@@ -692,6 +700,64 @@ fn following_resident_stays_quiet_until_the_walk_arrives() {
         .unwrap()
         .content
         .contains("到了乙地，同行结束"));
+}
+
+/// 村民带路、跟着的是自己走的化身：化身站着没跟上，带路人到了也不醒来另作打算（雾港凶案里
+/// 何青到了苏晴家就对着空屋子说「到了」）；等满几分钟算没跟上、同行结束，他才醒来看到实际结果。
+#[test]
+fn resident_leader_waits_for_the_avatar_until_the_walk_really_ends() {
+    let mut w = two_rooms();
+    let mut r = runtime(&mut w, Limits::default());
+    let look = protocol::Appearance {
+        marker: "旅".into(),
+        color: "#387963".into(),
+        profile: None,
+        look: None,
+    };
+    w.avatar_enter("旅人", look).unwrap();
+    let rev = w.avatar().unwrap().actions.revision;
+    w.avatar_interact(
+        "walk",
+        rev,
+        &Command::Offer {
+            partner_id: "r1".into(),
+            interaction: InteractionKind::Walk {
+                leader: "r1".into(),
+                locale: Some("loc_b".into()),
+            },
+            message: "你带我去乙地看看吧。".into(),
+        },
+    )
+    .unwrap();
+    let q = life_request(&mut r, &mut w);
+    reply(
+        &mut r,
+        &mut w,
+        &q,
+        "reply_invitation",
+        json!({"interaction_id":"walk","accept":true,"message":"走，我带你去。"}),
+    );
+    let mut ticks = 0;
+    while w.interactions().of("r1", "walk").unwrap().status == InteractionStatus::Running {
+        assert!(
+            r.poll(&mut w, true).is_empty(),
+            "化身没跟上时带路人原地等，不请求模型"
+        );
+        w.step(0.1);
+        ticks += 1;
+        assert!(ticks < 200, "没跟上的人应该在几分钟内退出同行");
+    }
+    assert_eq!(w.actor("r1").unwrap().locus.locale, "loc_b");
+    assert_eq!(w.avatar().unwrap().locus.locale, "loc_a");
+    let walk = w.interactions().of("r1", "walk").unwrap();
+    assert_eq!(walk.status, InteractionStatus::Interrupted);
+    let woke = request(&mut r, &mut w);
+    assert!(woke
+        .messages
+        .last()
+        .unwrap()
+        .content
+        .contains("旅人没跟上阿树，同行结束"));
 }
 
 /// 目标里提到的人来了：正在停留的人提前结束停留醒来，不必站满提前排好的时长。

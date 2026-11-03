@@ -90,6 +90,38 @@ impl World {
                 .is_some_and(|a| a.actions.agent_controlled && !a.player_controlled())
     }
 
+    /// 受 Agent 控制的带路人已经站在说好的目的地、手上没有别的事，同行却还没结束：有人还没跟上
+    /// （多半是自己走的化身）。他在原地等，不另作打算；人到齐、有人没跟上或不跟了，同行结束时
+    /// 才醒来，醒来看到的就是实际结果，不会对着空屋子说「到了」。
+    pub fn awaiting_followers(&self, actor: &str) -> bool {
+        let (Some(walk), Some(a)) = (self.interactions.walk_led_by(actor), self.actors.get(actor))
+        else {
+            return false;
+        };
+        a.actions.agent_controlled
+            && !a.player_controlled()
+            && a.plan.is_empty()
+            && a.current.action.is_none()
+            && a.current.is_open_ended()
+            && a.free_walk.is_none()
+            && matches!(&walk.kind, InteractionKind::Walk { locale: Some(dest), .. } if *dest == a.locus.locale)
+    }
+
+    /// 同行的人到了带路人身边：在同一个地点里，或在同一空间里离他 ARRIVE_REACH 以内
+    /// （带路人站在地点入口时，跟着的人停在身后几步、可能还在路上）。
+    fn beside_leader(&self, member: &str, leader: &str) -> bool {
+        if self.actors[member].locus.locale == self.actors[leader].locus.locale {
+            return true;
+        }
+        let reach = crate::avatar::Reach::new(self);
+        reach
+            .talk_spot(member)
+            .zip(reach.talk_spot(leader))
+            .is_some_and(|(m, l)| {
+                m.space == l.space && distance(m.position, l.position) <= ARRIVE_REACH
+            })
+    }
+
     /// 同行开始（邀请被接受，或交谈里的提议被答应）：成员已经写进聊天，路上默认安静；
     /// 跟随的村民换上「跟着某人」的活动，带路人和玩家操控的人照常自由行动。
     /// 受 Agent 控制的带路人说好了目的地就直接出发。
@@ -267,6 +299,9 @@ impl World {
             .filter(|m| **m != leader)
             .cloned()
             .collect();
+        // 带路人已经停在目的地等着：还没走到他身边的人也算落后，等满 LOST_MINUTES 就算没跟上，
+        // 不然站在二十几米外不进来的人会让他一直干等到同行超时
+        let waiting = self.awaiting_followers(&leader);
         let obstacles = self.avatar_obstacles();
         for (rank, follower) in followers.iter().enumerate() {
             let able = self
@@ -315,7 +350,7 @@ impl World {
                 // 带路人走在没有几何的路段上：看不出远近，不算落后
                 (_, None) => true,
                 _ => false,
-            };
+            } && (!waiting || self.beside_leader(follower, &leader));
             let state = self.walk_trails.0.get_mut(id).expect("上面已建");
             let apart = state.apart.entry(follower.clone()).or_default();
             *apart = if together && !stuck {
@@ -325,7 +360,8 @@ impl World {
             };
             if *apart >= LOST_MINUTES {
                 let name = self.actor_name(&leader);
-                self.drop_follower(id, follower, &format!("跟丢了{name}"));
+                let why = if waiting { "没跟上" } else { "跟丢了" };
+                self.drop_follower(id, follower, &format!("{why}{name}"));
             }
         }
         if let Some(state) = self.walk_trails.0.get_mut(id) {
@@ -359,20 +395,7 @@ impl World {
         let settled_place = self.topo.place_of(&here).is_some()
             && !self.actors[leader].current.is_travel()
             && self.actors[leader].free_walk.is_none();
-        // 跟着的人停在带路人身后几步：带路人站在地点的入口时，身后那几步可能还在路上，也算到了
-        let reach = crate::avatar::Reach::new(self);
-        let leader_spot = reach.talk_spot(leader);
-        let close = |m: &String| {
-            self.actors[m].locus.locale == here
-                || reach
-                    .talk_spot(m)
-                    .zip(leader_spot.as_ref())
-                    .is_some_and(|(s, l)| {
-                        s.space == l.space && distance(s.position, l.position) <= ARRIVE_REACH
-                    })
-        };
-        let all_here = members.iter().all(close);
-        drop(reach);
+        let all_here = members.iter().all(|m| self.beside_leader(m, leader));
         let arrived = match locale {
             Some(dest) => here == dest && all_here && !self.actors[leader].current.is_travel(),
             None => {

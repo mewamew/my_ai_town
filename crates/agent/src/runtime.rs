@@ -823,13 +823,15 @@ fn wants_request(world: &World, s: &Session) -> bool {
     let Some(a) = world.actor(&s.actor_id) else {
         return false;
     };
+    // 带路到了目的地、跟着的人还没到齐时也不算空闲：原地等，同行结束时再想
     let idle = a.plan.is_empty()
         && matches!(
             a.current.kind,
             kernel::world::ActKind::Placeholder {
                 cond: kernel::intent::StopCond::Never
             }
-        );
+        )
+        && !world.awaiting_followers(&s.actor_id);
     let responding =
         world.interactions().has_talk_invitation(&s.actor_id) && world.talk_available(&s.actor_id);
     // 交谈的成员和同行里跟着走的人占着活动，只在轮到自己说话时想；带路人边走边说也是轮到才想。
