@@ -48,3 +48,37 @@ export function effectiveQuality(choice = storedQuality()): Quality {
 export function pixelRatioCap(quality: Quality) {
   return quality === 'ultra' || quality === 'high' ? 2 : quality === 'mid' ? 1.5 : 1
 }
+
+/** 失焦模糊：画面上离焦点（选中的人）远的地方糊多少。默认「轻」，「电影感」是原来的强度 */
+export type DepthBlur = 'off' | 'light' | 'cinema'
+
+const BLUR_KEY = 'town-2d:hd-blur'
+const BLURS: DepthBlur[] = ['off', 'light', 'cinema']
+
+export const depthBlurLabels: Record<DepthBlur, string> = {
+  off: '关',
+  light: '轻',
+  cinema: '电影感',
+}
+export const depthBlurNotes: Record<DepthBlur, string> = {
+  off: '整个画面都清楚',
+  light: '离焦点远的地方稍微柔一点；焦点跟着选中的人',
+  cinema: '像拍微缩模型：焦点上下和远处都糊，人站在画面边上时另一半全糊',
+}
+
+export function storedDepthBlur(): DepthBlur {
+  try {
+    const value = localStorage.getItem(BLUR_KEY) as DepthBlur | null
+    return value && BLURS.includes(value) ? value : 'light'
+  } catch {
+    return 'light'
+  }
+}
+
+export function saveDepthBlur(level: DepthBlur) {
+  try {
+    localStorage.setItem(BLUR_KEY, level)
+  } catch {
+    // 存储不可用时只本次生效
+  }
+}

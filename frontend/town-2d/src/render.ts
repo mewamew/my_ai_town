@@ -45,7 +45,7 @@ import { PROP_HALF, WalkRoutes } from './map/route'
 import { LEGACY_UNITS_PER_METRE, OUTDOOR_SPACE, roomRect } from './map/grid'
 import { village, type MapTheme } from './map/themes'
 import { el } from 'town-shared/svg'
-import type { Quality } from 'town-shared/quality'
+import type { DepthBlur, Quality } from 'town-shared/quality'
 // 地图装配：静态图层、人物/气泡、镜头各自拥有状态；公共观察接口保持不变。
 
 export interface TownMapOptions {
@@ -1180,6 +1180,10 @@ export class TownMap {
   /** 地图画质（设定 · 显示） */
   setRenderQuality(quality: Quality) {
     this.hd?.setQuality(quality)
+  }
+  /** 失焦模糊（设定 · 显示）；立体场景还没建好时，它建好后自己读存下的那一档 */
+  setDepthBlur(level: DepthBlur) {
+    this.hd?.setDepthBlur(level)
   }
   mapPitch() {
     return this.hd?.pitch

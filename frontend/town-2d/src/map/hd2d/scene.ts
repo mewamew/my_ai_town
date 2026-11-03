@@ -70,7 +70,13 @@ import { colonnadeFront, lighthouseTower, vaultRoof } from './structures'
 import { dissolvable } from './dissolve'
 import { onStandee, stand, standee, texture } from './standee'
 import type { MapTheme } from '../themes/types'
-import { effectiveQuality, pixelRatioCap, type Quality } from 'town-shared/quality'
+import {
+  effectiveQuality,
+  pixelRatioCap,
+  storedDepthBlur,
+  type DepthBlur,
+  type Quality,
+} from 'town-shared/quality'
 
 // 立体像素场景：垫在 SVG 下面，镜头跟着 SVG 的视口走。
 // 世界坐标：x 同地图，z = 地图 y，y 向上为高度。镜头按俯角倾斜；树、路灯、村民这些立牌按俯角转向镜头。
@@ -109,6 +115,17 @@ const DOOR_REACH = 16 * PIXEL
 const WINDOW_REACH = 22 * PIXEL
 /** 屋顶从盖严到全掀开（或反过来）按像素格溶解的时长（毫秒） */
 const DISSOLVE_MS = 160
+/** 失焦模糊三档（设定 · 显示）：清晰带上下各占画面高度的多少，按画面高度、按远近糊的强度（原来的倍数），
+ *  焦点跟着选中的人走的高度范围（从下往上）。「电影感」是原来的样子：人站在画面边上时清晰带跟到边上，
+ *  另一半全糊，最糊处半径约 18 个屏幕像素，看全镇时太重；默认「轻」。「关」的清晰带盖满画面，色差也没了 */
+const DEPTH_BLUR: Record<
+  DepthBlur,
+  { band: number; tilt: number; depth: number; follow: readonly [number, number] }
+> = {
+  off: { band: 1, tilt: 0, depth: 0, follow: [0.18, 0.82] },
+  light: { band: 0.32, tilt: 0.34, depth: 0.3, follow: [0.4, 0.6] },
+  cinema: { band: 0.16, tilt: 1, depth: 1, follow: [0.18, 0.82] },
+}
 
 function storedPitch() {
   try {
@@ -301,6 +318,8 @@ export class HdScene {
   private overlay: PerfOverlay | null = null
   /** 此刻用的画质档 */
   private quality: Quality = 'high'
+  /** 失焦模糊的档（见 DEPTH_BLUR） */
+  private depthBlur = storedDepthBlur()
   /** 「自动」画质从什么时候开始量、已经降过几档 */
   private measureFrom = 0
   private drops = 0
@@ -756,8 +775,6 @@ export class HdScene {
       mid = quality === 'mid'
     this.bloom.enabled = !low
     this.sceneDepth.captureDepth = !low
-    for (const p of this.tiltShift) p.enabled = mid
-    this.bokeh.enabled = !low && !mid
     // 倒影镜头和多重采样只在高档以上；中档海面只反射天色和日光路径。
     // 2 倍像素比的屏幕本身就够细，再开 4× 多重采样看不出差别、渲染目标却要多占几百兆，只在 1.5 倍以下开
     this.reflection.enabled = !low && !mid
@@ -773,11 +790,28 @@ export class HdScene {
     // 村民按像素法线分明暗、头发高光、金属闪点：高档以上
     villagerLight.uShape.value = low || mid ? 0 : 1
     this.quality = quality
+    this.enableBlurPasses()
     this.volumetric.enabled = !low && !mid
     this.finish.uniforms.grain.value = low ? 0 : mid ? 0.025 : 0.035
     this.finish.uniforms.aberration.value = low || mid ? 0 : 0.012
     this.resize()
     this.applyLight()
+  }
+
+  /** 失焦模糊换档（设定 · 显示） */
+  setDepthBlur(level: DepthBlur) {
+    if (level === this.depthBlur) return
+    this.depthBlur = level
+    this.enableBlurPasses()
+    this.updateTiltShift()
+    this.request()
+  }
+
+  /** 景深按画质画：中档两遍高斯移轴，高档以上散景；失焦模糊「关」时两种都不画 */
+  private enableBlurPasses() {
+    const on = this.depthBlur !== 'off'
+    for (const p of this.tiltShift) p.enabled = on && this.quality === 'mid'
+    this.bokeh.enabled = on && this.quality !== 'mid' && this.quality !== 'low'
   }
 
   /** 焦点跟着谁：选中的村民或玩家操控的人（null 回到画面中间）；talking 时清晰带收窄，像对话时的特写 */
@@ -788,14 +822,15 @@ export class HdScene {
     this.request()
   }
 
-  /** 跟着的人的身子在画面上的高度（从下往上 0～1）；不在画面里时为 undefined */
+  /** 跟着的人的身子在画面上的高度（从下往上 0～1），只在这一档跟人的范围里跟；不在画面里时为 undefined */
   private subjectFocus() {
     const at = this.focusSubject && this.villagers.drawnAt(this.focusSubject)
     if (!at) return
     const p = new THREE.Vector3(at[0], 0, at[1]).project(this.camera)
     const half = VILLAGER_HEIGHT / (this.camera.top - this.camera.bottom)
     const y = (p.y + half) * 0.5 + 0.5
-    return y > 0.02 && y < 0.98 && Math.abs(p.x) < 1 ? Math.max(0.18, Math.min(0.82, y)) : undefined
+    const [low, high] = DEPTH_BLUR[this.depthBlur].follow
+    return y > 0.02 && y < 0.98 && Math.abs(p.x) < 1 ? Math.max(low, Math.min(high, y)) : undefined
   }
 
   /** 每帧画之前：焦点往跟着的人那里缓动，约 400 毫秒到位；交谈时清晰带慢慢收窄 */
@@ -834,10 +869,12 @@ export class HdScene {
     const near = Math.min(1, TILT_SHIFT_VIEW_HEIGHT / this.viewHeight)
     // 低角度保留前、中、后景层次；转向俯视时逐渐收小离焦，方便读地图与选中人物。
     const overhead = smooth(52, PITCH_MAX, this.pitchDegrees)
-    const amount = lerp(3.2, 0.35, overhead) * pr * near
-    // 清晰带跟着选中的人；没选人时跟着露出来的那块地图走：手机上村民卡盖住下半屏时，上半屏选中的人不糊
+    const level = DEPTH_BLUR[this.depthBlur]
+    const amount = lerp(3.2, 0.35, overhead) * pr * near * level.tilt
+    // 清晰带跟着选中的人；没选人时跟着露出来的那块地图走：手机上村民卡盖住下半屏时，上半屏选中的人不糊。
+    // 交谈时收窄一截，像对话时的特写
     const focus = this.focusNow ?? this.defaultFocus()
-    const band = lerp(0.16, 0.1, this.focusTalk)
+    const band = level.band - 0.06 * this.focusTalk
     const depthSpan = (this.viewHeight * this.tilt.cos) / this.tilt.sin
     const distance = Math.min(
       this.viewHeight * CAMERA_DISTANCE_PER_VIEW_HEIGHT,
@@ -847,7 +884,7 @@ export class HdScene {
       u.amount.value = amount
       u.focus.value = focus
       u.band.value = band
-      u.depthAmount.value = 2.4 * (1 - overhead) * pr * near
+      u.depthAmount.value = 2.4 * (1 - overhead) * pr * near * level.depth
       u.cameraNear.value = this.camera.near
       u.cameraFar.value = this.camera.far
       u.focusDepth.value = distance + (focus - 0.5) * depthSpan

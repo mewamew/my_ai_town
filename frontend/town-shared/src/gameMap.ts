@@ -2,7 +2,7 @@ import type { AvatarLook, AvatarState } from './avatar/types'
 import type { RosterMember, ServerMsg } from './protocol'
 import type { PropView } from './props/types'
 import type { Insets } from './mapView'
-import type { Quality } from './quality'
+import type { DepthBlur, Quality } from './quality'
 export type ResidentEntry = { locale: string; member: RosterMember }
 /** 居民在屏幕上的范围（CSS 像素）：脚底点的 x 与 y、头顶的 y、身体半宽 */
 export interface ScreenBox {
@@ -80,6 +80,8 @@ export interface GameMap {
   setMapPitch?(degrees: number): void
   /** 画质：像素比与后期效果，只影响本机画面 */
   setRenderQuality?(quality: Quality): void
+  /** 失焦模糊：离焦点远的地方糊多少，只影响本机画面 */
+  setDepthBlur?(level: DepthBlur): void
   /** 画面想告诉玩家的一句话（比如画质「自动」跑不动、降了一档），外壳放进事件栏 */
   onRenderNotice?: ((text: string) => void) | null
   /** 地图四边被面板盖住多少（CSS 像素）；跟随和「看这个人」会把目标放进露出来的那块 */

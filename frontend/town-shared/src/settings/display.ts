@@ -12,15 +12,20 @@ import {
   windows,
 } from '../platform'
 import {
+  depthBlurLabels,
+  depthBlurNotes,
   effectiveQuality,
   qualityLabels,
   qualityNotes,
+  saveDepthBlur,
   saveQuality,
+  storedDepthBlur,
   storedQuality,
+  type DepthBlur,
   type QualityChoice,
 } from '../quality'
 
-// 显示：全屏 / 界面动画 / 文字大小 / 地图俯角，全部存本机 localStorage、即时生效，不走后端。
+// 显示：全屏 / 界面动画 / 文字大小 / 地图俯角 / 失焦模糊 / 画质，全部存本机 localStorage、即时生效，不走后端。
 // 与原「游戏设置」对话框（gamePreferences）同一份存储键；入口已合并进设定中心。
 const KEY = 'town-player-preferences'
 
@@ -140,6 +145,33 @@ export function createDisplayPage(map: GameMap | undefined, game: boolean): Sett
   }
   rows.append(pitchRow)
 
+  // 失焦模糊：只在有立体场景的地图上有；画质「低」本来就不糊，说明里提一句
+  const blurChoice = segmented(
+    '失焦模糊',
+    (['off', 'light', 'cinema'] as const).map((value) => ({
+      value,
+      label: depthBlurLabels[value],
+    })),
+    (value) => {
+      const level = value as DepthBlur
+      saveDepthBlur(level)
+      map?.setDepthBlur?.(level)
+      syncBlur()
+    }
+  )
+  const blurRow = settingRow('失焦模糊', depthBlurNotes.light, blurChoice.el)
+  const blurNote = blurRow.querySelector('.set-row-desc')
+  const syncBlur = () => {
+    const level = storedDepthBlur()
+    blurChoice.set(level)
+    if (blurNote)
+      blurNote.textContent =
+        effectiveQuality() === 'low' ? '画质「低」时不糊' : depthBlurNotes[level]
+  }
+  blurRow.hidden = !map?.setDepthBlur
+  rows.append(blurRow)
+  syncBlur()
+
   // 画质：只在有立体场景的地图上有意义；即时生效
   const qualityChoice = segmented(
     '画质',
@@ -152,6 +184,7 @@ export function createDisplayPage(map: GameMap | undefined, game: boolean): Sett
       saveQuality(choice)
       map?.setRenderQuality?.(effectiveQuality(choice))
       syncQuality()
+      syncBlur()
     }
   )
   const qualityRow = settingRow('画质', qualityNotes.auto, qualityChoice.el)
