@@ -1,6 +1,6 @@
 import type { Atlas } from 'town-shared/mapDocument'
 import { buildingKind } from '../buildings'
-import { roomRect, toPx } from '../grid'
+import { PIXEL, roomRect, toPx } from '../grid'
 import { fbm, hash } from './noise'
 
 // 2D 小镇是四面环海的孤岛。海岸分三步算出来，全部按地面画布的像素算，一个像素 = PIXEL 个世界单位：
@@ -10,7 +10,9 @@ import { fbm, hash } from './noise'
 //    成了海湾；硬的地方留下来，成了岬角；伸进海里的地方三面受浪，啃得更快。
 //    啃完再把孤立的尖角和一格的缺口抹平；
 // 3. 啃断后留在海里的小块陆地和近岸随机撒的几处，画成礁石。
-// 镇上的东西四周始终留一圈陆地。港口和海塔朝海的一侧把海岸收到旁边，港口再往海里伸出栈桥。
+// 镇上的东西四周始终留一圈陆地。港口和海塔朝海的一侧把海岸收到旁边。
+// 港口的木码头朝南临水的一面往下画出木墙和桩（quay），再从岸线往水里伸出栈桥：
+// 这里只定位置和尺寸，桥是立体场景搭的（hd2d/pier.ts），桥下仍是水。
 
 /** 海岸离凸包的平均距离，大弯的深浅，扭曲的幅度（像素） */
 const COAST = 34
@@ -29,29 +31,67 @@ export const MAX_DEPTH = 40
 const wave = (x: number, y: number, size: number, s: number) =>
   Math.max(-1, Math.min(1, (fbm((x * 40) / size, (y * 40) / size, s) - 0.5) * 3))
 
+/** 一条栈桥：根部在岸线上，横平竖直地伸进水里，尽头一块平台往一边伸出去（L 形）。
+ *  平台伸向「前面」：横向的桥是南边（朝镜头），竖向的桥是东边；桥身另一边整条留给船靠 */
 export interface Dock {
+  /** 根部、桥身中线上的一点（像素格的边界；场景里换成地图坐标） */
   x: number
   y: number
+  /** 朝水里的方向（横竖之一） */
   dx: number
   dy: number
+  /** 从根部往外的长度（含尽头平台） */
   length: number
+  /** 桥身宽 */
+  width: number
+  /** 尽头平台沿栈桥方向的进深、横向的宽（从桥身后沿量起）；和桥身一样宽时就是没有平台 */
+  head: [number, number]
 }
+
+/** 地图坐标的栈桥上，沿桥 u、横过桥 v（地面像素，可带小数）换成地图坐标 [x, y]。
+ *  v 从桥身后沿量起，往前（横向桥朝南、竖向桥朝东）增大 */
+export function placer(d: Dock) {
+  const W = d.width / PIXEL
+  return (u: number, v: number): [number, number] => {
+    const a = u * PIXEL,
+      b = (v - W / 2) * PIXEL
+    return [d.x + d.dx * a + Math.abs(d.dy) * b, d.y + d.dy * a + Math.abs(d.dx) * b]
+  }
+}
+
+/** 地图坐标的栈桥的平面形状（地面像素格）：长 L，桥身占 v ∈ [0, W)，尽头平台从 headU 起占 v ∈ [0, V) */
+export function footprint(d: Dock) {
+  const L = Math.round(d.length / PIXEL),
+    V = Math.round(d.head[1] / PIXEL),
+    W = Math.round(d.width / PIXEL),
+    headU = L - Math.round(d.head[0] / PIXEL)
+  const inside = (u: number, v: number) =>
+    u >= 0 && u < L && v >= 0 && v < V && (u >= headU || v < W)
+  return { L, V, W, headU, inside }
+}
+
+/** 栈桥桥身宽、尽头平台的进深和宽（像素） */
+const PIER = { width: 8, headDepth: 7, headWidth: 20 }
+/** 码头临水朝南的一面往下画几行：两行木墙，一行露出水面的桩；桩每隔 POST 像素一根 */
+export const QUAY = { face: 3, post: 8 }
 
 export interface Island {
   /** 海面像素（不含港口和公园里原有的水） */
   sea: Uint8Array
-  /** 栈桥像素：画木板，不算水 */
+  /** 栈桥（含尽头平台）在水面上的投影，桥下仍是水 */
   piers: Uint8Array
+  /** 码头朝南临水那一面往下画的木墙：1、2 是两行墙板，3 是露出水面的桩；不算水 */
+  quay: Uint8Array
   /** 礁石像素：画石头，不算水 */
   rocks: Uint8Array
-  /** 每条栈桥：起点和朝海的方向（像素），长度（像素） */
+  /** 每条栈桥（像素） */
   docks: Dock[]
   /** 陆地像素离海多远，海面像素离岸多远，都到 MAX_DEPTH 为止 */
   toSea: Uint8Array
 }
 
 /** 两遍倒角距离变换：每个像素到最近 source 像素的距离（像素，近似欧氏） */
-function distance(source: Uint8Array, w: number, h: number) {
+export function distance(source: Uint8Array, w: number, h: number) {
   const d = new Float32Array(w * h)
   for (let i = 0; i < w * h; i++) d[i] = source[i] ? 0 : 1e9
   const D = Math.SQRT2
@@ -144,8 +184,15 @@ interface Anchor {
   near: number
 }
 
-/** 港口和海塔：朝镇外（离镇上东西的重心）的方向，海岸在它们朝海的一侧收近 */
-function anchorsOf(atlas: Atlas, content: Uint8Array, pw: number, ph: number): Anchor[] {
+/** 港口和海塔：朝镇外（离镇上东西的重心）的方向，海岸在它们朝海的一侧收近。
+ *  港口的方向用 facing 给的横竖方向，和港口里的水、栈桥一致 */
+function anchorsOf(
+  atlas: Atlas,
+  content: Uint8Array,
+  facing: Map<string, [number, number]>,
+  pw: number,
+  ph: number
+): Anchor[] {
   let cx = 0,
     cy = 0,
     n = 0
@@ -158,15 +205,17 @@ function anchorsOf(atlas: Atlas, content: Uint8Array, pw: number, ph: number): A
   cx /= Math.max(1, n)
   cy /= Math.max(1, n)
   const anchors: Anchor[] = []
-  const outward = (x: number, y: number, half: number, near: number) => {
+  const outward = (x: number, y: number, half: number, near: number, toward?: number[]) => {
     const len = Math.hypot(x - cx, y - cy) || 1
-    anchors.push({ x, y, dx: (x - cx) / len, dy: (y - cy) / len, half, near })
+    const [dx, dy] = toward ?? [(x - cx) / len, (y - cy) / len]
+    anchors.push({ x, y, dx, dy, half, near })
   }
   for (const r of atlas.regions) {
     if (r.kind !== 'harbor' || !r.cells.length) continue
     const ax = r.cells.reduce((s, [c]) => s + toPx((c + 0.5) * r.cell_size), 0) / r.cells.length
     const ay = r.cells.reduce((s, [, k]) => s + toPx((k + 0.5) * r.cell_size), 0) / r.cells.length
-    outward(ax, ay, Math.sqrt(r.cells.length) * (r.cell_size / 6) * 0.5, NEAR.harbor)
+    const half = Math.sqrt(r.cells.length) * (r.cell_size / 6) * 0.5
+    outward(ax, ay, half, NEAR.harbor, facing.get(r.id))
   }
   for (const s of atlas.spaces) {
     if (buildingKind(s) !== 'lighthouse') continue
@@ -364,10 +413,13 @@ function scatterRocks(
   }
 }
 
-/** 栈桥：从港口中心朝镇外走到外海的岸边，从岸上往海里铺，宽 4 像素 */
+/** 栈桥：从港口中心顺着朝海的方向找到岸线（往回走出水、再往前走到水边），根部就在水边，
+ *  往外伸 38～50 像素，尽头一块平台往前伸出去；港口很宽的分两条。整条桥（含平台）下面都得是水，
+ *  半路碰到陆地或礁石就截短，太短不搭；平台放不下就不要平台 */
 function piersOf(
   sea: Uint8Array,
   water: Uint8Array,
+  rocks: Uint8Array,
   anchors: Anchor[],
   pw: number,
   ph: number,
@@ -376,58 +428,92 @@ function piersOf(
   const piers = new Uint8Array(pw * ph)
   const docks: Dock[] = []
   const inside = (x: number, y: number) => x > 1 && y > 1 && x < pw - 2 && y < ph - 2
+  const wet = (x: number, y: number) =>
+    inside(x, y) &&
+    (sea[y * pw + x] || water[y * pw + x]) &&
+    !rocks[y * pw + x] &&
+    !piers[y * pw + x]
   for (const a of anchors) {
     if (a.near !== NEAR.harbor) continue
-    const horizontal = Math.abs(a.dx) >= Math.abs(a.dy)
-    const sx = horizontal ? Math.sign(a.dx) : 0,
-      sy = horizontal ? 0 : Math.sign(a.dy)
-    const offsets = a.half > 14 ? [-a.half * 0.55, a.half * 0.55] : [0]
+    const sx = a.dx,
+      sy = a.dy
+    // 一般一条；港口很宽时两条，中间放得下前一条的平台和后一条后面靠的船
+    const offsets = a.half > 50 ? [-a.half * 0.55, a.half * 0.55] : [0]
     offsets.forEach((off, k) => {
-      let x = Math.round(a.x + (horizontal ? 0 : off)),
-        y = Math.round(a.y + (horizontal ? off : 0))
-      // 记下进外海之前的最后一块陆地，栈桥从那里接出去
-      let landX = -1,
-        landY = -1
-      for (let n = 0; n < 200 && inside(x, y) && !sea[y * pw + x]; n++) {
-        if (!water[y * pw + x]) {
-          landX = x
-          landY = y
-        }
-        x += sx
-        y += sy
+      let x = Math.round(a.x + (sx ? 0 : off)),
+        y = Math.round(a.y + (sx ? off : 0))
+      for (let n = 0; n < 200 && wet(x, y); n++) ((x -= sx), (y -= sy))
+      for (let n = 0; n < 200 && inside(x, y) && !wet(x, y); n++) ((x += sx), (y += sy))
+      if (!wet(x, y)) return
+      // 横过桥面的一排像素（从桥身中线往后 back、往前 front）都是水
+      const half = PIER.width / 2
+      const across = (s: number, back: number, front: number) => {
+        for (let t = -back; t < front; t++)
+          if (!wet(x + sx * s + (sx ? 0 : t), y + sy * s + (sx ? t : 0))) return false
+        return true
       }
-      if (landX < 0 || !inside(x, y) || !sea[y * pw + x]) return
-      x = landX - 2 * sx
-      y = landY - 2 * sy
-      const length = 34 + Math.floor(hash(k, seed, 7) * 10)
-      let drawn = 0
-      for (let s = 0; s < length && inside(x + sx * s, y + sy * s); s++) {
-        drawn = s
-        for (let t = -1; t <= 2; t++) {
-          const qx = x + sx * s + (horizontal ? 0 : t),
-            qy = y + sy * s + (horizontal ? t : 0)
-          piers[qy * pw + qx] = 1
-        }
+      const want = 38 + Math.floor(hash(k, Math.round(a.x * 7 + a.y), seed + 7) * 13)
+      let length = 0
+      while (length < want && across(length, half, half)) length++
+      if (length < 16) return
+      let head = PIER.headWidth
+      for (let s = length - PIER.headDepth; s < length; s++)
+        if (!across(s, half, head - half)) head = PIER.width
+      for (let s = 0; s < length; s++) {
+        const front = (s >= length - PIER.headDepth ? head : PIER.width) - half
+        for (let t = -half; t < front; t++)
+          piers[(y + sy * s + (sx ? t : 0)) * pw + x + sx * s + (sx ? 0 : t)] = 1
       }
-      docks.push({ x, y, dx: sx, dy: sy, length: drawn })
+      // 根部记在像素格的边界上：朝正方向时是根部像素的左（上）沿，朝负方向时是右（下）沿
+      docks.push({
+        x: x + (sx < 0 ? 1 : 0),
+        y: y + (sy < 0 ? 1 : 0),
+        dx: sx,
+        dy: sy,
+        length,
+        width: PIER.width,
+        head: [PIER.headDepth, head],
+      })
     })
   }
-  for (let i = 0; i < pw * ph; i++) if (piers[i]) sea[i] = 0
   return { piers, docks }
 }
 
-/** 陆地离海、海面离岸的像素数，给沙滩和水深用 */
-function toSeaDistance(
+/** 码头朝南临水的一面：木码头正下方的水往下画 QUAY.face 行（栈桥底下不画），
+ *  前两行是墙板，第三行只在桩的位置有东西，其余仍是水 */
+function quayOf(
   sea: Uint8Array,
   water: Uint8Array,
+  deck: Uint8Array,
   piers: Uint8Array,
   pw: number,
   ph: number
 ) {
+  const quay = new Uint8Array(pw * ph)
+  for (let y = 1; y < ph - QUAY.face; y++)
+    for (let x = 0; x < pw; x++) {
+      if (!deck[(y - 1) * pw + x]) continue
+      for (let k = 1; k <= QUAY.face; k++) {
+        const i = (y + k - 1) * pw + x
+        if (!(sea[i] || water[i]) || piers[i]) break
+        const post = x % QUAY.post < 2
+        if (k < QUAY.face || post) quay[i] = k
+      }
+    }
+  for (let i = 0; i < pw * ph; i++)
+    if (quay[i]) {
+      sea[i] = 0
+      water[i] = 0
+    }
+  return quay
+}
+
+/** 陆地离海、海面离岸的像素数，给沙滩和水深用；栈桥架在水上，不算岸 */
+function toSeaDistance(sea: Uint8Array, water: Uint8Array, pw: number, ph: number) {
   const allWater = new Uint8Array(pw * ph)
   const land = new Uint8Array(pw * ph)
   for (let i = 0; i < pw * ph; i++) {
-    allWater[i] = sea[i] || (water[i] && !piers[i]) ? 1 : 0
+    allWater[i] = sea[i] || water[i] ? 1 : 0
     land[i] = allWater[i] ? 0 : 1
   }
   const toWater = distance(allWater, pw, ph),
@@ -439,17 +525,23 @@ function toSeaDistance(
 }
 
 /**
- * content 标出镇上的东西（不含原有水面），water 标出港口和公园里原有的水。
+ * content 标出镇上的东西（不含原有水面），water 标出港口和公园里原有的水（码头的木墙会从里面划掉），
+ * deck 标出港口的木码头，facing 是各港口朝海的方向（见 decor.ts）。
  */
 export function island(
   atlas: Atlas,
-  content: Uint8Array,
-  water: Uint8Array,
+  land: {
+    content: Uint8Array
+    water: Uint8Array
+    deck: Uint8Array
+    facing: Map<string, [number, number]>
+  },
   pw: number,
   ph: number,
   seed: number
 ): Island {
-  const anchors = anchorsOf(atlas, content, pw, ph)
+  const { content, water, deck, facing } = land
+  const anchors = anchorsOf(atlas, content, facing, pw, ph)
   const fromContent = distance(content, pw, ph)
   const locked = (i: number) => content[i] || water[i] || fromContent[i] <= RIM
   const { sea, band } = initialCoast(content, locked, pw, ph, seed)
@@ -457,6 +549,7 @@ export function island(
   pullCoast(sea, anchors, fromContent, locked, pw, ph)
   keepOpenSea(sea, pw, ph)
   const rocks = rocksOf(sea, content, band, anchors, pw, ph, seed)
-  const { piers, docks } = piersOf(sea, water, anchors, pw, ph, seed)
-  return { sea, piers, rocks, docks, toSea: toSeaDistance(sea, water, piers, pw, ph) }
+  const { piers, docks } = piersOf(sea, water, rocks, anchors, pw, ph, seed)
+  const quay = quayOf(sea, water, deck, piers, pw, ph)
+  return { sea, piers, quay, rocks, docks, toSea: toSeaDistance(sea, water, pw, ph) }
 }

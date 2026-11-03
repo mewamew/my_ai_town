@@ -8,6 +8,7 @@ import { fromPx, MARGIN, OUTDOOR_SPACE, PIXEL, pxIndex, roomPoint, toPx } from '
 import { WALL_CAP } from '../palette'
 import { OPEN, paintGround, treeShape, type Ground } from '../pixel/terrain'
 import type { Dock } from '../pixel/island'
+import { pier, PIER_DECK, pierLampCanvas } from './pier'
 import { fbm, hash, rng } from '../pixel/noise'
 import { Motes } from './motes'
 import { Villagers, type LiveMotion, type VillagerPlacement } from './villagers'
@@ -439,6 +440,7 @@ export class HdScene {
     const glowMap = new THREE.CanvasTexture(glowCanvas())
     glowMap.colorSpace = THREE.SRGBColorSpace
     this.addHouses(atlas, glowMap)
+    this.addPiers(ground, glowMap, seed)
     // 地标立牌和散落物先占地，剩下的空地再撒树、放微粒
     const open = this.placeStandees(atlas, ground, seed)
     const clear = { width: ground.width, height: ground.height, open }
@@ -1084,7 +1086,7 @@ export class HdScene {
     ground.rotation.x = -Math.PI / 2
     ground.position.set(-MARGIN + w / 2, 0, -MARGIN + h / 2)
     ground.receiveShadow = true
-    const coast = coastTexture(terrain.depth, terrain.shore, pw, ph)
+    const coast = coastTexture(terrain.depth, terrain.shore, terrain.calm, pw, ph)
     const { material, time, sparkle, sunPath } = outerMaterial(
       coast,
       this.horizon.haze,
@@ -1375,7 +1377,13 @@ export class HdScene {
 
   /** 户外地点的标志物立牌；立牌占的地方从空地里去掉 */
   private addLandmarks(atlas: Atlas, docks: Dock[], open: Uint8Array, pw: number, seed: number) {
-    for (const s of landmarkSprites(atlas, seed, docks, this.theme.landmarks)) {
+    const { wet, width, height } = this.groundWet
+    const water = (x: number, y: number) => {
+      const px = toPx(x),
+        py = toPx(y)
+      return px >= 0 && py >= 0 && px < width && py < height && wet[py * width + px] === 1
+    }
+    for (const s of landmarkSprites(atlas, seed, docks, this.theme.landmarks, water)) {
       // 逐帧动画的立牌按一帧的宽度算
       const frames = s.frames ?? 1,
         width = s.canvas.width / frames
@@ -1470,7 +1478,8 @@ export class HdScene {
     y: number,
     texelsUp: number,
     size: number,
-    on: number
+    on: number,
+    lift = 0
   ) {
     const sprite = new THREE.Sprite(
       new THREE.SpriteMaterial({
@@ -1481,8 +1490,11 @@ export class HdScene {
         opacity: 0,
       })
     )
-    // 沿立牌的方向抬高，屏幕上正好高出 texelsUp 个像素
-    this.upright.push((t) => onStandee(sprite, x, y, texelsUp, t, 40))
+    // 沿立牌的方向抬高，屏幕上正好高出 texelsUp 个像素；lift 是立牌底下垫高的世界单位（栈桥上的灯）
+    this.upright.push((t) => {
+      onStandee(sprite, x, y, texelsUp, t, 40)
+      sprite.position.y += lift
+    })
     sprite.scale.set(size, size, 1)
     this.scene.add(sprite)
     this.glows.push({ sprite, on })
@@ -1560,6 +1572,54 @@ export class HdScene {
         add(fromPx(x), fromPx(y), r, Math.floor(random() * 3), bush, 1.3)
         this.contacts.push({ x: fromPx(x), y: fromPx(y), r: r * 1.1, strength: bush ? 0.28 : 0.38 })
       }
+  }
+
+  /** 港口的栈桥（见 pier.ts）：桥身接上天气和灯光；尽头平台立一盏灯，入夜和路灯一起亮 */
+  private addPiers(ground: Ground, glowMap: THREE.Texture, seed: number) {
+    const G = this.theme.ground
+    // 废土沿用横担吊灯泡的破路灯，其余是木桩挑一盏马灯
+    const scrap = this.theme.lamp === 'scrap'
+    const post = texture(scrap ? lampCanvas(false, 'scrap') : pierLampCanvas(false)),
+      glass = texture(scrap ? lampCanvas(true, 'scrap') : pierLampCanvas(true))
+    const color = new THREE.Color(this.theme.light.lamp).multiplyScalar(1.5)
+    ground.docks.forEach((dock, k) => {
+      // 地形种子各张地图一样，按栈桥的位置再取一个
+      const own = Math.floor(hash(Math.round(dock.x), Math.round(dock.y), seed + k) * 1e6)
+      const built = pier(dock, G, G.pierGaps, own)
+      this.weather.shade(built.top, { snow: 1, wet: 0.5 })
+      this.weather.shade(built.sides, { snow: 0, wet: 0.5 })
+      this.weather.shade(built.posts, { snow: 1, wet: 0.5 })
+      this.lightmap.shade(built.top, 'ground')
+      this.lightmap.shade(built.sides, 'wall')
+      this.lightmap.shade(built.posts, 'wall')
+      this.flat.add(built.group)
+      const [x, y] = built.lamp
+      const lamp = standee(post, { emissive: glass })
+      this.lightmap.shade(lamp.material as THREE.Material, 'standee')
+      this.upright.push((t) => {
+        stand(lamp, x, y, t)
+        lamp.position.y += PIER_DECK
+      })
+      this.scene.add(lamp)
+      const on = 0.3 + hash(own, 3, 17) * 0.1
+      this.glowing.push({ material: lamp.material as THREE.Material, on })
+      this.addGlow(glowMap, x, y, scrap ? 24 : 13, 90, on, PIER_DECK)
+      this.lightSources.push({ kind: 'lamp', x, y, reach: LAMP_REACH, color, on })
+      // 桥上的杂物
+      built.spots.forEach(([gx, gy], j) => {
+        if (hash(own, j, 19) < 0.25) return
+        const goods = standee(texture(this.theme.landmarks.dockGoods(own + j)))
+        this.weather.shade(goods.material as THREE.MeshLambertMaterial, { snow: 1, wet: 0.4 })
+        this.lightmap.shade(goods.material as THREE.Material, 'standee')
+        const sx = Math.round(gx / PIXEL) * PIXEL,
+          sy = Math.round(gy / PIXEL) * PIXEL
+        this.upright.push((t) => {
+          stand(goods, sx, sy, t)
+          goods.position.y += PIER_DECK
+        })
+        this.scene.add(goods)
+      })
+    })
   }
 
   /** 沿室外路段每隔一段立一盏路灯，灯光画进光照图。入夜时从镇中心往外一盏盏亮起 */

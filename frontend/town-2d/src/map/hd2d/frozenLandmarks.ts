@@ -2,6 +2,7 @@ import { hash, mixHex, noise } from '../pixel/noise'
 import {
   carousel,
   court,
+  dockGoods,
   ferrisWheel,
   gazebo,
   obelisk,
@@ -229,7 +230,8 @@ function snowRock(seed: number) {
 }
 
 export const FROZEN_LANDMARKS: LandmarkSet = {
-  boat: frozenShip,
+  boat: (seed, _view, kind) => (kind === 2 ? rowboat(seed) : frozenShip(seed)),
+  dockGoods: (seed) => snowCap(dockGoods(seed), seed),
   plans: {
     ferris: (seed) => [[snowCap(ferrisWheel(), seed), 0, -6]],
     carousel: (seed) => [[snowCap(carousel(), seed), 0, -4]],

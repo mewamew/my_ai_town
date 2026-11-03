@@ -12,6 +12,7 @@ import { REFLECTION_SAMPLE, type Reflection } from './reflection'
 // 外海是大片慢慢推过来的明暗起伏，亮处偶尔一道细细的反光；风大时反光变多，有的翻成白浪尖。
 // 近岸浪线顺着岸往里推，水浅了走得慢、挤得密，到碎浪区断成白沫，过后留下一片碎沫；
 // 浪冲上沙滩又退下去，前沿一线白沫，退后留下慢慢晾干的湿痕；拍在岩石上溅起白沫（这一段画在地面上，见 surfOnLand）。
+// 港口和栈桥一带的水是平静的：浪线和白沫按有序抖动淡掉，贴着码头的一圈水暗一些，偶尔闪一下水纹。
 // 池塘和外海不连着，只有透底和闪光，不起浪。下雨时水面一圈圈雨点；晴天有闪光，偶尔一个十字星芒。
 // 越往北越融进海雾，直到海平线。全部按地图像素格取整，时间按每秒 8 步走，保持像素风。
 // 废土里同一块平面画成干海床：离旧海岸越远越平、越白；成片龟裂、盐壳、旧水位线，零星碎贝壳。
@@ -107,22 +108,25 @@ vec3 seaBandColor(float band) {
     : band < 5.0 ? seaHex(uSeaBand[4])
     : seaHex(uSeaBand[5]);
 }
-// 离岸贴图：r 是离岸（陆地是离水）的像素数，g 是岸边地物（1 外海的水，2 沙滩，3 岩石）；地图外都算外海深水
-vec2 seaCoast(vec2 cell) {
+// 离岸贴图：r 是离岸（陆地是离水）的像素数，g 是岸边地物（1 外海的水，2 沙滩，3 岩石），
+// b 是码头一带的平静程度（0～1，1 是贴着码头的那一圈）；地图外都算外海深水
+vec3 seaCoast(vec2 cell) {
   vec2 st = ((cell + 0.5) * uPixel - uOrigin) / uSize;
-  if (st.x < 0.0 || st.y < 0.0 || st.x > 1.0 || st.y > 1.0) return vec2(${MAX_DEPTH.toFixed(1)}, 1.0);
+  if (st.x < 0.0 || st.y < 0.0 || st.x > 1.0 || st.y > 1.0) return vec3(${MAX_DEPTH.toFixed(1)}, 1.0, 0.0);
   vec4 c = texture2D(uDepth, st);
-  return vec2(c.r * 255.0, floor(c.g * 255.0 + 0.5));
+  return vec3(c.r * 255.0, floor(c.g * 255.0 + 0.5), c.b);
 }
 `
 
 const COLOR = /* glsl */ `
   vec2 cell = floor(vSeaPos / uPixel);
-  vec2 coast = seaCoast(cell);
+  vec3 coast = seaCoast(cell);
   float d = coast.x;
   bool open = coast.y == 1.0;
   float t = floor(uSeaTime * 8.0) / 8.0;
   float dither = seaBayer(cell);
+  // 码头一带不起浪：平静程度按有序抖动过渡，浪线到这里一格格断掉，不是齐刷刷一条边
+  bool calm = coast.z > 0.08 + dither * 0.84;
   // 拉远到一个海面格子不到一个屏幕像素时，一像素的浪尖、反光、雨点和闪光淡掉，不排成规则的白点阵
   float detail = 1.0 - smoothstep(0.75, 1.6, fwidth(vSeaPos.x) / uPixel);
   // 水深分档，外海叠上大片色斑和几处浅滩
@@ -179,7 +183,7 @@ const COLOR = /* glsl */ `
     }
   }
 
-  if (open && d > 2.5 && d < 18.0) {
+  if (open && !calm && d > 2.5 && d < 18.0) {
     // 近岸浪线：外面是一道亮线，越近岸越白，到碎浪区断成一串白沫；贴岸那两格交给下面的白沫
     float phase = surfPhase(cell, d, t);
     float cyc = 2.0 * sqrt(d + 1.0) / ${SURF_SPACING};
@@ -196,11 +200,16 @@ const COLOR = /* glsl */ `
       if (seaNoise(cell / 2.3 + vec2(t * 0.4, 0.0)) > 0.64 + after * 0.3) c = mix(c, foam, 0.5 * breaking);
     } else if (phase > 1.0 - 1.0 / cyc && d > 3.0) c *= 0.9;
   }
-  if (open && d < 2.5) {
+  if (open && !calm && d < 2.5) {
     // 贴岸的白沫跟着浪：浪刚打上来时成片，退下去只剩零星
     float age = surfAge(cell, t);
     float keep = d < 1.5 ? (age < 0.25 ? 0.15 : 0.62) : (age < 0.1 ? 0.6 : 1.0);
     if (seaHash(cell + seaTick(3.0) * 13.0) > keep) c = mix(c, foam, d < 1.5 ? 1.0 : 0.6);
+  }
+  // 贴着码头和栈桥的那一圈水：木头底下背光，暗一些；水轻轻拍着木桩，偶尔闪一下水纹
+  if (coast.z > 0.999) {
+    c *= 0.8;
+    if (seaHash(cell + seaTick(1.5) * 5.0) > 0.78) c = mix(c, ripple, 0.4);
   }
   // 浅水里走过、鱼落水的地方一圈圈涟漪：踩踏图的 B 边散边淡，按它的边缘画一圈亮线
   if (d < 14.0) {
@@ -322,14 +331,22 @@ const ICE = /* glsl */ `
   diffuseColor.rgb = c;
 `
 
-/** 离岸距离和岸边地物（见 Ground.shore）合成一张两通道贴图，海面和沙滩上的浪共用 */
-export function coastTexture(depth: Uint8Array, shore: Uint8Array, pw: number, ph: number) {
-  const data = new Uint8Array(pw * ph * 2)
+/** 离岸距离、岸边地物（见 Ground.shore）和码头一带的平静程度（见 Ground.calm）合成一张贴图，
+ *  海面和沙滩上的浪共用 */
+export function coastTexture(
+  depth: Uint8Array,
+  shore: Uint8Array,
+  calm: Uint8Array,
+  pw: number,
+  ph: number
+) {
+  const data = new Uint8Array(pw * ph * 4)
   for (let i = 0; i < pw * ph; i++) {
-    data[i * 2] = depth[i]
-    data[i * 2 + 1] = shore[i]
+    data[i * 4] = depth[i]
+    data[i * 4 + 1] = shore[i]
+    data[i * 4 + 2] = calm[i]
   }
-  const map = new THREE.DataTexture(data, pw, ph, THREE.RGFormat, THREE.UnsignedByteType)
+  const map = new THREE.DataTexture(data, pw, ph, THREE.RGBAFormat, THREE.UnsignedByteType)
   map.magFilter = map.minFilter = THREE.NearestFilter
   map.needsUpdate = true
   return map

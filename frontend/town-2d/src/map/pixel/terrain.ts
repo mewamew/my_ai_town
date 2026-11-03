@@ -5,7 +5,7 @@ import { fromPx, MARGIN, OUTDOOR_SPACE, PIXEL, roomRect, toPx } from '../grid'
 import { bayer, crack, fbm, hash, noise, pick } from './noise'
 import { SNOW, SNOW_SHADE, WALL_CAP } from '../palette'
 import { DEFAULT_EDGE_WIDTH } from '../route'
-import { island, type Dock } from './island'
+import { distance, footprint, island, MAX_DEPTH, placer, QUAY, type Dock } from './island'
 import type { GroundPalette, MapTheme } from '../themes/types'
 
 // 地面按地面画布的像素算：地面、区域材质、水、海岸，再画上植被和房间。
@@ -43,7 +43,8 @@ export const TERRAIN_SEED = 20260923
  * base 是地面、区域材质、水面、海岸和浪花的像素，不含植被和房间（paintGround 再画上去）；
  * wet 标出外圈和水面像素（废土里外圈是干海床，也算在内），open 标出能种树的空地，
  * path 标出土路（2 是路中间的实土），立体场景在上面积水坑；depth 是水面离岸、陆地离水的像素数；
- * shore 标出海边的地物，立体场景按它画浪（见 shoreOf）；docks 是栈桥（地图坐标），船停在旁边
+ * shore 标出海边的地物，立体场景按它画浪（见 shoreOf）；calm 是码头一带水面的平静程度（0～255，见 calmOf）；
+ * docks 是栈桥（地图坐标），立体场景按它搭桥，船停在旁边
  */
 export interface Ground {
   atlas: Atlas
@@ -58,6 +59,7 @@ export interface Ground {
   path: Uint8Array
   depth: Uint8Array
   shore: Uint8Array
+  calm: Uint8Array
   docks: Dock[]
 }
 
@@ -69,7 +71,9 @@ export function groundOf(atlas: Atlas, theme: MapTheme, seed = TERRAIN_SEED): Gr
   const kindAt = (i: number) => (region[i] < 0 ? '' : atlas.regions[region[i]].kind)
   const path = tracePaths(atlas, pw, ph, seed)
   const { content, built } = landMasks(atlas, region, wet, path, kindAt, pw, ph)
-  const coast = coastOf(atlas, theme.ground, content, wet, pw, ph, seed)
+  const deck = new Uint8Array(pw * ph)
+  for (let i = 0; i < pw * ph; i++) deck[i] = kindAt(i) === 'harbor' && !wet[i] ? 1 : 0
+  const coast = coastOf(atlas, decor.harbors, content, deck, wet, pw, ph, seed)
   const layers: Layers = {
     pw,
     ph,
@@ -79,6 +83,7 @@ export function groundOf(atlas: Atlas, theme: MapTheme, seed = TERRAIN_SEED): Gr
     wet,
     path,
     built,
+    deck,
     ...coast,
     shoreWidth: shoreWidths(coast, wet, built, pw, ph, seed),
   }
@@ -90,6 +95,7 @@ export function groundOf(atlas: Atlas, theme: MapTheme, seed = TERRAIN_SEED): Gr
       if (sea[i] && depth[i] < 30)
         depth[i] = Math.min(40, Math.round(depth[i] * (0.35 + seaAround(x, y) * 0.9)))
     }
+  const calm = calmOf(layers, theme.outer === 'sea')
   const base = new Uint32Array(pw * ph)
   paintBase(layers, base)
   paintShoreline(layers, base)
@@ -99,6 +105,8 @@ export function groundOf(atlas: Atlas, theme: MapTheme, seed = TERRAIN_SEED): Gr
     x: fromPx(d.x),
     y: fromPx(d.y),
     length: d.length * PIXEL,
+    width: d.width * PIXEL,
+    head: [d.head[0] * PIXEL, d.head[1] * PIXEL] as [number, number],
   }))
   const open = openGround(atlas, layers)
   const shore = shoreOf(layers)
@@ -115,12 +123,13 @@ export function groundOf(atlas: Atlas, theme: MapTheme, seed = TERRAIN_SEED): Gr
     path,
     depth,
     shore,
+    calm,
     docks,
   }
 }
 
-/** 画出地面：trees 为 false 时不画树和灌木，由立体场景把它们立起来 */
-export function paintGround(ground: Ground, trees: boolean): HTMLCanvasElement {
+/** 画出地面。flat 是平面图：树、灌木和栈桥都画在地面上；不然由立体场景把它们立起来、搭起来 */
+export function paintGround(ground: Ground, flat: boolean): HTMLCanvasElement {
   const { width: pw, height: ph, atlas, theme, seed, decor } = ground
   const G = theme.ground
   const canvas = document.createElement('canvas')
@@ -157,14 +166,36 @@ export function paintGround(ground: Ground, trees: boolean): HTMLCanvasElement {
         [2, 1, 0],
       ])
         put(x + dx, y + dy, u(G.flowers[(k + j) % 5]))
-    } else if (trees) {
+    } else if (flat) {
       const { r, variant, bush } = treeShape(v)
       tree(x, y, r, variant, bush, seed, theme.flora, put, darken)
     }
   }
   for (const s of atlas.spaces) if (s.id !== OUTDOOR_SPACE) room(s, theme, seed, put, darken)
+  if (flat) for (const d of ground.docks) flatPier(d, G, put)
   ctx.putImageData(img, 0, 0)
   return canvas
+}
+
+/** 平面图上的栈桥：桥面板横铺，南边（朝镜头）压两行深色的桥侧和一排桩，看着是架在水上的 */
+function flatPier(d: Dock, G: GroundPalette, put: (x: number, y: number, c: number) => void) {
+  const at = placer(d)
+  const { L, V, inside } = footprint(d)
+  const cell = (a: number, b: number) =>
+    at(a + 0.5, b + 0.5).map((p) => Math.floor((p + MARGIN) / PIXEL))
+  const deck = new Set<string>()
+  for (let a = 0; a < L; a++)
+    for (let b = 0; b < V; b++) if (inside(a, b)) deck.add(cell(a, b).join(','))
+  for (let a = 0; a < L; a++)
+    for (let b = 0; b < V; b++) {
+      if (!inside(a, b)) continue
+      const [x, y] = cell(a, b)
+      const board = u(G.plank[Math.floor(hash(Math.floor(a / 3), 1, d.x) * G.plank.length)])
+      put(x, y, a % 3 === 2 ? mix(u(G.plankLine), board, 0.5) : board)
+      if (deck.has(`${x},${y + 1}`)) continue
+      put(x, y + 1, mix(u(G.plank[0]), SHADOW, 0.5))
+      if (x % 4 === 0) put(x, y + 2, mix(u(G.plank[0]), SHADOW, 0.65))
+    }
 }
 
 /** groundOf 的中间结果，给后面几步画地面、算空地用 */
@@ -179,6 +210,9 @@ interface Layers {
   built: Uint8Array
   sea: Uint8Array
   piers: Uint8Array
+  /** 港口的木码头、码头朝南那一面的木墙（见 island.ts 的 Island.quay） */
+  deck: Uint8Array
+  quay: Uint8Array
   rocks: Uint8Array
   depth: Uint8Array
   /** 这一处沙滩有多宽（像素），-1 是不在岸边 */
@@ -206,6 +240,8 @@ function rasterRegions(atlas: Atlas, decor: DecorPlan, pw: number, ph: number, s
     const cells = decor.water.get(r.id)
     if (cells) fillCells(cells, r.cell_size, (p) => (rawWater[p] = 1))
   }
+  // 港口是搭出来的木码头：它和它的水按格子铺，边是直的，不加噪声偏移
+  const harbor = (k: number) => k >= 0 && atlas.regions[k].kind === 'harbor'
   const region = new Int16Array(pw * ph)
   const wet = new Uint8Array(pw * ph)
   for (let y = 0; y < ph; y++)
@@ -214,8 +250,10 @@ function rasterRegions(atlas: Atlas, decor: DecorPlan, pw: number, ph: number, s
       const jy = Math.round((noise(x / 6, y / 6, seed + 51) - 0.5) * 6)
       const sx = Math.min(pw - 1, Math.max(0, x + jx)),
         sy = Math.min(ph - 1, Math.max(0, y + jy))
-      region[y * pw + x] = rawRegion[sy * pw + sx]
-      wet[y * pw + x] = rawWater[sy * pw + sx]
+      const i = y * pw + x
+      const j = harbor(rawRegion[i]) || harbor(rawRegion[sy * pw + sx]) ? i : sy * pw + sx
+      region[i] = rawRegion[j]
+      wet[i] = rawWater[j]
     }
   return { region, wet }
 }
@@ -247,33 +285,26 @@ function landMasks(
   return { content, built }
 }
 
-/** 孤岛的海岸（见 island.ts），再把外圈和栈桥并进 wet；seaAround 是一处周围 21×21 里海的比例 */
+/** 孤岛的海岸（见 island.ts），再把外圈并进 wet、码头的木墙从 wet 里划掉；seaAround 是一处周围 21×21 里海的比例 */
 function coastOf(
   atlas: Atlas,
-  G: GroundPalette,
+  facing: Map<string, [number, number]>,
   content: Uint8Array,
+  deck: Uint8Array,
   wet: Uint8Array,
   pw: number,
   ph: number,
   seed: number
 ) {
-  const { sea, piers, rocks, docks, toSea: depth } = island(atlas, content, wet, pw, ph, seed)
-  // 废土的栈桥年久失修：沿栈桥隔几段缺一整排板，露出下面的海床
-  if (G.pierGaps)
-    docks.forEach((d, k) => {
-      for (let s = 4; s < d.length; s++) {
-        if (hash(s, k, seed + 8) >= G.pierGaps) continue
-        for (let t = -1; t <= 2; t++) {
-          const i = (d.y + d.dy * s + (d.dx ? t : 0)) * pw + d.x + d.dx * s + (d.dy ? t : 0)
-          piers[i] = 0
-          sea[i] = 1
-        }
-      }
-    })
-  for (let i = 0; i < pw * ph; i++) {
-    if (sea[i]) wet[i] = 1
-    if (piers[i]) wet[i] = 0
-  }
+  const {
+    sea,
+    piers,
+    quay,
+    rocks,
+    docks,
+    toSea: depth,
+  } = island(atlas, { content, water: wet, deck, facing }, pw, ph, seed)
+  for (let i = 0; i < pw * ph; i++) if (sea[i]) wet[i] = 1
   const R = 10
   const seaSum = new Int32Array((pw + 1) * (ph + 1))
   for (let y = 0; y < ph; y++) {
@@ -294,7 +325,7 @@ function coastOf(
       ((x1 - x0) * (y1 - y0))
     )
   }
-  return { sea, piers, rocks, docks, depth, seaAround }
+  return { sea, piers, quay, rocks, docks, depth, seaAround }
 }
 
 /** 沙滩宽窄看地形：数一数周围 21×21 里有多少海，海少说明是凹进去的湾，浪小、沙子堆得宽；
@@ -309,7 +340,7 @@ function shoreWidths(
   ph: number,
   seed: number
 ) {
-  const { sea, piers, rocks, depth, seaAround } = coast
+  const { sea, quay, rocks, depth, seaAround } = coast
   const coastW = new Float32Array((pw + 1) * (ph + 1)),
     coastN = new Int32Array((pw + 1) * (ph + 1))
   for (let y = 0; y < ph; y++) {
@@ -318,10 +349,7 @@ function shoreWidths(
     for (let x = 0; x < pw; x++) {
       const i = y * pw + x
       const coast =
-        !wet[i] &&
-        !rocks[i] &&
-        !piers[i] &&
-        (sea[i - 1] || sea[i + 1] || sea[i - pw] || sea[i + pw])
+        !wet[i] && !rocks[i] && !quay[i] && (sea[i - 1] || sea[i + 1] || sea[i - pw] || sea[i + pw])
       if (coast) {
         const width =
           (0.52 - seaAround(x, y)) * 70 + 6 + (fbm(x * 1.4, y * 1.4, seed + 351) - 0.5) * 8
@@ -338,7 +366,7 @@ function shoreWidths(
   for (let y = 0; y < ph; y++)
     for (let x = 0; x < pw; x++) {
       const i = y * pw + x
-      if (wet[i] || built[i] || piers[i] || rocks[i] || depth[i] > 24) continue
+      if (wet[i] || built[i] || quay[i] || rocks[i] || depth[i] > 24) continue
       const x0 = Math.max(0, x - S),
         y0 = Math.max(0, y - S),
         x1 = Math.min(pw, x + S + 1),
@@ -369,8 +397,8 @@ function beach(L: Layers, i: number) {
 
 /** 礁石和岩石岸：灰色石头，上沿提亮、下沿压暗 */
 function stone(L: Layers, i: number, x: number, y: number) {
-  const { rocks, wet, piers, pw } = L
-  const solid = (j: number) => rocks[j] || (!wet[j] && !piers[j])
+  const { rocks, wet, pw } = L
+  const solid = (j: number) => rocks[j] || !wet[j]
   if (!solid(i - pw)) return u('#b3ac9b')
   if (!solid(i + pw)) return u('#57524a')
   return u(hash(x, y, L.seed + 14) < 0.3 ? '#7d776b' : '#8e887a')
@@ -392,9 +420,9 @@ function seaColor(G: GroundPalette, d: number, x: number, y: number) {
   return u(G.outer[Math.floor(t)])
 }
 
-/** 逐像素铺地面：外圈和水面、栈桥、礁石、沙滩，其余按区域材质 */
+/** 逐像素铺地面：外圈和水面、码头的木墙、礁石、沙滩，其余按区域材质；木码头再收边（见 deckEdge） */
 function paintBase(L: Layers, px: Uint32Array) {
-  const { pw, ph, seed, theme, wet, depth, piers, rocks, path, shoreWidth } = L
+  const { pw, ph, seed, theme, wet, depth, quay, rocks, path, shoreWidth } = L
   const G = theme.ground
   for (let y = 0; y < ph; y++)
     for (let x = 0; x < pw; x++) {
@@ -406,11 +434,8 @@ function paintBase(L: Layers, px: Uint32Array) {
           px[i] = mix(px[i], SHADOW, 0.3)
         continue
       }
-      if (piers[i]) {
-        const edge = !piers[i - 1] || !piers[i + 1] || !piers[i - pw] || !piers[i + pw]
-        px[i] = edge
-          ? u((x + y) % 5 ? '#6b5038' : '#3e2f24')
-          : u(G.plank[Math.floor(hash(x >> 2, y >> 2, seed + 6) * 3)])
+      if (quay[i]) {
+        px[i] = quayColor(G, quay[i], x)
         continue
       }
       if (rocks[i]) {
@@ -427,6 +452,7 @@ function paintBase(L: Layers, px: Uint32Array) {
       px[i] = groundColor(trodden ? 'path' : kind, x, y, seed, G, (c) => {
         if (y > 0) px[i - pw] = c
       })
+      if (L.deck[i]) px[i] = deckEdge(L, i, x, y, px[i])
       // 过渡带：越靠沙滩沙子越多，按有序抖动和草地交错，偶尔一丛海草
       if (shore === 4 && !trodden) {
         const t = (shoreWidth[i] + 5 - depth[i]) / 6
@@ -436,9 +462,54 @@ function paintBase(L: Layers, px: Uint32Array) {
     }
 }
 
-/** 岸线：水边一圈浪花（废土里是旧海岸的土坎），岸上一圈湿痕，码头边是深色木桩 */
+/** 码头朝南临水那一面（row 是 Island.quay 的 1～3）：两行横着的墙板，越往下越暗；
+ *  桩每隔 QUAY.post 像素一根，两像素宽，左亮右暗，伸进水里那一截长了青苔 */
+function quayColor(G: GroundPalette, row: number, x: number) {
+  const wood = u(G.plank[0])
+  if (x % QUAY.post < 2) {
+    const post = mix(wood, SHADOW, x % QUAY.post ? 0.55 : 0.3)
+    return row === QUAY.face ? mix(post, u('#2f4a3c'), 0.35) : post
+  }
+  return mix(wood, SHADOW, row === 1 ? 0.42 : 0.62)
+}
+
+/** 木码头收边：临水的一圈是压顶木（外沿一行亮、里面一行暗缝），隔 QUAY.post 像素露出一个桩头，
+ *  和朝南那面墙上的桩对齐；挨着陆地的一圈压一道深色边框 */
+function deckEdge(L: Layers, i: number, x: number, y: number, c: number) {
+  const { pw, wet, deck, quay } = L
+  const G = L.theme.ground
+  const water = (j: number) => wet[j] || quay[j]
+  const solid = (j: number) => deck[j] && !water(j)
+  // 临水的一边（西、东、北、南）：先看紧挨着的一格（外沿那行），再看隔着一格码头的（里面那行）
+  const steps = [-1, 1, -pw, pw]
+  let outer = true
+  let side = steps.findIndex((d) => water(i + d))
+  if (side < 0) {
+    outer = false
+    side = steps.findIndex((d) => water(i + 2 * d) && solid(i + d))
+  }
+  if (side >= 0) {
+    const vertical = side < 2
+    const along = (vertical ? y : x) % QUAY.post
+    if (along < 2) {
+      // 桩头：2×2 的圆木截面，左上亮、右下暗
+      const across = outer === (side % 2 === 0) ? 0 : 1
+      const [col, row] = vertical ? [across, along] : [along, across]
+      const tone = col + row
+      return tone === 0
+        ? mix(u(G.plank[2]), u('#fff4dc'), 0.3)
+        : mix(u(G.plank[0]), SHADOW, tone === 1 ? 0.3 : 0.55)
+    }
+    return outer ? mix(u(G.plank[2]), u('#fff4dc'), 0.18) : mix(u(G.plankLine), SHADOW, 0.2)
+  }
+  const ground = (j: number) => !wet[j] && !quay[j] && !deck[j]
+  if (steps.some((d) => ground(i + d))) return mix(u(G.plankLine), SHADOW, 0.25)
+  return c
+}
+
+/** 岸线：水边一圈浪花（废土里是旧海岸的土坎），岸上一圈湿痕；木码头自己收边（见 deckEdge） */
 function paintShoreline(L: Layers, px: Uint32Array) {
-  const { pw, ph, wet, piers, rocks } = L
+  const { pw, ph, wet, deck, quay, rocks } = L
   const G = L.theme.ground
   for (let y = 1; y < ph - 1; y++)
     for (let x = 1; x < pw - 1; x++) {
@@ -446,9 +517,33 @@ function paintShoreline(L: Layers, px: Uint32Array) {
       const n = wet[i - 1] + wet[i + 1] + wet[i - pw] + wet[i + pw]
       if (wet[i]) {
         if (n < 4) px[i] = u(G.outerEdge)
-      } else if (n > 0 && !piers[i] && !rocks[i] && !beach(L, i))
-        px[i] = L.kindAt(i) === 'harbor' ? u('#3e2f24') : mix(px[i], SHADOW, 0.35)
+      } else if (n > 0 && !deck[i] && !quay[i] && !rocks[i] && !beach(L, i))
+        px[i] = mix(px[i], SHADOW, 0.35)
     }
+}
+
+/** 码头一带的水不起浪：离木码头、码头的木墙和栈桥 12 像素内全静，再往外 16 像素淡掉（0～254）；
+ *  紧贴着它们的一圈记 255，海面在那里画木头底下的暗影和拍桩的水纹。
+ *  外圈是海时码头边的水还要加深：靠着的是码头不是沙滩的地方按深一些的档画，不透出沙底 */
+function calmOf(L: Layers, deepen: boolean) {
+  const { pw, ph, wet, deck, quay, piers, depth } = L
+  const built = new Uint8Array(pw * ph),
+    shore = new Uint8Array(pw * ph)
+  for (let i = 0; i < pw * ph; i++) {
+    built[i] = deck[i] || quay[i] || piers[i] ? 1 : 0
+    shore[i] = !wet[i] && !built[i] ? 1 : 0
+  }
+  const toBuilt = distance(built, pw, ph),
+    toShore = distance(shore, pw, ph)
+  const calm = new Uint8Array(pw * ph)
+  for (let i = 0; i < pw * ph; i++) {
+    if (!wet[i]) continue
+    const k = Math.min(1, Math.max(0, (28 - toBuilt[i]) / 16))
+    calm[i] = toBuilt[i] <= 1 ? 255 : Math.round(k * 254)
+    if (deepen && k > 0 && toBuilt[i] <= toShore[i] + 2)
+      depth[i] = Math.min(MAX_DEPTH, depth[i] + Math.round(7 * k))
+  }
+  return calm
 }
 
 /** 海边的地物：1 是和外海连着的水（港口的水也算，池塘不算），2 是外海边的沙滩，3 是外海边的岩石岸和礁石。
@@ -484,11 +579,11 @@ function shoreOf(L: Layers) {
 
 /** 能种东西的空地，立体场景按它撒树、放微粒 */
 function openGround(atlas: Atlas, L: Layers) {
-  const { pw, ph, wet, path, piers, rocks } = L
+  const { pw, ph, wet, path, quay, rocks } = L
   const open = new Uint8Array(pw * ph)
   for (let i = 0; i < pw * ph; i++) {
     const kind = L.kindAt(i)
-    if (wet[i] || path[i] || piers[i] || rocks[i] || beach(L, i) || PAVED.has(kind)) continue
+    if (wet[i] || path[i] || quay[i] || rocks[i] || beach(L, i) || PAVED.has(kind)) continue
     open[i] = OPEN_KINDS[kind] ?? OPEN.town
   }
   for (const s of atlas.spaces) {

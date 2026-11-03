@@ -1,7 +1,8 @@
 import type { Atlas } from 'town-shared/mapDocument'
 import { PIXEL } from '../grid'
-import type { Dock } from '../pixel/island'
+import { footprint, placer, type Dock } from '../pixel/island'
 import { hash, mixHex } from '../pixel/noise'
+import { villageBoat, type BoatView, type Moor } from './boats'
 import { fountain } from './fountain'
 import { sprite, stone } from './sprite'
 
@@ -29,11 +30,20 @@ export interface LandmarkSprite {
   glow?: HTMLCanvasElement
 }
 
-/** 一种风格的户外立牌：各类地点放什么、栈桥边停什么船、野地和外圈散落什么 */
+/** 一种风格的户外立牌：各类地点放什么、栈桥边停什么船、桥上堆什么、野地和外圈散落什么 */
 export interface LandmarkSet {
   /** 一种户外地点在自己的区域里放哪些立牌：[贴图或逐帧动画, 相对区域中心的偏移（地图像素）] */
   plans: Record<string, (seed: number) => [HTMLCanvasElement | Flipbook, number, number][]>
-  boat: (seed: number) => HTMLCanvasElement
+  /** 栈桥边的船：kind 0、1 是大船，2 是小舢板；view 是镜头看见侧面还是船尾，moor 是怎么系的。
+   *  没有这种船时给 null */
+  boat: (
+    seed: number,
+    view: BoatView,
+    kind: number,
+    moor: Moor
+  ) => HTMLCanvasElement | Flipbook | null
+  /** 栈桥上堆的杂物（木箱、木桶、缆绳、鱼篓） */
+  dockGoods: (seed: number) => HTMLCanvasElement
   /** 散落物：每个地图像素放一件的概率，野地（land）和外圈（outer）分开算；sprite 给出一件的贴图 */
   scatter?: {
     land: number
@@ -254,25 +264,44 @@ export function stall(k: number) {
   })
 }
 
-function boat() {
-  return sprite(36, 28, ({ px, rect, line }) => {
-    rect(17, 0, 1, 18, '#5a4030')
-    for (let y = 1; y < 15; y++) {
-      const w = Math.round(((y - 1) / 14) * 13)
-      for (let x = 18; x <= 18 + w; x++) px(x, y, x > 18 + w - 3 ? '#cfc6b2' : '#efe8d8')
-    }
-    for (let y = 18; y < 26; y++) {
-      const inset = Math.round(((y - 18) / 8) * 5)
-      for (let x = inset; x < 36 - inset; x++)
-        px(
-          x,
-          y,
-          y === 18 ? '#a0724a' : y === 21 ? '#e0dccc' : x > 28 - inset ? '#5e3e28' : '#7a5236'
-        )
-    }
-    line(0, 18, 3, 16, '#7a5236')
-    line(35, 18, 33, 16, '#5e3e28')
-    rect(6, 26, 24, 2, '#3e6f89')
+/** 栈桥上的杂物：摞起来的两只木箱、木桶、一盘缆绳、一只鱼篓，按编号挑一种 */
+export function dockGoods(seed: number) {
+  const k = Math.floor(hash(seed, 1, 23) * 4)
+  if (k === 0)
+    return sprite(8, 9, ({ rect, px }) => {
+      for (const [x, y, w, h] of [
+        [0, 4, 7, 5],
+        [2, 0, 6, 4],
+      ]) {
+        rect(x, y, w, h, '#a07a4e')
+        rect(x, y, w, 1, '#c8a070')
+        rect(x + w - 1, y, 1, h, '#6e5034')
+        px(x + 1, y + h - 2, '#5a4030')
+      }
+    })
+  if (k === 1)
+    return sprite(5, 7, ({ rect }) => {
+      rect(0, 1, 5, 5, '#8a5e3a')
+      rect(1, 0, 3, 7, '#8a5e3a')
+      rect(1, 0, 1, 7, '#a8784a')
+      rect(4, 1, 1, 5, '#5e3e26')
+      rect(0, 2, 5, 1, '#4a4a52')
+      rect(0, 5, 5, 1, '#4a4a52')
+    })
+  if (k === 2)
+    return sprite(7, 3, ({ rect, px }) => {
+      rect(1, 0, 5, 3, '#b89a6a')
+      rect(0, 1, 7, 1, '#b89a6a')
+      rect(2, 1, 3, 1, '#7a6040')
+      px(1, 0, '#d8c090')
+      px(6, 2, '#8a7050')
+    })
+  return sprite(6, 5, ({ rect, px }) => {
+    rect(0, 1, 6, 4, '#a88a50')
+    rect(0, 1, 6, 1, '#c8a868')
+    for (let x = 1; x < 6; x += 2) rect(x, 2, 1, 3, '#7a6038')
+    px(2, 0, '#9ab0b8')
+    px(3, 0, '#c8d8e0')
   })
 }
 
@@ -331,7 +360,8 @@ export function gazebo(broken = false) {
 }
 
 export const VILLAGE_LANDMARKS: LandmarkSet = {
-  boat,
+  boat: villageBoat,
+  dockGoods,
   plans: {
     ferris: () => [[ferrisWheel(), 0, -6]],
     carousel: () => [[carousel(), 0, -4]],
@@ -349,27 +379,75 @@ export const VILLAGE_LANDMARKS: LandmarkSet = {
   },
 }
 
-/** 第一条船停在栈桥外段的一侧（东西向停北边，立着的船身往上伸不挡住栈桥；南北向停东边），
- *  其余的停在栈桥尽头外面 */
-function mooredBoat(dock: Dock, k: number, set: LandmarkSet, seed: number): LandmarkSprite {
-  const along = k ? dock.length + 8 * PIXEL : dock.length * 0.7
-  const x = dock.x + dock.dx * along + (!k && dock.dy ? 16 * PIXEL : 0),
-    y = dock.y + dock.dy * along + (!k && dock.dx ? -3 * PIXEL : 0)
-  return { x, y, canvas: set.boat(seed + k) }
+/** 栈桥边的船：一条大船靠在桥身后面（横向的桥看侧面、船头朝桥头；竖向的桥看船尾），
+ *  多半还有一条小舢板拴在桥前头靠根部的地方、一条船系在桥头外面港湾里的浮筒上。
+ *  船底下要整片是水才放（water 按地图坐标问） */
+function mooredBoats(
+  dock: Dock,
+  k: number,
+  set: LandmarkSet,
+  seed: number,
+  water: (x: number, y: number) => boolean
+): LandmarkSprite[] {
+  const at = placer(dock)
+  const { L, W } = footprint(dock)
+  const side = dock.dx !== 0
+  const view: BoatView = side ? 'side' : 'stern'
+  // 船占的一片（沿桥 u0..u1、横过桥 v0..v1）隔两像素抽查一遍
+  const clear = (u0: number, u1: number, v0: number, v1: number) => {
+    for (let u = u0; u <= u1; u += 2)
+      for (let v = v0; v <= v1; v += 2) if (!water(...at(u, v))) return false
+    return true
+  }
+  const tied = (mirror: boolean): Moor => ({ mirror, tied: true })
+  const out: LandmarkSprite[] = []
+  const add = (u: number, v: number, art: HTMLCanvasElement | Flipbook | null) => {
+    if (!art) return
+    const [x, y] = at(u, v)
+    out.push({ x, y, ...(art instanceof HTMLCanvasElement ? { canvas: art } : art) })
+  }
+  // 地形种子各张地图一样，按栈桥的位置再取一个：各个小镇的船不一样
+  const own = Math.floor(hash(Math.round(dock.x), Math.round(dock.y), seed + k) * 1e6)
+  const roll = (salt: number) => hash(own, salt, 17)
+  const kind = Math.floor(roll(1) * 2)
+  // 大船：侧面船长约 34、看船尾时宽约 14 像素
+  const u = L - 13,
+    v = side ? -4 : -9
+  if (u > 17 && clear(u - 17, u + 17, v - (side ? 3 : 7), v + (side ? 3 : 7)))
+    add(u, v, set.boat(own, view, kind, tied(dock.dx < 0)))
+  const ru = 14,
+    rv = W + (side ? 3 : 5)
+  if (roll(2) < 0.75 && clear(ru - 10, ru + 10, rv - 2, rv + 4))
+    add(ru, rv, set.boat(own + 7, view, 2, tied(dock.dx > 0)))
+  // 港湾里的船：在桥头外面、桥身后方，和靠桥的大船错开
+  const au = L + 14,
+    av = side ? -24 : -26
+  if (roll(3) < 0.8 && clear(au - 18, au + 18, av - 4, av + 4))
+    add(au, av, set.boat(own + 13, view, 1 - kind, { mirror: dock.dx > 0, tied: false }))
+  return out
 }
 
-/** 按区域摆出所有户外标志物；docks 是港口栈桥（世界坐标），每条旁边停一条船 */
+/** 按区域摆出所有户外标志物；docks 是港口栈桥（地图坐标），船停在旁边，water 问地图上一点是不是水 */
 export function landmarkSprites(
   atlas: Atlas,
   seed: number,
   docks: Dock[],
-  set: LandmarkSet
+  set: LandmarkSet,
+  water: (x: number, y: number) => boolean
 ): LandmarkSprite[] {
-  const out: LandmarkSprite[] = docks.map((d, k) => mooredBoat(d, k, set, seed))
+  const out: LandmarkSprite[] = docks.flatMap((d, k) => mooredBoats(d, k, set, seed, water))
+  // 各地点立牌的种子按摆了几件往后数；船的条数不定，按原先每条栈桥一条船起算，地标的样子不跟着变
+  let placed = docks.length
   for (const r of atlas.regions) {
-    if (!r.cells.length) continue
-    const xs = r.cells.map(([x]) => x * r.cell_size),
-      ys = r.cells.map(([, y]) => y * r.cell_size)
+    // 港口朝海的一半是水，地标摆在陆上的木码头上
+    const cs = r.cell_size
+    const cells =
+      r.kind === 'harbor'
+        ? r.cells.filter(([c, rr]) => !water((c + 0.5) * cs, (rr + 0.5) * cs))
+        : r.cells
+    if (!cells.length) continue
+    const xs = cells.map(([x]) => x * cs),
+      ys = cells.map(([, y]) => y * cs)
     const box = {
       x0: Math.min(...xs),
       y0: Math.min(...ys),
@@ -380,12 +458,18 @@ export function landmarkSprites(
     if (!plan) continue
     const cx = (box.x0 + box.x1) / 2,
       cy = (box.y0 + box.y1) / 2
-    for (const [art, dx, dy] of plan(seed + out.length))
+    const arts = plan(seed + placed)
+    placed += arts.length
+    for (const [art, dx, dy] of arts) {
+      // 落到水上的（港口的地标偏得远）往中心拉回陆上
+      let k = 1
+      while (k > 0 && water(cx + dx * PIXEL * k, cy + dy * PIXEL * k)) k -= 0.1
       out.push({
-        x: cx + dx * PIXEL,
-        y: cy + dy * PIXEL,
+        x: cx + dx * PIXEL * Math.max(0, k),
+        y: cy + dy * PIXEL * Math.max(0, k),
         ...(art instanceof HTMLCanvasElement ? { canvas: art } : art),
       })
+    }
   }
   return out
 }

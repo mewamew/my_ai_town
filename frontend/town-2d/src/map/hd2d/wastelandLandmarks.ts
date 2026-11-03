@@ -2,6 +2,7 @@ import { hash, mixHex, noise, rng } from '../pixel/noise'
 import {
   carousel,
   court,
+  dockGoods,
   ferrisWheel,
   gazebo,
   obelisk,
@@ -346,7 +347,8 @@ function carWreck(seed: number) {
 }
 
 export const WASTELAND_LANDMARKS: LandmarkSet = {
-  boat: wreckBoat,
+  boat: (seed, _view, kind) => (kind === 2 ? null : wreckBoat(seed)),
+  dockGoods: (seed) => wear(dockGoods(seed), seed),
   plans: {
     ferris: (seed) => [[wear(ferrisWheel(true), seed), 0, -6]],
     carousel: (seed) => [[wear(carousel(true), seed), 0, -4]],
