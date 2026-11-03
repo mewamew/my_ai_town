@@ -12,6 +12,7 @@ use protocol::{
 };
 use std::collections::BTreeMap;
 
+mod appointments;
 mod chat;
 mod chat_validation;
 pub(crate) mod chat_view;
@@ -244,10 +245,15 @@ impl Interactions {
                 KernelError::interaction("你们之间已有待回应的交谈或同行邀请")
             );
         }
+        // 答应了的约定照常活动，不占邀请名额
         let open = |f: &dyn Fn(&Interaction) -> bool| {
             self.items
                 .values()
                 .filter(|i| !i.status.terminal() && f(i))
+                .filter(|i| {
+                    !(i.status == Status::Running
+                        && matches!(i.kind, InteractionKind::Appointment { .. }))
+                })
                 .count()
         };
         ensure!(
@@ -344,9 +350,9 @@ impl Interactions {
         }
     }
 
-    /// 最近一个邀请过期还有多久。
-    /// 下一个邀请过期或停下等回应结束还有多久。
+    /// 下一个邀请过期、停下等回应结束、约定提醒或判定还有多久。
     pub(crate) fn boundary(&self, now: f64) -> f64 {
+        let appointments = self.appointment_boundary(now);
         self.items
             .values()
             .filter(|i| i.status == Status::Offered)
@@ -360,7 +366,7 @@ impl Interactions {
             .flatten()
             .filter(|at| *at > now)
             .map(|at| at - now)
-            .fold(f64::INFINITY, f64::min)
+            .fold(appointments, f64::min)
     }
 
     pub(crate) fn expire(&mut self, actors: &mut Actors, now: f64) {
@@ -432,6 +438,7 @@ impl Interactions {
                     "招待用餐完成；补给与身体效果按道具定义结算，招待者未获得用餐收益".into()
                 }
                 InteractionKind::Walk { .. } => "同行结束".into(),
+                InteractionKind::Appointment { .. } => "约定达成：按约在约好的地方见上了面".into(),
             }
         } else {
             format!(

@@ -97,7 +97,7 @@ pub fn draft_verb_kind(draft: &ActionDraft) -> VerbKind {
     }
     match BuiltinVerb::parse(&draft.intent.verb) {
         Some(BuiltinVerb::Goto) => VerbKind::Goto,
-        Some(BuiltinVerb::Stay) => VerbKind::Stay,
+        Some(BuiltinVerb::Stay | BuiltinVerb::Look) => VerbKind::Stay,
         None => VerbKind::Prop,
     }
 }

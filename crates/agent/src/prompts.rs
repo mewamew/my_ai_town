@@ -73,6 +73,8 @@ pub const STALE_AFTER_NOTICE: &str = "请求期间收到重要通知，请先重
 pub const GO_PARAMETERS: &str =
     "intent.locale 填 known_places.id；不填 target 和 prop_id，地名不拼进 verb";
 pub const STAY_PARAMETERS: &str = "intent.duration_minutes 填分钟数";
+pub const LOOK_PARAMETERS: &str =
+    "不填别的参数；在原地花几分钟把眼前的东西和人看清，回执逐一写明，没写到的就是这里没有";
 
 // 记忆文件模板
 pub fn index_header(actor_id: &str, through_event: u64) -> String {

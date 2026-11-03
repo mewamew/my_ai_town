@@ -39,7 +39,7 @@ pub(crate) fn approach_station(
                 .or_else(|| station.clone())
         }
         Intent::Stay { station, .. } => station.clone(),
-        Intent::Goto { .. } => None,
+        Intent::Goto { .. } | Intent::Look => None,
     }?;
     let target = w.topo.stations.get(&station)?;
     Some((target.locale.clone(), station))

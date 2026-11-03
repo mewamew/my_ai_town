@@ -41,7 +41,8 @@ pub(crate) fn validate(
         }
         let participants: BTreeSet<_> = [item.initiator.clone(), item.partner.clone()].into();
         validate_event_sources(item, &participants, actors)?;
-        if item.status == Status::Running {
+        let appointment = matches!(item.kind, InteractionKind::Appointment { .. });
+        if item.status == Status::Running && !appointment {
             for actor in &participants {
                 validate_running_participant(item, &participants, &actors[actor], now)?;
             }
@@ -242,6 +243,14 @@ fn validate_kind(item: &Interaction, world: &World) -> Result<()> {
         }
         InteractionKind::Talk => {}
         InteractionKind::Walk { .. } => unreachable!("同行带聊天状态，按聊天校验"),
+        // 时刻只查范围：约好的时间和地点在存档里，读档后照常提醒和判定
+        InteractionKind::Appointment { locale, at } => ensure!(
+            at.is_finite()
+                && *at >= item.created_at
+                && *at <= item.created_at + crate::DAY
+                && world.topo.place_of(locale).is_some(),
+            KernelError::snapshot("存档约定的时间或地点无效")
+        ),
     }
     Ok(())
 }

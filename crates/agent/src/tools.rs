@@ -288,7 +288,7 @@ pub const TOOLS: [ToolSpec; 14] = [
         name: ToolName::OfferInvitation,
         description: || {
             format!(
-                "向在场的人发起交谈、同行、赠予或用餐邀请；{} 分钟未回应过期。交谈和同行邀请发出后本次醒来结束，对方回应、重要通知或 {} 分钟后返回状态。",
+                "向在场的人发起交谈、同行、约定、赠予或用餐邀请；{} 分钟未回应过期。交谈和同行邀请发出后本次醒来结束，对方回应、重要通知或 {} 分钟后返回状态。",
                 kernel::interactions::INVITE_MINUTES,
                 OFFER_WAIT_MINUTES
             )
@@ -307,7 +307,7 @@ pub const TOOLS: [ToolSpec; 14] = [
     ToolSpec {
         name: ToolName::Interact,
         description: || {
-            "聊天中的操作：say 发言（to 可指定对象）、listen 倾听、leave 告辞；propose 提议一起走（同行），accept/decline 回答对方的提议；join 加入 nearby_chats；cancel 取消自己发出的邀请或不再同行。每次只调用一个。".into()
+            "聊天中的操作：say 发言（to 可指定对象）、listen 倾听、leave 告辞；propose 提议一起走（同行）或约定时间地点，accept/decline 回答对方的提议；join 加入 nearby_chats（带 leader 的是路过的同行，加入就是跟着走）；cancel 取消自己发出的邀请或不再同行。每次只调用一个。".into()
         },
         parameters: schema::interact,
         exec: interact,
@@ -552,6 +552,7 @@ fn interact(ctx: &mut ToolContext, call: &ToolCall) -> Result<ToolOutcome, ToolE
                 partner.as_deref(),
                 &mut args["interaction"],
             );
+            resolve_appointment(ctx.world, &mut args["interaction"])?;
         }
         if let Some(to) = args["to"].as_str() {
             let members = chat.chat.as_ref().map(|c| &c.members);
@@ -603,6 +604,38 @@ fn interact(ctx: &mut ToolContext, call: &ToolCall) -> Result<ToolOutcome, ToolE
         }
         (outcome, _) => outcome,
     })
+}
+
+/// 约定的时刻写成「D3 14:00」（只写「14:00」按接下来最近的那个时刻）：换成世界分钟，世界只认分钟。
+/// 写法不对时说明怎么写。
+pub(crate) fn resolve_appointment(world: &World, interaction: &mut Value) -> Result<(), ToolError> {
+    if interaction["kind"] != "appointment" {
+        return Ok(());
+    }
+    let Some(text) = interaction["at"].as_str().map(str::trim) else {
+        return Ok(());
+    };
+    let now = world.minutes();
+    let at = kernel::calendar::parse_clock(text).or_else(|| {
+        let (h, m) = text.split_once(':')?;
+        let (h, m) = (h.parse::<u32>().ok()?, m.parse::<u32>().ok()?);
+        (h < 24 && m < 60).then(|| {
+            let today = now - kernel::time_of_day(now) + f64::from(h * 60 + m);
+            if today > now {
+                today
+            } else {
+                today + kernel::DAY
+            }
+        })
+    });
+    let at = at.ok_or_else(|| {
+        ToolError::new(
+            ToolErrorKind::InvalidArguments,
+            format!("{INVALID_ARGUMENTS}：约定时刻写成 D日数 HH:MM，例如 D3 14:00"),
+        )
+    })?;
+    interaction["at"] = json!(at);
+    Ok(())
 }
 
 /// 同行的带路人可以写 self、对方编号或名字：换成编号，世界只认编号。认不出就原样交给世界去拒绝。

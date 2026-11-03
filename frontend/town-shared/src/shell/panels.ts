@@ -200,6 +200,7 @@ export function createPanels(input: ShellInputs) {
     map,
     openHistory: (id) => chatHistory.open(id),
     localeName,
+    places: input.topology.places.map((p) => ({ id: p.locale, name: p.name })),
     resumeSpeed: input.normalSpeed,
     sounds: input.audio,
     game,

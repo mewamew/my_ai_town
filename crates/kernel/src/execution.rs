@@ -28,6 +28,15 @@ impl Actor {
             Intent::Stay { cond, station } => {
                 self.start_at_station(topo, now, &verb, ActKind::Placeholder { cond }, station)
             }
+            Intent::Look => self.start_at_station(
+                topo,
+                now,
+                &verb,
+                ActKind::Timed {
+                    cond: StopCond::Duration(crate::intent::LOOK_MINUTES),
+                },
+                None,
+            ),
             Intent::Do { cond, station, .. } => {
                 let cond = cond.unwrap_or_else(|| {
                     StopCond::Duration(

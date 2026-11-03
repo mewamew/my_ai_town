@@ -62,8 +62,13 @@ impl Interactions {
 
     /// 本人正在带路。
     pub fn leads_walk(&self, actor: &str) -> bool {
+        self.walk_led_by(actor).is_some()
+    }
+
+    /// 本人正在带的那场同行。
+    pub(crate) fn walk_led_by(&self, actor: &str) -> Option<&Interaction> {
         self.walk_of(actor)
-            .is_some_and(|i| i.kind.walk_leader() == Some(actor))
+            .filter(|i| i.kind.walk_leader() == Some(actor))
     }
 }
 
@@ -422,6 +427,87 @@ impl World {
         self.walk_trails.0.remove(id);
     }
 
+    /// 跟上一场进行中的同行（路过时加入，或带路人又邀了一个人）：成为跟随者，手头没做完的事按中断结算。
+    /// 村民要和带路人在同一处所，玩家要走到带路人身边。
+    pub(crate) fn join_walk(
+        &mut self,
+        actor: &str,
+        id: &str,
+        message: &str,
+    ) -> crate::error::Result<Interaction> {
+        use crate::error::KernelError;
+        super::check_message(message)?;
+        let item = self
+            .interactions
+            .get(id)
+            .filter(|i| i.status == Status::Running)
+            .ok_or_else(|| KernelError::interaction("同行已经结束"))?;
+        let leader = item.kind.walk_leader().unwrap_or_default().to_owned();
+        ensure!(
+            !chat_of(item).members.contains(actor),
+            KernelError::interaction("已经在这场同行里")
+        );
+        ensure!(
+            self.talk_available(actor),
+            KernelError::interaction("先结束手头的交谈或同行，再跟上")
+        );
+        let near = if self.actors[actor].player_controlled() {
+            crate::avatar::Reach::new(self).pair(actor, &leader).is_ok()
+        } else {
+            self.actors[actor].locus.locale == self.actors[&leader].locus.locale
+        };
+        ensure!(near, KernelError::interaction("要先走到带路的人身边"));
+        let now = self.minutes;
+        self.actor_mut(actor)
+            .interrupt_actions(now, "跟上同行，结束原活动安排");
+        {
+            let c = chat_of_mut(self.interactions.get_mut(id));
+            c.members.insert(actor.into());
+            c.ever_members.insert(actor.into());
+            c.turn_queue.push(actor.into());
+        }
+        let audience = chat_of(&self.interactions[id]).members.clone();
+        let mut lines = vec![(protocol::ChatEntryKind::Joined, "加入同行")];
+        if !message.trim().is_empty() {
+            lines.push((protocol::ChatEntryKind::Speech, message));
+        }
+        for (kind, text) in lines {
+            let line = super::ChatLine {
+                speaker: actor,
+                kind,
+                text,
+                audience: audience.clone(),
+            };
+            self.interactions
+                .chat_event(&mut self.actors, now, id, line);
+        }
+        if self.walk_carries(actor, &leader) {
+            self.bind_follower(id, actor);
+        } else {
+            self.unbind_walk_member(id, actor);
+        }
+        self.interactions
+            .sync_chat_activity(&mut self.actors, now, id);
+        Ok(self.interactions[id].clone())
+    }
+
+    /// 带路人又邀了一个人同行：对方答应后跟上他正在带的那一场，这份邀请就此办完。
+    pub(crate) fn merge_walk_offer(&mut self, offer: &str, walk: &str) {
+        let now = self.minutes;
+        let item = self.interactions[offer].clone();
+        let leader = self.actor_name(&item.initiator);
+        self.interactions.end_chat(
+            &mut self.actors,
+            now,
+            offer,
+            &format!("跟上了{leader}带的同行"),
+        );
+        if let Err(error) = self.join_walk(&item.partner, walk, "") {
+            let line = format!("{} 没能跟上同行：{error}", self.actor_name(&item.partner));
+            self.log(protocol::EventInfo::default(), line);
+        }
+    }
+
     /// 某人退出或离场时，他带的同行跟着结束（化身离开小镇、带路人倒下）。
     pub(crate) fn end_walks_of(&mut self, actor: &str, reason: &str) {
         let Some(item) = self.interactions.walk_of(actor) else {
@@ -471,8 +557,19 @@ pub(crate) fn check_walk(
         );
     }
     for id in [actor, partner] {
+        // 带路人正在带别人：同一个目的地（或不写）就并进那一场，多人同行
+        let joining = |i: &Interaction| {
+            id == leader
+                && i.kind.walk_leader() == Some(leader)
+                && (locale.is_none()
+                    || i.kind
+                        == (InteractionKind::Walk {
+                            leader: leader.into(),
+                            locale: locale.map(str::to_owned),
+                        }))
+        };
         ensure!(
-            w.interactions.walk_of(id).is_none(),
+            w.interactions.walk_of(id).is_none_or(joining),
             KernelError::interaction("有人已经在同行中，先结束原来的同行")
         );
     }

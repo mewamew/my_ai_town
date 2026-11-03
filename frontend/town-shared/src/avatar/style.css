@@ -512,6 +512,28 @@
   color: var(--avatar-green);
   font-weight: 600;
 }
+/* 约时间：地点和时刻两个下拉，加「约好」 */
+.avatar-appoint span {
+  color: var(--text-2);
+  font-size: 12px;
+}
+.avatar-appoint select {
+  max-width: 9em;
+  padding: 2px 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+.avatar-appoint button {
+  color: var(--avatar-green);
+  font-weight: 600;
+}
+.avatar-appointments {
+  display: grid;
+  gap: 6px;
+}
 .avatar-turn {
   display: flex;
   align-items: center;

@@ -66,6 +66,7 @@ impl World {
             self.expire_interactions();
             self.withdraw_departed_offers();
             self.note_presence();
+            self.advance_appointments(t0);
         }
         std::mem::take(&mut self.events)
     }

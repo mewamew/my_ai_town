@@ -339,3 +339,145 @@ fn departures_are_seen_and_an_invitation_lapses_when_the_invitee_walks_off() {
         .iter()
         .any(|e| e.kind == protocol::FactKind::Notice && e.text.contains("已经走开")));
 }
+
+/// 约定：答应后照常活动，到点前提醒双方；到时都在就算见上，没去的人记爽约。
+#[test]
+fn appointments_remind_both_and_record_who_did_not_come() {
+    let mut w = world(&[("a", "陈默", "loc_a"), ("b", "何青", "loc_a")]);
+    let meet = |w: &mut World, key: &str, at: f64| {
+        act(
+            w,
+            "b",
+            key,
+            Cmd::Offer {
+                partner_id: "a".into(),
+                interaction: InteractionKind::Appointment {
+                    locale: "loc_b".into(),
+                    at,
+                },
+                message: "下午在乙地碰头。".into(),
+            },
+        );
+        act(
+            w,
+            "a",
+            &format!("{key}-yes"),
+            Cmd::Reply {
+                interaction_id: key.into(),
+                accept: true,
+                message: "好，到时见。".into(),
+            },
+        );
+    };
+    let now = w.minutes();
+    meet(&mut w, "kept", now + 60.);
+    meet(&mut w, "missed", now + 300.);
+    // 答应了约定照常活动，不占身体
+    assert!(w.actor("a").unwrap().waiting_for_plan());
+    let notices = |w: &World, id: &str| {
+        w.actor(id)
+            .unwrap()
+            .journal
+            .events
+            .iter()
+            .filter(|e| e.kind == protocol::FactKind::Notice && e.text.contains("还有 30 分钟"))
+            .count()
+    };
+    w.step(35.);
+    assert_eq!(
+        (notices(&w, "a"), notices(&w, "b")),
+        (1, 1),
+        "到点前提醒双方，只提醒一次"
+    );
+    for id in ["a", "b"] {
+        common::run(
+            &mut w,
+            id,
+            "go",
+            json!({"intent":{"verb":"前往","locale":"loc_b"}}),
+        )
+        .unwrap();
+        common::finish(&mut w, id, "go");
+    }
+    w.step(30.);
+    assert_eq!(status(&w, "kept"), InteractionStatus::Succeeded);
+    // 第二个约定之前陈默回了甲地：何青等到宽限过去，记下陈默没去
+    common::run(
+        &mut w,
+        "a",
+        "back",
+        json!({"intent":{"verb":"前往","locale":"loc_a"}}),
+    )
+    .unwrap();
+    common::finish(&mut w, "a", "back");
+    w.step(300.);
+    let missed = w.interactions().of("a", "missed").unwrap();
+    assert_eq!(missed.status, InteractionStatus::Interrupted);
+    assert!(missed
+        .reason
+        .as_deref()
+        .unwrap()
+        .contains("陈默没有按约到乙地"));
+}
+
+/// 查看四周：回执写明这里有什么、谁在，末尾说明没写到的就是没有。路过的同行可以跟上，多人一起走。
+#[test]
+fn looking_around_lists_what_is_here_and_a_third_person_can_join_a_walk() {
+    let mut w = world(&[
+        ("a", "陈默", "loc_a"),
+        ("b", "何青", "loc_a"),
+        ("c", "苏晴", "loc_a"),
+    ]);
+    common::run(&mut w, "a", "look", json!({"intent":{"verb":"查看四周"}})).unwrap();
+    let look = common::finish(&mut w, "a", "look");
+    let text = look.changes.join("");
+    assert!(
+        text.contains("何青")
+            && text.contains("苏晴")
+            && text.contains("除此之外，这里没有别的东西")
+    );
+
+    act(
+        &mut w,
+        "b",
+        "walk",
+        Cmd::Offer {
+            partner_id: "a".into(),
+            interaction: InteractionKind::Walk {
+                leader: "b".into(),
+                locale: Some("loc_b".into()),
+            },
+            message: "跟我去乙地。".into(),
+        },
+    );
+    act(
+        &mut w,
+        "a",
+        "walk-yes",
+        Cmd::Reply {
+            interaction_id: "walk".into(),
+            accept: true,
+            message: "走。".into(),
+        },
+    );
+    act(
+        &mut w,
+        "c",
+        "join",
+        Cmd::Join {
+            interaction_id: "walk".into(),
+            message: "我也去。".into(),
+        },
+    );
+    assert_eq!(w.following("c"), Some("b"));
+    for _ in 0..200 {
+        w.step(0.05);
+        if status(&w, "walk") != InteractionStatus::Running {
+            break;
+        }
+    }
+    assert_eq!(status(&w, "walk"), InteractionStatus::Succeeded);
+    for id in ["a", "b", "c"] {
+        assert_eq!(w.actor(id).unwrap().locus.locale, "loc_b");
+    }
+}

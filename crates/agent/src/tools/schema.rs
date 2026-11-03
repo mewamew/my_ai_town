@@ -86,6 +86,7 @@ pub(crate) fn interaction_kinds() -> Vec<InteractionKind> {
         Give => InteractionKind::Give { items: vec![] },
         Serve => InteractionKind::Serve { prop_id: s(), verb: s() },
         Walk => InteractionKind::Walk { leader: s(), locale: None },
+        Appointment => InteractionKind::Appointment { locale: s(), at: 0.0 },
     })
 }
 pub(crate) fn interaction_commands() -> Vec<InteractionCommand> {
@@ -255,9 +256,16 @@ fn interaction() -> Value {
         InteractionKind::Walk { .. } => (
             json!({
                 "leader": described(json!({"type":"string"}), "同行时谁带路：self 是自己，或填对方 ID"),
-                "locale": described(json!({"type":"string"}), "同行说好的目的地 known_places.id；由自己带路时写上，世界直接带大家出发")
+                "locale": described(json!({"type":"string"}), "同行的目的地或约定的见面地点，known_places.id；同行由自己带路时写上，世界直接带大家出发")
             }),
             vec!["leader"],
+        ),
+        InteractionKind::Appointment { .. } => (
+            json!({
+                "locale": {"type":"string"},
+                "at": described(json!({"type":"string"}), "约定时刻，写成 D日数 HH:MM，例如 D3 14:00；要在十分钟以后、一天以内")
+            }),
+            vec!["locale", "at"],
         ),
     })
 }

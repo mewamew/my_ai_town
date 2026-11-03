@@ -1094,11 +1094,20 @@ fn avatar_state() -> AvatarState {
             distance: 5.5,
             blocked: false,
         }],
-        nearby_chats: vec![NearbyChat {
-            id: "chat2".into(),
-            locale: "indoor_cafe".into(),
-            members: ["resident_b".to_string()].into(),
-        }],
+        nearby_chats: vec![
+            NearbyChat {
+                id: "chat2".into(),
+                locale: "indoor_cafe".into(),
+                members: ["resident_b".to_string()].into(),
+                leader: None,
+            },
+            NearbyChat {
+                id: "walk1".into(),
+                locale: "indoor_cafe".into(),
+                members: ["resident_b".to_string(), "resident_c".to_string()].into(),
+                leader: Some("resident_b".into()),
+            },
+        ],
         portals: vec![PortalView {
             id: "door1".into(),
             label: "咖啡馆门口".into(),
@@ -1243,6 +1252,15 @@ pub fn shape_samples() -> (Vec<ServerMsg>, Vec<ClientMsg>) {
             interact(InteractionCommand::Decline {
                 interaction_id: "chat1".into(),
                 message: "改天吧。".into(),
+            }),
+            interact(InteractionCommand::Propose {
+                interaction_id: "chat1".into(),
+                interaction: InteractionKind::Appointment {
+                    locale: "indoor_library".into(),
+                    at: 840.0,
+                },
+                message: "下午两点图书馆见？".into(),
+                to: None,
             }),
             avatar(AvatarCommand::Miracle {
                 revision: 3,

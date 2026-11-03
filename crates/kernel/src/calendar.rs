@@ -55,3 +55,16 @@ pub fn meal_at(meals: &[MealWindow], minutes: f64) -> Option<&MealWindow> {
 pub fn day_index(minutes: f64) -> i64 {
     (minutes / DAY).floor() as i64
 }
+
+/// 读「D2 14:00」这样的时钟写法，返回世界分钟（D1 00:00 是 0）；写法不对为空。
+pub fn parse_clock(text: &str) -> Option<f64> {
+    let (day, time) = text.trim().strip_prefix('D')?.split_once(' ')?;
+    let (hour, minute) = time.trim().split_once(':')?;
+    let (day, hour, minute) = (
+        day.parse::<u32>().ok()?,
+        hour.parse::<u32>().ok()?,
+        minute.parse::<u32>().ok()?,
+    );
+    (day > 0 && hour < 24 && minute < 60)
+        .then(|| f64::from(day - 1) * crate::DAY + f64::from(hour * 60 + minute))
+}

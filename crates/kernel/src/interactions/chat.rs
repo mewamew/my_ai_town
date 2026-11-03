@@ -75,7 +75,7 @@ impl Interactions {
 
     /// 成员的活动与聊天状态对齐：无期占位、同一参与者集合、同一开始时刻。
     /// 同行里只有跟随的村民占着活动（见 walk.rs），他们只更新参与者集合，旧观察作废。
-    fn sync_chat_activity(&mut self, actors: &mut Actors, now: f64, id: &str) {
+    pub(super) fn sync_chat_activity(&mut self, actors: &mut Actors, now: f64, id: &str) {
         let i = &self.items[id];
         let c = chat_of(i);
         let (members, locale, verb, started_at) = (

@@ -108,6 +108,13 @@ pub(crate) fn check_intent<'a>(
             check_action_station(&w.topo, locale, station.as_deref())?;
             None
         }
+        Intent::Look => {
+            ensure!(
+                prop.is_none(),
+                KernelError::action("查看四周不接受道具参数")
+            );
+            None
+        }
         Intent::Do { verb, station, .. } => {
             check_action_station(&w.topo, locale, station.as_deref())?;
             Some(check_prop_action(w, actor, verb, locale, draft)?)

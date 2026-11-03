@@ -23,12 +23,14 @@ export interface PlayerAction {
   inventory?: InventoryOperation
   writing?: { title: string; text: string }
 }
-/** 双方互动的种类：交谈、赠予物品、招待用餐、同行（leader 带路，locale 是说好的目的地） */
+/** 双方互动的种类：交谈、赠予物品、招待用餐、同行（leader 带路，locale 是说好的目的地）、
+ *  约定（at 是约好的世界分钟，locale 是见面的地方） */
 export type InteractionKind =
   | { kind: 'talk' }
   | { kind: 'give'; items: string[] }
   | { kind: 'serve'; prop_id: string; verb: string }
   | { kind: 'walk'; leader: string; locale?: string }
+  | { kind: 'appointment'; locale: string; at: number }
 export type InteractionCommand =
   | { operation: 'offer'; partner_id: string; interaction: InteractionKind; message: string }
   | { operation: 'reply'; interaction_id: string; accept: boolean; message: string }
@@ -164,7 +166,8 @@ interface PresentView {
   }[]
   /** 附近还说不上话的人：离得远（米），或已经够近、只是隔着东西 */
   approach?: { id: string; name: string; distance: number; blocked: boolean }[]
-  nearby_chats: { id: string; locale: string; members: string[] }[]
+  /** 附近进行中的交谈；带 leader 的是路过的同行，加入就是跟着走 */
+  nearby_chats: { id: string; locale: string; members: string[]; leader?: string }[]
   portals: { id: string; label: string }[]
   props: AvatarProp[]
   reading: ContentText | null

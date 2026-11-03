@@ -9,6 +9,7 @@ import type {
 } from './types'
 import { panelButton, pendingTalk, personName, runningTalk, runningWalk } from './view'
 import { button, el } from '../dom'
+import { clock } from '../format'
 import { isTouch } from '../platform'
 // 交谈面板：收到的邀请、进行中的对话或同行、交谈里的提议、附近的人。发言输入框由控制器持有。
 
@@ -22,6 +23,10 @@ interface Notices {
   usage: () => void
   settings: () => void
   localeName: (id: string) => string
+  /** 约时间可选的见面地点 */
+  places: { id: string; name: string }[]
+  /** 世界时刻（分钟） */
+  minutes: number
 }
 
 /** 一次重绘里各部分共用的东西 */
@@ -36,6 +41,7 @@ interface ChatView {
   interact: (command: InteractionCommand) => void
   nameOf: (id: string) => string
   localeName: (id: string) => string
+  notices: Notices
   /** 在面板里加一段 */
   block: (className: string) => HTMLElement
 }
@@ -66,7 +72,9 @@ function inviteCard(v: ChatView, i: AvatarInteraction) {
         ? '和你聊聊'
         : i.kind.kind === 'walk'
           ? walkWish(v, i.kind)
-          : '送你东西'
+          : i.kind.kind === 'appointment'
+            ? `约你${appointmentText(v, i.kind)}`
+            : '送你东西'
     card.append(el('p', `${nameOf(i.initiator)}想${what}${i.message ? `：${i.message}` : ''}`))
     const reply = (accept: boolean, message: string) =>
       interact({ operation: 'reply', interaction_id: i.id, accept, message })
@@ -107,6 +115,90 @@ function walkText(v: ChatView, kind: Extract<InteractionKind, { kind: 'walk' }>)
 function walkWish(v: ChatView, kind: Extract<InteractionKind, { kind: 'walk' }>) {
   return `一起走（${walkText(v, kind)}）`
 }
+/** 约定的说法：「第 13 天 14:00 在小广场见」 */
+function appointmentText(v: ChatView, kind: Extract<InteractionKind, { kind: 'appointment' }>) {
+  return `${clock(kind.at)} 在${v.localeName(kind.locale)}见`
+}
+/** 提议的说法：一起走或约时间 */
+function proposalText(v: ChatView, kind: InteractionKind) {
+  if (kind.kind === 'walk') return walkWish(v, kind)
+  if (kind.kind === 'appointment') return `约好${appointmentText(v, kind)}`
+  return '一起做件事'
+}
+
+/** 已经约好的事：什么时候在哪儿见、和谁，可以取消 */
+function appointments(v: ChatView) {
+  const kept = (v.state.interactions ?? []).filter(
+    (i) => i.status === 'running' && i.kind.kind === 'appointment'
+  )
+  if (!kept.length) return
+  const list = v.block('avatar-appointments')
+  list.append(el('h4', '约定'))
+  for (const i of kept) {
+    if (i.kind.kind !== 'appointment') continue
+    const other = i.initiator === v.actor.id ? i.partner : i.initiator
+    const row = el('div')
+    row.className = 'avatar-person'
+    row.append(
+      el('span', `${appointmentText(v, i.kind)} · 和${v.nameOf(other)}`),
+      panelButton(
+        '取消约定',
+        () => v.interact({ operation: 'cancel', interaction_id: i.id }),
+        !v.active
+      )
+    )
+    list.append(row)
+  }
+}
+
+// 约时间的选择在重画之间保留：面板每有新话就重画，选到一半不该被清掉
+let appointPlace = ''
+let appointLater = '一小时后'
+
+/** 约时间可选的时刻：一两个钟头以后、明早、明天中午；超出一天的不列（约定最多约到一天以内） */
+function laterChoices(now: number) {
+  const day = Math.floor(now / 1440) * 1440
+  const round = (m: number) => Math.ceil(m / 10) * 10
+  return [
+    { label: '一小时后', at: round(now + 60) },
+    { label: '两小时后', at: round(now + 120) },
+    { label: '三小时后', at: round(now + 180) },
+    { label: '明早八点', at: day + 1440 + 480 },
+    { label: '明天中午', at: day + 1440 + 720 },
+  ].filter((c) => c.at >= now + 10 && c.at + 30 <= now + 1440)
+}
+
+/** 两人交谈时约个以后见面的时间地点：在交谈里提议，对方答应才算约好 */
+function appointRow(v: ChatView, talk: AvatarInteraction) {
+  const others = (talk.members ?? []).filter((id) => id !== v.actor.id)
+  const { places, minutes } = v.notices
+  if (talk.kind.kind !== 'talk' || others.length !== 1 || talk.proposal || !places.length) return
+  const choices = laterChoices(minutes)
+  if (!choices.length) return
+  if (!places.some((p) => p.id === appointPlace)) appointPlace = places[0].id
+  const row = v.block('avatar-textacts avatar-appoint')
+  const place = el('select')
+  place.setAttribute('aria-label', '见面地点')
+  for (const p of places) place.append(new Option(p.name, p.id, false, p.id === appointPlace))
+  place.onchange = () => (appointPlace = place.value)
+  const later = el('select')
+  later.setAttribute('aria-label', '见面时间')
+  for (const c of choices)
+    later.append(
+      new Option(`${c.label}（${clock(c.at).slice(-5)}）`, c.label, false, c.label === appointLater)
+    )
+  later.onchange = () => (appointLater = later.value)
+  const propose = () => {
+    const c = choices.find((c) => c.label === later.value) ?? choices[0]
+    v.interact({
+      operation: 'propose',
+      interaction_id: talk.id,
+      interaction: { kind: 'appointment', locale: place.value, at: c.at },
+      message: `${c.label}在${v.localeName(place.value)}见，行吗？`,
+    })
+  }
+  row.append(el('span', '约时间'), place, later, panelButton('约好', propose, !v.active))
+}
 
 /** 聊天记录里的过程条目怎么说 */
 function eventText(e: ChatEntry) {
@@ -129,17 +221,27 @@ function eventText(e: ChatEntry) {
 /** 交谈里等人回答的提议：问我的给「好」「算了」，我提的可以撤回 */
 function proposalCard(v: ChatView, talk: AvatarInteraction) {
   const p = talk.proposal
-  if (!p || p.interaction.kind !== 'walk') return
+  if (!p) return
   const { interact, active } = v
   const card = v.block('avatar-invite avatar-proposal')
   const row = el('div')
   row.className = 'avatar-row'
+  const walk = p.interaction.kind === 'walk' ? p.interaction : null
   if (p.to === v.actor.id) {
-    card.append(el('p', `${v.nameOf(p.by)}想${walkWish(v, p.interaction)}`))
-    const lead = p.interaction.leader === v.actor.id
-    card.append(el('p', lead ? '答应后交谈结束，他跟在你身后' : '答应后跟着他走，可以开自动跟随'))
+    card.append(el('p', `${v.nameOf(p.by)}想${proposalText(v, p.interaction)}`))
+    const lead = walk?.leader === v.actor.id
+    card.append(
+      el(
+        'p',
+        !walk
+          ? '答应后双方照常活动，到点前会提醒'
+          : lead
+            ? '答应后交谈结束，他跟在你身后'
+            : '答应后跟着他走，可以开自动跟随'
+      )
+    )
     const yes = panelButton(
-      lead ? '好，跟我来' : '好，走吧',
+      !walk ? '好，到时见' : lead ? '好，跟我来' : '好，走吧',
       () => interact({ operation: 'accept', interaction_id: talk.id, message: '好。' }),
       !active
     )
@@ -154,7 +256,7 @@ function proposalCard(v: ChatView, talk: AvatarInteraction) {
       )
     )
   } else {
-    card.append(el('p', `等${v.nameOf(p.to)}回答：${walkWish(v, p.interaction)}`))
+    card.append(el('p', `等${v.nameOf(p.to)}回答：${proposalText(v, p.interaction)}`))
     row.append(
       panelButton(
         '撤回',
@@ -225,6 +327,7 @@ function talkLog(v: ChatView, talk: AvatarInteraction) {
   log.append(turn)
   proposalCard(v, talk)
   togetherRow(v, talk)
+  appointRow(v, talk)
   const acts = v.block('avatar-textacts')
   acts.append(
     panelButton(
@@ -290,11 +393,18 @@ function nearbyPeople(v: ChatView) {
   for (const c of state.nearby_chats ?? [])
     if (!c.members.includes(v.actor.id))
       people.append(
-        panelButton(
-          `加入附近的交谈（${c.members.length} 人）`,
-          () => interact({ operation: 'join', interaction_id: c.id, message: '我也想一起聊聊。' }),
-          !idle
-        )
+        c.leader
+          ? panelButton(
+              `跟上${v.nameOf(c.leader)}的同行（${c.members.length} 人）`,
+              () => interact({ operation: 'join', interaction_id: c.id, message: '我也跟着去。' }),
+              !idle
+            )
+          : panelButton(
+              `加入附近的交谈（${c.members.length} 人）`,
+              () =>
+                interact({ operation: 'join', interaction_id: c.id, message: '我也想一起聊聊。' }),
+              !idle
+            )
       )
 }
 
@@ -317,6 +427,7 @@ export function renderChat(
     interact: (command) => void execute({ kind: 'interact', revision: a.revision, command }),
     nameOf: (id) => personName(state, undefined, id),
     localeName: notices.localeName,
+    notices,
     block: (className) => {
       const s = el('section')
       s.className = className
@@ -331,6 +442,7 @@ export function renderChat(
       button('关闭这条结果', () => notices.dismiss(id))
     )
   for (const i of state.interactions ?? []) if (i.status === 'offered') inviteCard(view, i)
+  appointments(view)
   const talk = runningTalk(state)
   if (talk) talkLog(view, talk)
   else nearbyPeople(view)

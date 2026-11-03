@@ -250,7 +250,7 @@ impl Builder<'_> {
         let actor = &self.a.id;
         self.w
             .interactions
-            .running_chats()
+            .running_chats(&self.w.actors)
             .into_iter()
             .filter(|c| {
                 c.members

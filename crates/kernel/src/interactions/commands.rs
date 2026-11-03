@@ -19,9 +19,14 @@ impl World {
     }
 
     /// 同行路上不另起互动：带路人和玩家操控的同行者虽然不占活动，也算在一场互动里。
-    fn check_not_walking(&self, ids: [&str; 2]) -> Result<()> {
+    /// 只有带路人再邀人同行（多人同行）例外，同行规则在 check_walk 里另查。
+    fn check_not_walking(&self, ids: [&str; 2], kind: &InteractionKind) -> Result<()> {
+        let leader = kind.walk_leader();
         ensure!(
-            ids.iter().all(|id| self.interactions.walk_of(id).is_none()),
+            ids.iter().all(|id| {
+                self.interactions.walk_of(id).is_none()
+                    || (leader == Some(*id) && self.interactions.leads_walk(id))
+            }),
             KernelError::interaction("正在同行，先到地方或结束同行")
         );
         Ok(())
@@ -108,7 +113,7 @@ impl World {
     pub fn nearby_chats(&self, actor: &str) -> Vec<protocol::NearbyChat> {
         self.actors
             .get(actor)
-            .map(|a| self.interactions.nearby_chats(a))
+            .map(|a| self.interactions.nearby_chats(&self.actors, a))
             .unwrap_or_default()
     }
 
@@ -162,7 +167,7 @@ impl World {
             if let Some(i) = self
                 .interactions
                 .get(interaction_id)
-                .filter(|i| i.status == Status::Running)
+                .filter(|i| i.status == Status::Running && i.kind.walk_leader().is_none())
             {
                 let (place, members) =
                     (i.locale.clone(), i.chat.as_ref().map(|c| c.members.clone()));
@@ -180,6 +185,19 @@ impl World {
             }
         }
         let now = self.minutes;
+        if let InteractionCommand::Join {
+            interaction_id,
+            message,
+        } = command
+        {
+            if self
+                .interactions
+                .get(interaction_id)
+                .is_some_and(|i| i.kind.walk_leader().is_some())
+            {
+                return self.join_walk(actor, interaction_id, message);
+            }
+        }
         match command {
             InteractionCommand::Offer {
                 partner_id,
@@ -241,7 +259,7 @@ impl World {
             self.actors[actor].interaction_available(),
             KernelError::interaction("请先完成当前活动，再发起邀请")
         );
-        self.check_not_walking([actor, partner])?;
+        self.check_not_walking([actor, partner], &kind)?;
         check_pair_here(self, actor, partner, &kind)?;
         self.interactions.check_new_offer(actor, partner, &kind)?;
         let duration_minutes = check_kind(self, actor, partner, &kind)?;
@@ -258,6 +276,10 @@ impl World {
         // 玩家和村民之间的：记在村民所在的处所（接受时再按那时的位置定一次）
         if let Some(place) = place {
             item.locale = place;
+        }
+        // 约定的邀请最晚在约定时刻前要回答
+        if let InteractionKind::Appointment { at, .. } = &item.kind {
+            item.expires_at = item.expires_at.min(*at);
         }
         let now = self.minutes;
         self.interactions
@@ -329,7 +351,7 @@ impl World {
     /// 接受邀请前再查一遍：双方仍在邀请地点（玩家参与的只看还够不够得着）、能够回应，
     /// 互动内容本身仍然可行。
     fn check_accept(&self, actor: &str, old: &Interaction) -> Result<()> {
-        self.check_not_walking([actor, &old.initiator])?;
+        self.check_not_walking([actor, &old.initiator], &old.kind)?;
         check_pair_here(self, &old.initiator, actor, &old.kind)?;
         ensure!(
             self.player_pair_place(&old.initiator, actor, &old.kind)
@@ -342,7 +364,8 @@ impl World {
                 self.talk_available(actor) && self.talk_available(&old.initiator),
                 KernelError::interaction("双方须能够回应，并先结束已有的共同互动")
             );
-        } else {
+        } else if !matches!(old.kind, InteractionKind::Appointment { .. }) {
+            // 约定答应了照常活动，不要求空闲
             ensure!(
                 self.actors[actor].interaction_available()
                     && self.actors[&old.initiator].interaction_available(),
@@ -356,10 +379,23 @@ impl World {
     /// 双方同意后安装同一参与者集合的身体活动；交谈另有轮次机制，同行由世界带着跟随的人走。
     fn start_pair_activity(&mut self, item: &Interaction) {
         let now = self.minutes;
-        if item.kind.walk_leader().is_some() {
+        if let Some(leader) = item.kind.walk_leader() {
+            // 带路人正在带别人：跟上那一场
+            if let Some(walk) = self.interactions.walk_led_by(leader).map(|w| w.id.clone()) {
+                return self.merge_walk_offer(&item.id, &walk);
+            }
             self.interactions
                 .start_chat(&mut self.actors, now, &item.id);
             self.begin_walk(&item.id);
+            return;
+        }
+        if let InteractionKind::Appointment { locale, at } = &item.kind {
+            // 约定不占身体：只记下说好了，到点由世界提醒
+            let text = format!(
+                "约好了：{}",
+                super::appointments::describe(self, locale, *at)
+            );
+            self.interactions.fact(&mut self.actors, now, item, &text);
             return;
         }
         for id in [&item.initiator, &item.partner] {
@@ -506,6 +542,9 @@ fn check_kind(w: &World, actor: &str, partner: &str, kind: &InteractionKind) -> 
     match kind {
         InteractionKind::Walk { leader, locale } => {
             super::walk::check_walk(w, actor, partner, leader, locale.as_deref())
+        }
+        InteractionKind::Appointment { locale, at } => {
+            super::appointments::check_appointment(w, locale, *at)
         }
         InteractionKind::Talk => {
             w.check_weather_chat(actor)?;

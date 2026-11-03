@@ -85,12 +85,14 @@ pub struct ChatSummary {
     pub entries: usize,
 }
 
-/// 同一处所里进行中的聊天：谁在聊。
+/// 同一处所里进行中的聊天：谁在聊。路过的同行另带带路人，加入就是跟着一起走。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NearbyChat {
     pub id: String,
     pub locale: String,
     pub members: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leader: Option<String>,
 }
 
 /// 聊天参与者看到的聊天：只含本人实际听到的最近台词。

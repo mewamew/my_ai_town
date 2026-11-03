@@ -81,8 +81,95 @@ pub(crate) struct Receipt {
     pub readable: Option<protocol::ReadableFact>,
 }
 
+/// 查看四周的回执：这里是什么地方、有哪些东西（说明、剩余、里面装着什么）、谁在、地上放着什么；
+/// 末尾写明除此之外没有别的，说法能拿它当场核实。
+pub(crate) fn survey(w: &World, actor_id: &str) -> String {
+    let a = &w.actors[actor_id];
+    let locale = &a.locus.locale;
+    let place = w.topo.locale_name(locale);
+    let mut parts = Vec::new();
+    if let Some(p) = w.topo.place_of(locale) {
+        if !p.summary.is_empty() {
+            parts.push(p.summary.clone());
+        }
+        if !p.visible_features.is_empty() {
+            parts.push(format!("看得到{}", p.visible_features.join("、")));
+        }
+    }
+    let things: Vec<String> = w
+        .topo
+        .props()
+        .iter()
+        .filter(|p| p.locale == *locale && !p.withdrawn && w.can_access_prop(actor_id, p))
+        .filter(|p| !w.inventory.carried_by(&p.id, actor_id))
+        .map(|p| {
+            let mut notes = Vec::new();
+            if !p.description.is_empty() {
+                notes.push(p.description.clone());
+            }
+            for action in p.verbs.iter().filter_map(|v| v.action.as_ref()) {
+                if let Some(left) = w.props.supply_remaining(&p.id, action) {
+                    notes.push(format!("剩 {left} 份"));
+                }
+            }
+            let inside: Vec<String> = w
+                .container_items(actor_id, &p.id)
+                .into_iter()
+                .map(|i| i.name)
+                .collect();
+            if p.storage_slots > 0 {
+                notes.push(if inside.is_empty() {
+                    "里面是空的".into()
+                } else {
+                    format!("里面有{}", inside.join("、"))
+                });
+            }
+            if notes.is_empty() {
+                p.name.clone()
+            } else {
+                format!("{}（{}）", p.name, notes.join("；"))
+            }
+        })
+        .collect();
+    parts.push(if things.is_empty() {
+        "没有什么东西".into()
+    } else {
+        format!("有{}", things.join("、"))
+    });
+    let people: Vec<String> = w
+        .actors
+        .values()
+        .filter(|o| o.id != actor_id && o.present() && o.locus.locale == *locale)
+        .map(|o| {
+            if o.needs.body.dead {
+                match &o.needs.body.killed {
+                    Some(k) => format!("{}（已经死了，{}）", o.name, k.wound),
+                    None => format!("{}（已经死了）", o.name),
+                }
+            } else {
+                format!("{}（{}）", o.name, o.current.verb)
+            }
+        })
+        .collect();
+    parts.push(if people.is_empty() {
+        "没有别人".into()
+    } else {
+        format!("{}在这里", people.join("、"))
+    });
+    format!(
+        "仔细查看了{place}：{}。除此之外，这里没有别的东西",
+        parts.join("；")
+    )
+}
+
 /// 生成一条执行记录的正文。verb 是刚完成的活动，now 是完成时刻。
 pub(crate) fn receipt(w: &World, actor_id: &str, verb: &str, now: f64) -> Receipt {
+    if crate::intent::BuiltinVerb::parse(verb) == Some(crate::intent::BuiltinVerb::Look) {
+        return Receipt {
+            text: survey(w, actor_id),
+            readable: None,
+        };
+    }
     let a = &w.actors[actor_id];
     let minutes = (now - a.current.started_at).round().max(0.0);
     let locale = a.locus.locale.clone();

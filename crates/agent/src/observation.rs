@@ -36,7 +36,8 @@ pub fn static_map(world: &World, actor: &str) -> Result<Value, AgentError> {
         "known_places": places,
         "basic_actions": [
             {"verb":"前往","parameters":prompts::GO_PARAMETERS},
-            {"verb":"停留","parameters":prompts::STAY_PARAMETERS}
+            {"verb":"停留","parameters":prompts::STAY_PARAMETERS},
+            {"verb":"查看四周","parameters":prompts::LOOK_PARAMETERS}
         ]
     }))
 }

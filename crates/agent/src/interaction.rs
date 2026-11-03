@@ -5,12 +5,28 @@ use protocol::{Interaction, InteractionKind, InteractionStatus, ResidentInteract
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 
+/// 约定的时刻在观察里另写一份时钟（clock），模型按「D3 14:00」理解，不必换算分钟。
+pub fn with_clock(kind: &mut Value) {
+    if kind["kind"] == "appointment" {
+        if let Some(at) = kind["at"].as_f64() {
+            kind["clock"] = json!(kernel::clock_string(at));
+        }
+    }
+}
+
 /// 给模型的观察：只露出被赠予的那几件物品，不露出对方的其他随身物和未读正文。
 pub fn observation(world: &World, actor: &str, interaction: &Interaction) -> Value {
     let mut view = json!(kernel::interactions::Interactions::observation(
         actor,
         interaction
     ));
+    with_clock(&mut view["kind"]);
+    if let Some(kind) = view
+        .get_mut("proposal")
+        .and_then(|p| p.get_mut("interaction"))
+    {
+        with_clock(kind);
+    }
     if let InteractionKind::Give { items } = &interaction.kind {
         let offered: Vec<_> = items
             .iter()
@@ -53,6 +69,11 @@ fn result_text(interaction: &Interaction) -> String {
         InteractionStatus::Offered => "邀请已发出，对方尚未同意".into(),
         InteractionStatus::Running if interaction.kind.walk_leader().is_some() => {
             "正在同行，到了地方会结束".into()
+        }
+        InteractionStatus::Running
+            if matches!(interaction.kind, InteractionKind::Appointment { .. }) =>
+        {
+            "约好了，到时在约好的地方见".into()
         }
         InteractionStatus::Running if interaction.chat.is_some() => {
             "大家正在交谈，可继续说话、倾听或告辞".into()

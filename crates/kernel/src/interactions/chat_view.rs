@@ -43,24 +43,30 @@ impl Interactions {
         })
     }
 
-    /// 本人所在处所里进行中的聊天。
-    pub(crate) fn nearby_chats(&self, actor: &Actor) -> Vec<NearbyChat> {
-        self.running_chats()
+    /// 本人所在处所里进行中的聊天和路过的同行。
+    pub(crate) fn nearby_chats(&self, actors: &Actors, actor: &Actor) -> Vec<NearbyChat> {
+        self.running_chats(actors)
             .into_iter()
             .filter(|c| c.locale == actor.locus.locale)
             .collect()
     }
 
-    /// 正在进行的交谈，不论在哪。同行不算：路上的同行不能这样加入。
-    pub(crate) fn running_chats(&self) -> Vec<NearbyChat> {
+    /// 正在进行的交谈与同行，不论在哪。同行按带路人此刻所在的处所算，加入就是跟着一起走。
+    pub(crate) fn running_chats(&self, actors: &Actors) -> Vec<NearbyChat> {
         self.items
             .values()
-            .filter(|i| i.status == Status::Running && i.kind.walk_leader().is_none())
+            .filter(|i| i.status == Status::Running)
             .filter_map(|i| {
+                let leader = i.kind.walk_leader().map(str::to_owned);
+                let locale = match &leader {
+                    Some(id) => actors.get(id)?.locus.locale.clone(),
+                    None => i.locale.clone(),
+                };
                 Some(NearbyChat {
                     id: i.id.clone(),
-                    locale: i.locale.clone(),
+                    locale,
                     members: i.chat.as_ref()?.members.clone(),
+                    leader,
                 })
             })
             .collect()

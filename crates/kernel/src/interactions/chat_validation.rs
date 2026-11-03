@@ -145,8 +145,11 @@ fn validate_proposal(i: &Interaction, c: &ChatState, now: f64) -> Result<()> {
     let Some(p) = &c.proposal else {
         return Ok(());
     };
-    let walk_ok = matches!(&p.interaction, InteractionKind::Walk { leader, .. }
-        if *leader == p.by || *leader == p.to);
+    let walk_ok = match &p.interaction {
+        InteractionKind::Walk { leader, .. } => *leader == p.by || *leader == p.to,
+        InteractionKind::Appointment { at, .. } => at.is_finite(),
+        _ => false,
+    };
     ensure!(
         i.status == Status::Running
             && i.kind == InteractionKind::Talk

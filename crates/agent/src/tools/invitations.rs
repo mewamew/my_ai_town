@@ -26,6 +26,7 @@ pub(super) fn offer(ctx: &mut ToolContext, call: &ToolCall) -> Result<ToolOutcom
         partner.as_deref(),
         &mut args["interaction"],
     );
+    resolve_appointment(ctx.world, &mut args["interaction"])?;
     let a: Offer = decode(&args)?;
     execute_interaction(
         ctx,

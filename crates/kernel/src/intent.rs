@@ -4,7 +4,7 @@
 //! 动词、处所、落脚点全部对着封闭集合查。绝对坐标/时刻在草案类型上
 //! 已不可表示（protocol 侧 deny_unknown_fields），这里管的是 id 与取值。
 //!
-//! 动词封闭集合 = 内建 { 前往, 停留 } ∪ 道具动作词（affordance.rs）。
+//! 动词封闭集合 = 内建 { 前往, 停留, 查看四周 } ∪ 道具动作词（affordance.rs）。
 //! 「工作 / 睡觉 / 吃饭」三个泛动词已退役：睡觉、吃饭本来就是道具动作词，
 //! 「工作」没有内容，不能作为当前封闭动作集合中的泛动词。
 
@@ -13,12 +13,14 @@ use crate::error::{KernelError, Result};
 use crate::topology::Topology;
 use protocol::{IntentDraft, UntilPredicate};
 
-/// 内建动词：不来自道具表的两个动作词。文案只在 `label` 一处。
+/// 内建动词：不来自道具表的动作词。文案只在 `label` 一处。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BuiltinVerb {
     Goto,
     Stay,
+    /// 查看四周：花几分钟把眼前的地点、东西和人看清，回执逐一写明，没写的就是没有。
+    Look,
 }
 
 impl BuiltinVerb {
@@ -26,16 +28,20 @@ impl BuiltinVerb {
         match self {
             Self::Goto => "前往",
             Self::Stay => "停留",
+            Self::Look => "查看四周",
         }
     }
 
     /// 草案动词对应的内建动词；道具动作词返回 None。
     pub fn parse(verb: &str) -> Option<Self> {
-        [Self::Goto, Self::Stay]
+        [Self::Goto, Self::Stay, Self::Look]
             .into_iter()
             .find(|b| b.label() == verb)
     }
 }
+
+/// 查看四周花多少分钟。
+pub const LOOK_MINUTES: f64 = 3.0;
 
 /// 活动的结束条件。谓词是状态判断（"已天亮"），不是时刻——晚一点满足仍成立。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -66,6 +72,8 @@ pub enum Intent {
         cond: Option<StopCond>,
         station: Option<String>,
     },
+    /// 查看四周：在原地花 LOOK_MINUTES 分钟。
+    Look,
 }
 
 impl Intent {
@@ -74,6 +82,7 @@ impl Intent {
             Intent::Goto { .. } => BuiltinVerb::Goto.label(),
             Intent::Stay { .. } => BuiltinVerb::Stay.label(),
             Intent::Do { verb, .. } => verb,
+            Intent::Look => BuiltinVerb::Look.label(),
         }
     }
 
@@ -89,6 +98,7 @@ impl Intent {
                 Some(c) => format!("{verb}（{}）", cond_text(c)),
                 None => verb.clone(),
             },
+            Intent::Look => BuiltinVerb::Look.label().into(),
         }
     }
 }
@@ -168,6 +178,13 @@ pub fn validate(topo: &Topology, aff: &Affordances, d: &IntentDraft) -> Result<I
             cond: parse_cond(d, true)?,
             station: check_station(topo, &d.target)?,
         }),
+        Some(BuiltinVerb::Look) => {
+            ensure!(
+                d.locale.is_none() && d.target.is_none() && d.until.is_none(),
+                KernelError::action("查看四周只看眼前，不填地点、落脚点和结束条件")
+            );
+            Ok(Intent::Look)
+        }
         None if aff.is_verb(&d.verb) => Ok(Intent::Do {
             verb: d.verb.clone(),
             cond: match parse_cond(d, false)? {

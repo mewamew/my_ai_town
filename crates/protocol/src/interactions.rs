@@ -19,6 +19,11 @@ pub enum InteractionKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         locale: Option<String>,
     },
+    /// 约定：到 at（世界分钟）在 locale 见面。答应后双方照常活动，到点前提醒，没去的人记爽约。
+    Appointment {
+        locale: String,
+        at: f64,
+    },
 }
 impl InteractionKind {
     pub fn label(&self) -> &'static str {
@@ -27,6 +32,7 @@ impl InteractionKind {
             Self::Give { .. } => "赠予物品",
             Self::Serve { .. } => "招待用餐",
             Self::Walk { .. } => "同行",
+            Self::Appointment { .. } => "约定",
         }
     }
     /// 带聊天记录的互动：交谈，以及路上可以说话的同行。

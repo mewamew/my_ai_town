@@ -20,6 +20,8 @@ export interface AvatarPanelState {
   tab: AvatarTab | null
   invitationResults: Map<string, string>
   bagSelection: string | null
+  /** 世界时刻（分钟），约时间用；不进面板签名，免得每拍重画 */
+  minutes: number
 }
 /** 面板只在这些状态改变时重绘：坐标每拍都变，照坐标重绘会丢输入焦点和草稿 */
 export function panelSignature(p: AvatarPanelState, controlling: boolean) {
@@ -53,6 +55,7 @@ export function createAvatarPanels(ui: AvatarUI, deps: AvatarDeps, actions: Avat
   const {
     map,
     localeName,
+    places,
     send,
     resumeSpeed,
     openHistory,
@@ -270,6 +273,8 @@ export function createAvatarPanels(ui: AvatarUI, deps: AvatarDeps, actions: Avat
           usage: openUsage,
           settings: openSettings,
           localeName,
+          places,
+          minutes: snapshot.minutes,
         }
       )
       body.scrollTop = pinned ? body.scrollHeight : keep

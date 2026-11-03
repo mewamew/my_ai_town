@@ -1,5 +1,6 @@
-//! 交谈里的提议：一方提议一起走（同行），被问的人答应或不答应，提议人也可以撤回。
-//! 两人交谈时答应了，这场交谈就变成路上的同行，说过的话都还在；人多时两人告辞，另开一场同行。
+//! 交谈里的提议：一方提议一起走（同行）或约个时间地点（约定），被问的人答应或不答应，提议人也可以撤回。
+//! 同行：两人交谈时答应了，这场交谈就变成路上的同行，说过的话都还在；人多时两人告辞，另开一场同行。
+//! 约定：答应后另记一份约定，交谈照常继续。
 use super::chat::{chat_of, chat_of_mut};
 use super::{check_message, ChatLine, Interactions, LeaveKind};
 use crate::error::{KernelError, Result};
@@ -43,19 +44,26 @@ impl World {
             c.proposal.as_ref().is_none_or(|p| p.by == actor),
             KernelError::interaction("对方的提议还在等你回答，先答应或拒绝")
         );
-        let InteractionKind::Walk { leader, locale } = kind else {
-            return Err(KernelError::interaction(
-                "交谈里只能提议一起走（kind 填 walk）",
-            ));
-        };
-        super::walk::check_walk(self, actor, &to, leader, locale.as_deref())?;
+        match kind {
+            InteractionKind::Walk { leader, locale } => {
+                super::walk::check_walk(self, actor, &to, leader, locale.as_deref())?;
+            }
+            InteractionKind::Appointment { locale, at } => {
+                super::appointments::check_appointment(self, locale, *at)?;
+            }
+            _ => {
+                return Err(KernelError::interaction(
+                    "交谈里只能提议一起走（walk）或约定（appointment）",
+                ))
+            }
+        }
         let now = self.minutes;
         let members = c.members.clone();
         let turn = self.interactions.chat_turn(&self.actors[actor], now);
         if !message.trim().is_empty() {
             self.line(chat, actor, ChatEntryKind::Speech, message);
         }
-        let text = self.describe_walk(kind);
+        let text = self.describe_proposal(kind);
         self.line(chat, actor, ChatEntryKind::Proposed, &text);
         let c = chat_of_mut(self.interactions.get_mut(chat));
         c.proposal = Some(ChatProposal {
@@ -110,6 +118,9 @@ impl World {
                     ))
                 }
             }
+        }
+        if matches!(kind, InteractionKind::Appointment { .. }) {
+            return self.accept_appointment(chat, actor, &proposal.by, kind, message);
         }
         let InteractionKind::Walk { leader, locale } = &kind else {
             return Err(KernelError::interaction("这项提议不能在交谈里答应"));
@@ -237,8 +248,50 @@ impl World {
         );
     }
 
-    /// 提议的说法：「一起走：旅人带路，去陈默家」。
-    pub(crate) fn describe_walk(&self, kind: &InteractionKind) -> String {
+    /// 答应交谈里的约定：另记一份进行中的约定，交谈照常继续。
+    fn accept_appointment(
+        &mut self,
+        chat: &str,
+        actor: &str,
+        by: &str,
+        kind: InteractionKind,
+        message: &str,
+    ) -> Result<Interaction> {
+        let now = self.minutes;
+        let InteractionKind::Appointment { locale, at } = kind.clone() else {
+            unreachable!("调用方已确认是约定");
+        };
+        let duration = super::appointments::check_appointment(self, &locale, at)?;
+        if !message.trim().is_empty() {
+            self.line(chat, actor, ChatEntryKind::Speech, message);
+        }
+        self.line(chat, actor, ChatEntryKind::Accepted, "答应了");
+        chat_of_mut(self.interactions.get_mut(chat)).proposal = None;
+        let id = (1..)
+            .map(|n| format!("{chat}-appt{n}"))
+            .find(|id| self.interactions.get(id).is_none())
+            .expect("总有没用过的编号");
+        let mut item =
+            Interactions::new_offer(&id, &self.actors[by], actor, kind, "", duration, now);
+        item.expires_at = item.expires_at.min(at);
+        item.reply = Some(message.into());
+        item.accepted = Some(true);
+        item.status = Status::Running;
+        item.started_at = Some(now);
+        self.interactions.items.insert(id.clone(), item.clone());
+        let text = format!(
+            "约好了：{}",
+            super::appointments::describe(self, &locale, at)
+        );
+        self.interactions.fact(&mut self.actors, now, &item, &text);
+        Ok(self.interactions[chat].clone())
+    }
+
+    /// 提议的说法：「一起走：旅人带路，去陈默家」「约定：D13 14:00 在小广场见」。
+    pub(crate) fn describe_proposal(&self, kind: &InteractionKind) -> String {
+        if let InteractionKind::Appointment { locale, at } = kind {
+            return format!("约定：{}", super::appointments::describe(self, locale, *at));
+        }
         let InteractionKind::Walk { leader, locale } = kind else {
             return kind.label().into();
         };

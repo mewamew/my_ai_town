@@ -29,6 +29,8 @@ export interface AvatarDeps {
   map: GameMap
   openHistory: (id: string) => void
   localeName: (id: string) => string
+  /** 地图上的已知地点：约时间时选见面的地方 */
+  places: { id: string; name: string }[]
   /** 「继续世界」恢复到的运行速度 */
   resumeSpeed: number
   sounds?: Pick<GameAudio, 'updateMovement' | 'playDescend'>
@@ -139,6 +141,8 @@ class AvatarController {
   private readonly timer: number
   /** 世界因故暂停的原因（额度用尽等），随名册更新 */
   private holds: WorldHold[] = []
+  /** 名册里的世界时刻（分钟）：约时间时从它往后算 */
+  private minutes = 0
   /** 进入控制前的 2D 镜头，交还后恢复 */
   private savedCamera: number[] | null = null
   private state: AvatarState | null = null
@@ -624,6 +628,7 @@ class AvatarController {
       tab: this.tab,
       invitationResults: this.invitations.results,
       bagSelection: this.bagSelection,
+      minutes: this.minutes,
     }
   }
 
@@ -823,6 +828,7 @@ class AvatarController {
 
   handleMsg(message: ServerMsg) {
     if (message.type === 'roster') {
+      this.minutes = message.sim_minutes
       this.holds = message.holds ?? []
       this.members = new Map(message.locales.flatMap((l) => l.members).map((m) => [m.id, m]))
       this.render()
