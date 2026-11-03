@@ -16,11 +16,14 @@ const RESIDENT_COLOR: &str = "#397d60";
 
 impl World {
     /// 玩家操控的人的步速（见 WALK_PACE、RUN_PACE）；没有行走地图时为空。
+    /// 带人走时放慢、按奔跑也不加快（见 World::player_pace）。
     pub fn avatar_walk(&self) -> Option<protocol::AvatarWalk> {
         let map = self.walk_map.as_ref()?;
+        let actor = self.player_id();
+        let walk = self.player_pace(actor, WALK_PACE);
         Some(protocol::AvatarWalk {
-            metres_per_minute: map.metres_per_minute * WALK_PACE,
-            sprint_factor: RUN_PACE / WALK_PACE,
+            metres_per_minute: map.metres_per_minute * walk,
+            sprint_factor: self.player_pace(actor, RUN_PACE) / walk,
         })
     }
 
@@ -145,6 +148,13 @@ impl Builder<'_> {
             "已经死了".into()
         } else if b.needs.incapacitated() {
             "倒下了，没法回应".into()
+        } else if let Some(walk) = self.w.interactions.walk_of(&b.id) {
+            if walk.includes(&self.a.id) {
+                "正在和你同行"
+            } else {
+                "正在和别人同行"
+            }
+            .into()
         } else if let Some(id) = &b.current.interaction {
             let with_me = self
                 .w
@@ -271,6 +281,7 @@ impl Builder<'_> {
                 members: c.members,
                 message: i.message.clone(),
                 partner: c.partner,
+                proposal: c.proposal,
                 reason: i.reason.clone(),
                 reply: i.reply.clone(),
                 status: c.status,

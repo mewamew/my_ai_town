@@ -55,17 +55,35 @@ fn interaction_schema(schema: &Value, chat_id: Option<&str>) -> Option<Value> {
     for operation in operations {
         let operation = operation.as_str()?;
         // 只细分当前协议已知的操作；以后增加新操作时保留原 schema，不能静默漏掉能力。
-        if !matches!(operation, "say" | "listen" | "leave" | "join" | "cancel") {
+        if !matches!(
+            operation,
+            "say" | "listen" | "leave" | "join" | "cancel" | "propose" | "accept" | "decline"
+        ) {
             return None;
         }
+        let in_chat = matches!(
+            operation,
+            "say" | "listen" | "leave" | "propose" | "accept" | "decline"
+        );
         let mut id = original.get("interaction_id")?.clone();
-        if let Some(chat_id) = chat_id.filter(|_| matches!(operation, "say" | "listen" | "leave")) {
+        if let Some(chat_id) = chat_id.filter(|_| in_chat) {
             id["const"] = json!(chat_id);
         }
         let mut properties =
             json!({"operation":{"type":"string","const":operation},"interaction_id":id});
         let mut required = vec!["operation", "interaction_id"];
-        if matches!(operation, "say" | "leave" | "join") {
+        if operation == "propose" {
+            properties["interaction"] = original.get("interaction")?.clone();
+            properties["to"] = original.get("to")?.clone();
+            required.push("interaction");
+        }
+        if operation == "accept" {
+            properties["locale"] = original.get("locale")?.clone();
+        }
+        if matches!(
+            operation,
+            "say" | "leave" | "join" | "propose" | "accept" | "decline"
+        ) {
             let mut message = original.get("message")?.clone();
             if operation == "say" {
                 message["minLength"] = json!(1);

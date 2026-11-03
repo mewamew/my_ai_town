@@ -5,7 +5,7 @@ import type { AvatarDeps } from './controller'
 import { renderChat } from './chat'
 import { renderBag } from './bag'
 import { renderStatus } from './status'
-import { actionButton, partnerNames, runningTalk } from './view'
+import { actionButton, partnerNames, personName, runningTalk, runningWalk } from './view'
 import { el } from '../dom'
 import { gameIcon } from '../game/icons'
 import { groupHolds } from '../holds'
@@ -62,6 +62,8 @@ export function createAvatarPanels(ui: AvatarUI, deps: AvatarDeps, actions: Avat
     fixHold,
   } = deps
   const { execute, openTab, targets, stopMoving, render, selectBag, leave } = actions
+  // 交谈中点开「告辞」后的几种说法；不在交谈里就收起
+  let farewell = false
   const { me, meDot, meName, meSub, mid, bagCount, title, meta, body, profile, needsStrip } = ui
   // 状态每拍都会更新；保留内容没变的按钮，避免按下后、松开前被重建而丢失点击。
   function updateMid(next: HTMLElement[]) {
@@ -106,6 +108,17 @@ export function createAvatarPanels(ui: AvatarUI, deps: AvatarDeps, actions: Avat
     bagCount.textContent = String(a.inventory.used)
     const items: HTMLElement[] = []
     const talk = runningTalk(state)
+    const walk = runningWalk(state)
+    if (!talk || walk) farewell = false
+    const interact = (command: Parameters<typeof execute>[0] & { kind: 'interact' }) =>
+      void execute(command)
+    const say = (operation: 'leave', message: string) =>
+      talk &&
+      interact({
+        kind: 'interact',
+        revision: a.revision,
+        command: { operation, interaction_id: talk.id, message },
+      })
     if (!state.speed && holds.length) {
       // 和地图上的提示卡同一个说法和修法；几种原因同时出现时先修第一种
       const [first] = groupHolds(holds)
@@ -125,24 +138,72 @@ export function createAvatarPanels(ui: AvatarUI, deps: AvatarDeps, actions: Avat
       items.push(resume)
     } else if (state?.awaiting_arrival) {
       items.push(el('span', '等待村民到达，可随时交还 AI'))
+    } else if (walk) {
+      // 同行：带路时写谁跟着、到了和不用跟了；跟着走时写跟着谁、自动跟随和不跟了
+      const names = walk.followers.map((id) => personName(state, walk.talk, id)).join('、')
+      const leader = personName(state, walk.talk, walk.leader)
+      const where = walk.locale ? ` · 去${localeName(walk.locale)}` : ''
+      const chip = el('span', walk.leading ? `${names}跟着你${where}` : `跟着${leader}${where}`)
+      chip.className = 'avatar-walk-chip'
+      chip.onclick = () => openTab('chat')
+      items.push(chip)
+      if (walk.leading) {
+        const done = actionButton('到了', undefined, () => say('leave', '到了。'))
+        done.classList.add('main')
+        items.push(
+          done,
+          actionButton('不用跟了', undefined, () => say('leave', '不用跟了。'))
+        )
+      } else {
+        const on = actions.autoFollow() === walk.leader
+        const toggle = actionButton(on ? '自动跟随：开' : '自动跟随：关', undefined, () =>
+          actions.setAutoFollow(on ? null : walk.leader)
+        )
+        toggle.classList.toggle('on', on)
+        items.push(
+          toggle,
+          actionButton('不跟了', undefined, () => say('leave', '我不跟了。'))
+        )
+      }
     } else if (talk) {
       const chatting = actionButton(`和${partnerNames(state, talk)}交谈中`, undefined, () =>
         openTab('chat')
       )
       chatting.classList.add('main')
-      items.push(
-        chatting,
-        actionButton(
-          '取消',
-          undefined,
-          () =>
-            void execute({
-              kind: 'interact',
-              revision: a.revision,
-              command: { operation: 'cancel', interaction_id: talk.id },
-            })
-        )
-      )
+      const toggle = actionButton(farewell ? '告辞 ▴' : '告辞 ▾', undefined, () => {
+        farewell = !farewell
+        render(true)
+      })
+      toggle.classList.toggle('on', farewell)
+      items.push(chatting, toggle)
+      if (farewell) {
+        // 告辞的几种说法：对方听到的是这句话，而不是「走开了」；跟我来、你带路是提议一起走
+        const others = (talk.members ?? []).filter((id) => id !== a.id)
+        const propose = (leader: string, message: string) => {
+          farewell = false
+          interact({
+            kind: 'interact',
+            revision: a.revision,
+            command: {
+              operation: 'propose',
+              interaction_id: talk.id,
+              interaction: { kind: 'walk', leader },
+              message,
+            },
+          })
+        }
+        const bye = (message: string) => {
+          farewell = false
+          say('leave', message)
+        }
+        items.push(actionButton('先走了，回头聊', undefined, () => bye('我先走了，回头聊。')))
+        if (others.length === 1 && !talk.proposal)
+          items.push(
+            actionButton('跟我来', undefined, () => propose(a.id, '跟我来，我带你去。')),
+            actionButton('你带路', undefined, () => propose(others[0], '你带路，我跟着你。'))
+          )
+        items.push(actionButton('改天再说', undefined, () => bye('改天再说吧。')))
+      }
     } else if (a.busy) {
       const busy = el('span', `正在${a.activity}${a.remaining ? ` · ${a.remaining}` : ''}`)
       busy.className = 'avatar-busy'
@@ -184,7 +245,10 @@ export function createAvatarPanels(ui: AvatarUI, deps: AvatarDeps, actions: Avat
     body.replaceChildren()
     if (tab === 'chat') {
       const talk = runningTalk(state)
-      title.textContent = talk ? `和${partnerNames(state, talk)}交谈` : '交谈'
+      const walking = talk?.kind.kind === 'walk'
+      title.textContent = talk
+        ? `和${partnerNames(state, talk)}${walking ? '同行' : '交谈'}`
+        : '交谈'
       meta.textContent = talk
         ? `${localeName(a.locus.locale)} · ${talk.members?.length ?? 2} 人`
         : '附近的人与邀请'
@@ -205,6 +269,7 @@ export function createAvatarPanels(ui: AvatarUI, deps: AvatarDeps, actions: Avat
           },
           usage: openUsage,
           settings: openSettings,
+          localeName,
         }
       )
       body.scrollTop = pinned ? body.scrollHeight : keep

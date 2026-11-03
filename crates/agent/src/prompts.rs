@@ -34,7 +34,8 @@ pub fn reflection_rules() -> String {
     fill(REFLECTION_RULES, &[("notes_max", &NOTES_MAX.to_string())])
 }
 /// 交谈轮次的调用出错，让模型改一次；再错就交出发言权。
-pub const CHAT_TOOLS_ONLY: &str = "交谈轮次只能调用一次 interact：say、listen 或 leave";
+pub const CHAT_TOOLS_ONLY: &str =
+    "交谈轮次只能调用一次 interact：say、listen、leave，或 propose 提议一起走、accept/decline 回答提议";
 pub const LIFE_TOOLS_ONLY: &str = "reflect 只在整理轮次使用，生活决策里不能调用";
 
 const MEMORY_NOTE: &str =

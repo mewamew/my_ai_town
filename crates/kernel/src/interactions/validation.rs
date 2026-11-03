@@ -19,10 +19,24 @@ pub(crate) fn validate(
     now: f64,
 ) -> Result<()> {
     let heard = super::chat_validation::HeardEvents::build(actors);
+    // 一个人同时只在一场进行中的交谈或同行里
+    let mut talking = BTreeSet::new();
+    for c in items
+        .values()
+        .filter(|i| i.status == Status::Running)
+        .filter_map(|i| i.chat.as_ref())
+    {
+        for m in &c.members {
+            ensure!(
+                talking.insert(m.as_str()),
+                KernelError::snapshot("一个人同时在两场交谈或同行里")
+            );
+        }
+    }
     for (id, item) in items {
         validate_item(id, item, actors, &world.topo, now)?;
         if item.chat.is_some() {
-            super::chat_validation::validate(item, actors, now, &heard)?;
+            super::chat_validation::validate(item, actors, world, now, &heard)?;
             continue;
         }
         let participants: BTreeSet<_> = [item.initiator.clone(), item.partner.clone()].into();
@@ -67,7 +81,7 @@ fn validate_item(
     );
     // 玩家搭话可以在路上（见 World::player_pair_place），交谈的地点也可以是路段
     let place_ok = topo.is_dwell(&item.locale)
-        || (item.kind == InteractionKind::Talk && topo.locales.contains_key(&item.locale));
+        || (item.kind.has_chat() && topo.locales.contains_key(&item.locale));
     ensure!(
         item.initiator != item.partner
             && actors.contains_key(&item.initiator)
@@ -227,6 +241,7 @@ fn validate_kind(item: &Interaction, world: &World) -> Result<()> {
             );
         }
         InteractionKind::Talk => {}
+        InteractionKind::Walk { .. } => unreachable!("同行带聊天状态，按聊天校验"),
     }
     Ok(())
 }

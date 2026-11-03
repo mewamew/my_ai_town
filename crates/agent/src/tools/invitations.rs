@@ -18,7 +18,15 @@ struct Reply {
 }
 
 pub(super) fn offer(ctx: &mut ToolContext, call: &ToolCall) -> Result<ToolOutcome, ToolError> {
-    let a: Offer = decode(&call.arguments)?;
+    let mut args = call.arguments.clone();
+    let partner = args["partner_id"].as_str().map(str::to_owned);
+    resolve_leader(
+        ctx.world,
+        &ctx.session.actor_id,
+        partner.as_deref(),
+        &mut args["interaction"],
+    );
+    let a: Offer = decode(&args)?;
     execute_interaction(
         ctx,
         call,

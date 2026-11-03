@@ -5,7 +5,7 @@ use crate::{
     tools::ToolName,
 };
 use kernel::World;
-use protocol::{FactKind, GroupStatus, InteractionKind};
+use protocol::{FactKind, GroupStatus};
 use serde_json::json;
 
 impl ResidentRuntime {
@@ -25,7 +25,7 @@ impl ResidentRuntime {
             s.cursors.last_notice = notice.event_id;
             let talk = notice.objects.iter().any(|id| {
                 world.interactions().of(&s.actor_id, id).is_some_and(|i| {
-                    i.kind == InteractionKind::Talk
+                    i.kind.has_chat()
                         && i.event_ids
                             .get(&s.actor_id)
                             .is_some_and(|ids| ids.contains(&notice.event_id))
@@ -35,6 +35,9 @@ impl ResidentRuntime {
                 invited = true;
             } else if s.pending.iter().any(|p| matches!(p, PendingTool::Actions { group_id, .. }
                 if world.action_group(&s.actor_id, group_id).is_some_and(|g| g.status == GroupStatus::Running))) {
+                world.interrupt_actions(&s.actor_id, &notice.text);
+            } else if world.following(&s.actor_id).is_some() {
+                // 跟着走的路上来了重要通知（饿了、累了、天气）：先退出同行，醒来自己决定。
                 world.interrupt_actions(&s.actor_id, &notice.text);
             }
         }

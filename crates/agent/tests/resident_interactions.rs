@@ -472,7 +472,8 @@ fn invalid_chat_id_reports_the_real_id_without_sending_the_rejected_message() {
     let operations = chat_calls[0]["properties"]["arguments"]["anyOf"]
         .as_array()
         .unwrap();
-    assert_eq!(operations.len(), 3);
+    // say、listen、leave，以及提议一起走和回答提议
+    assert_eq!(operations.len(), 6);
     for operation in operations {
         assert_eq!(operation["additionalProperties"], false);
         assert_eq!(
@@ -607,4 +608,88 @@ fn chat_turn_fallbacks_yield_the_turn_without_speaking_for_the_resident() {
             .any(|e| e.actor == "r1" && e.kind == protocol::ChatEntryKind::Speech),
         "兜底只交出发言权，不产生台词"
     );
+}
+
+/// 答应同行后跟着走的村民一路不请求模型，到了地方才醒来，观察里写着到了哪儿。
+#[test]
+fn following_resident_stays_quiet_until_the_walk_arrives() {
+    use kernel::avatar::{Area, Portal, Spot, Surface, WalkMap};
+    let spot = |locale: &str, x: f64, y: f64| Spot {
+        locale: locale.into(),
+        space: locale.into(),
+        position: [x, y],
+    };
+    let mut w = world();
+    w.walk_map = Some(std::sync::Arc::new(WalkMap {
+        version: 1,
+        svg_units_per_metre: 12.,
+        metres_per_minute: 12.,
+        surfaces: ["loc_a", "loc_b"]
+            .into_iter()
+            .map(|id| Surface {
+                locale: id.into(),
+                space: id.into(),
+                area: Area::Rect {
+                    min: [0., 0.],
+                    max: [20., 20.],
+                },
+            })
+            .collect(),
+        stations: [
+            ("st_a".into(), spot("loc_a", 2., 2.)),
+            ("st_b".into(), spot("loc_b", 2., 2.)),
+        ]
+        .into(),
+        portals: vec![Portal {
+            id: "door".into(),
+            label: "门".into(),
+            from: spot("loc_a", 5., 2.),
+            to: spot("loc_b", 2., 2.),
+        }],
+        ..Default::default()
+    }));
+    let mut r = runtime(&mut w, Limits::default());
+    w.spawn("r2", "何青", "loc_a").unwrap();
+    w.enable_agent("r2").unwrap();
+    command(
+        &mut w,
+        "r2",
+        "walk",
+        Command::Offer {
+            partner_id: "r1".into(),
+            interaction: InteractionKind::Walk {
+                leader: "r2".into(),
+                locale: Some("loc_b".into()),
+            },
+            message: "跟我去乙地看看。".into(),
+        },
+    );
+    let q = life_request(&mut r, &mut w);
+    reply(
+        &mut r,
+        &mut w,
+        &q,
+        "reply_invitation",
+        json!({"interaction_id":"walk","accept":true,"message":"行，我跟着你。"}),
+    );
+    assert_eq!(w.following("r1"), Some("r2"));
+    let mut quiet = 0;
+    while w.interactions().of("r1", "walk").unwrap().status == InteractionStatus::Running {
+        assert!(r.poll(&mut w, true).is_empty(), "跟着走的路上不请求模型");
+        w.step(0.1);
+        quiet += 1;
+        assert!(quiet < 200, "同行应该在几分钟内走到");
+    }
+    assert_eq!(
+        w.interactions().of("r1", "walk").unwrap().status,
+        InteractionStatus::Succeeded
+    );
+    assert_eq!(w.actor("r1").unwrap().locus.locale, "loc_b");
+    let woke = request(&mut r, &mut w);
+    assert!(woke
+        .messages
+        .last()
+        .unwrap()
+        .content
+        .contains("到了乙地，同行结束"));
 }

@@ -48,6 +48,11 @@ pub(crate) enum LeaveKind {
 impl Interactions {
     pub(crate) fn start_chat(&mut self, actors: &mut Actors, now: f64, id: &str) {
         let i = self.get_mut(id);
+        let joined = if i.kind.walk_leader().is_some() {
+            "加入同行"
+        } else {
+            "加入交谈"
+        };
         let (initiator, actor) = (i.initiator.clone(), i.partner.clone());
         let c = chat_of_mut(i);
         c.members = [initiator.clone(), actor.clone()].into();
@@ -61,7 +66,7 @@ impl Interactions {
             ChatLine {
                 speaker: &actor,
                 kind: ChatEntryKind::Joined,
-                text: "加入交谈",
+                text: joined,
                 audience,
             },
         );
@@ -69,6 +74,7 @@ impl Interactions {
     }
 
     /// 成员的活动与聊天状态对齐：无期占位、同一参与者集合、同一开始时刻。
+    /// 同行里只有跟随的村民占着活动（见 walk.rs），他们只更新参与者集合，旧观察作废。
     fn sync_chat_activity(&mut self, actors: &mut Actors, now: f64, id: &str) {
         let i = &self.items[id];
         let c = chat_of(i);
@@ -78,8 +84,16 @@ impl Interactions {
             i.kind.label(),
             i.started_at.expect("进行中的聊天有开始时刻"),
         );
+        let walk = i.kind.walk_leader().is_some();
         for actor in &members {
             let a = actors.get_mut(actor).expect("聊天成员存在");
+            if walk {
+                a.actions.bump_revision();
+                if a.current.interaction.as_deref() == Some(id) {
+                    a.current.participants = members.clone();
+                }
+                continue;
+            }
             a.reset_idle(now, true);
             a.current.locale = locale.clone();
             a.current.verb = verb.into();
@@ -89,14 +103,15 @@ impl Interactions {
         }
     }
 
-    /// 本人正在参与的、进行中的聊天。
+    /// 本人正在参与的、进行中的聊天。同行的带路人和玩家操控的同行者不占活动，按成员查。
     pub(crate) fn active_chat(&self, actor: &Actor) -> Option<&Interaction> {
-        actor
-            .current
-            .interaction
-            .as_ref()
-            .and_then(|id| self.items.get(id))
-            .filter(|i| i.status == Status::Running && i.chat.is_some())
+        match &actor.current.interaction {
+            Some(id) => self
+                .items
+                .get(id)
+                .filter(|i| i.status == Status::Running && i.chat.is_some()),
+            None => self.walk_of(&actor.id),
+        }
     }
 
     pub(crate) fn chat_turn(&self, actor: &Actor, now: f64) -> bool {
@@ -220,6 +235,10 @@ impl Interactions {
             actors[actor].interaction_available() && actors[actor].locus.locale == item.locale,
             KernelError::interaction("先结束当前活动并到聊天地点，再加入")
         );
+        ensure!(
+            item.kind.walk_leader().is_none() && self.walk_of(actor).is_none(),
+            KernelError::interaction("同行路上不能加入别的交谈，同行也不能这样加入")
+        );
         let c = chat_of_mut(self.get_mut(id));
         c.members.insert(actor.into());
         c.ever_members.insert(actor.into());
@@ -293,7 +312,7 @@ impl Interactions {
         Ok(())
     }
 
-    fn advance_chat_turn(
+    pub(super) fn advance_chat_turn(
         &mut self,
         actors: &mut Actors,
         now: f64,
@@ -301,6 +320,7 @@ impl Interactions {
         to: Option<&str>,
         pass: bool,
     ) {
+        let walk = self.items[id].kind.walk_leader().is_some();
         let c = chat_of_mut(self.get_mut(id));
         let done = c.turn_queue.remove(0);
         if c.turn_queue.is_empty() {
@@ -313,7 +333,13 @@ impl Interactions {
         }
         c.passes = if pass { c.passes + 1 } else { 0 };
         if c.passes >= c.members.len() {
-            c.resume_at = now + 1.0;
+            // 大家都在听：交谈隔一分钟再轮；同行路上就安静下来，有人开口再说。
+            c.resume_at = now
+                + if walk {
+                    super::walk::QUIET_MINUTES
+                } else {
+                    1.0
+                };
             c.passes = 0;
         }
         self.sync_chat_activity(actors, now, id);
@@ -352,6 +378,12 @@ impl Interactions {
         c.members.remove(actor);
         c.turn_queue.retain(|v| v != actor);
         c.passes = 0;
+        if c.proposal
+            .as_ref()
+            .is_some_and(|p| p.by == actor || p.to == actor)
+        {
+            c.proposal = None;
+        }
         if c.turn_queue.is_empty() {
             // 走的人是这一轮最后一个：其他人这一轮都轮过了，最后开口的人排到新一轮末尾。
             let last = c
@@ -363,21 +395,42 @@ impl Interactions {
             new_round(c, last.as_deref());
         }
         let remaining = c.members.len();
-        actors
-            .get_mut(actor)
-            .expect("聊天成员存在")
-            .reset_idle(now, true);
-        if remaining >= 2 {
+        release(actors, now, actor, id);
+        let leader = self.items[id].kind.walk_leader().map(str::to_owned);
+        let leader_left = leader.as_deref() == Some(actor);
+        if remaining >= 2 && !leader_left {
             self.sync_chat_activity(actors, now, id);
             return Ok(());
         }
         let who = actors.get(actor).map_or(actor, |a| a.name.as_str());
-        self.end_chat(actors, now, id, &format!("{who}走开了，交谈结束"));
-        if kind == LeaveKind::Forced {
-            let i = self.get_mut(id);
-            i.status = Status::Interrupted;
-            i.reason = Some(reason.into());
-        }
+        let Some(leader) = leader else {
+            self.end_chat(actors, now, id, &format!("{who}走开了，交谈结束"));
+            if kind == LeaveKind::Forced {
+                let i = self.get_mut(id);
+                i.status = Status::Interrupted;
+                i.reason = Some(reason.into());
+            }
+            return Ok(());
+        };
+        // 同行：带路人不走了，或最后一个跟随的人退出。还在一起（同一处所）就算好好结束了。
+        let together = chat_of(&self.items[id])
+            .members
+            .iter()
+            .map(String::as_str)
+            .chain([actor])
+            .all(|m| actors[m].locus.locale == actors[&leader].locus.locale);
+        let text = match (kind, leader_left) {
+            (LeaveKind::Forced, _) => format!("{reason}，同行结束"),
+            (LeaveKind::Voluntary, true) => format!("{who}不带路了，同行结束"),
+            (LeaveKind::Voluntary, false) => format!("{who}不跟了，同行结束"),
+        };
+        self.end_chat(actors, now, id, &text);
+        let i = self.get_mut(id);
+        i.status = match kind {
+            LeaveKind::Forced => Status::Interrupted,
+            LeaveKind::Voluntary if together => Status::Succeeded,
+            LeaveKind::Voluntary => Status::Cancelled,
+        };
         Ok(())
     }
 
@@ -390,11 +443,9 @@ impl Interactions {
         let c = chat_of_mut(i);
         let members = std::mem::take(&mut c.members);
         c.turn_queue.clear();
+        c.proposal = None;
         for actor in &members {
-            actors
-                .get_mut(actor)
-                .expect("聊天成员存在")
-                .reset_idle(now, true);
+            release(actors, now, actor, id);
         }
         if let Some(actor) = members.first() {
             self.chat_event(
@@ -467,5 +518,16 @@ impl Interactions {
                 .or_default()
                 .push(event);
         }
+    }
+}
+
+/// 离开或结束聊天时放开一个人：活动指向这场聊天的回到空等；同行的带路人和玩家操控的同行者
+/// 没占活动，正在做的事（比如带路的「前往」）照旧，只让旧观察作废。
+fn release(actors: &mut Actors, now: f64, actor: &str, id: &str) {
+    let a = actors.get_mut(actor).expect("聊天成员存在");
+    if a.current.interaction.as_deref() == Some(id) {
+        a.reset_idle(now, true);
+    } else {
+        a.actions.bump_revision();
     }
 }

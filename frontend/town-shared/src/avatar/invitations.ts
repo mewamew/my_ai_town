@@ -22,14 +22,15 @@ export function createInvitations() {
       if (next.controlled && tab === null && offered.some((i) => !offeredIds.has(i.id)))
         tab = 'chat'
       for (const i of interactions) {
-        if (!offeredIds.has(i.id) || i.initiator !== next.actor?.id || i.kind.kind !== 'talk')
-          continue
+        const social = i.kind.kind === 'talk' || i.kind.kind === 'walk'
+        if (!offeredIds.has(i.id) || i.initiator !== next.actor?.id || !social) continue
         if (i.status !== 'declined' && i.status !== 'expired') continue
         const partner = next.nearby?.find((n) => n.id === i.partner)?.name ?? '对方'
+        const label = i.kind.kind === 'walk' ? '同行' : '交谈'
         const result =
           i.status === 'declined'
-            ? `${partner}没有接受邀请：${i.reply || '这次暂时不方便交谈'}`
-            : `${partner}未回应，交谈邀请已过期`
+            ? `${partner}没有接受邀请：${i.reply || '这次暂时不方便'}`
+            : `${partner}未回应，${label}邀请已过期`
         results.set(i.id, result)
         fresh.push(result)
       }

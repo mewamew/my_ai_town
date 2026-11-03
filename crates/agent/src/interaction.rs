@@ -51,6 +51,9 @@ fn result_text(interaction: &Interaction) -> String {
     }
     match interaction.status {
         InteractionStatus::Offered => "邀请已发出，对方尚未同意".into(),
+        InteractionStatus::Running if interaction.kind.walk_leader().is_some() => {
+            "正在同行，到了地方会结束".into()
+        }
         InteractionStatus::Running if interaction.chat.is_some() => {
             "大家正在交谈，可继续说话、倾听或告辞".into()
         }

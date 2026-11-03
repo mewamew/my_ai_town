@@ -11,6 +11,12 @@ pub enum ChatEntryKind {
     Joined,
     Left,
     Ended,
+    /// 提出提议（同行等），正文是提议内容
+    Proposed,
+    /// 答应了提议
+    Accepted,
+    /// 没答应，或提议人撤回
+    Declined,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -34,6 +40,20 @@ pub struct ChatState {
     pub entries: Vec<ChatEntry>,
     pub passes: usize,
     pub resume_at: f64,
+    /// 等人回答的提议；旧存档没有这一项。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposal: Option<ChatProposal>,
+}
+
+/// 交谈里提出、等 to 回答的提议。答应、拒绝、撤回或有一方离开交谈时清掉。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChatProposal {
+    pub by: String,
+    pub to: String,
+    #[serde(serialize_with = "crate::sorted")]
+    pub interaction: crate::InteractionKind,
+    pub at: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +105,8 @@ pub struct ChatObservation {
     pub locale: String,
     pub members: BTreeSet<String>,
     pub partner: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposal: Option<ChatProposal>,
     pub reason: Option<String>,
     pub status: InteractionStatus,
     pub turn: Option<String>,

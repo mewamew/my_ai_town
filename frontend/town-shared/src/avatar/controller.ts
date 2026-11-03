@@ -270,6 +270,11 @@ class AvatarController {
         this.bagSelection = id
       },
       miracleMenu: () => this.miracleMenu(),
+      autoFollow: () => this.navigation.autoFollow(),
+      setAutoFollow: (id) => {
+        this.navigation.setAutoFollow(id)
+        this.render()
+      },
     }
   }
 

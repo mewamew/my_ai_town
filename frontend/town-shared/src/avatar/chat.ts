@@ -1,9 +1,16 @@
 import type { WorldHold } from '../protocol'
-import type { AvatarCommand, AvatarInteraction, AvatarState, InteractionCommand } from './types'
-import { panelButton, pendingTalk, runningTalk } from './view'
+import type { ChatEntry } from '../chat/types'
+import type {
+  AvatarCommand,
+  AvatarInteraction,
+  AvatarState,
+  InteractionCommand,
+  InteractionKind,
+} from './types'
+import { panelButton, pendingTalk, personName, runningTalk, runningWalk } from './view'
 import { button, el } from '../dom'
 import { isTouch } from '../platform'
-// 交谈面板：收到的邀请、进行中的对话、附近的人。发言输入框由控制器持有。
+// 交谈面板：收到的邀请、进行中的对话或同行、交谈里的提议、附近的人。发言输入框由控制器持有。
 
 type Execute = (c: AvatarCommand) => Promise<boolean>
 type Actor = NonNullable<AvatarState['actor']>
@@ -14,6 +21,7 @@ interface Notices {
   dismiss: (id: string) => void
   usage: () => void
   settings: () => void
+  localeName: (id: string) => string
 }
 
 /** 一次重绘里各部分共用的东西 */
@@ -27,14 +35,9 @@ interface ChatView {
   execute: Execute
   interact: (command: InteractionCommand) => void
   nameOf: (id: string) => string
+  localeName: (id: string) => string
   /** 在面板里加一段 */
   block: (className: string) => HTMLElement
-}
-
-function entryName(state: AvatarState, id: string) {
-  for (const i of state.interactions ?? [])
-    for (const e of i.entries ?? []) if (e.actor === id) return e.name
-  return undefined
 }
 
 /** 世界暂停时的说明；因额度或故障暂停时给出原因和去处 */
@@ -58,7 +61,12 @@ function inviteCard(v: ChatView, i: AvatarInteraction) {
   const row = el('div')
   row.className = 'avatar-row'
   if (i.partner === v.actor.id) {
-    const what = i.kind.kind === 'talk' ? '和你聊聊' : '送你东西'
+    const what =
+      i.kind.kind === 'talk'
+        ? '和你聊聊'
+        : i.kind.kind === 'walk'
+          ? walkWish(v, i.kind)
+          : '送你东西'
     card.append(el('p', `${nameOf(i.initiator)}想${what}${i.message ? `：${i.message}` : ''}`))
     const reply = (accept: boolean, message: string) =>
       interact({ operation: 'reply', interaction_id: i.id, accept, message })
@@ -86,12 +94,119 @@ function inviteCard(v: ChatView, i: AvatarInteraction) {
 function turnText(state: AvatarState, talk: AvatarInteraction) {
   if (!state.speed) return '暂停期间不计发言等待时间'
   if (talk.can_speak) return '轮到你了 · 一分钟不说话会自动切到只听'
+  if (talk.kind.kind === 'walk' && talk.can_request_turn) return '路上没人说话，想说就点「我想说」'
   return talk.can_request_turn ? '你在只听，想说话就点「我想说」' : '等对方说完'
 }
 
-/** 进行中的交谈：对白、轮到谁发言，以及只听、我想说、离开 */
+/** 同行的说法：「陈默带路，去陈默家」 */
+function walkText(v: ChatView, kind: Extract<InteractionKind, { kind: 'walk' }>) {
+  const who = kind.leader === v.actor.id ? '你带路' : `${v.nameOf(kind.leader)}带路`
+  return kind.locale ? `${who}，去${v.localeName(kind.locale)}` : who
+}
+/** 收到的同行邀请或提议想做什么：「一起走（你带路）」 */
+function walkWish(v: ChatView, kind: Extract<InteractionKind, { kind: 'walk' }>) {
+  return `一起走（${walkText(v, kind)}）`
+}
+
+/** 聊天记录里的过程条目怎么说 */
+function eventText(e: ChatEntry) {
+  switch (e.kind) {
+    case 'joined':
+      return `${e.name}加入了`
+    case 'left':
+      return `${e.name}离开了：${e.text}`
+    case 'proposed':
+      return `${e.name}提议${e.text}`
+    case 'accepted':
+      return `${e.name}答应了`
+    case 'declined':
+      return `${e.name}${e.text}`
+    default:
+      return e.text || '交谈结束'
+  }
+}
+
+/** 交谈里等人回答的提议：问我的给「好」「算了」，我提的可以撤回 */
+function proposalCard(v: ChatView, talk: AvatarInteraction) {
+  const p = talk.proposal
+  if (!p || p.interaction.kind !== 'walk') return
+  const { interact, active } = v
+  const card = v.block('avatar-invite avatar-proposal')
+  const row = el('div')
+  row.className = 'avatar-row'
+  if (p.to === v.actor.id) {
+    card.append(el('p', `${v.nameOf(p.by)}想${walkWish(v, p.interaction)}`))
+    const lead = p.interaction.leader === v.actor.id
+    card.append(el('p', lead ? '答应后交谈结束，他跟在你身后' : '答应后跟着他走，可以开自动跟随'))
+    const yes = panelButton(
+      lead ? '好，跟我来' : '好，走吧',
+      () => interact({ operation: 'accept', interaction_id: talk.id, message: '好。' }),
+      !active
+    )
+    yes.className = 'avatar-primary-small'
+    row.append(
+      yes,
+      panelButton(
+        '算了',
+        () =>
+          interact({ operation: 'decline', interaction_id: talk.id, message: '算了，改天吧。' }),
+        !active
+      )
+    )
+  } else {
+    card.append(el('p', `等${v.nameOf(p.to)}回答：${walkWish(v, p.interaction)}`))
+    row.append(
+      panelButton(
+        '撤回',
+        () => interact({ operation: 'decline', interaction_id: talk.id, message: '' }),
+        !active
+      )
+    )
+  }
+  card.append(row)
+}
+
+/** 两人交谈时的「一起走」：跟我来（我带路）、你带路（他带路）。都在交谈里提议，对方答应才走 */
+function togetherRow(v: ChatView, talk: AvatarInteraction) {
+  const others = (talk.members ?? []).filter((id) => id !== v.actor.id)
+  if (talk.kind.kind !== 'talk' || others.length !== 1 || talk.proposal) return
+  const [partner] = others
+  const propose = (leader: string, message: string) =>
+    v.interact({
+      operation: 'propose',
+      interaction_id: talk.id,
+      interaction: { kind: 'walk', leader },
+      message,
+    })
+  const row = v.block('avatar-textacts avatar-together')
+  row.append(
+    el('span', '一起走'),
+    panelButton('跟我来', () => propose(v.actor.id, '跟我来，我带你去。'), !v.active),
+    panelButton('你带路', () => propose(partner, '你带路，我跟着你。'), !v.active)
+  )
+}
+
+/** 进行中的交谈或同行：对白、轮到谁发言，以及只听、我想说、离开；同行另有到了、不跟了 */
 function talkLog(v: ChatView, talk: AvatarInteraction) {
   const { actor: a, active, interact } = v
+  const walk = runningWalk(v.state)
+  if (walk) {
+    const note = v.block('avatar-walk-note')
+    note.append(
+      el(
+        'p',
+        walk.leading
+          ? `${walk.followers.map(v.nameOf).join('、')}跟着你${walk.locale ? ` · 去${v.localeName(walk.locale)}` : ''}`
+          : `跟着${v.nameOf(walk.leader)}走${walk.locale ? ` · 去${v.localeName(walk.locale)}` : ''}`
+      ),
+      el(
+        'p',
+        walk.leading
+          ? '你走到哪他们跟到哪，在一个地方停下一会儿就算到了；带着人时走得慢一些'
+          : '到了地方同行会自动结束；可以在操作条上开自动跟随'
+      )
+    )
+  }
   const log = v.block('avatar-chatlog')
   for (const e of talk.entries ?? []) {
     if (e.kind === 'speech') {
@@ -101,17 +216,17 @@ function talkLog(v: ChatView, talk: AvatarInteraction) {
       log.append(b)
       continue
     }
-    const ev = el(
-      'p',
-      e.kind === 'joined' ? `${e.name}加入了` : e.kind === 'left' ? `${e.name}离开了` : '交谈结束'
-    )
+    const ev = el('p', eventText(e))
     ev.className = 'avatar-chat-event'
     log.append(ev)
   }
   const turn = el('p', turnText(v.state, talk))
   turn.className = active && talk.can_speak ? 'avatar-turn on' : 'avatar-turn'
   log.append(turn)
-  v.block('avatar-textacts').append(
+  proposalCard(v, talk)
+  togetherRow(v, talk)
+  const acts = v.block('avatar-textacts')
+  acts.append(
     panelButton(
       '只听',
       () => interact({ operation: 'listen', interaction_id: talk.id }),
@@ -121,14 +236,17 @@ function talkLog(v: ChatView, talk: AvatarInteraction) {
       '我想说',
       () => void v.execute({ kind: 'request_turn', chat_id: talk.id, revision: a.revision }),
       !active || !talk.can_request_turn
-    ),
-    panelButton(
-      '离开交谈',
-      () =>
-        interact({ operation: 'leave', interaction_id: talk.id, message: '我先走了，回头聊。' }),
-      !active
     )
   )
+  const leave = (message: string) =>
+    interact({ operation: 'leave', interaction_id: talk.id, message })
+  if (!walk) acts.append(panelButton('离开交谈', () => leave('我先走了，回头聊。'), !active))
+  else if (walk.leading)
+    acts.append(
+      panelButton('到了', () => leave('到了。'), !active),
+      panelButton('不用跟了', () => leave('不用跟了，你先忙吧。'), !active)
+    )
+  else acts.append(panelButton('不跟了', () => leave('我不跟了。'), !active))
 }
 
 /** 没在交谈时：附近的人（可邀请）和附近正在进行、可以加入的交谈 */
@@ -197,10 +315,8 @@ export function renderChat(
     idle: active && !a.busy,
     execute,
     interact: (command) => void execute({ kind: 'interact', revision: a.revision, command }),
-    nameOf: (id) =>
-      id === a.id
-        ? '你'
-        : (state.nearby?.find((n) => n.id === id)?.name ?? entryName(state, id) ?? '对方'),
+    nameOf: (id) => personName(state, undefined, id),
+    localeName: notices.localeName,
     block: (className) => {
       const s = el('section')
       s.className = className

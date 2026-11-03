@@ -288,7 +288,7 @@ pub const TOOLS: [ToolSpec; 14] = [
         name: ToolName::OfferInvitation,
         description: || {
             format!(
-                "向在场的人发起交谈、赠予或用餐邀请；{} 分钟未回应过期。交谈邀请发出后本次醒来结束，对方回应、重要通知或 {} 分钟后返回状态。",
+                "向在场的人发起交谈、同行、赠予或用餐邀请；{} 分钟未回应过期。交谈和同行邀请发出后本次醒来结束，对方回应、重要通知或 {} 分钟后返回状态。",
                 kernel::interactions::INVITE_MINUTES,
                 OFFER_WAIT_MINUTES
             )
@@ -307,7 +307,7 @@ pub const TOOLS: [ToolSpec; 14] = [
     ToolSpec {
         name: ToolName::Interact,
         description: || {
-            "聊天中的操作：say 发言（to 可指定对象）、listen 倾听、leave 告辞；join 加入 nearby_chats。每次只调用一个。".into()
+            "聊天中的操作：say 发言（to 可指定对象）、listen 倾听、leave 告辞；propose 提议一起走（同行），accept/decline 回答对方的提议；join 加入 nearby_chats；cancel 取消自己发出的邀请或不再同行。每次只调用一个。".into()
         },
         parameters: schema::interact,
         exec: interact,
@@ -537,6 +537,22 @@ fn interact(ctx: &mut ToolContext, call: &ToolCall) -> Result<ToolOutcome, ToolE
                 json!({"interaction_id": chat.id})
             ));
         }
+        if args["operation"] == "propose" {
+            let partner = args["to"].as_str().map(str::to_owned).or_else(|| {
+                let members = &chat.chat.as_ref()?.members;
+                let mut others = members.iter().filter(|m| **m != ctx.session.actor_id);
+                match (others.next(), others.next()) {
+                    (Some(only), None) => Some(only.clone()),
+                    _ => None,
+                }
+            });
+            resolve_leader(
+                ctx.world,
+                &ctx.session.actor_id,
+                partner.as_deref(),
+                &mut args["interaction"],
+            );
+        }
         if let Some(to) = args["to"].as_str() {
             let members = chat.chat.as_ref().map(|c| &c.members);
             let resolved = members
@@ -589,15 +605,41 @@ fn interact(ctx: &mut ToolContext, call: &ToolCall) -> Result<ToolOutcome, ToolE
     })
 }
 
+/// 同行的带路人可以写 self、对方编号或名字：换成编号，世界只认编号。认不出就原样交给世界去拒绝。
+pub(crate) fn resolve_leader(
+    world: &World,
+    me: &str,
+    partner: Option<&str>,
+    interaction: &mut Value,
+) {
+    if interaction["kind"] != "walk" {
+        return;
+    }
+    let Some(raw) = interaction["leader"].as_str().map(str::trim) else {
+        return;
+    };
+    let id = match raw {
+        "self" | "me" | "我" | "自己" => Some(me.to_owned()),
+        "partner" | "you" | "对方" | "你" => partner.map(str::to_owned),
+        _ => world
+            .actor_ids()
+            .into_iter()
+            .find(|id| id == raw || world.actor(id).is_some_and(|a| a.name == raw)),
+    };
+    if let Some(id) = id {
+        interaction["leader"] = json!(id);
+    }
+}
+
 fn execute_interaction(
     ctx: &mut ToolContext,
     call: &ToolCall,
     command: InteractionCommand,
 ) -> Result<ToolOutcome, ToolError> {
-    // 收到交谈邀请时可以在普通动作继续执行期间答复，其他工具仍遵守原等待规则。
+    // 收到交谈或同行邀请时可以在普通动作继续执行期间答复，其他工具仍遵守原等待规则。
     let talk_reply = matches!(&command, InteractionCommand::Reply { interaction_id, .. }
         if ctx.world.interactions().of(&ctx.session.actor_id, interaction_id)
-            .is_some_and(|i| i.kind == protocol::InteractionKind::Talk));
+            .is_some_and(|i| i.kind.has_chat()));
     if !talk_reply || ctx.session.pending.iter().any(PendingTool::blocks_request) {
         require_idle(ctx, "先等待当前工具结果，再处理互动")?;
     }
@@ -611,14 +653,11 @@ fn execute_interaction(
         }));
     }
     let talk_offer = matches!(
-        command,
-        InteractionCommand::Offer {
-            interaction: protocol::InteractionKind::Talk,
-            ..
-        }
+        &command,
+        InteractionCommand::Offer { interaction, .. } if interaction.has_chat()
     );
     if talk_offer && result.status == InteractionStatus::Offered {
-        // 发出交谈邀请后不再占一次请求去等：对方回应、重要通知或超时时把邀请状态一并返回。
+        // 发出交谈或同行邀请后不再占一次请求去等：对方回应、重要通知或超时时把邀请状态一并返回。
         // 游标取邀请发出之后的，邀请本身的事件不算回应。
         return Ok(ToolOutcome::Pending(PendingTool::Wait {
             call: call.clone(),

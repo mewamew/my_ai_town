@@ -37,4 +37,7 @@ export interface AvatarActions {
   selectBag: (id: string | null) => void
   /** 对当前对象施展神力：打开操作条上方的选项单（F、操作条上的「神力」） */
   miracleMenu: () => void
+  /** 跟着村民走时自动跟随的那个人；没开为 null */
+  autoFollow: () => string | null
+  setAutoFollow: (id: string | null) => void
 }

@@ -99,16 +99,33 @@ export function colorPicker(initial: string, onChange: (color: string) => void) 
     },
   }
 }
-/** 正在进行的交谈（同一时刻最多一场） */
+/** 正在进行的交谈或同行（同一时刻最多一场；同行是路上也能说话的交谈） */
 export function runningTalk(state: AvatarState | null): AvatarInteraction | undefined {
-  return state?.interactions?.find((i) => i.status === 'running' && i.kind.kind === 'talk')
+  return state?.interactions?.find(
+    (i) => i.status === 'running' && (i.kind.kind === 'talk' || i.kind.kind === 'walk')
+  )
 }
-/** 同一对人尚未回应的邀请，双方都不重复发起。 */
+/** 正在进行的同行：谁带路、去哪、谁跟着；不在同行里为空 */
+export function runningWalk(state: AvatarState | null) {
+  const talk = runningTalk(state)
+  const kind = talk?.kind
+  if (!talk || kind?.kind !== 'walk') return undefined
+  const me = state?.actor?.id
+  const followers = (talk.members ?? []).filter((id) => id !== kind.leader)
+  return {
+    talk,
+    leader: kind.leader,
+    locale: kind.locale,
+    leading: kind.leader === me,
+    followers,
+  }
+}
+/** 同一对人尚未回应的交谈或同行邀请，双方都不重复发起。 */
 export function pendingTalk(state: AvatarState, other: string): AvatarInteraction | undefined {
   const me = state.actor?.id
   return state.interactions?.find(
     (i) =>
-      i.kind.kind === 'talk' &&
+      (i.kind.kind === 'talk' || i.kind.kind === 'walk') &&
       i.status === 'offered' &&
       ((i.initiator === me && i.partner === other) || (i.partner === me && i.initiator === other))
   )
@@ -117,11 +134,15 @@ export function pendingTalk(state: AvatarState, other: string): AvatarInteractio
 export function partnerNames(state: AvatarState, talk: AvatarInteraction) {
   const me = state.actor?.id
   const ids = (talk.members ?? [talk.initiator, talk.partner]).filter((id) => id !== me)
-  const names = ids.map(
-    (id) =>
-      state.nearby?.find((n) => n.id === id)?.name ??
-      talk.entries?.find((e) => e.actor === id)?.name ??
-      '对方'
+  return ids.map((id) => personName(state, talk, id)).join('、') || '对方'
+}
+/** 一个人的名字：附近的人或交谈记录里有就用，否则叫「对方」；是自己时为「你」 */
+export function personName(state: AvatarState, talk: AvatarInteraction | undefined, id: string) {
+  if (id === state.actor?.id) return '你'
+  return (
+    state.nearby?.find((n) => n.id === id)?.name ??
+    talk?.entries?.find((e) => e.actor === id)?.name ??
+    state.interactions?.flatMap((i) => i.entries ?? []).find((e) => e.actor === id)?.name ??
+    '对方'
   )
-  return names.join('、') || '对方'
 }

@@ -16,9 +16,13 @@ mod chat;
 mod chat_validation;
 pub(crate) mod chat_view;
 mod commands;
+mod proposals;
 pub(crate) mod validation;
+pub(crate) mod walk;
 
 pub(crate) use chat::{ChatLine, LeaveKind};
+pub(crate) use walk::WalkTrails;
+pub use walk::LEAD_PACE;
 
 /// 写给互动参与者的一条事实：种类、正文、涉及的对象。
 pub(crate) struct Fact {
@@ -133,19 +137,19 @@ impl Interactions {
         self.items.get(id).filter(|i| i.includes(actor))
     }
 
-    /// 有人向本人发出、尚未回应的交谈邀请。
+    /// 有人向本人发出、尚未回应的交谈或同行邀请：忙着也能考虑，接受才中断手头的事。
     pub fn has_talk_invitation(&self, actor: &str) -> bool {
-        self.items.values().any(|i| {
-            i.partner == actor && i.status == Status::Offered && i.kind == InteractionKind::Talk
-        })
+        self.items
+            .values()
+            .any(|i| i.partner == actor && i.status == Status::Offered && i.kind.has_chat())
     }
 
-    /// 玩家（化身或附身）发给这个人、还没回应、发出不到 TALK_HOLD_MINUTES 的交谈邀请。
+    /// 玩家（化身或附身）发给这个人、还没回应、发出不到 TALK_HOLD_MINUTES 的交谈或同行邀请。
     pub(crate) fn player_talk_offer(&self, actors: &Actors, actor: &str, now: f64) -> bool {
         self.items.values().any(|i| {
             i.partner == actor
                 && i.status == Status::Offered
-                && i.kind == InteractionKind::Talk
+                && i.kind.has_chat()
                 && now < i.expires_at.min(i.created_at + TALK_HOLD_MINUTES)
                 && actors
                     .get(&i.initiator)
@@ -178,7 +182,7 @@ impl Interactions {
         now: f64,
     ) -> Interaction {
         Interaction {
-            chat: matches!(kind, InteractionKind::Talk).then(Default::default),
+            chat: kind.has_chat().then(Default::default),
             id: id.into(),
             initiator: initiator.id.clone(),
             partner: partner.into(),
@@ -229,15 +233,15 @@ impl Interactions {
         partner: &str,
         kind: &InteractionKind,
     ) -> Result<()> {
-        if *kind == InteractionKind::Talk {
+        if kind.has_chat() {
             ensure!(
                 !self.items.values().any(|i| {
-                    i.kind == InteractionKind::Talk
+                    i.kind.has_chat()
                         && i.status == Status::Offered
                         && ((i.initiator == actor && i.partner == partner)
                             || (i.initiator == partner && i.partner == actor))
                 }),
-                KernelError::interaction("你们之间已有待回应的交谈邀请")
+                KernelError::interaction("你们之间已有待回应的交谈或同行邀请")
             );
         }
         let open = |f: &dyn Fn(&Interaction) -> bool| {
@@ -347,8 +351,10 @@ impl Interactions {
             .values()
             .filter(|i| i.status == Status::Offered)
             .flat_map(|i| {
-                let hold =
-                    (i.kind == InteractionKind::Talk).then_some(i.created_at + TALK_HOLD_MINUTES);
+                let hold = i
+                    .kind
+                    .has_chat()
+                    .then_some(i.created_at + TALK_HOLD_MINUTES);
                 [Some(i.expires_at), hold]
             })
             .flatten()
@@ -425,6 +431,7 @@ impl Interactions {
                 InteractionKind::Serve { .. } => {
                     "招待用餐完成；补给与身体效果按道具定义结算，招待者未获得用餐收益".into()
                 }
+                InteractionKind::Walk { .. } => "同行结束".into(),
             }
         } else {
             format!(

@@ -38,7 +38,7 @@ type Cell = (i32, i32);
 
 impl WalkMap {
     /// 两点之间整段通畅：同一空间，按采样步长逐点检查人物半径内没有阻挡。
-    fn segment_clear(&self, a: &Spot, b: &Spot, obstacles: &[Obstacle]) -> bool {
+    pub(crate) fn segment_clear(&self, a: &Spot, b: &Spot, obstacles: &[Obstacle]) -> bool {
         if a.space != b.space {
             return false;
         }

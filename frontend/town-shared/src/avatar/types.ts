@@ -23,17 +23,33 @@ export interface PlayerAction {
   inventory?: InventoryOperation
   writing?: { title: string; text: string }
 }
-/** 双方互动的种类：交谈、赠予物品、招待用餐 */
+/** 双方互动的种类：交谈、赠予物品、招待用餐、同行（leader 带路，locale 是说好的目的地） */
 export type InteractionKind =
   | { kind: 'talk' }
   | { kind: 'give'; items: string[] }
   | { kind: 'serve'; prop_id: string; verb: string }
+  | { kind: 'walk'; leader: string; locale?: string }
 export type InteractionCommand =
   | { operation: 'offer'; partner_id: string; interaction: InteractionKind; message: string }
   | { operation: 'reply'; interaction_id: string; accept: boolean; message: string }
   | { operation: 'cancel' | 'listen'; interaction_id: string }
-  | { operation: 'join' | 'leave'; interaction_id: string; message: string }
+  | { operation: 'join' | 'leave' | 'decline'; interaction_id: string; message: string }
   | { operation: 'say'; interaction_id: string; message: string; to?: string }
+  | {
+      operation: 'propose'
+      interaction_id: string
+      interaction: InteractionKind
+      message: string
+      to?: string
+    }
+  | { operation: 'accept'; interaction_id: string; message: string; locale?: string }
+/** 交谈里等人回答的提议（现在是一起走） */
+export interface ChatProposal {
+  by: string
+  to: string
+  interaction: InteractionKind
+  at: number
+}
 /** 化身神力：复活死者、治好伤病、补满饱腹精力水分 */
 export type MiracleKind = 'revive' | 'heal' | 'refill'
 export type AvatarCommand =
@@ -77,11 +93,12 @@ interface InteractionBase {
   /** 受邀村民的模型回应格式出错时给邀请者看的说明 */
   response_error?: string
 }
-/** 聊天：本人听到的台词、成员与轮次 */
+/** 聊天：本人听到的台词、成员与轮次，以及等人回答的提议 */
 interface ChatFields {
   entries: ChatEntry[]
   members: string[]
   turn: string | null
+  proposal?: ChatProposal
 }
 /** 赠予、招待用餐等双方互动的完整记录 */
 interface PairFields {

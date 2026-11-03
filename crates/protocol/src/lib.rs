@@ -41,7 +41,7 @@ pub use avatar::{
     PortalView, PositionAck, RecentEvent,
 };
 pub use chat::{
-    ChatEntry, ChatEntryKind, ChatObservation, ChatPresence, ChatState, ChatSummary,
+    ChatEntry, ChatEntryKind, ChatObservation, ChatPresence, ChatProposal, ChatState, ChatSummary,
     InteractionObservation, NearbyChat, SpeechView,
 };
 pub use client_msg::{ClientMsg, IntentDraft, UntilPredicate};

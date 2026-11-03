@@ -826,12 +826,14 @@ fn wants_request(world: &World, s: &Session) -> bool {
         );
     let responding =
         world.interactions().has_talk_invitation(&s.actor_id) && world.talk_available(&s.actor_id);
+    // 交谈的成员和同行里跟着走的人占着活动，只在轮到自己说话时想；带路人边走边说也是轮到才想。
+    let turn = world.chat_turn(&s.actor_id);
     a.actions.agent_controlled
         && a.present()
         && a.possession.is_none()
         && !a.needs.incapacitated()
-        && ((a.current.action.is_none() && idle) || responding)
-        && (world.active_chat(&s.actor_id).is_none() || world.chat_turn(&s.actor_id))
+        && ((a.current.action.is_none() && idle) || responding || turn)
+        && (a.current.interaction.is_none() || turn)
         && s.in_flight.is_none()
         && !s
             .pending

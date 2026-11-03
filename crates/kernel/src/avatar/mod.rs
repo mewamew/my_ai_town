@@ -211,6 +211,7 @@ impl World {
         }
         let locus = a.locus.clone();
         let name = a.name.clone();
+        self.end_walks_of(ID, "离开了小镇");
         self.interrupt_actions(ID, "化身离开小镇");
         let now = self.minutes;
         let a = self.actor_mut(ID);

@@ -39,7 +39,8 @@ impl World {
                         .map_or(f64::INFINITY, |w| w.boundary(t0)),
                 )
                 .min(physiology::next_boundary(&self.actors, &rates))
-                .min(self.happenings_boundary());
+                .min(self.happenings_boundary())
+                .min(self.walk_boundary());
             let completed = self.advance_activities(&ids, t0, step);
             self.minutes = t0 + step;
             self.advance_needs(step, rates);
@@ -50,6 +51,8 @@ impl World {
                     a.locus = destination;
                 }
             }
+            // 带路人走完这一段后，跟随的人沿他的足迹跟上。
+            self.advance_walks(step);
             self.advance_weather();
             for id in completed {
                 // 第一名参与者完成会同时释放双方；第二名不能再结算已释放的空等。

@@ -12,6 +12,9 @@ const ENTRIES_BYTES: usize = 6_000;
 const ENTRIES_BYTES_MIN: usize = 500;
 /// 交谈期间的重要通知最多带几条。
 const NOTICES_MAX: usize = 6;
+/// 属于本场对话的字段：有变化时放进 chat 里重发，不放在顶层。等人回答的提议没有时为 null，
+/// 交谈变成同行时 kind 跟着变。
+const CHAT_FIELDS: [&str; 3] = ["members", "proposal", "kind"];
 /// 对话记录超过这个字节数就从全量重新开始：交谈再长，请求也有上限。
 const TRANSCRIPT_BYTES: u64 = 16_000;
 
@@ -165,10 +168,18 @@ impl TurnState {
             })
             .collect();
         let slim = view::slim(raw);
+        // 提议一起去某处时要写地点编号；交谈轮次不带地图，只列名字和编号。
+        let places: Vec<_> = world
+            .topo
+            .places
+            .iter()
+            .map(|p| json!({"id":p.locale,"name":p.name}))
+            .collect();
         Ok(Self {
             clock: raw["clock"].clone(),
             fields: vec![
                 ("identity", json!({"id": actor.id, "name": actor.name})),
+                ("places", json!(places)),
                 ("location", raw["location"].clone()),
                 ("needs", slim["needs"].clone()),
                 (
@@ -181,6 +192,8 @@ impl TurnState {
                 ),
                 ("people_here", json!(people)),
                 ("members", chat["members"].clone()),
+                ("proposal", chat["proposal"].clone()),
+                ("kind", chat["kind"].clone()),
                 ("goals", json!(goals)),
             ],
             chat,
@@ -238,7 +251,7 @@ impl TurnState {
         let mut body = serde_json::Map::new();
         body.insert("clock".into(), self.clock.clone());
         for (key, value) in &self.fields {
-            if *key != "members" {
+            if !CHAT_FIELDS.contains(key) {
                 body.insert((*key).into(), value.clone());
             }
         }
@@ -290,8 +303,8 @@ impl TurnState {
             let mut body = serde_json::Map::new();
             body.insert("clock".into(), self.clock.clone());
             for (key, value) in changed {
-                if *key == "members" {
-                    chat["members"] = value.clone();
+                if CHAT_FIELDS.contains(key) {
+                    chat[*key] = value.clone();
                 } else {
                     body.insert((*key).into(), value.clone());
                 }

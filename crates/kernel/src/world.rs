@@ -52,6 +52,8 @@ pub struct World {
     pub(crate) placer: Option<Box<dyn Placer>>,
     /// 道具动作引发的后续：定时事件、随机流（happenings.rs），随快照保存。
     pub(crate) happenings: crate::happenings::Happenings,
+    /// 同行的足迹与计时（interactions/walk.rs），不存档。
+    pub(crate) walk_trails: crate::interactions::WalkTrails,
 }
 
 impl World {
@@ -74,6 +76,7 @@ impl World {
             miracles: false,
             placer: None,
             happenings: Default::default(),
+            walk_trails: Default::default(),
         }
     }
 

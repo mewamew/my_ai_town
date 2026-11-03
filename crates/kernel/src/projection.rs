@@ -102,7 +102,9 @@ fn roster(world: &World, speed: f64) -> ServerMsg {
             .or_default()
             .push(RosterMember {
                 appearance: a.avatar.as_ref().map(|p| p.appearance.clone()),
-                chat: world.interactions.chat_presence(&world.actors, a),
+                chat: world
+                    .interactions
+                    .chat_presence(&world.actors, a, world.minutes),
                 speech: world.interactions.latest_speech(&a.id),
                 inventory: world.inventory_view(&a.id),
                 id: a.id.clone(),
@@ -118,6 +120,8 @@ fn roster(world: &World, speed: f64) -> ServerMsg {
                 plan: PlanView {
                     current: if a.needs.incapacitated() {
                         a.needs.limitation().into()
+                    } else if let Some(walk) = world.walk_plan(&a.id) {
+                        walk
                     } else {
                         a.current.plan_text(&world.topo)
                     },
@@ -147,6 +151,38 @@ fn roster(world: &World, speed: f64) -> ServerMsg {
 }
 
 impl World {
+    /// 同行里的人在名册上的说明：「跟着旅人走，去陈默家」「带陈默去陈默家」。
+    fn walk_plan(&self, actor: &str) -> Option<String> {
+        let item = self.interactions.walk_of(actor)?;
+        let protocol::InteractionKind::Walk { leader, locale } = &item.kind else {
+            return None;
+        };
+        let to = locale
+            .as_ref()
+            .map(|l| format!("去{}", self.topo.locale_name(l)))
+            .unwrap_or_default();
+        let name = |id: &str| {
+            self.actors
+                .get(id)
+                .map_or(String::new(), |a| a.name.clone())
+        };
+        Some(if leader == actor {
+            let others: Vec<_> = item
+                .chat
+                .as_ref()?
+                .members
+                .iter()
+                .filter(|m| *m != actor)
+                .map(|m| name(m))
+                .collect();
+            format!("带{}{to}", others.join("、"))
+        } else if to.is_empty() {
+            format!("跟着{}走", name(leader))
+        } else {
+            format!("跟着{}走，{to}", name(leader))
+        })
+    }
+
     // ---------- 子系统的只读入口：改动只走世界的命令 ----------
 
     pub fn interactions(&self) -> &Interactions {

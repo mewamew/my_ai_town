@@ -34,6 +34,16 @@ const TICK_SECONDS = 0.1
 const RESIDENT_METRES_PER_MINUTE = 12
 /** 追人时多久看一次他挪没挪开（毫秒） */
 const CHASE_CHECK_MS = 300
+/** 自动跟随：离带路的人超过这么远（米）就追上去，追到这么近停下 */
+const FOLLOW_START = 2.4
+const FOLLOW_STOP = 1.4
+
+/** 自己跟着别人走时，同行里带路的人；不在同行里或自己带路时为空 */
+function walkLeader(state: AvatarState | null): string | undefined {
+  const walk = state?.interactions?.find((i) => i.status === 'running' && i.kind.kind === 'walk')
+  const kind = walk?.kind
+  return kind?.kind === 'walk' && kind.leader !== state?.actor?.id ? kind.leader : undefined
+}
 
 /** 行走输入、点击目标的路线与到达后的互动。 */
 export function createAvatarNavigation(deps: AvatarNavigationDeps) {
@@ -114,6 +124,8 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
   let arriveAct: (() => void) | null = null
   /** 正在走向的人：他走开（出门、进屋、换地方）时路线跟着改，不扑空到他原来站的地方 */
   let chasing: { id: string; at: WalkTarget; checked: number } | null = null
+  /** 跟着村民走时打开的自动跟随：他走到哪就跟到哪。自己按方向走、同行结束时关掉 */
+  let autoFollow: string | null = null
   // 路线经过门时化身自己发开门命令，这一下不算用户改主意，不该清掉路线
   let autoPortal = false
   /** 选一条绕开障碍的路线；地图没有选路能力时退回直线 */
@@ -173,8 +185,11 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
   const input = createWalkingInput(
     canWalk,
     (direction) => {
-      // 按方向键就放弃点击的目标；松键和失焦发的零向量不算
-      if (direction[0] || direction[1]) walk.clear()
+      // 按方向键就放弃点击的目标和自动跟随；松键和失焦发的零向量不算
+      if (direction[0] || direction[1]) {
+        autoFollow = null
+        walk.clear()
+      }
       emitManualDirection(direction)
     },
     primaryAction,
@@ -273,7 +288,8 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
    *  （或进了别的屋子），按他现在的位置重新选路 */
   function followChased() {
     arriveEarly()
-    if (!chasing || !arriveAction) return
+    keepFollowing()
+    if (!chasing || (!arriveAction && chasing.id !== autoFollow)) return
     const now = performance.now()
     if (now - chasing.checked < CHASE_CHECK_MS) return
     chasing.checked = now
@@ -292,8 +308,35 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
     walk.set(route, 1.4)
     map.setAvatarDestination?.(route[route.length - 1].point)
   }
+  /** 自动跟随：同行还在、他还在带路就追上去，到了身后就停；同行结束就关掉 */
+  function keepFollowing() {
+    if (!autoFollow) return
+    if (walkLeader(getState()) !== autoFollow) {
+      autoFollow = null
+      return
+    }
+    if (chasing?.id === autoFollow || !canWalk()) return
+    const there = map.walkTargetOf?.('person', autoFollow)
+    const here = herePoint()
+    if (!there || !here) return
+    const gap =
+      here.space === there.space
+        ? Math.hypot(here.position[0] - there.position[0], here.position[1] - there.position[1])
+        : Infinity
+    if (gap <= FOLLOW_START) return
+    const route = planRoute(there)
+    if (!route?.length) return
+    arriveAction = null
+    arriveAct = null
+    walk.set(route, FOLLOW_STOP)
+    chasing = { id: autoFollow, at: there, checked: performance.now() }
+    walk.tick()
+  }
   map.onAvatarWalkTo = (target) => {
-    if (owned() && startWalk(target, 0.5, null)) chasing = null
+    if (owned() && startWalk(target, 0.5, null)) {
+      chasing = null
+      autoFollow = null
+    }
   }
   signal.addEventListener('abort', () => {
     map.onAvatarWalkTo = null
@@ -311,6 +354,12 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
     /** 换了租约：输入序号从头计 */
     restartSequence() {
       inputSequence = 0
+    },
+    autoFollow: () => autoFollow,
+    setAutoFollow(id: string | null) {
+      autoFollow = id
+      if (!id && chasing) walk.clear()
+      keepFollowing()
     },
   }
 }

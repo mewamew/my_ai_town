@@ -14,7 +14,17 @@ use protocol::{Interaction, InteractionCommand, InteractionKind, InteractionStat
 impl World {
     pub fn talk_available(&self, actor: &str) -> bool {
         self.actors.get(actor).is_some_and(|a| a.talk_available())
+            && self.interactions.walk_of(actor).is_none()
             && self.check_weather_chat(actor).is_ok()
+    }
+
+    /// 同行路上不另起互动：带路人和玩家操控的同行者虽然不占活动，也算在一场互动里。
+    fn check_not_walking(&self, ids: [&str; 2]) -> Result<()> {
+        ensure!(
+            ids.iter().all(|id| self.interactions.walk_of(id).is_none()),
+            KernelError::interaction("正在同行，先到地方或结束同行")
+        );
+        Ok(())
     }
 
     /// 玩家（化身或附身的人）和村民搭话、送东西：在哪儿进行。只看距离和遮挡，不要求同一处所，
@@ -34,7 +44,7 @@ impl World {
         };
         let place = &resident.locus.locale;
         match kind {
-            InteractionKind::Talk => Some(place.clone()),
+            InteractionKind::Talk | InteractionKind::Walk { .. } => Some(place.clone()),
             InteractionKind::Give { .. } if self.topo.is_dwell(place) => Some(place.clone()),
             _ => None,
         }
@@ -182,6 +192,21 @@ impl World {
                 message,
             } => self.reply(actor, interaction_id, *accept, message),
             InteractionCommand::Cancel { interaction_id } => self.cancel(actor, interaction_id),
+            InteractionCommand::Propose {
+                interaction_id,
+                interaction,
+                message,
+                to,
+            } => self.propose(actor, interaction_id, interaction, message, to.as_deref()),
+            InteractionCommand::Accept {
+                interaction_id,
+                message,
+                locale,
+            } => self.accept_proposal(actor, interaction_id, message, locale.as_deref()),
+            InteractionCommand::Decline {
+                interaction_id,
+                message,
+            } => self.decline_proposal(actor, interaction_id, message),
             InteractionCommand::Join { .. }
             | InteractionCommand::Say { .. }
             | InteractionCommand::Listen { .. }
@@ -216,6 +241,7 @@ impl World {
             self.actors[actor].interaction_available(),
             KernelError::interaction("请先完成当前活动，再发起邀请")
         );
+        self.check_not_walking([actor, partner])?;
         check_pair_here(self, actor, partner, &kind)?;
         self.interactions.check_new_offer(actor, partner, &kind)?;
         let duration_minutes = check_kind(self, actor, partner, &kind)?;
@@ -275,7 +301,7 @@ impl World {
         }
         let now = self.minutes;
         // 所有距离、身体与同意校验通过后才中断，不把未完成的工作算作完成。
-        if accept && old.kind == InteractionKind::Talk {
+        if accept && old.kind.has_chat() {
             for id in [&old.initiator, &old.partner] {
                 self.actor_mut(id)
                     .interrupt_actions(now, "接受交谈，结束原活动安排");
@@ -303,6 +329,7 @@ impl World {
     /// 接受邀请前再查一遍：双方仍在邀请地点（玩家参与的只看还够不够得着）、能够回应，
     /// 互动内容本身仍然可行。
     fn check_accept(&self, actor: &str, old: &Interaction) -> Result<()> {
+        self.check_not_walking([actor, &old.initiator])?;
         check_pair_here(self, &old.initiator, actor, &old.kind)?;
         ensure!(
             self.player_pair_place(&old.initiator, actor, &old.kind)
@@ -310,7 +337,7 @@ impl World {
                 || self.actors[actor].locus.locale == old.locale,
             KernelError::interaction("双方已离开邀请地点，请重新发起")
         );
-        if old.kind == InteractionKind::Talk {
+        if old.kind.has_chat() {
             ensure!(
                 self.talk_available(actor) && self.talk_available(&old.initiator),
                 KernelError::interaction("双方须能够回应，并先结束已有的共同互动")
@@ -326,9 +353,15 @@ impl World {
         Ok(())
     }
 
-    /// 双方同意后安装同一参与者集合的身体活动；交谈另有轮次机制。
+    /// 双方同意后安装同一参与者集合的身体活动；交谈另有轮次机制，同行由世界带着跟随的人走。
     fn start_pair_activity(&mut self, item: &Interaction) {
         let now = self.minutes;
+        if item.kind.walk_leader().is_some() {
+            self.interactions
+                .start_chat(&mut self.actors, now, &item.id);
+            self.begin_walk(&item.id);
+            return;
+        }
         for id in [&item.initiator, &item.partner] {
             let verb = match &item.kind {
                 InteractionKind::Serve { verb, .. } if id == &item.partner => verb.as_str(),
@@ -369,13 +402,18 @@ impl World {
             .of(actor, interaction_id)
             .ok_or_else(|| KernelError::interaction("互动不存在或不属于自己"))?;
         if item.status == Status::Running && item.chat.is_some() {
+            let why = if item.kind.walk_leader().is_some() {
+                "不走了"
+            } else {
+                "取消交谈"
+            };
             self.interactions.leave_chat(
                 &mut self.actors,
                 now,
                 actor,
                 interaction_id,
                 LeaveKind::Voluntary,
-                "取消交谈",
+                why,
             )?;
         } else if !item.status.terminal() {
             self.interactions.end(
@@ -466,6 +504,9 @@ impl World {
 fn check_kind(w: &World, actor: &str, partner: &str, kind: &InteractionKind) -> Result<f64> {
     let locale = &w.actors[actor].locus.locale;
     match kind {
+        InteractionKind::Walk { leader, locale } => {
+            super::walk::check_walk(w, actor, partner, leader, locale.as_deref())
+        }
         InteractionKind::Talk => {
             w.check_weather_chat(actor)?;
             w.check_weather_chat(partner)?;

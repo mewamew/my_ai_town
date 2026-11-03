@@ -988,6 +988,9 @@ fn avatar_state() -> AvatarState {
                     chat_entry(ChatEntryKind::Joined),
                     chat_entry(ChatEntryKind::Left),
                     chat_entry(ChatEntryKind::Ended),
+                    chat_entry(ChatEntryKind::Proposed),
+                    chat_entry(ChatEntryKind::Accepted),
+                    chat_entry(ChatEntryKind::Declined),
                 ],
                 expires_at: 440.0,
                 id: "chat1".into(),
@@ -997,6 +1000,15 @@ fn avatar_state() -> AvatarState {
                 members: ["player".to_string(), "resident_ashu".to_string()].into(),
                 message: "聊聊？".into(),
                 partner: "resident_ashu".into(),
+                proposal: Some(ChatProposal {
+                    by: "player".into(),
+                    to: "resident_ashu".into(),
+                    interaction: InteractionKind::Walk {
+                        leader: "player".into(),
+                        locale: Some("indoor_library".into()),
+                    },
+                    at: 430.0,
+                }),
                 reason: None,
                 reply: Some("好".into()),
                 status: InteractionStatus::Running,
@@ -1205,6 +1217,32 @@ pub fn shape_samples() -> (Vec<ServerMsg>, Vec<ClientMsg>) {
                 partner_id: "resident_ashu".into(),
                 interaction: InteractionKind::Talk,
                 message: "一起聊聊？".into(),
+            }),
+            interact(InteractionCommand::Offer {
+                partner_id: "resident_ashu".into(),
+                interaction: InteractionKind::Walk {
+                    leader: "resident_ashu".into(),
+                    locale: None,
+                },
+                message: "你带路吧。".into(),
+            }),
+            interact(InteractionCommand::Propose {
+                interaction_id: "chat1".into(),
+                interaction: InteractionKind::Walk {
+                    leader: "player".into(),
+                    locale: None,
+                },
+                message: "我带你去".into(),
+                to: None,
+            }),
+            interact(InteractionCommand::Accept {
+                interaction_id: "chat1".into(),
+                message: "走吧。".into(),
+                locale: Some("indoor_library".into()),
+            }),
+            interact(InteractionCommand::Decline {
+                interaction_id: "chat1".into(),
+                message: "改天吧。".into(),
             }),
             avatar(AvatarCommand::Miracle {
                 revision: 3,

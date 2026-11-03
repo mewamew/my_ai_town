@@ -212,6 +212,8 @@ pub struct AvatarChatItem {
     pub members: BTreeSet<String>,
     pub message: String,
     pub partner: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposal: Option<crate::ChatProposal>,
     pub reason: Option<String>,
     pub reply: Option<String>,
     pub status: InteractionStatus,

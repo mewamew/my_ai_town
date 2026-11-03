@@ -4,6 +4,7 @@ use crate::{avatar::WalkMap, intent::Intent, topology::Prop, World};
 use protocol::{At, PlaceNear};
 use space::{Override, PlacementRequest, MAX_OVERRIDES};
 
+pub(crate) mod follow;
 pub mod free;
 pub mod space;
 

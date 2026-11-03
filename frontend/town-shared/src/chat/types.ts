@@ -13,8 +13,8 @@ export interface ChatPresence {
   participants: string[]
   turn: string | null
 }
-/** 聊天记录的一条：说了话，或加入、离开、结束这类过程记录 */
-type ChatEntryKind = 'speech' | 'joined' | 'left' | 'ended'
+/** 聊天记录的一条：说了话，加入、离开、结束这类过程记录，或提议、答应、没答应 */
+type ChatEntryKind = 'speech' | 'joined' | 'left' | 'ended' | 'proposed' | 'accepted' | 'declined'
 export interface ChatEntry {
   seq: number
   at: number

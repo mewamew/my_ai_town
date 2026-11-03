@@ -35,6 +35,7 @@ impl<'a> HeardEvents<'a> {
 pub(super) fn validate(
     i: &Interaction,
     actors: &BTreeMap<String, Actor>,
+    world: &crate::World,
     now: f64,
     heard: &HeardEvents,
 ) -> Result<()> {
@@ -46,9 +47,11 @@ pub(super) fn validate(
         .chain([i.initiator.clone(), i.partner.clone()])
         .collect();
     ensure!(
-        i.kind == InteractionKind::Talk,
-        KernelError::snapshot("聊天互动必须是交谈")
+        i.kind.has_chat(),
+        KernelError::snapshot("聊天互动必须是交谈或同行")
     );
+    validate_walk(i, c, &allowed, world)?;
+    validate_proposal(i, c, now)?;
     ensure!(
         c.resume_at.is_finite() && c.resume_at >= 0.0,
         KernelError::snapshot("聊天恢复时刻无效")
@@ -115,8 +118,70 @@ fn validate_entries(
     Ok(())
 }
 
+/// 同行：带路人是到过的人之一，进行中的同行里还在队伍里；目的地是已知地点；地图要能走。
+fn validate_walk(
+    i: &Interaction,
+    c: &ChatState,
+    allowed: &BTreeSet<String>,
+    world: &crate::World,
+) -> Result<()> {
+    let InteractionKind::Walk { leader, locale } = &i.kind else {
+        return Ok(());
+    };
+    ensure!(
+        allowed.contains(leader)
+            && locale
+                .as_ref()
+                .is_none_or(|l| world.topo.place_of(l).is_some())
+            && (i.status != Status::Running
+                || (c.members.contains(leader) && world.walk_map.is_some())),
+        KernelError::snapshot("存档同行的带路人或目的地无效")
+    );
+    Ok(())
+}
+
+/// 等人回答的提议：只在进行中的交谈里，提议人和被问的人都还在，提议的是一起走。
+fn validate_proposal(i: &Interaction, c: &ChatState, now: f64) -> Result<()> {
+    let Some(p) = &c.proposal else {
+        return Ok(());
+    };
+    let walk_ok = matches!(&p.interaction, InteractionKind::Walk { leader, .. }
+        if *leader == p.by || *leader == p.to);
+    ensure!(
+        i.status == Status::Running
+            && i.kind == InteractionKind::Talk
+            && p.by != p.to
+            && c.members.contains(&p.by)
+            && c.members.contains(&p.to)
+            && p.at.is_finite()
+            && p.at <= now
+            && walk_ok,
+        KernelError::snapshot("存档交谈里的提议无效")
+    );
+    Ok(())
+}
+
 /// 在场成员的活动：无期占位、指向这场聊天、参与者集合就是成员集合。
+/// 同行里只有跟随的村民占着活动；带路人和玩家操控的人不占，位置也不必在同一处所。
 fn validate_member_activity(i: &Interaction, c: &ChatState, a: &Actor) -> Result<()> {
+    if let Some(leader) = i.kind.walk_leader() {
+        ensure!(a.present(), KernelError::snapshot("同行的人不在场"));
+        let carried = a.id != leader && a.actions.agent_controlled && !a.player_controlled();
+        let bound = a.current.interaction.as_ref() == Some(&i.id);
+        ensure!(
+            if carried {
+                bound
+                    && a.current.participants == c.members
+                    && a.current.action.is_none()
+                    && a.plan.is_empty()
+                    && a.current.is_open_ended()
+            } else {
+                !bound
+            },
+            KernelError::snapshot("同行的活动与成员不同步")
+        );
+        return Ok(());
+    }
     ensure!(
         a.controllable() && !a.needs.incapacitated(),
         KernelError::snapshot("聊天成员不能行动")

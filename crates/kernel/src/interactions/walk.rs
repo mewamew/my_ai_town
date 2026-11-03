@@ -1,0 +1,480 @@
+//! 同行：带路人领着人走。同行是一场会移动的交谈：聊天成员就是同行的人，带路人以外都是跟随者。
+//! 跟随的村民由世界沿带路人的足迹带着走，期间不需要做决定；带路人和玩家操控的人自己走。
+//! 到了说好的地方、带路人在某处停下、有人跟丢或身体出状况，世界就结束同行或让那个人退出。
+use super::chat::{chat_of, chat_of_mut};
+use super::Interactions;
+use crate::avatar::{distance, Spot};
+use crate::navigation::follow::{Follower, Trail};
+use crate::{World, DAY};
+use protocol::{
+    ActionDraft, IntentDraft, Interaction, InteractionKind, InteractionStatus as Status,
+};
+use std::collections::BTreeMap;
+
+/// 同行最长多久（分钟）：没写目的地又一直没停下，到时就停下来想想。存档里同行的时长就是它。
+pub(crate) const WALK_MINUTES: f64 = 60.0;
+/// 同行开始后路上默认不轮流说话：轮次停这么久，有人开口（请求发言）才恢复。
+pub(crate) const QUIET_MINUTES: f64 = DAY;
+/// 化身或附身的人带路时的步速，是村民步速的几倍：跟随的村民追得上。
+pub const LEAD_PACE: f64 = 1.2;
+/// 跟随者离带路人（按足迹长度）保持的距离（米）；多人同行时依次往后排开。
+const FOLLOW_GAP: f64 = 1.2;
+const FOLLOW_SPACING: f64 = 0.9;
+/// 落后超过这么多米就加快到 CATCH_UP_PACE 追上去。
+const CATCH_UP_BEHIND: f64 = 2.5;
+const CATCH_UP_PACE: f64 = 1.5;
+/// 世界推进同行的最长间隔（分钟）：跟随者每走这么一小段就按带路人的新位置重算。
+const WALK_TICK: f64 = 0.25;
+/// 没写目的地时，带路人在一个地点停留这么久（分钟）、跟随的人也在那里，就算到了。
+const SETTLE_MINUTES: f64 = 1.5;
+/// 离带路人超过这么远（米）、不在同一空间，或被挡住走不动，累计这么久（分钟）就算跟丢。
+const LOST_DISTANCE: f64 = 25.0;
+const LOST_MINUTES: f64 = 6.0;
+
+/// 同行的运行期状态：带路人的足迹、各人的跟随进度、落后与停留的计时。不存档，读档后重新记。
+#[derive(Debug, Clone, Default)]
+pub(crate) struct WalkTrails(BTreeMap<String, WalkTrail>);
+
+#[derive(Debug, Clone, Default)]
+struct WalkTrail {
+    trail: Trail,
+    followers: BTreeMap<String, Follower>,
+    /// 各跟随者已经落后或被挡住多久（分钟）。
+    apart: BTreeMap<String, f64>,
+    /// 带路人在当前地点已经停了多久（分钟），以及是哪个地点。
+    settled: f64,
+    settled_at: Option<String>,
+}
+
+impl Interactions {
+    /// 进行中的同行。
+    pub(crate) fn walks(&self) -> impl Iterator<Item = &Interaction> {
+        self.items
+            .values()
+            .filter(|i| i.status == Status::Running && i.kind.walk_leader().is_some())
+    }
+
+    /// 本人所在的、进行中的同行（带路或跟随）。
+    pub fn walk_of(&self, actor: &str) -> Option<&Interaction> {
+        self.walks()
+            .find(|i| i.chat.as_ref().is_some_and(|c| c.members.contains(actor)))
+    }
+
+    /// 本人正在带路。
+    pub fn leads_walk(&self, actor: &str) -> bool {
+        self.walk_of(actor)
+            .is_some_and(|i| i.kind.walk_leader() == Some(actor))
+    }
+}
+
+impl World {
+    /// 本人在同行里跟着谁：跟随者返回带路人的编号，带路人和不在同行里的人为空。
+    pub fn following(&self, actor: &str) -> Option<&str> {
+        let leader = self.interactions.walk_of(actor)?.kind.walk_leader()?;
+        (leader != actor).then_some(leader)
+    }
+
+    /// 跟随者由世界带着走：受 Agent 控制、不是带路人、没被玩家操控。
+    pub(crate) fn walk_carries(&self, actor: &str, leader: &str) -> bool {
+        actor != leader
+            && self
+                .actors
+                .get(actor)
+                .is_some_and(|a| a.actions.agent_controlled && !a.player_controlled())
+    }
+
+    /// 同行开始（邀请被接受，或交谈里的提议被答应）：成员已经写进聊天，路上默认安静；
+    /// 跟随的村民换上「跟着某人」的活动，带路人和玩家操控的人照常自由行动。
+    /// 受 Agent 控制的带路人说好了目的地就直接出发。
+    pub(crate) fn begin_walk(&mut self, id: &str) {
+        let now = self.minutes;
+        let item = &self.interactions[id];
+        let InteractionKind::Walk { leader, locale } = item.kind.clone() else {
+            return;
+        };
+        let members = chat_of(item).members.clone();
+        {
+            let c = chat_of_mut(self.interactions.get_mut(id));
+            c.proposal = None;
+            c.passes = 0;
+            c.resume_at = now + QUIET_MINUTES;
+            c.turn_queue = std::iter::once(leader.clone())
+                .chain(members.iter().filter(|m| **m != leader).cloned())
+                .collect();
+        }
+        for member in &members {
+            if self.walk_carries(member, &leader) {
+                self.bind_follower(id, member);
+            } else {
+                self.unbind_walk_member(id, member);
+            }
+        }
+        let mut state = WalkTrail::default();
+        if let Some(at) = crate::avatar::Reach::new(self).talk_spot(&leader) {
+            state.trail.mark(at);
+        }
+        self.walk_trails.0.insert(id.into(), state);
+        if let Some(dest) = locale {
+            self.lead_off(id, &leader, &dest);
+        }
+    }
+
+    /// 受 Agent 控制的带路人说好了目的地：替他安排「前往」，跟随者一起出发。
+    fn lead_off(&mut self, id: &str, leader: &str, dest: &str) {
+        let Some(a) = self.actors.get(leader) else {
+            return;
+        };
+        if a.player_controlled() || !a.actions.agent_controlled || a.locus.locale == dest {
+            return;
+        }
+        let revision = a.actions.revision;
+        let draft = ActionDraft {
+            intent: IntentDraft {
+                verb: crate::intent::BuiltinVerb::Goto.label().into(),
+                locale: Some(dest.into()),
+                target: None,
+                duration_minutes: None,
+                until: None,
+            },
+            inventory: None,
+            prop_id: None,
+            recipient: None,
+            writing: None,
+        };
+        if let Err(error) =
+            self.run_actions_from(leader, &format!("{id}/lead"), revision, &[draft], false)
+        {
+            let a = &self.actors[leader];
+            let line = format!("{} 没能出发带路：{error}", a.name);
+            self.log(a.event_info(), line);
+        }
+    }
+
+    /// 跟随的村民：换上指向这场同行的无期活动，站在行走地图上的自由位置，由世界带着走。
+    pub(crate) fn bind_follower(&mut self, id: &str, actor: &str) {
+        let now = self.minutes;
+        let item = &self.interactions[id];
+        let leader = item.kind.walk_leader().unwrap_or_default().to_owned();
+        let members = chat_of(item).members.clone();
+        let verb = format!("跟着{}", self.actors.get(&leader).map_or("", |a| &a.name));
+        let spot = crate::avatar::Reach::new(self).talk_spot(actor);
+        let a = self.actor_mut(actor);
+        a.plan.clear();
+        a.free_walk = None;
+        a.actions.bump_revision();
+        if let Some(spot) = spot {
+            a.locus = spot.locus();
+        }
+        let mut activity = crate::activity::Activity::waiting(actor, now, a.locus.locale.clone());
+        activity.verb = verb;
+        activity.interaction = Some(id.into());
+        activity.participants = members;
+        a.current = activity;
+    }
+
+    /// 带路人和玩家操控的同行者不占活动：原来指向这场同行或交谈的活动换成空等，旧观察作废。
+    fn unbind_walk_member(&mut self, id: &str, actor: &str) {
+        let now = self.minutes;
+        let a = self.actor_mut(actor);
+        if a.current.interaction.as_deref() == Some(id) {
+            a.reset_idle(now, true);
+        } else {
+            a.actions.bump_revision();
+        }
+    }
+
+    /// 玩家接管或交还一个同行者：接管后自己走，交还后由世界带着走。
+    pub(crate) fn sync_walk_member(&mut self, actor: &str) {
+        let Some(item) = self.interactions.walk_of(actor) else {
+            return;
+        };
+        let (id, leader) = (
+            item.id.clone(),
+            item.kind.walk_leader().unwrap_or_default().to_owned(),
+        );
+        if self.walk_carries(actor, &leader) {
+            self.bind_follower(&id, actor);
+        } else {
+            self.unbind_walk_member(&id, actor);
+        }
+    }
+
+    /// 有同行进行时，世界至少每 WALK_TICK 分钟推进一次跟随者。
+    pub(crate) fn walk_boundary(&self) -> f64 {
+        if self.interactions.walks().next().is_some() {
+            WALK_TICK
+        } else {
+            f64::INFINITY
+        }
+    }
+
+    /// 玩家操控的人带路时放慢到 LEAD_PACE，不然跟随的村民追不上。
+    pub(crate) fn player_pace(&self, actor: &str, pace: f64) -> f64 {
+        if self.interactions.leads_walk(actor) {
+            pace.min(LEAD_PACE)
+        } else {
+            pace
+        }
+    }
+
+    /// 推进全部同行 minutes 分钟：记下带路人的足迹，带着跟随者走，再看有没有人跟丢、到了没有。
+    pub(crate) fn advance_walks(&mut self, minutes: f64) {
+        let ids: Vec<String> = self.interactions.walks().map(|i| i.id.clone()).collect();
+        self.walk_trails.0.retain(|id, _| ids.contains(id));
+        for id in ids {
+            self.advance_walk(&id, minutes);
+        }
+    }
+
+    fn advance_walk(&mut self, id: &str, minutes: f64) {
+        let item = &self.interactions[id];
+        let (leader, locale) = match &item.kind {
+            InteractionKind::Walk { leader, locale } => (leader.clone(), locale.clone()),
+            _ => return,
+        };
+        let leader_ok = self
+            .actors
+            .get(&leader)
+            .is_some_and(|a| a.present() && !a.needs.incapacitated());
+        if !leader_ok {
+            let name = self.actor_name(&leader);
+            return self.finish_walk(
+                id,
+                Status::Interrupted,
+                format!("{name}没法再带路，同行结束"),
+            );
+        }
+        let Some(map) = self.walk_map.clone() else {
+            return self.finish_walk(id, Status::Interrupted, "这里没有行走地图，同行结束".into());
+        };
+        let reach = crate::avatar::Reach::new(self);
+        let leader_spot = reach.talk_spot(&leader);
+        drop(reach);
+        let state = self.walk_trails.0.entry(id.into()).or_default();
+        if let Some(at) = leader_spot.clone() {
+            state.trail.mark(at);
+        }
+        let followers: Vec<String> = chat_of(&self.interactions[id])
+            .members
+            .iter()
+            .filter(|m| **m != leader)
+            .cloned()
+            .collect();
+        let obstacles = self.avatar_obstacles();
+        for (rank, follower) in followers.iter().enumerate() {
+            let able = self
+                .actors
+                .get(follower)
+                .is_some_and(|a| a.present() && !a.needs.incapacitated());
+            if !able {
+                self.drop_follower(id, follower, "停下了");
+                continue;
+            }
+            let here = crate::avatar::Reach::new(self).talk_spot(follower);
+            let mut stuck = false;
+            if self.walk_carries(follower, &leader) {
+                if let Some(here) = &here {
+                    let gap = FOLLOW_GAP + FOLLOW_SPACING * rank as f64;
+                    let state = self.walk_trails.0.get_mut(id).expect("上面已建");
+                    let progress = state.followers.entry(follower.clone()).or_default();
+                    let behind = leader_spot
+                        .as_ref()
+                        .filter(|l| l.space == here.space)
+                        .map_or(f64::INFINITY, |l| distance(l.position, here.position));
+                    let pace = if behind > gap + CATCH_UP_BEHIND {
+                        CATCH_UP_PACE
+                    } else {
+                        1.0
+                    };
+                    let step = map.follow_trail(
+                        here,
+                        &state.trail,
+                        progress,
+                        gap,
+                        minutes * map.metres_per_minute * pace,
+                        &obstacles,
+                    );
+                    stuck = step.stuck;
+                    if let Some(spot) = step.moved {
+                        self.place_follower(follower, spot);
+                    }
+                }
+            }
+            let here = crate::avatar::Reach::new(self).talk_spot(follower);
+            let together = match (&here, &leader_spot) {
+                (Some(h), Some(l)) => {
+                    h.space == l.space && distance(h.position, l.position) <= LOST_DISTANCE
+                }
+                // 带路人走在没有几何的路段上：看不出远近，不算落后
+                (_, None) => true,
+                _ => false,
+            };
+            let state = self.walk_trails.0.get_mut(id).expect("上面已建");
+            let apart = state.apart.entry(follower.clone()).or_default();
+            *apart = if together && !stuck {
+                0.
+            } else {
+                *apart + minutes
+            };
+            if *apart >= LOST_MINUTES {
+                let name = self.actor_name(&leader);
+                self.drop_follower(id, follower, &format!("跟丢了{name}"));
+            }
+        }
+        if let Some(state) = self.walk_trails.0.get_mut(id) {
+            let keep = state
+                .followers
+                .values()
+                .map(|f| f.next)
+                .min()
+                .unwrap_or(usize::MAX);
+            state
+                .trail
+                .trim(keep.min(state.trail.base + state.trail.points.len()));
+        }
+        if self.interactions[id].status != Status::Running {
+            return;
+        }
+        self.check_arrival(id, &leader, locale.as_deref(), minutes);
+    }
+
+    /// 到了没有：说好的目的地，带路人和跟随者都在那里就算到；没写目的地时，带路人在一个地点
+    /// 停够 SETTLE_MINUTES、跟随者也在那里才算。走满 WALK_MINUTES 还没到就先停下。
+    fn check_arrival(&mut self, id: &str, leader: &str, locale: Option<&str>, minutes: f64) {
+        let members: Vec<String> = chat_of(&self.interactions[id])
+            .members
+            .iter()
+            .cloned()
+            .collect();
+        let here = self.actors[leader].locus.locale.clone();
+        let settled_place = self.topo.place_of(&here).is_some()
+            && !self.actors[leader].current.is_travel()
+            && self.actors[leader].free_walk.is_none();
+        let all_here = members.iter().all(|m| self.actors[m].locus.locale == here);
+        let arrived = match locale {
+            Some(dest) => here == dest && all_here,
+            None => {
+                let state = self.walk_trails.0.entry(id.into()).or_default();
+                if settled_place && all_here && state.settled_at.as_deref() == Some(here.as_str()) {
+                    state.settled += minutes;
+                } else {
+                    state.settled = 0.;
+                    state.settled_at = (settled_place && all_here).then(|| here.clone());
+                }
+                state.settled >= SETTLE_MINUTES
+            }
+        };
+        if arrived {
+            let place = self.topo.locale_name(&here);
+            return self.finish_walk(id, Status::Succeeded, format!("到了{place}，同行结束"));
+        }
+        let started = self.interactions[id].started_at.unwrap_or(self.minutes);
+        if self.minutes - started >= WALK_MINUTES {
+            self.finish_walk(
+                id,
+                Status::Interrupted,
+                format!("走了 {WALK_MINUTES:.0} 分钟还没到，先停下来"),
+            );
+        }
+    }
+
+    /// 跟随者挪到新位置：处所跟着位置走。
+    fn place_follower(&mut self, actor: &str, spot: Spot) {
+        let a = self.actor_mut(actor);
+        a.current.locale = spot.locale.clone();
+        a.locus = spot.locus();
+    }
+
+    /// 一个跟随者退出同行（跟丢、倒下、离开小镇）；只剩带路人时同行随之结束。
+    fn drop_follower(&mut self, id: &str, actor: &str, why: &str) {
+        let now = self.minutes;
+        let name = self.actor_name(actor);
+        let reason = format!("{name}{why}");
+        if let Err(e) = self.interactions.leave_chat(
+            &mut self.actors,
+            now,
+            actor,
+            id,
+            super::LeaveKind::Forced,
+            &reason,
+        ) {
+            self.log(
+                protocol::EventInfo::default(),
+                format!("{actor} 退出同行 {id} 失败：{e}"),
+            );
+        }
+        if let Some(state) = self.walk_trails.0.get_mut(id) {
+            state.followers.remove(actor);
+            state.apart.remove(actor);
+        }
+    }
+
+    /// 结束一场同行：聊天随之结束，跟随的村民回到空等；状态按结束原因写。
+    pub(crate) fn finish_walk(&mut self, id: &str, status: Status, reason: String) {
+        let now = self.minutes;
+        if self.interactions[id].status != Status::Running {
+            return;
+        }
+        self.interactions
+            .end_chat(&mut self.actors, now, id, &reason);
+        let item = self.interactions.get_mut(id);
+        item.status = status;
+        self.walk_trails.0.remove(id);
+    }
+
+    /// 某人退出或离场时，他带的同行跟着结束（化身离开小镇、带路人倒下）。
+    pub(crate) fn end_walks_of(&mut self, actor: &str, reason: &str) {
+        let Some(item) = self.interactions.walk_of(actor) else {
+            return;
+        };
+        let id = item.id.clone();
+        if item.kind.walk_leader() == Some(actor) {
+            let name = self.actor_name(actor);
+            self.finish_walk(
+                &id,
+                Status::Interrupted,
+                format!("{name}{reason}，同行结束"),
+            );
+        } else {
+            self.drop_follower(&id, actor, reason);
+        }
+    }
+
+    fn actor_name(&self, id: &str) -> String {
+        self.actors
+            .get(id)
+            .map_or_else(|| id.to_owned(), |a| a.name.clone())
+    }
+}
+
+/// 同行的时长与目的地规则：只给检查互动内容用。
+pub(crate) fn check_walk(
+    w: &World,
+    actor: &str,
+    partner: &str,
+    leader: &str,
+    locale: Option<&str>,
+) -> crate::error::Result<f64> {
+    use crate::error::KernelError;
+    ensure!(
+        w.walk_map.is_some(),
+        KernelError::interaction("这张地图不支持同行")
+    );
+    ensure!(
+        leader == actor || leader == partner,
+        KernelError::interaction("带路的人须是同行的一方")
+    );
+    if let Some(dest) = locale {
+        ensure!(
+            w.topo.place_of(dest).is_some(),
+            KernelError::interaction(format!("目的地 {dest} 不是已知地点"))
+        );
+    }
+    for id in [actor, partner] {
+        ensure!(
+            w.interactions.walk_of(id).is_none(),
+            KernelError::interaction("有人已经在同行中，先结束原来的同行")
+        );
+    }
+    Ok(WALK_MINUTES)
+}

@@ -6,8 +6,19 @@ use std::collections::BTreeMap;
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum InteractionKind {
     Talk,
-    Give { items: Vec<String> },
-    Serve { prop_id: String, verb: String },
+    Give {
+        items: Vec<String>,
+    },
+    Serve {
+        prop_id: String,
+        verb: String,
+    },
+    /// 同行：leader 带路，其余参与者跟着走。locale 是说好的目的地，可以不写，由带路的人边走边定。
+    Walk {
+        leader: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        locale: Option<String>,
+    },
 }
 impl InteractionKind {
     pub fn label(&self) -> &'static str {
@@ -15,6 +26,18 @@ impl InteractionKind {
             Self::Talk => "交谈",
             Self::Give { .. } => "赠予物品",
             Self::Serve { .. } => "招待用餐",
+            Self::Walk { .. } => "同行",
+        }
+    }
+    /// 带聊天记录的互动：交谈，以及路上可以说话的同行。
+    pub fn has_chat(&self) -> bool {
+        matches!(self, Self::Talk | Self::Walk { .. })
+    }
+    /// 同行的带路人；不是同行时为空。
+    pub fn walk_leader(&self) -> Option<&str> {
+        match self {
+            Self::Walk { leader, .. } => Some(leader),
+            _ => None,
         }
     }
 }
@@ -51,6 +74,26 @@ pub enum InteractionCommand {
     },
     Cancel {
         interaction_id: String,
+    },
+    /// 交谈中提议一起做件事（现在是同行）：to 是要回答的人，两人交谈时可省略。
+    Propose {
+        interaction_id: String,
+        interaction: InteractionKind,
+        message: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        to: Option<String>,
+    },
+    /// 答应交谈里等自己回答的提议。自己带路而提议没写目的地时，可以用 locale 补上。
+    Accept {
+        interaction_id: String,
+        message: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        locale: Option<String>,
+    },
+    /// 不答应交谈里的提议；提议人用它撤回自己的提议。
+    Decline {
+        interaction_id: String,
+        message: String,
     },
 }
 

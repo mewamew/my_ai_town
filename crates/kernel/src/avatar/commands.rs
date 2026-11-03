@@ -27,7 +27,7 @@ impl World {
             .actor_spot(actor)
             .ok_or_else(|| KernelError::navigation("化身位置无效"))?;
         let n = direction[0].hypot(direction[1]).max(1.);
-        let pace = if run { RUN_PACE } else { WALK_PACE };
+        let pace = self.player_pace(actor, if run { RUN_PACE } else { WALK_PACE });
         let d = direction.map(|v| v / n * map.metres_per_minute * pace * dt);
         let next = map.advance(&start, d, &self.avatar_obstacles());
         let a = self.actor_mut(actor);

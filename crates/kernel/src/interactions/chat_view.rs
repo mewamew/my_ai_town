@@ -36,6 +36,7 @@ impl Interactions {
             locale: item.locale.clone(),
             members: c.members.clone(),
             partner: item.partner.clone(),
+            proposal: c.proposal.clone(),
             reason: item.reason.clone(),
             status: item.status,
             turn: c.turn_queue.first().cloned(),
@@ -50,11 +51,11 @@ impl Interactions {
             .collect()
     }
 
-    /// 正在进行的交谈，不论在哪。
+    /// 正在进行的交谈，不论在哪。同行不算：路上的同行不能这样加入。
     pub(crate) fn running_chats(&self) -> Vec<NearbyChat> {
         self.items
             .values()
-            .filter(|i| i.status == Status::Running)
+            .filter(|i| i.status == Status::Running && i.kind.walk_leader().is_none())
             .filter_map(|i| {
                 Some(NearbyChat {
                     id: i.id.clone(),
@@ -65,9 +66,18 @@ impl Interactions {
             .collect()
     }
 
-    pub(crate) fn chat_presence(&self, actors: &Actors, actor: &Actor) -> Option<ChatPresence> {
+    /// 名册上的「在聊」：同行路上安静着（没人开口）时不算，免得画成停下来交谈的样子。
+    pub(crate) fn chat_presence(
+        &self,
+        actors: &Actors,
+        actor: &Actor,
+        now: f64,
+    ) -> Option<ChatPresence> {
         let i = self.active_chat(actor)?;
         let c = i.chat.as_ref()?;
+        if i.kind.walk_leader().is_some() && c.resume_at > now {
+            return None;
+        }
         Some(ChatPresence {
             id: i.id.clone(),
             participants: c.members.iter().map(|a| actors[a].name.clone()).collect(),

@@ -190,6 +190,8 @@ impl World {
         );
         let now = self.minutes;
         self.actor_mut(id).begin_possession(now, waiting, spot);
+        // 同行里被接管的跟随者改由玩家自己走
+        self.sync_walk_member(id);
         Ok(())
     }
     /// 附身等待到达的村民已经走到可以交给玩家的位置：`activate_possession` 会生效。
@@ -215,6 +217,8 @@ impl World {
         let a = self.actor_mut(&id);
         a.possession = None;
         a.actions.bump_revision();
+        // 交还的同行跟随者重新由世界带着走
+        self.sync_walk_member(&id);
         Some(id)
     }
     /// 读档校验：玩家行为记录、附身状态、接续行走与自由位置。

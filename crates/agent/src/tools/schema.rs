@@ -84,6 +84,7 @@ pub(crate) fn interaction_kinds() -> Vec<InteractionKind> {
         Talk => InteractionKind::Talk,
         Give => InteractionKind::Give { items: vec![] },
         Serve => InteractionKind::Serve { prop_id: s(), verb: s() },
+        Walk => InteractionKind::Walk { leader: s(), locale: None },
     })
 }
 pub(crate) fn interaction_commands() -> Vec<InteractionCommand> {
@@ -96,6 +97,9 @@ pub(crate) fn interaction_commands() -> Vec<InteractionCommand> {
         Offer => InteractionCommand::Offer { partner_id: s(), interaction: InteractionKind::Talk, message: s() },
         Reply => InteractionCommand::Reply { interaction_id: s(), accept: false, message: s() },
         Cancel => InteractionCommand::Cancel { interaction_id: s() },
+        Propose => InteractionCommand::Propose { interaction_id: s(), interaction: InteractionKind::Talk, message: s(), to: None },
+        Accept => InteractionCommand::Accept { interaction_id: s(), message: s(), locale: None },
+        Decline => InteractionCommand::Decline { interaction_id: s(), message: s() },
     })
 }
 
@@ -247,6 +251,13 @@ fn interaction() -> Value {
             json!({"prop_id":{"type":"string"},"verb":{"type":"string"}}),
             vec!["prop_id", "verb"],
         ),
+        InteractionKind::Walk { .. } => (
+            json!({
+                "leader": described(json!({"type":"string"}), "同行时谁带路：self 是自己，或填对方 ID"),
+                "locale": described(json!({"type":"string"}), "同行说好的目的地 known_places.id；由自己带路时写上，世界直接带大家出发")
+            }),
+            vec!["leader"],
+        ),
     })
 }
 
@@ -356,7 +367,7 @@ pub(super) fn interact() -> Value {
         )
     })
 }
-/// 交谈轮次的 interact：只有 say、listen、leave。
+/// 交谈轮次的 interact：say、listen、leave，以及提议一起走和回答提议。
 pub(super) fn chat_interact() -> Value {
     interaction_operations(|c| {
         matches!(
@@ -364,6 +375,9 @@ pub(super) fn chat_interact() -> Value {
             InteractionCommand::Say { .. }
                 | InteractionCommand::Listen { .. }
                 | InteractionCommand::Leave { .. }
+                | InteractionCommand::Propose { .. }
+                | InteractionCommand::Accept { .. }
+                | InteractionCommand::Decline { .. }
         )
     })
 }
@@ -391,6 +405,27 @@ fn interaction_operations(keep: impl Fn(&InteractionCommand) -> bool) -> Value {
         }
         InteractionCommand::Offer { .. } => offer_fields(),
         InteractionCommand::Reply { .. } => reply_fields(),
+        InteractionCommand::Propose { .. } => {
+            let mut fields = id();
+            fields["interaction"] = interaction();
+            fields["message"] = message();
+            fields["to"] = json!({"type":"string"});
+            (fields, vec!["interaction_id", "interaction", "message"])
+        }
+        InteractionCommand::Accept { .. } => {
+            let mut fields = id();
+            fields["message"] = message();
+            fields["locale"] = described(
+                json!({"type":"string"}),
+                "自己带路而提议没写目的地时，补上要去的 known_places.id",
+            );
+            (fields, vec!["interaction_id", "message"])
+        }
+        InteractionCommand::Decline { .. } => {
+            let mut fields = id();
+            fields["message"] = message();
+            (fields, vec!["interaction_id", "message"])
+        }
     })
 }
 /// 发邀请与回应邀请的参数；独立工具和 interact 的分支共用。
