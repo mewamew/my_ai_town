@@ -17,14 +17,22 @@
 }
 svg.hd2d .pixel-terrain,
 svg.hd2d .roofed,
-svg.hd2d .vcovered .vmark {
+svg.hd2d .vcovered :is(.vmark, .vhit) {
   display: none;
 }
-/* 立体场景里村民是像素小人；头像留作透明的点击区，大小和小人差不多 */
+/* 立体场景里村民是像素小人：透明的身形框和小人一样大，点他身上哪里都算点到；
+   头像也留作透明的点击区，它按屏幕大小画，缩小到小人比它还小时也好点中 */
 svg.hd2d .vportrait {
   opacity: 0;
   filter: none;
   pointer-events: auto;
+}
+.vhit {
+  display: none;
+  fill: transparent;
+}
+svg.hd2d .vhit {
+  display: inline;
 }
 /* 村民头像是像素图，放大时不插值 */
 .vportrait,

@@ -23,6 +23,8 @@ const VERB_ICONS: Record<VerbKind, string> = {
 
 interface Villager {
   g: SVGGElement
+  /** 立体场景里的点击区：透明的身形框，和像素小人一样大 */
+  hit: SVGRectElement
   mark: SVGGElement
   portrait: SVGImageElement
   name: SVGTextElement
@@ -164,8 +166,25 @@ export class ResidentLayer {
     if (this.lastEntries) this.update(this.lastEntries)
   }
 
+  /** 小人在视图坐标里占的地方（脚底在 x, y）：立体场景是像素小人的立牌，平面图是头像标记。
+   *  别人的名字躲开它；立体场景里它也是点击区 */
+  private bodyRect([x, y]: [number, number]): LabelRect {
+    const s = this.markerScale,
+      sy = s * this.upright
+    if (this.bodyHeight === undefined)
+      return { x: x - 48 * s, y: y - 104 * sy, width: 96 * s, height: 112 * sy }
+    const height = this.bodyHeight * this.upright
+    return {
+      x: x - VILLAGER_HALF,
+      y: y - height,
+      width: VILLAGER_HALF * 2,
+      height: height + 8 * sy,
+    }
+  }
+
   private create(member: RosterMember): Villager {
     const g = el('g', { 'data-vid': member.id })
+    const hit = el('rect', { class: 'vhit' })
     // 标记以头像底部落在世界坐标：外层 g 管位移，头像本身保持贴纸轮廓。
     const mark = el('g', { class: 'vmark' })
     mark.appendChild(el('circle', { class: 'vring', r: 58 }))
@@ -189,10 +208,10 @@ export class ResidentLayer {
       'pointer-events': 'none',
       display: 'none',
     })
-    g.append(labelLine, mark, name, verb, wait)
+    g.append(hit, labelLine, mark, name, verb, wait)
     if (this.selectedId === member.id) g.classList.add('vsel')
     this.layer.appendChild(g)
-    const v = { g, mark, portrait, name, verb, wait, labelLine }
+    const v = { g, hit, mark, portrait, name, verb, wait, labelLine }
     this.villagers.set(member.id, v)
     return v
   }
@@ -237,6 +256,9 @@ export class ResidentLayer {
       'transform',
       `translate(${x},${y})${s === 1 && sy === 1 ? '' : ` scale(${s},${sy})`}`
     )
+    const body = this.bodyRect([x, y])
+    for (const key of ['x', 'y', 'width', 'height'] as const)
+      v.hit.setAttribute(key, String(body[key]))
     v.name.setAttribute('x', String(x))
     v.name.setAttribute('y', String(y - this.nameRise()))
     v.verb.setAttribute('x', String(x))
@@ -323,6 +345,7 @@ export class ResidentLayer {
         this.bubbles.dropBubble(id)
       }
     }
+    this.stackByDepth()
     const { grouped, occupied } = this.regroup(entries, seen)
     // 名字避让只移动文字，不改变角色的真实位置和交互距离。
     const labels: LabelRect[] = [...occupied]
@@ -330,22 +353,10 @@ export class ResidentLayer {
     for (const [id, v] of this.villagers) {
       const worldPos = this.positions.get(id)
       if (!seen.has(id) || !worldPos || v.g.getAttribute('display') === 'none') continue
-      const pos = this.project(worldPos)
       const verb = grouped.has(id) ? null : v.verb.getBBox()
       if (verb?.width && verb.height) labels.push(verb)
-      const s = this.markerScale
-      const sy = s * this.upright
-      // 别人的名字要躲开这个人的身体：立体场景里是小人的立牌，平面里是头像标记
-      const height = (this.bodyHeight ?? 0) * this.upright
-      const body: LabelRect =
-        this.bodyHeight === undefined
-          ? { x: pos[0] - 48 * s, y: pos[1] - 104 * sy, width: 96 * s, height: 112 * sy }
-          : {
-              x: pos[0] - VILLAGER_HALF,
-              y: pos[1] - height,
-              width: VILLAGER_HALF * 2,
-              height: height + 8 * sy,
-            }
+      // 别人的名字要躲开这个人的身体
+      const body = this.bodyRect(this.project(worldPos))
       bodies.set(id, body)
       labels.push(body)
     }
@@ -381,6 +392,19 @@ export class ResidentLayer {
       labels.push(box)
     }
     this.bubbles.tickBubbles()
+  }
+
+  /** 离镜头近（脚在画面上更靠下）的人排在后面、叠在上面：身形框重叠时点到的是画在前面的那个 */
+  private stackByDepth() {
+    const depth = (id: string) => {
+      const p = this.positions.get(id)
+      return p ? this.project(p)[1] : -Infinity
+    }
+    const order = [...this.villagers].sort(([a], [b]) => depth(a) - depth(b)).map(([, v]) => v.g)
+    const now = this.layer.querySelectorAll(':scope > [data-vid]')
+    if (order.every((g, i) => now[i] === g)) return
+    const groups = this.groups.layer.parentNode === this.layer ? this.groups.layer : null
+    for (const g of order) this.layer.insertBefore(g, groups)
   }
 
   /** 名字挨得太近的人合成一个多人标签。选中的人、在交谈的人、化身不参与，总是单独显示 */
