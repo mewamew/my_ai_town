@@ -71,7 +71,7 @@ pub struct Obstacle {
 }
 impl Obstacle {
     /// 占地盖住这一点（同一空间里）：站在这里的人是坐在、躺在这件家具上。
-    fn covers(&self, at: &Spot) -> bool {
+    pub(crate) fn covers(&self, at: &Spot) -> bool {
         self.spot.space == at.space
             && (0..2).all(|i| (at.position[i] - self.spot.position[i]).abs() < self.half[i])
     }

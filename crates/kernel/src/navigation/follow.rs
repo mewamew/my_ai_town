@@ -88,6 +88,13 @@ impl WalkMap {
         metres: f64,
         obstacles: &[Obstacle],
     ) -> Step {
+        // 起身时身下那件家具（坐着的椅子、躺着的床，占地盖住站位）不算挡路，不然一步也迈不出去
+        let obstacles: Vec<Obstacle> = obstacles
+            .iter()
+            .filter(|o| !o.covers(here))
+            .cloned()
+            .collect();
+        let obstacles = obstacles.as_slice();
         let mut at = here.clone();
         let mut budget = metres;
         let mut moved = false;

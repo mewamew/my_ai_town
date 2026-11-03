@@ -2,7 +2,7 @@
 //! 带路的化身离开小镇时同行结束，跟随的人不会卡住。
 use crate::common;
 use kernel::{
-    avatar::{Area, Portal, Spot, Surface, WalkMap, ID},
+    avatar::{Area, Obstacle, Portal, Spot, Surface, WalkMap, ID},
     World,
 };
 use protocol::{Appearance, InteractionCommand as Cmd, InteractionKind, InteractionStatus};
@@ -594,4 +594,55 @@ fn meeting_side_by_side_at_the_entrance_keeps_the_appointment() {
     assert_eq!(w.avatar().unwrap().locus.locale, "loc_a");
     w.step(30.);
     assert_eq!(status(&w, "meet"), InteractionStatus::Succeeded);
+}
+
+/// 跟着走的村民起步时躺在床上（床的占地盖住他的落脚点）：也能起身跟着出门。
+#[test]
+fn a_follower_on_the_bed_gets_up_and_follows_out_of_the_door() {
+    let mut w = world(&[("a", "林夏", "loc_a")]);
+    let mut map = (**w.walk_map.as_ref().unwrap()).clone();
+    map.obstacles.push(Obstacle {
+        id: "bed".into(),
+        spot: spot("loc_a", 2., 2.),
+        half: [0.6, 0.6],
+    });
+    w.walk_map = Some(Arc::new(map));
+    enter(&mut w);
+    // 化身站到两三米外再说话：离床太远，不能直接一步站过去
+    let pace = w.avatar_walk().unwrap().metres_per_minute;
+    w.avatar_move([1., 0.], false, 1.6 / pace).unwrap();
+    talk(&mut w);
+    act(
+        &mut w,
+        ID,
+        "propose",
+        Cmd::Propose {
+            interaction_id: "chat".into(),
+            interaction: InteractionKind::Walk {
+                leader: ID.into(),
+                locale: None,
+            },
+            message: "跟我来。".into(),
+            to: None,
+        },
+    );
+    act(
+        &mut w,
+        "a",
+        "accept",
+        Cmd::Accept {
+            interaction_id: "chat".into(),
+            message: "好呀。".into(),
+            locale: None,
+        },
+    );
+    w.avatar_portal("door").unwrap();
+    for _ in 0..40 {
+        w.step(0.05);
+    }
+    assert_eq!(
+        w.actor("a").unwrap().locus.locale,
+        "loc_b",
+        "起身跟着穿过了门"
+    );
 }
