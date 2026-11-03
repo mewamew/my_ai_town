@@ -8,8 +8,10 @@ import type { WalkStep, WalkTarget } from '../gameMap'
 const STUCK_TICKS = 6
 /** 位移小于一拍步长的这个比例算没动 */
 const STILL_RATIO = 0.1
-/** 中途路径点不必踩准 */
+/** 中途路径点不必踩准：离它这么近、又看得到下一个路径点，就提前转向 */
 const WAYPOINT_RADIUS = 1
+/** 看不到下一个路径点（拐角那边隔着走不过去的地方）时，要走到离拐角这么近才转向 */
+const CORNER_RADIUS = 0.3
 /** 门口要站得够近：后端要求离门 1.6 米内才开得了门 */
 const PORTAL_RADIUS = 0.6
 /** 同一次点击最多重新选路的次数 */
@@ -28,6 +30,8 @@ interface WalkDeps {
   portal: (id: string) => Promise<boolean>
   /** 被挡住时重新选路；null 表示确实走不过去 */
   replan: (to: WalkTarget) => WalkStep[] | null
+  /** 两点之间的直线能不能走；地图不会判断时不给，当作能走 */
+  sees?: (from: WalkTarget, to: WalkTarget) => boolean
   end: (reason: WalkEnd) => void
 }
 
@@ -96,12 +100,12 @@ export function createWalkTo(deps: WalkDeps) {
         dx = step.point.position[0] - here.position[0]
         dy = step.point.position[1] - here.position[1]
         distance = Math.hypot(dx, dy)
-        const reach = step.portal
-          ? PORTAL_RADIUS
-          : index === route.length - 1
-            ? radius
-            : WAYPOINT_RADIUS
+        const corner = !step.portal && index < route.length - 1
+        const reach = step.portal ? PORTAL_RADIUS : corner ? WAYPOINT_RADIUS : radius
         if (distance > reach) break
+        // 提前转向是抄近路：从这里直奔下一个点要走得通才抄，不然会撞上拐角那边挡着的地方原地不动
+        const next = route[index + 1]?.point
+        if (corner && distance > CORNER_RADIUS && next && !(deps.sees?.(here, next) ?? true)) break
         if (step.portal) {
           opening = true
           deps.emit([0, 0])

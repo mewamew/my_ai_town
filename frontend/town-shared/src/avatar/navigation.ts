@@ -149,6 +149,7 @@ export function createAvatarNavigation(deps: AvatarNavigationDeps) {
       }
     },
     replan: planRoute,
+    sees: (from, to) => map.walkSees?.(from, to) ?? true,
     end: (reason) => {
       map.setAvatarDestination?.(null)
       const object = arriveAction

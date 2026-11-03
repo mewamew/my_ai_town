@@ -311,6 +311,11 @@ export class WalkRoutes {
     this.blocked = blocked
   }
 
+  /** 同一空间里两点之间的直线能不能走（和拉直路线用的是同一个判断） */
+  sees(a: WalkTarget, b: WalkTarget): boolean {
+    return a.space === b.space && this.clearLine(a, b)
+  }
+
   /** 从 from 走到 to 的路径点；走不到返回 null。带 portal 的一步表示走到门口再开门。
    *  to 站不了时终点换成附近能站的地方（见 destination），最后一个点就是实际要去的地方 */
   find(from: WalkTarget, to: WalkTarget): WalkStep[] | null {

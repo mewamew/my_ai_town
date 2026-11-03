@@ -59,6 +59,8 @@ export interface GameMap {
   walkTargetOf?(kind: 'person' | 'prop', id: string): WalkTarget | undefined
   /** 绕开障碍的路线；走不到返回 null。没有实现时化身只会直线走。 */
   walkRoute?(from: WalkTarget, to: WalkTarget): WalkStep[] | null
+  /** 两点之间的直线能不能走（同 walkRoute 的判断）；走路线时据此决定拐角能不能提前转 */
+  walkSees?(from: WalkTarget, to: WalkTarget): boolean
   /** 键盘和摇杆的画面方向转成世界方向；点击路线已经是世界坐标，不经过这里。 */
   walkDirection?(direction: [number, number]): [number, number]
   /** 画出或清掉目的地标记 */

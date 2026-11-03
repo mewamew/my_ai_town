@@ -727,6 +727,9 @@ export class TownMap {
   walkRoute(from: WalkTarget, to: WalkTarget): WalkStep[] | null {
     return this.walkGrid().find(from, to)
   }
+  walkSees(from: WalkTarget, to: WalkTarget): boolean {
+    return this.walkGrid().sees(from, to)
+  }
 
   /** 控制化身时点了地图：点在盖着屋顶的房子（屋顶、墙）上就走进它的门，不然走到点的地面；
    *  这一点站不了时由选路换成附近能站的地方 */
