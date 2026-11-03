@@ -78,6 +78,8 @@ pub enum FactKind {
     /// 明确记录是谁说的；说法内容不因此成为经世界验证的事实。
     Speech,
     Interaction,
+    /// 人来人往：同一地点里有人来了、有人往哪儿去了。
+    Presence,
 }
 impl FactKind {
     pub fn label(self) -> &'static str {
@@ -88,6 +90,7 @@ impl FactKind {
             Self::Action => "行动经历",
             Self::Speech => "交谈",
             Self::Interaction => "共同活动",
+            Self::Presence => "人来人往",
         }
     }
 }

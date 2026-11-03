@@ -50,6 +50,7 @@ pub mod possession;
 mod presence;
 mod projection;
 pub mod props;
+pub mod sightings;
 mod simulation;
 mod snapshot;
 pub mod topology;

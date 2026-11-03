@@ -693,3 +693,52 @@ fn following_resident_stays_quiet_until_the_walk_arrives() {
         .content
         .contains("到了乙地，同行结束"));
 }
+
+/// 目标里提到的人来了：正在停留的人提前结束停留醒来，不必站满提前排好的时长。
+#[test]
+fn a_planned_stay_ends_when_someone_from_the_goals_shows_up() {
+    let mut w = world();
+    let mut r = runtime(&mut w, Limits::default());
+    w.spawn("r2", "何青", "loc_b").unwrap();
+    w.enable_agent("r2").unwrap();
+    let q = life_request(&mut r, &mut w);
+    let goal = tool_call(
+        "goal",
+        "set_goal",
+        json!({"id":"等人","title":"等何青来说清楚后墙根的事","condition":{"kind":"action","verb":"停留","locale":"loc_a"},"status":"active"}),
+    );
+    let stay = tool_call(
+        "stay",
+        "run_actions",
+        json!({"actions":[{"intent":{"verb":"停留","duration_minutes":120}}]}),
+    );
+    assert!(reply_with(
+        &mut r,
+        &mut w,
+        &q,
+        "在这儿等她。",
+        vec![goal, stay]
+    ));
+    w.step(1.);
+    assert!(r.poll(&mut w, true).is_empty());
+    let rev = w.actor("r2").unwrap().actions.revision;
+    w.run_actions(
+        "r2",
+        "come",
+        rev,
+        &serde_json::from_value::<Vec<protocol::ActionDraft>>(
+            json!([{"intent":{"verb":"前往","locale":"loc_a"}}]),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    for _ in 0..40 {
+        w.step(0.1);
+    }
+    assert_eq!(w.actor("r2").unwrap().locus.locale, "loc_a");
+    let woke = request(&mut r, &mut w);
+    let body = &woke.messages.last().unwrap().content;
+    assert!(body.contains("何青来了"), "醒来时看到她来了");
+    let group = w.action_group("r1", "s1-r1-stay").unwrap();
+    assert_eq!(group.status, protocol::GroupStatus::Interrupted);
+}

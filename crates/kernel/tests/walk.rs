@@ -173,6 +173,28 @@ fn chat_proposal_turns_talk_into_walk_and_the_follower_comes_through_the_door() 
     }
     assert_eq!(w.actor("a").unwrap().locus.locale, "loc_b", "跟着穿过了门");
     assert_eq!(status(&w, "chat"), InteractionStatus::Running);
+    // 边走边聊：路上开口，跟着的人轮到回话，照样跟着
+    w.avatar_request_turn("chat", w.avatar().unwrap().actions.revision)
+        .unwrap();
+    act(
+        &mut w,
+        ID,
+        "say",
+        Cmd::Say {
+            interaction_id: "chat".into(),
+            message: "就在前面。".into(),
+            to: None,
+        },
+    );
+    assert!(w.chat_turn("a") && w.following("a") == Some(ID));
+    act(
+        &mut w,
+        "a",
+        "listen",
+        Cmd::Listen {
+            interaction_id: "chat".into(),
+        },
+    );
     // 带路的人在乙地停下，跟随的人也在：一会儿就算到了
     for _ in 0..40 {
         w.step(0.05);
@@ -268,4 +290,52 @@ fn avatar_leaving_town_ends_the_walk_and_frees_the_follower() {
     assert!(a.waiting_for_plan() && a.actions.revision > before);
     w.step(1.0);
     assert!(w.actor("a").unwrap().waiting_for_plan());
+}
+
+/// 看得见去向：同处的人看到谁往哪儿去了、谁来了；邀请对象走开后邀请作废，邀请人收到通知，不再干等。
+#[test]
+fn departures_are_seen_and_an_invitation_lapses_when_the_invitee_walks_off() {
+    let mut w = world(&[("a", "陈默", "loc_a"), ("b", "何青", "loc_a")]);
+    w.step(0.1);
+    common::run(
+        &mut w,
+        "b",
+        "go",
+        json!({"intent":{"verb":"前往","locale":"loc_b"}}),
+    )
+    .unwrap();
+    common::finish(&mut w, "b", "go");
+    let seen: Vec<_> = w
+        .actor("a")
+        .unwrap()
+        .journal
+        .events
+        .iter()
+        .filter(|e| e.kind == protocol::FactKind::Presence)
+        .map(|e| e.text.clone())
+        .collect();
+    assert_eq!(seen, ["何青往乙地去了"]);
+
+    enter(&mut w);
+    act(
+        &mut w,
+        "a",
+        "ask",
+        Cmd::Offer {
+            partner_id: ID.into(),
+            interaction: InteractionKind::Talk,
+            message: "刀在哪儿看见的，你带我去。".into(),
+        },
+    );
+    walk_avatar(&mut w, [0., 1.], 1.0);
+    let ask = w.interactions().of("a", "ask").unwrap();
+    assert_eq!(ask.status, InteractionStatus::Cancelled);
+    assert!(ask.reason.as_deref().unwrap().contains("旅人已经走开"));
+    assert!(w
+        .actor("a")
+        .unwrap()
+        .journal
+        .events
+        .iter()
+        .any(|e| e.kind == protocol::FactKind::Notice && e.text.contains("已经走开")));
 }

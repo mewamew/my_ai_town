@@ -54,6 +54,8 @@ pub struct World {
     pub(crate) happenings: crate::happenings::Happenings,
     /// 同行的足迹与计时（interactions/walk.rs），不存档。
     pub(crate) walk_trails: crate::interactions::WalkTrails,
+    /// 每人上次所在的已知地点（sightings.rs），不存档；为空表示还没开始记。
+    pub(crate) places_seen: Option<std::collections::BTreeMap<String, Option<String>>>,
 }
 
 impl World {
@@ -77,6 +79,7 @@ impl World {
             placer: None,
             happenings: Default::default(),
             walk_trails: Default::default(),
+            places_seen: None,
         }
     }
 

@@ -32,7 +32,8 @@ pub(crate) fn fact_kinds() -> Vec<FactKind> {
         Notice,
         Action,
         Speech,
-        Interaction
+        Interaction,
+        Presence
     })
 }
 pub(crate) fn memory_kinds() -> Vec<MemoryKind> {

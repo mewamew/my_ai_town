@@ -43,6 +43,7 @@ impl ResidentRuntime {
         // 不调用 interrupt_on_notice，避免接管/交还本身中断合法活动。
         session.restart_after_interruption();
         session.cursors.last_notice = world.actor(actor).map_or(0, |a| a.journal.cursor());
+        session.cursors.last_presence = session.cursors.last_notice;
         self.state.sessions.insert(actor.into(), session);
         Ok(())
     }

@@ -18,6 +18,7 @@ use std::{
     rc::Rc,
 };
 
+mod arrivals;
 mod chat;
 mod controlled;
 mod input;

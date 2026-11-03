@@ -162,6 +162,9 @@ pub struct Cursors {
     /// 已折叠进摘要的最后一个事件；之后的事件还在会话原文里，不必再当记忆附带。
     #[serde(default, rename = "folded_through_cursor")]
     pub folded_through: u64,
+    /// 最近看过的「有人来了」事件；目标里的人来了会提前结束停留（runtime/arrivals.rs）。
+    #[serde(default, rename = "last_presence_cursor")]
+    pub last_presence: u64,
 }
 
 /// 一次唤醒的等待与计数，只经 Session 的方法修改。
@@ -399,7 +402,17 @@ impl Session {
             delivered: cursor,
             last_notice: cursor,
             folded_through: cursor,
+            last_presence: cursor,
         };
+    }
+    /// 进行中或暂停的目标里提到这个人（名字或编号）。
+    pub fn goals_mention(&self, id: &str, name: &str) -> bool {
+        self.goals.values().filter(|g| g.status.is_open()).any(|g| {
+            [&g.title, &g.commitment, &g.reason]
+                .into_iter()
+                .chain(&g.next_steps)
+                .any(|text| (!name.is_empty() && text.contains(name)) || text.contains(id))
+        })
     }
     /// 停止原因；没有停止时为 None。
     pub fn pause_reason(&self) -> Option<&str> {

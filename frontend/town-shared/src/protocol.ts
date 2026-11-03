@@ -198,7 +198,8 @@ export type RequestStatus =
   'in_flight' | 'adopted' | 'format_retry' | 'outdated' | 'failed' | 'dropped' | 'controlled'
 
 /** 世界事件的种类；旧存档里的 job 读入时按 observation */
-type FactKind = 'observation' | 'readable' | 'notice' | 'action' | 'speech' | 'interaction'
+type FactKind =
+  'observation' | 'readable' | 'notice' | 'action' | 'speech' | 'interaction' | 'presence'
 /** 村民经历过的一条世界事件 */
 interface WorldFact {
   event_id: number

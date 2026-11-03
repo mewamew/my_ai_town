@@ -64,6 +64,8 @@ impl World {
             self.notice_bodies();
             self.day_boundary(t0, &ids);
             self.expire_interactions();
+            self.withdraw_departed_offers();
+            self.note_presence();
         }
         std::mem::take(&mut self.events)
     }

@@ -54,6 +54,7 @@ impl ResidentRuntime {
             return;
         }
         self.react_to_notices(world, s);
+        self.react_to_arrivals(world, s);
         let mut finished = false;
         for pending in std::mem::take(&mut s.pending) {
             let settled = match &pending {
@@ -180,7 +181,8 @@ impl ResidentRuntime {
         let Some(actor) = world.actor(&s.actor_id) else {
             return false;
         };
-        let occurred = event_arrived(actor, after_cursor, event);
+        let occurred = event_arrived(actor, after_cursor, event)
+            || super::arrivals::relevant_arrival(world, s, after_cursor);
         if world.minutes() < until && !occurred && !world.chat_turn(&s.actor_id) {
             return false;
         }
