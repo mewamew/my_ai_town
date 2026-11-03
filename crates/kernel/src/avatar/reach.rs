@@ -164,19 +164,10 @@ impl<'a> Reach<'a> {
         })
     }
 
-    /// 同一空间里两人隔多远、中间有没有东西挡着；不在同一空间（隔着墙）为空。
-    pub(crate) fn gap(&self, a: &str, b: &str) -> Option<(f64, bool)> {
+    /// 同一空间里两人隔多远；不在同一空间（隔着墙）为空。
+    pub(crate) fn gap(&self, a: &str, b: &str) -> Option<f64> {
         let (from, to) = (self.talk_spot(a)?, self.talk_spot(b)?);
-        let map = self.w.walk_map.as_ref()?;
-        (from.space == to.space).then(|| {
-            let d = distance(from.position, to.position);
-            (
-                d,
-                map.within_talk(&from, &to, f64::INFINITY, || {
-                    self.obstacles.get_or_init(|| self.w.avatar_obstacles())
-                }),
-            )
-        })
+        (from.space == to.space).then(|| distance(from.position, to.position))
     }
 
     /// 玩家放下物品的落脚点：够得着的站点里最近的一个。

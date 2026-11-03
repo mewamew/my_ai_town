@@ -198,6 +198,13 @@ impl WalkMap {
             .min_by_key(|s| usize::from(s.locale != preferred))
             .map(|s| s.locale.as_str())
     }
+    /// 这一点落在这个空间的地面上：同 locale_at 有结果，但不用挑处所，找到一块就停。
+    /// 走路每 0.1 米、看遮挡每 0.15 米都要问好几次，是每拍最费时的地方
+    fn on_surface(&self, space: &str, p: Point) -> bool {
+        self.surfaces
+            .iter()
+            .any(|s| s.space == space && s.area.contains(p))
+    }
     pub fn clear(&self, space: &str, p: Point, obstacles: &[Obstacle], radius: f64) -> bool {
         self.clear_except(space, p, obstacles, &[], radius)
     }
@@ -210,16 +217,13 @@ impl WalkMap {
         ignored: &[&str],
         radius: f64,
     ) -> bool {
+        // 半径为 0（看遮挡时逐点取样）八个方向都是这一点，查一次就够
+        let rim = if radius > 0. { 8 } else { 1 };
         p.iter().all(|v| v.is_finite())
             && self.terrain_clear(space, p)
-            && (0..8).all(|i| {
+            && (0..rim).all(|i| {
                 let a = i as f64 * std::f64::consts::TAU / 8.;
-                self.locale_at(
-                    space,
-                    [p[0] + radius * a.cos(), p[1] + radius * a.sin()],
-                    "",
-                )
-                .is_some()
+                self.on_surface(space, [p[0] + radius * a.cos(), p[1] + radius * a.sin()])
             })
             && !obstacles.iter().any(|o| {
                 !ignored.contains(&o.id.as_str())

@@ -175,6 +175,8 @@ impl Builder<'_> {
     }
 
     /// 附近（同一空间 APPROACH_RANGE 米内）还说不上话、能走过去找的人：离得远，或者中间隔着东西。
+    /// 说不上话已由 pair 按交谈距离判过：交谈距离内还说不上话就是隔着东西，不再对远处的人逐段查遮挡
+    /// （每拍都要算一遍，同一空间里人一多、离得一远，一拍就要算上一秒）。
     fn approach_people(&self) -> Vec<ApproachPerson> {
         let a = self.a;
         self.w
@@ -187,12 +189,12 @@ impl Builder<'_> {
                     && self.reach.pair(&a.id, &b.id).is_err()
             })
             .filter_map(|b| {
-                let (distance, visible) = self.reach.gap(&a.id, &b.id)?;
+                let distance = self.reach.gap(&a.id, &b.id)?;
                 (distance <= APPROACH_RANGE).then(|| ApproachPerson {
                     id: b.id.clone(),
                     name: b.name.clone(),
                     distance: (distance * 10.).round() / 10.,
-                    blocked: !visible && distance <= TALK_REACH,
+                    blocked: distance <= TALK_REACH,
                 })
             })
             .collect()

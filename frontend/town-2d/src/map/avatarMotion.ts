@@ -3,7 +3,8 @@ import type { WalkTarget } from 'town-shared/gameMap'
 // 玩家自己操控的人：本地预测。名册 0.1 秒才来一份，按它画会一走一顿；而方向和步速是本地发出去的，
 // 服务端按输入到达的时刻、按真实经过的时间走（见 crates/host/src/avatar/tick.rs），
 // 所以每帧照着同样的方向和步速往前走，画出来的就是服务端马上要走到的地方。
-// 撞墙和沿墙滑照搬服务端（crates/kernel/src/avatar/geometry.rs 的 advance 和 slide），两边走出来的路一样。
+// 撞墙和沿墙滑照搬服务端（crates/kernel/src/avatar/geometry.rs 的 advance 和 slide），两边走出来的路一样；
+// 方向过了 INPUT_TIMEOUT_MS 没再发就停下，也和服务端一样。
 // 名册来了只用来校正：服务端的位置晚到一点，应当落在本地刚走过的轨迹上，走动时只补偏离轨迹的那一点，
 // 不按「估出来晚了多久」往回拉（估多了会把人越推越前）；落在很久以前的地方（被挡住）才往回补，
 // 两边都停下以后补上全部的差。差都用一小段时间平滑地补。
@@ -23,6 +24,10 @@ const MAX_STEP_MS = 250
 const SUB_STEP_METRES = 0.1
 /** 一直在发方向、名册里的位置却这么久（毫秒）没动：服务端被挡住了，本地也停下等校正 */
 const STUCK_MS = 250
+/** 方向这么久（毫秒）没再发就停下，同服务端的 INPUT_TIMEOUT（crates/host/src/avatar/tick.rs）。
+ *  点地图走过去时方向跟着化身状态重发，服务端一拍卡上一阵、状态没来，那边已经停了：
+ *  本地接着走就会走过头，再被拉回来重走一遍 */
+const INPUT_TIMEOUT_MS = 350
 
 type Point = [number, number]
 
@@ -39,6 +44,8 @@ export class AvatarMotion {
   /** 服务端最近一份位置，和它从什么时候起没再动 */
   private server: { p: Point; still: number } | null = null
   private stuck = false
+  /** 最近一次发方向的时刻 */
+  private commandAt = -Infinity
 
   /** clear：人能不能站在这一点（米），和服务端的判断一样（见 route.ts 的 clear） */
   constructor(private clear: (space: string, x: number, y: number) => boolean) {}
@@ -56,6 +63,12 @@ export class AvatarMotion {
       if (this.server) this.server.still = now
     }
     this.vel = v
+    this.commandAt = now
+  }
+
+  /** 发着方向，而且还没过期：服务端也正按它走 */
+  private commanding(now: number) {
+    return (this.vel[0] !== 0 || this.vel[1] !== 0) && now - this.commandAt < INPUT_TIMEOUT_MS
   }
 
   /** 名册里的位置（服务端的权威位置） */
@@ -73,7 +86,7 @@ export class AvatarMotion {
     // 服务端被挡住：一直在发方向，它却不动了
     const moved =
       !this.server || Math.hypot(p[0] - this.server.p[0], p[1] - this.server.p[1]) > 0.01
-    const still = moved || !(this.vel[0] || this.vel[1]) ? now : this.server!.still
+    const still = moved || !this.commanding(now) ? now : this.server!.still
     this.server = { p: [...p], still }
     this.stuck = now - still > STUCK_MS
     // 本地最近走过的轨迹上离它最近的点：落在轨迹上（晚到）只补偏离的那一点；
@@ -93,14 +106,14 @@ export class AvatarMotion {
   /** 还在动：在走，或者还有没补完的差 */
   active() {
     return (
-      ((this.vel[0] !== 0 || this.vel[1] !== 0) && !this.stuck) ||
+      (this.commanding(this.last) && !this.stuck) ||
       Math.hypot(this.error[0], this.error[1]) > 0.003
     )
   }
 
-  /** 在走（走路帧要动）：发着方向、没被挡住 */
+  /** 在走（走路帧要动）：发着方向、没过期、没被挡住 */
   walking() {
-    return (this.vel[0] !== 0 || this.vel[1] !== 0) && !this.stuck
+    return this.commanding(this.last) && !this.stuck
   }
 
   private reset(at: WalkTarget, now: number) {
@@ -119,9 +132,11 @@ export class AvatarMotion {
     if (dt <= 0) return
     this.last = now
     if (!this.known) return
-    if ((this.vel[0] || this.vel[1]) && !this.stuck) {
-      const dx = this.vel[0] * dt,
-        dy = this.vel[1] * dt
+    // 方向在这一段中途过期的，只走到过期那一刻
+    const walk = Math.min(dt, this.commandAt + INPUT_TIMEOUT_MS - (now - dt))
+    if ((this.vel[0] || this.vel[1]) && !this.stuck && walk > 0) {
+      const dx = this.vel[0] * walk,
+        dy = this.vel[1] * walk
       const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / SUB_STEP_METRES))
       for (let i = 0; i < steps; i++) this.step(dx / steps, dy / steps)
     }
