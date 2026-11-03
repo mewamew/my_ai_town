@@ -327,6 +327,8 @@ export class HdScene {
   /** 每次画之前、立牌摆好以后调用（玩家操控时的镜头跟随）：返回这一帧挪了镜头。
    *  挪镜头改的 viewBox 当场读进立体镜头，SVG 上的名字和立体画面同一帧到位 */
   beforeDraw?: (t: number) => boolean
+  /** 画过第一帧：之后画布改尺寸要当场补画 */
+  private drawn = false
   /** 天光、立牌显隐这类环境变化等下一个节拍再画，不在两拍之间插一帧 */
   private ambient = false
   private hour = PREVIEW_HOUR
@@ -629,6 +631,7 @@ export class HdScene {
     this.syncView()
     this.dirty = false
     this.composer.render()
+    this.drawn = true
   }
 
   /** 玩家操控的人的本地预测（见 villagers.ts 的 LiveMotion）；没在操控时为空 */
@@ -2024,6 +2027,10 @@ export class HdScene {
     for (const p of this.tiltShift) p.uniforms.res.value.set(w * pr, h * pr)
     this.updateTiltShift()
     this.readView()
+    // 改尺寸（右栏开合、窗口缩放、换画质）会清空画布：当场补画，不等下一帧。
+    // 尺寸监听在浏览器绘制前回调，等下一帧再画，中间这一帧画布就是空的：
+    // Safari 和 mac 版露出底下的浅色页面，像白屏闪一下，Chrome 是黑一下
+    if (this.drawn) this.draw(performance.now())
   }
 
   /** 操作带来的变化（拖地图、换角度、开合屋顶）下一帧就画，不等节拍 */
