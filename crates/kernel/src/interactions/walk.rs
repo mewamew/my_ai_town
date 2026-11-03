@@ -27,6 +27,8 @@ const CATCH_UP_PACE: f64 = 1.5;
 const WALK_TICK: f64 = 0.25;
 /// 没写目的地时，带路人在一个地点停留这么久（分钟）、跟随的人也在那里，就算到了。
 const SETTLE_MINUTES: f64 = 1.5;
+/// 跟随者离带路人这么近（米）以内、在同一空间里，到地方时就算一起到了。
+const ARRIVE_REACH: f64 = 3.0;
 /// 离带路人超过这么远（米）、不在同一空间，或被挡住走不动，累计这么久（分钟）就算跟丢。
 const LOST_DISTANCE: f64 = 25.0;
 const LOST_MINUTES: f64 = 6.0;
@@ -340,6 +342,8 @@ impl World {
         if self.interactions[id].status != Status::Running {
             return;
         }
+        self.follow_new_destination(id, &leader);
+        let locale = self.interactions[id].kind.clone().walk_locale().or(locale);
         self.check_arrival(id, &leader, locale.as_deref(), minutes);
     }
 
@@ -355,9 +359,22 @@ impl World {
         let settled_place = self.topo.place_of(&here).is_some()
             && !self.actors[leader].current.is_travel()
             && self.actors[leader].free_walk.is_none();
-        let all_here = members.iter().all(|m| self.actors[m].locus.locale == here);
+        // 跟着的人停在带路人身后几步：带路人站在地点的入口时，身后那几步可能还在路上，也算到了
+        let reach = crate::avatar::Reach::new(self);
+        let leader_spot = reach.talk_spot(leader);
+        let close = |m: &String| {
+            self.actors[m].locus.locale == here
+                || reach
+                    .talk_spot(m)
+                    .zip(leader_spot.as_ref())
+                    .is_some_and(|(s, l)| {
+                        s.space == l.space && distance(s.position, l.position) <= ARRIVE_REACH
+                    })
+        };
+        let all_here = members.iter().all(close);
+        drop(reach);
         let arrived = match locale {
-            Some(dest) => here == dest && all_here,
+            Some(dest) => here == dest && all_here && !self.actors[leader].current.is_travel(),
             None => {
                 let state = self.walk_trails.0.entry(id.into()).or_default();
                 if settled_place && all_here && state.settled_at.as_deref() == Some(here.as_str()) {
@@ -370,6 +387,7 @@ impl World {
             }
         };
         if arrived {
+            self.step_followers_into(&members, leader, &here);
             let place = self.topo.locale_name(&here);
             return self.finish_walk(id, Status::Succeeded, format!("到了{place}，同行结束"));
         }
@@ -380,6 +398,45 @@ impl World {
                 Status::Interrupted,
                 format!("走了 {WALK_MINUTES:.0} 分钟还没到，先停下来"),
             );
+        }
+    }
+
+    /// 到了以后，还站在地点外面一两步的跟随村民往前挪进去，醒来时就在那个地点里。
+    fn step_followers_into(&mut self, members: &[String], leader: &str, place: &str) {
+        let Some(map) = self.walk_map.clone() else {
+            return;
+        };
+        let obstacles = self.avatar_obstacles();
+        let toward = crate::avatar::Reach::new(self).talk_spot(leader);
+        for m in members {
+            if self.actors[m].locus.locale == place || !self.walk_carries(m, leader) {
+                continue;
+            }
+            let (Some(from), Some(toward)) =
+                (crate::avatar::Reach::new(self).talk_spot(m), &toward)
+            else {
+                continue;
+            };
+            if let Some(spot) = map.step_into(place, &from, toward.position, &obstacles) {
+                self.place_follower(m, spot);
+            }
+        }
+    }
+
+    /// 受 Agent 控制的带路人改了去处（到了一处又往别处走）：同行的目的地跟着改，到那儿才算到。
+    fn follow_new_destination(&mut self, id: &str, leader: &str) {
+        let crate::world::ActKind::Travel { journey, .. } = &self.actors[leader].current.kind
+        else {
+            return;
+        };
+        let dest = journey.dest_locale.clone();
+        if self.topo.place_of(&dest).is_none() || self.actors[leader].player_controlled() {
+            return;
+        }
+        if let InteractionKind::Walk { locale, .. } = &mut self.interactions.get_mut(id).kind {
+            if locale.as_deref() != Some(dest.as_str()) {
+                *locale = Some(dest);
+            }
         }
     }
 

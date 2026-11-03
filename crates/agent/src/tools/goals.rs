@@ -134,7 +134,7 @@ fn resolve_condition(
         GoalCondition::Action { verb, locale }
             if !world.topo.is_dwell(locale)
                 || !(world.affordances.is_verb(verb)
-                    || ["前往", "停留"].contains(&verb.as_str())) =>
+                    || kernel::intent::BuiltinVerb::parse(verb).is_some()) =>
         {
             Err("目标动作或地点不存在".into())
         }

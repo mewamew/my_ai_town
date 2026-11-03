@@ -427,7 +427,9 @@ class AvatarController {
     const { state, ui } = this
     const chat = runningTalk(state)
     const text = ui.draft.value.trim()
-    if (!chat || !state?.actor || !text || !chat.can_speak || !state.speed || !this.online) return
+    const quietWalk = chat?.kind.kind === 'walk' && chat.can_request_turn
+    if (!chat || !state?.actor || !text || !(chat.can_speak || quietWalk)) return
+    if (!state.speed || !this.online) return
     if (
       await this.execute({
         kind: 'interact',
@@ -729,7 +731,9 @@ class AvatarController {
     ui.back.hidden = !controlling || this.following
     const talk = runningTalk(state)
     ui.composer.hidden = this.tab !== 'chat' || !talk || !controlling
-    ui.say.disabled = !talk?.can_speak || !state?.speed || this.commands.pendingMutation || !online
+    // 同行路上安静着时也能直接开口（世界从开口的人说起）
+    const canSay = !!talk?.can_speak || (talk?.kind.kind === 'walk' && !!talk.can_request_turn)
+    ui.say.disabled = !canSay || !state?.speed || this.commands.pendingMutation || !online
     ui.draft.readOnly = !state?.speed || !online
     const prompts = controlling ? this.targets().map((t) => t.prompt) : []
     map.setAvatarPrompts?.(prompts)

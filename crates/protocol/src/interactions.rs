@@ -46,6 +46,13 @@ impl InteractionKind {
             _ => None,
         }
     }
+    /// 同行说好的目的地；不是同行或没写目的地时为空。
+    pub fn walk_locale(self) -> Option<String> {
+        match self {
+            Self::Walk { locale, .. } => locale,
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -92,6 +99,7 @@ pub enum InteractionCommand {
     /// 答应交谈里等自己回答的提议。自己带路而提议没写目的地时，可以用 locale 补上。
     Accept {
         interaction_id: String,
+        #[serde(default)]
         message: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         locale: Option<String>,
@@ -99,6 +107,7 @@ pub enum InteractionCommand {
     /// 不答应交谈里的提议；提议人用它撤回自己的提议。
     Decline {
         interaction_id: String,
+        #[serde(default)]
         message: String,
     },
 }

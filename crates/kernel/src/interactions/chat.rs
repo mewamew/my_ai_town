@@ -288,6 +288,18 @@ impl Interactions {
             !message.trim().is_empty(),
             KernelError::interaction("发言不能为空；只想听请使用 listen")
         );
+        // 同行路上安静着（没人在说话）：谁开口就从谁说起，不用等轮次
+        let i = &self.items[id];
+        if i.kind.walk_leader().is_some()
+            && chat_of(i).resume_at > now
+            && chat_of(i).members.contains(actor)
+        {
+            let c = chat_of_mut(self.get_mut(id));
+            c.turn_queue.retain(|m| m != actor);
+            c.turn_queue.insert(0, actor.into());
+            c.resume_at = now;
+            c.passes = 0;
+        }
         ensure!(
             self.chat_turn(&actors[actor], now),
             KernelError::interaction("尚未轮到本人发言，请等待")

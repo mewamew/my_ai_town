@@ -428,12 +428,12 @@ fn interaction_operations(keep: impl Fn(&InteractionCommand) -> bool) -> Value {
                 json!({"type":"string"}),
                 "自己带路而提议没写目的地时，补上要去的 known_places.id",
             );
-            (fields, vec!["interaction_id", "message"])
+            (fields, vec!["interaction_id"])
         }
         InteractionCommand::Decline { .. } => {
             let mut fields = id();
             fields["message"] = message();
-            (fields, vec!["interaction_id", "message"])
+            (fields, vec!["interaction_id"])
         }
     })
 }

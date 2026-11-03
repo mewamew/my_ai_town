@@ -316,7 +316,7 @@ pub const TOOLS: [ToolSpec; 14] = [
         name: ToolName::WaitFor,
         description: || {
             format!(
-                "等待事件或若干分钟。只填 event：该类事件或重要通知到来才唤醒，最长 {} 分钟；填 minutes 到点一定重看。聊天中调用等于 listen。",
+                "等待事件或若干分钟。只填 event：该类事件或重要通知到来才唤醒，最长 {} 分钟；填 minutes 到点一定重看。轮到自己说话时调用等于 listen。",
                 limits::WAIT_MINUTES.end()
             )
         },
@@ -746,7 +746,12 @@ fn wait_for(ctx: &mut ToolContext, call: &ToolCall) -> Result<ToolOutcome, ToolE
         ));
     }
     let actor = ctx.session.actor_id.clone();
-    if let Some(chat) = ctx.world.active_chat(&actor) {
+    // 轮到自己说话时等待就是倾听；同行路上没轮到谁（带路人边走边等）照常等待
+    if let Some(chat) = ctx
+        .world
+        .active_chat(&actor)
+        .filter(|_| ctx.world.chat_turn(&actor))
+    {
         let command = InteractionCommand::Listen {
             interaction_id: chat.id.clone(),
         };

@@ -53,6 +53,39 @@ fn world(residents: &[(&str, &str, &str)]) -> World {
     w
 }
 
+/// 甲乙两处挨着、在同一个室外空间里（像街道和广场）：甲处 x 0–10，乙处 x 10–20。
+fn open_world(residents: &[(&str, &str, &str)]) -> World {
+    let mut w = world(residents);
+    let outdoor = |locale: &str, x: f64| Spot {
+        locale: locale.into(),
+        space: "town".into(),
+        position: [x, 2.],
+    };
+    w.walk_map = Some(Arc::new(WalkMap {
+        version: 1,
+        svg_units_per_metre: 12.,
+        metres_per_minute: 12.,
+        surfaces: [("loc_a", 0., 10.), ("loc_b", 10., 20.)]
+            .into_iter()
+            .map(|(id, x0, x1)| Surface {
+                locale: id.into(),
+                space: "town".into(),
+                area: Area::Rect {
+                    min: [x0, 0.],
+                    max: [x1, 20.],
+                },
+            })
+            .collect(),
+        stations: [
+            ("st_a".into(), outdoor("loc_a", 2.)),
+            ("st_b".into(), outdoor("loc_b", 18.)),
+        ]
+        .into(),
+        ..Default::default()
+    }));
+    w
+}
+
 fn enter(w: &mut World) {
     let look = Appearance {
         marker: "旅".into(),
@@ -173,9 +206,7 @@ fn chat_proposal_turns_talk_into_walk_and_the_follower_comes_through_the_door() 
     }
     assert_eq!(w.actor("a").unwrap().locus.locale, "loc_b", "跟着穿过了门");
     assert_eq!(status(&w, "chat"), InteractionStatus::Running);
-    // 边走边聊：路上开口，跟着的人轮到回话，照样跟着
-    w.avatar_request_turn("chat", w.avatar().unwrap().actions.revision)
-        .unwrap();
+    // 边走边聊：路上谁开口就从谁说起（不用先请求发言），跟着的人轮到回话，照样跟着
     act(
         &mut w,
         ID,
@@ -480,4 +511,42 @@ fn looking_around_lists_what_is_here_and_a_third_person_can_join_a_walk() {
     for id in ["a", "b", "c"] {
         assert_eq!(w.actor(id).unwrap().locus.locale, "loc_b");
     }
+}
+
+/// 带路人刚跨进广场就停下，跟着的人停在身后几步、还在路上：也算一起到了，跟着的人挪进广场。
+#[test]
+fn a_follower_a_few_steps_behind_at_the_entrance_still_arrives_inside() {
+    let mut w = open_world(&[("a", "林夏", "loc_a")]);
+    enter(&mut w);
+    act(
+        &mut w,
+        ID,
+        "walk",
+        Cmd::Offer {
+            partner_id: "a".into(),
+            interaction: InteractionKind::Walk {
+                leader: ID.into(),
+                locale: Some("loc_b".into()),
+            },
+            message: "跟我去广场。".into(),
+        },
+    );
+    act(
+        &mut w,
+        "a",
+        "walk-yes",
+        Cmd::Reply {
+            interaction_id: "walk".into(),
+            accept: true,
+            message: "好呀。".into(),
+        },
+    );
+    // 化身从 x=2 走到刚过分界的 x≈10.5 停下
+    let pace = w.avatar_walk().unwrap().metres_per_minute;
+    walk_avatar(&mut w, [1., 0.], 8.5 / pace);
+    for _ in 0..10 {
+        w.step(0.05);
+    }
+    assert_eq!(status(&w, "walk"), InteractionStatus::Succeeded);
+    assert_eq!(w.actor("a").unwrap().locus.locale, "loc_b", "挪进了广场");
 }

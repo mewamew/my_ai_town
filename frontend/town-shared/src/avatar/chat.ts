@@ -102,7 +102,7 @@ function inviteCard(v: ChatView, i: AvatarInteraction) {
 function turnText(state: AvatarState, talk: AvatarInteraction) {
   if (!state.speed) return '暂停期间不计发言等待时间'
   if (talk.can_speak) return '轮到你了 · 一分钟不说话会自动切到只听'
-  if (talk.kind.kind === 'walk' && talk.can_request_turn) return '路上没人说话，想说就点「我想说」'
+  if (talk.kind.kind === 'walk' && talk.can_request_turn) return '路上没人说话，想说什么直接说'
   return talk.can_request_turn ? '你在只听，想说话就点「我想说」' : '等对方说完'
 }
 
