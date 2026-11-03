@@ -460,8 +460,10 @@ export class Acting {
     // 小动作：站着没事做时才演
     const quirk = !m.moving && !body?.dead && !body?.down && m.lively ? m.quirk : undefined
     const qk = quirk ? m.now - quirk.at : 0
+    // 提着灯笼、打着伞的人手里没空：不演要用手的那些
+    const handsBusy = wear?.lantern || wear?.umbrella
     const quirkPose: PoseKind | undefined = quirk
-      ? POSE_QUIRKS.has(quirk.kind)
+      ? POSE_QUIRKS.has(quirk.kind) && !handsBusy
         ? (quirk.kind as PoseKind)
         : quirk.kind === 'pickup' && qk < 900
           ? 'sitGround'
@@ -601,7 +603,7 @@ export class Acting {
       names.push('cover')
       stance = { ...stance, arm: null }
     }
-    if (quirk?.kind === 'wave' && bodyView === 'down' && !wear?.umbrella) {
+    if (quirk?.kind === 'wave' && bodyView === 'down' && !handsBusy) {
       front.push(WAVE(Math.floor(qk / 250) % 2 === 1))
       names.push(`wave${Math.floor(qk / 250) % 2}`)
     }
