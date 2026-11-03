@@ -1,13 +1,15 @@
 import * as THREE from 'three'
 import { PIXEL } from '../grid'
+import { hashString } from '../pixel/noise'
 import type { Tilt } from './layout'
 import { pixelFilter, stand, standee } from './standee'
 import { contactTexture } from './ao'
 import { REFLECTION_SKIP } from './reflection'
-import { VILLAGER_HALF, VILLAGER_SCALE, type Direction } from './villagerSprite'
+import { VILLAGER_HALF, VILLAGER_HEIGHT, VILLAGER_SCALE, type Direction } from './villagerSprite'
 import { RIG_H, RIG_W, VillagerRig, frameKey } from './villagerRig'
-import { Acting, talkMs, type Mood, type Moment } from './villagerActing'
-import { likes, moodOf, type Cue } from './villagerCues'
+import { Acting, talkMs, type Mood, type Moment, type Wear } from './villagerActing'
+import { bodyOf, likes, moodOf, standingSigns, type Cue } from './villagerCues'
+import { CYCLE, SIGN_RANK, type Shown, type Sign } from './villagerSigns'
 import { poseOf } from './villagerPose'
 
 // 村民立牌：位置跟着名册走。名册每拍（100 毫秒）来一次，立牌比最新一份晚一到两拍，在相邻两份
@@ -49,8 +51,6 @@ export interface VillagerPlacement {
   /** 为避开家具和墙而做的显示偏移，不进入名册位置与行走时间轴。 */
   offset?: [number, number]
   visible: boolean
-  /** 死亡的人变灰，失去行动能力的人压暗 */
-  condition: 'normal' | 'incapacitated' | 'dead'
   /** 玩家正在操控的人：不缓冲，按本地预测画（见 LiveMotion） */
   live?: boolean
   /** 站着时转身朝向这一点（被玩家邀请、正和玩家聊天的人朝向玩家，聊天的人朝向对方） */
@@ -59,7 +59,27 @@ export interface VillagerPlacement {
   cue?: Cue
 }
 
-const TINT = { normal: '#ffffff', incapacitated: '#a8a0a0', dead: '#6f6f78' }
+/** 天气和时间落在人身上要用的：雨多大、在不在下雪、夜里亮灯的程度、冷不冷（呵白气、围围巾）、
+ *  废土的正午（冒汗）、天好（散步哼歌），游戏分钟（按它算在外面待了多久） */
+export interface Climate {
+  rain: number
+  snowing: boolean
+  lit: number
+  cold: boolean
+  scarves: boolean
+  hot: boolean
+  fine: boolean
+  minutes: number
+}
+
+/** 积雪、淋湿按在户外待的游戏分钟分档 */
+const SNOW_MIN = [4, 15, 30]
+const WET_MIN = [3, 12]
+/** 一阵子的符号留多久（毫秒） */
+const SIGN_MS = 2200
+/** 复活的光柱：落下、停住、淡掉（毫秒），多高（地图单位） */
+const BEAM_MS = [300, 1200, 1800]
+const BEAM_H = VILLAGER_HEIGHT * 6
 
 /** 玩家正在操控的人画在哪：本地预测（见 ../avatarMotion.ts），每帧问一次 */
 export interface LiveMotion {
@@ -112,6 +132,20 @@ interface Villager {
   talk?: { at: number; text: string; liked: boolean }
   hear?: { at: number; ms: number; liked: boolean }
   react: { mood: Mood; until: number }[]
+  /** 谁带伞、提灯笼、围围巾：按编号定，每次都是同一些人 */
+  owns: { umbrella: boolean; lantern: boolean; scarf: boolean }
+  /** 在户外淋雨、落雪的游戏分钟（进屋清零）：积雪和淋湿的档按它算 */
+  rainMin: number
+  snowMin: number
+  /** 一阵子的符号（吓到、心、灯泡、怒）；过了就看一直在的状态 */
+  sign?: Shown
+  /** 刚复活的时刻和落下来的光柱 */
+  revived?: number
+  beam?: THREE.Mesh
+  /** 伞面、符号高出头顶的地图单位：气泡按它躲开 */
+  crown: number
+  /** 上一帧在走：天好时刚出门散步，偶尔哼一句 */
+  strolling: boolean
   /** 此刻在看的方向（画面坐标）和下次重挑的时刻；上次因为看人转身的时刻 */
   gazeAt?: [number, number]
   nextLook: number
@@ -205,10 +239,6 @@ export class Villagers {
       }
       if (v.mesh.visible !== p.visible) changed = true
       v.mesh.visible = v.contact.visible = p.visible
-      const color = (v.mesh.material as THREE.MeshLambertMaterial).color
-      const tint = color.getHex()
-      color.set(TINT[p.condition])
-      if (color.getHex() !== tint) changed = true
       if (v.faceToward?.[0] !== p.faceToward?.[0] || v.faceToward?.[1] !== p.faceToward?.[1])
         changed = true
       v.faceToward = p.faceToward
@@ -262,20 +292,131 @@ export class Villagers {
   /** 每场聊天最近开口的那一句：一句只分给听的人一次 */
   private readonly heard = new Map<string, Villager['talk']>()
 
-  /** 换上新的线索：新说出口的一句开始动嘴；聊完了高兴一阵；刚被治好、复活的先惊讶再高兴 */
+  /** 换上新的线索：新说出口的一句开始动嘴；聊完了高兴一阵、冒个心；被治好冒心，复活、神力先惊讶再高兴，
+   *  天上落下光柱；邀请被拒冒怒，有了新目标冒灯泡；身边有人倒下，旁边的人吓一跳 */
   private cue(v: Villager, cue: Cue) {
     const before = v.cue
     v.cue = cue
     const now = performance.now()
     if (cue.speech && cue.speech.key !== before.speech?.key)
       v.talk = { at: now, text: cue.speech.text, liked: likes(cue.persona, cue.speech.text) }
-    if (before.chat && !cue.chat) v.react = [{ mood: 'happy', until: now + 2500 }]
-    if (cue.revived && cue.revived.at !== before.revived?.at)
-      v.react = [
-        { mood: 'surprised', until: now + 900 },
-        { mood: 'happy', until: now + 3500 },
-      ]
+    if (before.chat && !cue.chat) {
+      v.react = [{ mood: 'happy', until: now + 2500 }]
+      this.signal(v, 'heart', now)
+    }
+    if (cue.revived && cue.revived.at !== before.revived?.at) {
+      if (cue.revived.kind === 'cure') {
+        v.react = [{ mood: 'happy', until: now + 3000 }]
+        this.signal(v, 'heart', now)
+      } else {
+        v.react = [
+          { mood: 'surprised', until: now + 900 },
+          { mood: 'happy', until: now + 3500 },
+        ]
+        this.signal(v, '!', now)
+        v.revived = now
+        this.beamDown(v, now)
+      }
+    }
+    if (cue.declined && before.declined !== cue.declined) this.signal(v, 'anger', now)
+    if (cue.goal && before.goal && before.goal !== cue.goal) this.signal(v, 'bulb', now)
+    const fell = (cue.down || cue.dead) && !before.down && !before.dead && before !== cue
+    if (fell && v.mesh.visible)
+      for (const o of this.all.values())
+        if (
+          o !== v &&
+          !o.cue.dead &&
+          Math.hypot(o.at[0] - v.at[0], o.at[1] - v.at[1]) < LOOK_NEAR
+        ) {
+          this.signal(o, '!', now)
+          o.react = [{ mood: 'surprised', until: now + 1200 }]
+        }
   }
+
+  /** 冒一个一阵子的符号：比正在冒的要紧（或那个已经过了）才换 */
+  private signal(v: Villager, sign: Sign, now: number) {
+    if (v.sign && v.sign.until > now && SIGN_RANK[v.sign.sign] > SIGN_RANK[sign]) return
+    v.sign = { sign, at: now, until: now + SIGN_MS }
+  }
+
+  /** 此刻头顶冒哪个符号：一阵子的优先；没有就看一直在的状态，按各自的节奏隔一阵冒一次 */
+  private signNow(v: Villager, now: number): Shown | undefined {
+    if (v.sign && v.sign.until > now) return v.sign
+    v.sign = undefined
+    const phase = hashString(v.id) % 10000
+    let best: Shown | undefined
+    for (const sign of standingSigns(v.cue, this.climate.hot)) {
+      const [on, off] = CYCLE[sign] ?? [2000, 6000]
+      const start = now - ((now + phase) % (on + off))
+      if (now - start >= on) continue
+      if (!best || SIGN_RANK[sign] > SIGN_RANK[best.sign])
+        best = { sign, at: start, until: start + on }
+    }
+    return best
+  }
+
+  /** 闪电：在外面的人吓一跳 */
+  startle() {
+    const now = performance.now()
+    for (const v of this.all.values())
+      if (v.mesh.visible && !v.cue.indoors && !v.cue.dead) {
+        this.signal(v, '!', now)
+        v.react = [{ mood: 'surprised', until: now + 700 }]
+      }
+  }
+
+  /** 复活：天上落下一道光柱，停一会儿淡掉 */
+  private beamDown(v: Villager, now: number) {
+    if (v.beam) return
+    const material = new THREE.MeshBasicMaterial({
+      map: this.beamTexture,
+      color: '#fff1c8',
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
+    const mesh = new THREE.Mesh(this.beamGeometry, material)
+    mesh.layers.set(REFLECTION_SKIP)
+    mesh.renderOrder = 2
+    mesh.userData.at = now
+    v.beam = mesh
+    this.scene.add(mesh)
+    this.placeBeam(v)
+  }
+
+  private placeBeam(v: Villager) {
+    if (!v.beam) return
+    stand(v.beam, v.at[0] + v.offset[0], v.at[1] + v.offset[1], this.tilt, PIXEL * 2)
+  }
+
+  /** 光柱：贴地往上，落下时从上往下长出来，停住后淡掉 */
+  private stepBeam(v: Villager, now: number) {
+    const beam = v.beam
+    if (!beam) return
+    const k = now - beam.userData.at
+    const material = beam.material as THREE.MeshBasicMaterial
+    if (k >= BEAM_MS[2]) {
+      this.scene.remove(beam)
+      material.dispose()
+      v.beam = undefined
+      return
+    }
+    const grow = Math.min(1, k / BEAM_MS[0])
+    beam.scale.set(1, grow, 1)
+    // 从上往下长：缩放以顶端为准
+    this.placeBeam(v)
+    beam.translateY(BEAM_H * (1 - grow))
+    material.opacity =
+      0.85 * (k < BEAM_MS[1] ? 1 : 1 - (k - BEAM_MS[1]) / (BEAM_MS[2] - BEAM_MS[1]))
+  }
+
+  private readonly beamGeometry = new THREE.PlaneGeometry(VILLAGER_HALF * 2.6, BEAM_H).translate(
+    0,
+    BEAM_H / 2,
+    0
+  )
+  private readonly beamTexture = beamTexture()
 
   /** 此刻的心情：一阵子的表情优先，过了就按身体和需求 */
   private moodNow(v: Villager, now: number): Mood {
@@ -372,6 +513,7 @@ export class Villagers {
       if (v.live) {
         if (this.stepLive(v, now)) changed = true
         this.frame(v, now)
+        this.stepBeam(v, now)
         continue
       }
       while (v.path.length > 1 && v.path[1].t <= this.play) v.path.shift()
@@ -397,6 +539,7 @@ export class Villagers {
         changed = true
       }
       this.frame(v, now)
+      this.stepBeam(v, now)
     }
     return changed
   }
@@ -466,6 +609,10 @@ export class Villagers {
   /** 按此刻的朝向、走路、姿势、表情、呼吸眨眼和风合成这一帧；和上一帧不一样才重画、上传 */
   private frame(v: Villager, now: number) {
     if (!v.mesh.visible) return
+    // 天好时在外面刚迈开步，五个人里约有一个哼一句
+    if (v.moving && !v.strolling && this.climate.fine && !v.cue.indoors && !v.cue.verb)
+      if (hashString(`${v.id}${Math.floor(now / 20000)}`) % 5 === 0) this.signal(v, 'note', now)
+    v.strolling = v.moving
     if (v.talk && now - v.talk.at > talkMs(v.talk.text)) v.talk = undefined
     if (v.hear && now - v.hear.at > v.hear.ms) v.hear = undefined
     const m: Moment = {
@@ -481,13 +628,100 @@ export class Villagers {
       mood: this.moodNow(v, now),
       talk: v.talk,
       hear: v.hear,
+      body: bodyOf(v.cue),
+      wear: this.wearOf(v),
+      sign: this.signNow(v, now),
+      revived: v.revived,
     }
+    // 没伞淋雨的人小跑：脚步比走过的路快
+    if (m.wear?.cover) m.stride *= 1.4
     const f = v.acting.frame(m)
+    v.crown = (f.props?.key.includes('umbrella') ? 10 : f.sign ? 3 : 0) * PIXEL * VILLAGER_SCALE
     const key = frameKey(f)
     if (key === v.drawn) return
     v.drawn = key
     v.rig.draw(f, v.data)
     v.map.needsUpdate = true
+  }
+
+  /** 天气落在这个人身上：下雨在外面的打伞（没伞的抱头），淋湿和积雪按在外面待的时间分档，
+   *  冷天多数人围围巾、在外面呵白气，夜里一部分人提灯笼 */
+  private wearOf(v: Villager): Wear {
+    const c = this.climate
+    const out = !v.cue.indoors && !v.cue.dead && !v.cue.down
+    const raining = out && c.rain > 0.15
+    const level = (n: number, steps: number[]) => steps.filter((s) => n >= s).length
+    return {
+      umbrella: raining && v.owns.umbrella,
+      cover: raining && !v.owns.umbrella && !v.cue.verb,
+      wet: level(v.rainMin, WET_MIN) as Wear['wet'],
+      snow: level(v.snowMin, SNOW_MIN) as Wear['snow'],
+      scarf: c.scarves && v.owns.scarf,
+      breath: c.cold && out,
+      lantern: out && c.lit > 0.5 && v.owns.lantern,
+    }
+  }
+
+  /** 天气和时间变了：按过去的游戏分钟给每人累积淋雨、积雪（进屋就抖掉、慢慢干） */
+  setClimate(c: Climate) {
+    const dt = Math.max(0, Math.min(30, c.minutes - this.climate.minutes))
+    this.climate = c
+    if (!dt) return
+    for (const v of this.all.values()) {
+      const out = !v.cue.indoors
+      if (out && c.rain > 0.15) v.rainMin += dt * (v.owns.umbrella ? 0.25 : 1)
+      else v.rainMin = Math.max(0, v.rainMin - dt / 3)
+      if (!out) v.snowMin = 0
+      else if (c.snowing) v.snowMin += dt
+      else v.snowMin = Math.max(0, v.snowMin - dt / 10)
+    }
+  }
+  private climate: Climate = {
+    rain: 0,
+    snowing: false,
+    lit: 0,
+    cold: false,
+    scarves: false,
+    hot: false,
+    fine: false,
+    minutes: 0,
+  }
+
+  /** 提着灯笼的人在哪（地图坐标）：光照图把它们当作会走的灯 */
+  lanterns() {
+    const out: [number, number][] = []
+    for (const v of this.all.values())
+      if (v.mesh.visible && v.drawn.includes('lantern'))
+        out.push([v.at[0] + v.offset[0], v.at[1] + v.offset[1]])
+    return out
+  }
+
+  /** 打着伞的人：伞面中心（世界 x、z）、半径、离地高，雨滴落到伞面就没了。伞面在贴图第 8～14 行，
+   *  立牌按俯角往后仰，所以按立牌自己的朝向从脚往上量 */
+  umbrellas() {
+    const out: [number, number, number, number][] = []
+    const texel = PIXEL * VILLAGER_SCALE
+    for (const v of this.all.values()) {
+      if (!v.mesh.visible || !v.drawn.includes('umbrella')) continue
+      const top = this.canopy.set(0, (RIG_H - 11) * texel, 0)
+      v.mesh.localToWorld(top)
+      out.push([top.x, top.z, 14 * texel, top.y])
+    }
+    return out
+  }
+  private readonly canopy = new THREE.Vector3()
+
+  /** 头顶多出来的高度（伞面、符号，地图单位）：气泡按它躲开 */
+  crown(id: string) {
+    return this.all.get(id)?.crown ?? 0
+  }
+
+  /** 还有一阵子的东西要演完（光柱、刚冒的符号）：减少动画时也要接着画 */
+  pending() {
+    const now = performance.now()
+    for (const v of this.all.values())
+      if (v.beam || (v.sign && v.sign.until > now) || v.react.length) return true
+    return false
   }
 
   private create(p: VillagerPlacement): Villager {
@@ -518,6 +752,11 @@ export class Villagers {
       drawn: '',
       cue: p.cue ?? {},
       react: [],
+      owns: owns(p.id),
+      rainMin: 0,
+      snowMin: 0,
+      crown: 0,
+      strolling: false,
       look: p.look,
       at: [p.x, p.y],
       path: [{ t: this.latest, x: p.x, y: p.y }],
@@ -556,6 +795,10 @@ export class Villagers {
     const v = this.all.get(id)
     if (!v) return
     this.scene.remove(v.mesh, v.contact)
+    if (v.beam) {
+      this.scene.remove(v.beam)
+      ;(v.beam.material as THREE.Material).dispose()
+    }
     v.mesh.geometry.dispose()
     ;(v.mesh.material as THREE.Material).dispose()
     v.map.dispose()
@@ -564,8 +807,40 @@ export class Villagers {
 
   dispose() {
     for (const id of [...this.all.keys()]) this.remove(id)
+    this.beamGeometry.dispose()
+    this.beamTexture.dispose()
     this.contactGeometry.dispose()
     this.contactMaterial.map?.dispose()
     this.contactMaterial.dispose()
   }
+}
+
+/** 谁带伞（一半人）、提灯笼（三成）、围围巾（七成）：按编号定 */
+function owns(id: string) {
+  const h = hashString(id)
+  return { umbrella: (h & 1) === 0, lantern: (h >>> 1) % 10 < 3, scarf: (h >>> 5) % 10 < 7 }
+}
+
+/** 光柱的样子：中间亮、两边和顶上淡，贴地那头最亮 */
+function beamTexture() {
+  const w = 16,
+    h = 64
+  const c = document.createElement('canvas')
+  c.width = w
+  c.height = h
+  const ctx = c.getContext('2d')!
+  const img = ctx.createImageData(w, h)
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const across = 1 - Math.abs((x + 0.5) / w - 0.5) * 2
+      const up = 1 - y / h
+      const a = Math.pow(across, 1.6) * (0.35 + 0.65 * Math.pow(1 - up, 0.6))
+      const i = (y * w + x) * 4
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = 255
+      img.data[i + 3] = Math.round(a * 255)
+    }
+  ctx.putImageData(img, 0, 0)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace
+  return t
 }

@@ -620,13 +620,12 @@ export class TownMap {
               visible: !covered(p),
               live: member.id === this.motionId,
               faceToward: this.faceToward(member),
-              cue: cueOf(member, this.lastRoster?.sim_minutes ?? 0, this.templates.get(member.id)),
-              condition:
-                member.body?.life === 'dead'
-                  ? ('dead' as const)
-                  : member.body && !member.body.can_decide
-                    ? ('incapacitated' as const)
-                    : ('normal' as const),
+              cue: cueOf(
+                member,
+                this.lastRoster?.sim_minutes ?? 0,
+                this.templates.get(member.id),
+                this.scene.spaceAt(p) !== OUTDOOR_SPACE
+              ),
             },
           ]
         : []
@@ -1036,7 +1035,8 @@ export class TownMap {
     const p = this.getScreenPos(id),
       a = Math.abs(this.svg.getScreenCTM()?.a || 1)
     if (!p) return
-    const height = this.hd ? VILLAGER_HEIGHT : 108 * this.markerScale
+    // 立体场景里头顶撑着伞、冒着符号时，气泡躲开那一截
+    const height = this.hd ? VILLAGER_HEIGHT + this.hd.villagerCrown(id) : 108 * this.markerScale
     const half = this.hd ? VILLAGER_HALF : 58 * this.markerScale
     return { x: p[0], feet: p[1], top: p[1] - height * a, half: half * a }
   }

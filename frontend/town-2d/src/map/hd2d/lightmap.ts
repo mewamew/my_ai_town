@@ -31,6 +31,9 @@ export interface LightSource {
 
 /** 灯亮到全亮的过渡宽度（按「亮灯程度」算） */
 const FADE = 0.08
+/** 提着走的灯笼：最多几盏、照多远 */
+const MAX_CARRIED = 24
+const CARRIED_REACH = 22 * PIXEL
 
 const VERTEX = /* glsl */ `
 attribute vec4 iRect;
@@ -157,6 +160,11 @@ export class LightMap {
   private lit = 0
   private open: ReadonlySet<string> = new Set()
   private dirty = true
+  /** 提着走的灯笼：另一组实例，和固定的灯同一个着色器；一走动只重画它前后经过的那一块 */
+  private readonly carriedGeometry = new THREE.InstancedBufferGeometry()
+  private carried: [number, number][] = []
+  /** 灯笼挪过后要重画的那一块（地图坐标的包围框）；固定的灯变了就整张重画 */
+  private patch: [number, number, number, number] | null = null
 
   /** pw、ph 是地面画布的像素数；houses 的占地挡光 */
   constructor(pw: number, ph: number, houses: readonly House[]) {
@@ -200,6 +208,23 @@ export class LightMap {
     this.mesh = new THREE.Mesh(this.geometry, this.material)
     this.mesh.frustumCulled = false
     this.scene.add(this.mesh)
+    const g = this.carriedGeometry
+    g.setAttribute('position', this.geometry.getAttribute('position'))
+    g.setIndex(this.geometry.getIndex())
+    for (const [name, size] of [
+      ['iRect', 4],
+      ['iParams', 4],
+      ['iShape', 4],
+      ['iColor', 3],
+    ] as const)
+      g.setAttribute(
+        name,
+        new THREE.InstancedBufferAttribute(new Float32Array(MAX_CARRIED * size), size)
+      )
+    g.instanceCount = 0
+    const carried = new THREE.Mesh(g, this.material)
+    carried.frustumCulled = false
+    this.scene.add(carried)
     this.uniforms = {
       uLightMap: { value: this.target.texture },
       uLightOrigin: { value: origin },
@@ -287,17 +312,66 @@ export class LightMap {
     }
   }
 
-  /** 光源有变化时重画光照图；返回画了没有 */
+  /** 提着灯笼的人（地图坐标）：灯笼是一盏会走的小灯，光照图跟着重画。只重画灯笼这一帧和上一帧
+   *  所在的那一块（剪裁到包围框），不整张重画；color 是灯的颜色（线性，已乘强度） */
+  setCarried(points: readonly [number, number][], color: THREE.Color) {
+    const n = Math.min(points.length, MAX_CARRIED)
+    const same =
+      n === this.carried.length &&
+      this.carried.every(([x, y], i) => x === points[i][0] && y === points[i][1])
+    if (same) return
+    for (const p of this.carried) this.grow(p)
+    this.carried = points.slice(0, n).map(([x, y]) => [x, y])
+    for (const p of this.carried) this.grow(p)
+    const g = this.carriedGeometry
+    const rect = g.getAttribute('iRect') as THREE.InstancedBufferAttribute,
+      params = g.getAttribute('iParams') as THREE.InstancedBufferAttribute,
+      shape = g.getAttribute('iShape') as THREE.InstancedBufferAttribute,
+      tint = g.getAttribute('iColor') as THREE.InstancedBufferAttribute
+    const r = CARRIED_REACH
+    this.carried.forEach(([x, y], i) => {
+      rect.setXYZW(i, x - r, y - r, x + r, y + r)
+      params.setXYZW(i, KIND.lamp, r, 0, 1)
+      shape.setXYZW(i, x, y, 0, 1)
+      tint.setXYZ(i, color.r, color.g, color.b)
+    })
+    for (const a of [rect, params, shape, tint]) a.needsUpdate = true
+    g.instanceCount = n
+  }
+
+  private grow([x, y]: [number, number]) {
+    const r = CARRIED_REACH + PIXEL
+    const p = this.patch
+    this.patch = p
+      ? [Math.min(p[0], x - r), Math.min(p[1], y - r), Math.max(p[2], x + r), Math.max(p[3], y + r)]
+      : [x - r, y - r, x + r, y + r]
+  }
+
+  /** 光源有变化时重画光照图：固定的灯变了整张重画，只有灯笼走动时只重画它经过的那一块；返回画了没有 */
   render(renderer: THREE.WebGLRenderer) {
-    if (!this.dirty) return false
+    if (!this.dirty && !this.patch) return false
+    const target = this.target
+    if (!this.dirty && this.patch) {
+      // 地图坐标 → 光照图的像素（原点在左下，和光照图的行同向）
+      const o = this.uniforms.uLightOrigin.value
+      const x0 = Math.max(0, Math.floor((this.patch[0] - o.x) / PIXEL)),
+        y0 = Math.max(0, Math.floor((this.patch[1] - o.y) / PIXEL))
+      const x1 = Math.min(target.width, Math.ceil((this.patch[2] - o.x) / PIXEL)),
+        y1 = Math.min(target.height, Math.ceil((this.patch[3] - o.y) / PIXEL))
+      target.scissor.set(x0, y0, Math.max(0, x1 - x0), Math.max(0, y1 - y0))
+      target.scissorTest = true
+    }
     this.dirty = false
+    this.patch = null
     const before = renderer.getRenderTarget()
     const clear = renderer.getClearColor(new THREE.Color()),
       alpha = renderer.getClearAlpha()
-    renderer.setRenderTarget(this.target)
+    renderer.setRenderTarget(target)
     renderer.setClearColor(0x000000, 0)
     renderer.clear(true, false, false)
-    if (this.levels.some((v) => v > 0)) renderer.render(this.scene, this.camera)
+    if (this.levels.some((v) => v > 0) || this.carried.length)
+      renderer.render(this.scene, this.camera)
+    target.scissorTest = false
     renderer.setRenderTarget(before)
     renderer.setClearColor(clear, alpha)
     return true
@@ -369,6 +443,7 @@ export class LightMap {
   }
 
   dispose() {
+    this.carriedGeometry.dispose()
     this.target.dispose()
     this.occupancy.dispose()
     this.material.dispose()

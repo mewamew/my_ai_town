@@ -1,5 +1,6 @@
 import type { AgentState, NeedBand, NeedKind, RosterMember } from 'town-shared/protocol'
-import type { Mood } from './villagerActing'
+import type { Body, Mood } from './villagerActing'
+import type { Sign } from './villagerSigns'
 
 // 名册里和表演有关的那几项：render.ts 从名册摘出来交给立牌。不加协议字段，只换个演法——
 // 动作词演成姿势，聊天演成面对面说话，需求和身体状况演成表情。表情只跟着有数据的状态走，
@@ -18,8 +19,8 @@ export interface Cue {
   needs?: Partial<Record<NeedKind, NeedBand>>
   /** 身体状况：种类和严重程度（1～3） */
   conditions?: { kind: 'injury' | 'illness' | 'poison'; severity: number }[]
-  /** 能不能走动；死了 */
-  canMove?: boolean
+  /** 倒下了（还活着，但不能自己决定或不能走动）；死了 */
+  down?: boolean
   dead?: boolean
   /** 生命记录里刚发生的治愈、复活、神力（游戏分钟和种类） */
   revived?: { at: number; kind: 'cure' | 'revive' | 'miracle' }
@@ -27,6 +28,11 @@ export interface Cue {
   state?: AgentState
   /** 村民库模板编号：内置村民的喜好和小动作按它查 */
   persona?: string
+  /** 在屋里（淋不着雨、落不上雪，进屋抖掉积雪） */
+  indoors?: boolean
+  /** 最近一次自己发起、被对方婉拒的邀请；最近定下的目标（换了就冒符号） */
+  declined?: string
+  goal?: string
 }
 
 /** 台词多旧以内还算刚说的（游戏分钟）：和聊天气泡一样；治愈、复活多久以内还演一下 */
@@ -34,7 +40,12 @@ const FRESH_SPEECH = 2
 const FRESH_RECOVERY = 3
 
 /** 从名册里摘线索；minutes 是名册的游戏时间 */
-export function cueOf(member: RosterMember, minutes: number, persona?: string): Cue {
+export function cueOf(
+  member: RosterMember,
+  minutes: number,
+  persona?: string,
+  indoors?: boolean
+): Cue {
   const body = member.body
   const needs: Cue['needs'] = {}
   for (const n of member.needs ?? []) needs[n.kind] = n.band
@@ -43,6 +54,18 @@ export function cueOf(member: RosterMember, minutes: number, persona?: string): 
     .at(-1)
   const recent = recover && minutes - recover.at <= FRESH_RECOVERY ? recover : undefined
   const speech = member.speech
+  const agent = member.resident_agent
+  // 婉拒的邀请：参与者按发起人在前，名字对得上才是自己被拒
+  const declined = agent?.interactions.find(
+    (i) => i.status === 'declined' && i.participants[0] === member.name
+  )
+  const goal = agent?.goals
+    .filter((g) => g.status === 'active')
+    .reduce<(typeof agent.goals)[number] | undefined>(
+      (a, g) => (!a || g.updated_at > a.updated_at ? g : a),
+      undefined
+    )
+  const alive = body?.life !== 'dead'
   return {
     verb: member.verb_kind === 'prop' ? member.verb : undefined,
     chat: member.chat?.id,
@@ -53,12 +76,41 @@ export function cueOf(member: RosterMember, minutes: number, persona?: string): 
         : undefined,
     needs,
     conditions: body?.conditions.map((c) => ({ kind: c.kind, severity: c.severity })),
-    canMove: body ? body.can_move : true,
-    dead: body?.life === 'dead',
+    down: !!body && alive && (!body.can_decide || !body.can_move),
+    dead: !alive,
     revived: recent && { at: recent.at, kind: recent.kind as 'cure' | 'revive' | 'miracle' },
-    state: member.resident_agent?.state,
+    state: agent?.state,
     persona,
+    indoors,
+    declined: declined?.id,
+    goal: goal && `${goal.id}:${goal.updated_at}`,
   }
+}
+
+/** 身体状况演成什么：伤、病、毒按轻重，饿了，倒下了，死了 */
+export function bodyOf(cue: Cue): Body {
+  const level = (kind: 'injury' | 'illness' | 'poison') =>
+    cue.conditions?.find((c) => c.kind === kind)?.severity ?? 0
+  return {
+    injury: level('injury'),
+    illness: level('illness'),
+    poison: level('poison'),
+    hungry: low(cue.needs?.fullness),
+    down: !!cue.down && !cue.dead,
+    dead: !!cue.dead,
+  }
+}
+
+/** 一直在的状态隔一阵冒的符号：在反思「…」、想不出要做什么「？」、饿了「咕」、需求告急「汗」 */
+export function standingSigns(cue: Cue, hot: boolean): Sign[] {
+  if (cue.dead) return []
+  const out: Sign[] = []
+  if (cue.state === 'reflecting') out.push('dots')
+  if (cue.state === 'undecided') out.push('?')
+  if (low(cue.needs?.fullness)) out.push('growl')
+  const urgent = Object.values(cue.needs ?? {}).some((b) => b === 'urgent')
+  if (urgent || (hot && !cue.indoors)) out.push('sweat')
+  return out
 }
 
 const low = (band?: NeedBand) => band === 'urgent' || band === 'collapse'

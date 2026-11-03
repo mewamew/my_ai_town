@@ -428,3 +428,45 @@ export const BEAT_MS: Partial<Record<PoseKind, number>> = {
 export function holdsWhileWalking(kind: PoseKind) {
   return kind === 'carry'
 }
+
+// ---- 天气里穿戴的：伞、围巾、灯笼（伞面、围巾取各人的点缀色 C，暗面 f） ----
+
+const CANOPY = [
+  '..............K..............',
+  '..........KKKKCKKKK..........',
+  '......KKKKCCCCCCCCCKKKK......',
+  '...KKKCCCCfCCCCCCCfCCCCKKK...',
+  '.KKCCCCCCfCCCCCCCCCfCCCCCCKK.',
+  'KCCCCCCCfCCCCCCCCCCCfCCCCCCCK',
+  'KfKKfKKfKKfKKfKKfKKfKKfKKfKfK',
+]
+/** 伞：伞面比头宽、离头顶两格，中间露一截伞柄；两手在胸前握柄（柄的中段被头挡住） */
+export function umbrella(view: 'down' | 'up' | 'side'): Cells {
+  if (view === 'side')
+    return [
+      ...cells(-3, -10, CANOPY),
+      ...cells(12, -3, ['K', 'K', 'K']),
+      ...cells(14, 16, ['K', 'K', 'K', 'K', 's']),
+    ]
+  return [
+    ...cells(-4, -10, CANOPY),
+    ...cells(10, -3, ['K', 'K', 'K']),
+    ...(view === 'down' ? [...cells(10, 17, ['K', 'K', 'K', 'K']), ...cells(9, 20, ['sKs'])] : []),
+  ]
+}
+
+/** 围巾：绕脖子一圈，正面垂下一截 */
+export function scarf(view: 'down' | 'up' | 'side'): Cells {
+  if (view === 'side') return cells(7, 17, ['.CCCCCCC', 'CfCfCfCC', 'Cf......', 'C.......'])
+  if (view === 'up') return cells(5, 17, ['.CCCCCCCCC.', 'CfCfCfCfCfC'])
+  return cells(5, 17, ['.CCCCCCCCC.', 'CfCfCfCfCfC', '.....fC....', '.....Cf....'])
+}
+
+/** 灯笼：右手提着，灯罩里一点火苗；背面换到另一边 */
+export function lantern(view: 'down' | 'up' | 'side'): Cells {
+  const x = view === 'up' ? 4 : 15
+  return [
+    ...cells(x, 20, ['s', 'K', 'K']),
+    ...cells(x - 1, 23, ['KKK', 'KuK', 'KkK', 'KuK', '.K.']),
+  ]
+}

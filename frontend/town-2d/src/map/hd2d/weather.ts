@@ -86,9 +86,13 @@ vec2 place(vec4 seed) {
   return vec2(wrapTo(seed.x * uSize.x, uCenter.x, uSize.x), wrapTo(seed.y * uSize.y, uCenter.y, uSize.y));
 }`
 
+/** 最多几把打开的伞挡雨 */
+const MAX_UMBRELLAS = 16
 const rainVertex = /* glsl */ `${COMMON}
 attribute float aEnd;
 uniform float uLength;
+uniform vec4 uUmbrellas[${MAX_UMBRELLAS}];
+uniform int uUmbrellaCount;
 varying float vAlpha;
 void main() {
   vec2 g = place(aSeed);
@@ -100,6 +104,14 @@ void main() {
   float len = uLength * mix(0.55, 1.4, r3);
   vec3 p = vec3(g.x - slant * y, y, g.y) + vec3(slant, 1.0, (r1 - 0.5) * 0.2) * len * aEnd;
   vAlpha = step(aSeed.w, uAmount) * mix(0.2, 0.55, aEnd) * mix(0.5, 1.0, r2);
+  // 打着伞的人头顶：雨滴落到伞面就没了（伞面中心 xy、半径 z、离地高 w）
+  vec2 foot = vec2(g.x - slant * y, g.y);
+  for (int i = 0; i < ${MAX_UMBRELLAS}; i++) {
+    if (i >= uUmbrellaCount) break;
+    vec4 u = uUmbrellas[i];
+    vec2 d = foot - u.xy;
+    if (y < u.w && dot(d, d) < u.z * u.z) vAlpha = 0.0;
+  }
   gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
 }`
 const rainFragment = /* glsl */ `
@@ -288,7 +300,11 @@ export class Weather3D {
     )
     this.rain = new THREE.LineSegments(
       rainGeometry,
-      this.particle(rainVertex, rainFragment, { uLength: { value: 8 * PIXEL } })
+      this.particle(rainVertex, rainFragment, {
+        uLength: { value: 8 * PIXEL },
+        uUmbrellas: { value: Array.from({ length: MAX_UMBRELLAS }, () => new THREE.Vector4()) },
+        uUmbrellaCount: { value: 0 },
+      })
     )
     this.splash = this.points(counts.splash, seeds(counts.splash), splashVertex, splashFragment, {
       uSin: { value: 0.77 },
@@ -553,6 +569,14 @@ export class Weather3D {
     if (!s.uTime.value) return 0
     const gust = gustAt(x, z, s.uTime.value, s.uWindDir.value)
     return s.uWind.value * (0.6 + 1.6 * gust) * 2 * s.uWindSide.value
+  }
+
+  /** 打着伞的人：伞面中心（世界 x、z）、半径、离地高；雨滴落到伞面就没了 */
+  setUmbrellas(list: readonly [number, number, number, number][]) {
+    const u = (this.rain.material as THREE.ShaderMaterial).uniforms
+    const n = Math.min(list.length, MAX_UMBRELLAS)
+    list.slice(0, n).forEach((v, i) => (u.uUmbrellas.value[i] as THREE.Vector4).set(...v))
+    u.uUmbrellaCount.value = n
   }
 
   /** 要求减少动画（设定里或系统里）：人的小动作也停 */

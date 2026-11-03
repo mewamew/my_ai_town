@@ -341,6 +341,15 @@ export class HdScene {
     this.lightmap.shade(m, 'standee')
   )
   private readonly swayAt = (x: number, z: number) => this.weather.swayAt(x, z)
+  /** 灯笼的光：和路灯同色，暗一些 */
+  private get lanternColor() {
+    return (this._lantern ??= new THREE.Color(this.theme.light.lamp).multiplyScalar(1.1))
+  }
+  private _lantern?: THREE.Color
+  /** 上一拍在打闪：闪电亮起的那一下人才吓一跳 */
+  private bolt = false
+  /** 游戏分钟：人在外面淋雨、落雪多久按它算 */
+  private minutes = 0
   private readonly props = new PropStandees(
     this.scene,
     this.tilt,
@@ -579,8 +588,12 @@ export class HdScene {
     const dt = Math.min(0.1, (t - this.lastTick) / 1000)
     this.lastTick = t
     if (document.hidden || !this.container.clientWidth) return
-    let changed = fast || this.villagers.active()
+    let changed = fast || this.villagers.active() || this.villagers.pending()
     const weather = this.weather.step(dt, t / 1000, this.day)
+    // 闪电：在外面的人吓一跳
+    const bolt = this.weather.flash > 0.5
+    if (bolt && !this.bolt) this.villagers.startle()
+    this.bolt = bolt
     if (weather.light) this.applyLight(false)
     changed ||= weather.changed || this.ambient
     this.ambient = false
@@ -602,10 +615,13 @@ export class HdScene {
   /** 画一帧：立牌先摆到这一帧那一刻的位置，名字跟上；镜头按立牌挪好、读进立体镜头，再画 */
   private draw(t: number) {
     this.lastDraw = t
-    this.lightmap.render(this.renderer)
     // 人的头发跟着风场摆，要求减少动画时呼吸、眨眼这些小动作也停
     this.villagers.setAir(this.weather.calm, this.swayAt)
     if (this.villagers.step(t)) this.onVillagersMoved?.()
+    // 提着的灯笼是会走的灯：人走到哪，光照图上那一块跟着重画；打着伞的人头顶不落雨
+    this.lightmap.setCarried(this.villagers.lanterns(), this.lanternColor)
+    if (this.weather.rainLevel > 0) this.weather.setUmbrellas(this.villagers.umbrellas())
+    this.lightmap.render(this.renderer)
     this.cameraMoving = this.beforeDraw?.(t) ?? false
     this.stepFocus(t)
     this.finish.uniforms.seed.value = (t * 0.37) % 100
@@ -1531,6 +1547,7 @@ export class HdScene {
     const clock = `${minutes}|${weather}`
     if (clock === this.clock) return
     this.clock = clock
+    this.minutes = minutes
     this.hour = (((minutes % 1440) + 1440) % 1440) / 60
     this.weather.setKind(weather as WeatherKind | undefined)
     this.weather.setClock(minutes)
@@ -1585,6 +1602,11 @@ export class HdScene {
   /** 立牌比名册里的位置落后多少（地图单位）；不在场的人为 undefined */
   villagerLag(id: string) {
     return this.villagers.lag(id)
+  }
+
+  /** 头顶撑着的伞、冒着的符号高出头顶多少（地图单位）：气泡躲开 */
+  villagerCrown(id: string) {
+    return this.villagers.crown(id)
   }
 
   /** 道具立牌：屋里的跟着屋子掀开才显示。返回每个立牌实际画的位置：x 是收进墙内侧后的，
@@ -1905,6 +1927,19 @@ export class HdScene {
     this.fauna.setLight({ day, twilight, night, rain, wind: this.weather.windUniforms.uWind.value })
     // 晴夜有星星、下雪时有雪花：站着的人偶尔抬头看
     this.villagers.setSky(night * clear * (1 - rain) > 0.5 || this.weather.snowFalling)
+    // 天气落在人身上：伞、淋湿、积雪、围巾、呵白气、灯笼、废土正午冒汗、天好时散步哼歌
+    const icy = this.theme.outer === 'ice'
+    const snowy = this.weather.snowFalling || this.weather.snowLevel > 0.3
+    this.villagers.setClimate({
+      rain,
+      snowing: this.weather.snowFalling,
+      lit: this.lit,
+      cold: icy || snowy || (hour >= 4.5 && hour < 8.5 && (wet > 0.3 || overcast > 0.5)),
+      scarves: icy || snowy,
+      hot: this.theme.outer === 'seabed' && hour >= 11 && hour < 15 && clear > 0.6,
+      fine: day > 0.6 && cloud < 0.3 && rain < 0.05,
+      minutes: this.minutes,
+    })
     this.fauna.setEnabled(!this.reduceMotion.matches && this.quality !== 'low')
     this.grass.uniforms.uSnow.value = this.weather.snowLevel
     // 有体积光时灯在雾里的光晕由它画，加色贴片淡一些
