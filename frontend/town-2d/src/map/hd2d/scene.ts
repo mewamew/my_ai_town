@@ -2174,9 +2174,10 @@ export class HdScene {
     this.grass.setScale(unitPx)
     this.fauna.setScale(unitPx)
     this.villagers.setTexelPx(unitPx * PIXEL * VILLAGER_SCALE)
-    // 看得见的地面范围（转过方位角时取外接框），外面留一圈：镜头外的人不重画贴图
+    // 看得见的地面范围（转过方位角时取外接框），外面留一圈：镜头外的人不重画贴图。
+    // 村民位置是地图坐标，中心要用转回地图的 target；vx、vy 是转过方位角的视口坐标，转过角度后差得很远
     const reach = (Math.abs(yawCos) + Math.abs(yawSin)) * Math.max(w, h) * 0.5 + VILLAGER_HEIGHT * 2
-    this.villagers.setView(vx - reach, vy - reach, vx + reach, vy + reach)
+    this.villagers.setView(target.x - reach, target.z - reach, target.x + reach, target.z + reach)
     this.reflection.uniforms.uReflStreak.value.set(-yawSin, -yawCos).multiplyScalar(6 * PIXEL)
     this.waterVisible = this.waterInView(target, w, h)
     this.updateTiltShift()
