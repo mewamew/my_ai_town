@@ -12,7 +12,7 @@ const BAND_SEVERITY: Record<string, number> = Object.fromEntries(
   Object.entries(NEED_BANDS).map(([id, band]) => [id, band.severity])
 )
 /** 显示顺序固定；世界设定关掉的项后端不再发送，这里按需求种类补一行灰条。 */
-const NEED_ORDER: NeedKind[] = ['fullness', 'energy', 'water', 'health']
+export const NEED_ORDER: NeedKind[] = ['fullness', 'energy', 'water', 'health']
 /** 关掉的项没有后端数据，灰条上写的名字 */
 const NEED_NAMES: Record<NeedKind, string> = {
   fullness: '饱腹',

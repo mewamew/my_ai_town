@@ -131,6 +131,16 @@ export function registrationOf(id: string): ResidentRegistration | undefined {
   return population?.residents.find((r) => r.id === id)
 }
 
+/** 按入住登记的先后排；人口还没到或没登记的照原顺序排在后面。名册按地点分组，人一走动顺序就变，
+ *  头像条和角色卡换人要一个固定的顺序 */
+export function byJoinOrder<T>(items: T[], id: (item: T) => string): T[] {
+  const rank = new Map(population?.residents.map((r, i) => [r.id, i]))
+  return items
+    .map((item, i) => ({ item, key: rank.get(id(item)) ?? rank.size + i }))
+    .sort((a, b) => a.key - b.key)
+    .map(({ item }) => item)
+}
+
 /** 居民编号 → 出图编号 */
 export function residentPortraitKey(id: string): string {
   return residentKeys.get(id) ?? id

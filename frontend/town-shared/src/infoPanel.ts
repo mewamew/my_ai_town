@@ -16,7 +16,7 @@ import type { RosterFrame } from './shell/panel'
 import type { EventsHandle } from './events'
 import { $, query } from './dom'
 import { displayClock, playerText } from './format'
-import { portraitKey } from './portraits'
+import { byJoinOrder, portraitKey } from './portraits'
 import { agentStateLabels } from './labels'
 import { lineLabel } from './game/icons'
 import type { MiracleKind } from './avatar/types'
@@ -33,6 +33,8 @@ interface InfoPanelDeps {
   onSelectResident: (id: string) => void
   /** 选中的村民换了人（右栏里的聊天记录页要退回角色卡） */
   onSelectionChange: () => void
+  /** 选中谁定下来了（含取消选中）：头像条跟着高亮 */
+  onSelected: () => void
   /** 化身控制中：右栏收起、不选中村民 */
   avatarActive: () => boolean
   /** 这个世界开放了化身控制 */
@@ -91,11 +93,8 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     if (selectedId) deps.onTalk(selectedId)
   }
 
-  const residentSelect = query<HTMLSelectElement>(panel, '#resident-select')
-  let residentChoices = ''
-  /** 名册顺序，手机抽屉左右滑动按它换人 */
+  /** 换人的顺序（按入住登记，和头像条一样），手机抽屉左右滑动按它换人 */
   let order: string[] = []
-  residentSelect.onchange = () => select(residentSelect.value)
 
   let selectedId: string | null = null
   /** 已经替玩家选过第一位：之后点空地取消选中，下一份名册不再自动选回来 */
@@ -213,7 +212,6 @@ export function initInfoPanel(deps: InfoPanelDeps) {
       current = undefined
     }
     selectedId = id
-    residentSelect.value = id ?? ''
     if (id) deps.onSelectResident(id)
     deps.map.setSelected(id)
     focus.show(id)
@@ -228,6 +226,7 @@ export function initInfoPanel(deps: InfoPanelDeps) {
       $('info-home').textContent = ''
     }
     syncFocus()
+    deps.onSelected()
   }
 
   function renderHome() {
@@ -282,15 +281,10 @@ export function initInfoPanel(deps: InfoPanelDeps) {
 
   /** roster 驱动：信息刷新 + 跨级检测 + 跟随 */
   function render(entries: ResidentEntry[], minutes: number, speed: number) {
-    const choices = entries.map((e) => ({ id: e.member.id, name: e.member.name }))
-    order = choices.map((c) => c.id)
-    const choiceKey = JSON.stringify(choices)
-    if (residentChoices !== choiceKey) {
-      residentChoices = choiceKey
-      residentSelect.replaceChildren(...choices.map((choice) => new Option(choice.name, choice.id)))
-      residentSelect.hidden = choices.length < 2
-      residentSelect.value = selectedId ?? ''
-    }
+    order = byJoinOrder(
+      entries.map((e) => e.member.id),
+      (id) => id
+    )
     if (!entries.length && !selectedId) {
       $('info-name').textContent = '还没有村民'
       $('info-place').textContent = '点顶栏的「邀请村民」请几位住进来'

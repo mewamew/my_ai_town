@@ -6,7 +6,7 @@
   color: var(--text);
 }
 
-/* ---------- 台子：小人、想法泡、换人和收起 ---------- */
+/* ---------- 台子：小人、想法泡、收起 ---------- */
 .card-stage {
   position: relative;
   /* 想法泡的上边距留在台子里面，不穿出去把整个台子往下推 */
@@ -97,7 +97,7 @@
   display: flex;
   gap: 6px;
 }
-.card-tools :is(.info-switch, .card-tool) {
+.card-tools .card-tool {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -109,25 +109,6 @@
   color: var(--text);
   font-size: 12px;
   cursor: pointer;
-}
-/* 下拉框透明地盖在文字上，点开的是统一的下拉列表（design/select.ts） */
-.info-switch {
-  position: relative;
-  white-space: nowrap;
-}
-.info-switch select {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  opacity: 0;
-  cursor: pointer;
-}
-.info-switch:has(select[hidden]) {
-  display: none !important;
-}
-.info-switch:focus-within {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
 }
 
 /* ---------- 名牌 ---------- */

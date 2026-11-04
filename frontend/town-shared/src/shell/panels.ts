@@ -14,6 +14,7 @@ import type { EventsHandle } from '../events'
 import { lineLabel } from '../game/icons'
 import type { GameMap } from '../gameMap'
 import { initInfoPanel } from '../infoPanel'
+import { createResidentStrip } from '../info/strip'
 import type { MapEntry, Topology } from '../mapDocument'
 import { namesOf, type HoldFix } from '../holds'
 import { createMapToast } from '../mapToast'
@@ -89,6 +90,18 @@ export function createPanels(input: ShellInputs) {
     const r = selectedResident()
     if (r) action(r)
   }
+  // 地图左上角的头像条：点头像和在地图上点人一样，先关掉道具卡，再选中并打开角色卡
+  const strip = createResidentStrip({
+    map,
+    container: $('map'),
+    localeName,
+    open: (id) => {
+      props.closeCard()
+      infoPanel.open(id)
+    },
+    selected: () => infoPanel.selected(),
+    avatarActive: () => avatar.active(),
+  })
   const infoPanel = initInfoPanel({
     map,
     events,
@@ -105,6 +118,7 @@ export function createPanels(input: ShellInputs) {
     }),
     onSelectResident: (id) => send({ type: 'get_agent_config', resident: id }),
     onSelectionChange: () => chatHistory.residentChanged(),
+    onSelected: () => strip.select(),
     avatarActive: () => avatar.active(),
     avatarAvailable: () => avatar.available(),
     onOpenItem: (id) => props.open(id),
@@ -285,7 +299,7 @@ export function createPanels(input: ShellInputs) {
     }
   )
   events.onImportant((clock, important) => notices.show(clock, important))
-  const parts = { session, chatHistory, chatBubbles, worldSettings, observed, infoPanel }
+  const parts = { session, chatHistory, chatBubbles, worldSettings, observed, infoPanel, strip }
   const shell = {
     ...parts,
     ...{ books, props, center, notices, avatar, open, emptyTown, models, modelWait },
@@ -404,6 +418,7 @@ interface RegisteredParts {
   diary: ReturnType<typeof initDiary>
   memory: ReturnType<typeof initMemory>
   infoPanel: ReturnType<typeof initInfoPanel>
+  strip: ReturnType<typeof createResidentStrip>
   residents: ReturnType<typeof initResidentsPage>
   usage: ReturnType<typeof initUsage>
   books: ReturnType<typeof initBooks>
@@ -504,6 +519,8 @@ function register(input: ShellInputs, p: RegisteredParts) {
     hubs.reset,
     hubs.population,
     p.infoPanel,
+    // 排在信息栏后面：第一份名册替玩家选中的人，头像条同一拍就高亮
+    p.strip,
     p.residents,
     p.usage,
     // 书与公告只旁听道具目录，要排在道具页前面：道具页收到目录就认领了

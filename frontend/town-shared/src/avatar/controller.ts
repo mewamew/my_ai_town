@@ -14,6 +14,7 @@ import { createAvatarTouch } from './touch'
 import { isTouch } from '../platform'
 import type { AvatarActions, AvatarTab } from './ui-types'
 import type { GameMap } from '../gameMap'
+import { CLOSE_UP_WIDTH } from '../mapView'
 import type { ClientMsg, RosterMember, ServerMsg, WorldHold } from '../protocol'
 import type { AvatarCommand, AvatarState, MiracleKind } from './types'
 import { miracleOptions } from '../miracles'
@@ -74,8 +75,6 @@ const typing = () => {
       (e.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName)))
   )
 }
-/** 刚进入化身时镜头拉近到的宽度（地图单位）：看得清自己和身边几步内的人 */
-const CLOSE_UP_WIDTH = 1400
 /** 镜头对准人头上方一点，名字和提示标签不贴着画面上沿 */
 const CAMERA_RISE = 30
 /** 一帧里人挪了这么远（地图单位）算瞬移（进门、出门），镜头直接切过去 */
