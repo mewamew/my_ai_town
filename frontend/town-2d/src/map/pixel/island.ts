@@ -72,6 +72,9 @@ export function footprint(d: Dock) {
 
 /** 栈桥桥身宽、尽头平台的进深和宽（像素） */
 const PIER = { width: 8, headDepth: 7, headWidth: 20 }
+/** 栈桥从天然的海边伸出去时：水边参差，桥头往岸上退几格、头几行容许压着沙滩（跳板就搭在沙滩上）；
+ *  木码头离海边超过 reach 像素就不搭，免得桥离港口太远 */
+const BEACH_PIER = { back: 2, slack: 4, reach: 48 }
 /** 码头临水朝南的一面往下画几行：两行木墙，一行露出水面的桩；桩每隔 POST 像素一根 */
 export const QUAY = { face: 3, post: 8 }
 
@@ -415,10 +418,12 @@ function scatterRocks(
 
 /** 栈桥：从港口中心顺着朝海的方向找到岸线（往回走出水、再往前走到水边），根部就在水边，
  *  往外伸 38～50 像素，尽头一块平台往前伸出去；港口很宽的分两条。整条桥（含平台）下面都得是水，
- *  半路碰到陆地或礁石就截短，太短不搭；平台放不下就不要平台 */
+ *  半路碰到陆地或礁石就截短，太短不搭；平台放不下就不要平台。
+ *  港口不临海时（水已改成木码头，见 dryHarbors），桥从前面的海边伸出去，桥头搭在沙滩上 */
 function piersOf(
   sea: Uint8Array,
   water: Uint8Array,
+  deck: Uint8Array,
   rocks: Uint8Array,
   anchors: Anchor[],
   pw: number,
@@ -443,8 +448,14 @@ function piersOf(
       let x = Math.round(a.x + (sx ? 0 : off)),
         y = Math.round(a.y + (sx ? off : 0))
       for (let n = 0; n < 200 && wet(x, y); n++) ((x -= sx), (y -= sy))
-      for (let n = 0; n < 200 && inside(x, y) && !wet(x, y); n++) ((x += sx), (y += sy))
-      if (!wet(x, y)) return
+      // 往前走到水边；离开木码头后在陆上走了多远（港口和海之间隔着路时，桥从路那边的海边伸出去）
+      let ashore = 0
+      for (let n = 0; n < 200 && inside(x, y) && !wet(x, y); n++) {
+        ashore = deck[y * pw + x] ? 0 : ashore + 1
+        x += sx
+        y += sy
+      }
+      if (!wet(x, y) || ashore > BEACH_PIER.reach) return
       // 横过桥面的一排像素（从桥身中线往后 back、往前 front）都是水
       const half = PIER.width / 2
       const across = (s: number, back: number, front: number) => {
@@ -452,17 +463,28 @@ function piersOf(
           if (!wet(x + sx * s + (sx ? 0 : t), y + sy * s + (sx ? t : 0))) return false
         return true
       }
+      // 码头的岸线是直的，第一排就全是水；天然的海边参差，桥头退到沙滩上
+      let ramp = 0
+      while (ramp <= BEACH_PIER.slack && !across(ramp, half, half)) ramp++
+      if (ramp > BEACH_PIER.slack) return
+      if (ramp) {
+        x -= sx * BEACH_PIER.back
+        y -= sy * BEACH_PIER.back
+        ramp += BEACH_PIER.back
+      }
       const want = 38 + Math.floor(hash(k, Math.round(a.x * 7 + a.y), seed + 7) * 13)
-      let length = 0
+      let length = ramp
       while (length < want && across(length, half, half)) length++
-      if (length < 16) return
+      if (length - ramp < 16) return
       let head = PIER.headWidth
       for (let s = length - PIER.headDepth; s < length; s++)
         if (!across(s, half, head - half)) head = PIER.width
       for (let s = 0; s < length; s++) {
         const front = (s >= length - PIER.headDepth ? head : PIER.width) - half
-        for (let t = -half; t < front; t++)
-          piers[(y + sy * s + (sx ? t : 0)) * pw + x + sx * s + (sx ? 0 : t)] = 1
+        for (let t = -half; t < front; t++) {
+          const i = (y + sy * s + (sx ? t : 0)) * pw + x + sx * s + (sx ? 0 : t)
+          if (sea[i] || water[i]) piers[i] = 1
+        }
       }
       // 根部记在像素格的边界上：朝正方向时是根部像素的左（上）沿，朝负方向时是右（下）沿
       docks.push({
@@ -508,6 +530,37 @@ function quayOf(
   return quay
 }
 
+/** 港口里的水连不到海（港口和海之间隔着路、房子），就成了镇子中间的一个水洼：
+ *  改铺木码头，栈桥照旧顺着朝海的方向从前面的海边伸出去。公园的池塘不挨木码头，不受影响 */
+function dryHarbors(sea: Uint8Array, water: Uint8Array, deck: Uint8Array, pw: number, ph: number) {
+  const seen = new Uint8Array(pw * ph)
+  for (let start = 0; start < pw * ph; start++) {
+    if (!water[start] || seen[start]) continue
+    const blob = [start]
+    seen[start] = 1
+    let harbor = false,
+      open = false
+    for (let n = 0; n < blob.length; n++) {
+      const i = blob[n],
+        x = i % pw
+      for (const j of [i - pw, i + pw, x > 0 ? i - 1 : -1, x < pw - 1 ? i + 1 : -1]) {
+        if (j < 0 || j >= pw * ph) continue
+        if (deck[j]) harbor = true
+        if (sea[j]) open = true
+        if (water[j] && !seen[j]) {
+          seen[j] = 1
+          blob.push(j)
+        }
+      }
+    }
+    if (harbor && !open)
+      for (const i of blob) {
+        water[i] = 0
+        deck[i] = 1
+      }
+  }
+}
+
 /** 陆地离海、海面离岸的像素数，给沙滩和水深用；栈桥架在水上，不算岸 */
 function toSeaDistance(sea: Uint8Array, water: Uint8Array, pw: number, ph: number) {
   const allWater = new Uint8Array(pw * ph)
@@ -548,8 +601,9 @@ export function island(
   erode(sea, band, pw, ph, seed)
   pullCoast(sea, anchors, fromContent, locked, pw, ph)
   keepOpenSea(sea, pw, ph)
+  dryHarbors(sea, water, deck, pw, ph)
   const rocks = rocksOf(sea, content, band, anchors, pw, ph, seed)
-  const { piers, docks } = piersOf(sea, water, rocks, anchors, pw, ph, seed)
+  const { piers, docks } = piersOf(sea, water, deck, rocks, anchors, pw, ph, seed)
   const quay = quayOf(sea, water, deck, piers, pw, ph)
   return { sea, piers, quay, rocks, docks, toSea: toSeaDistance(sea, water, pw, ph) }
 }
