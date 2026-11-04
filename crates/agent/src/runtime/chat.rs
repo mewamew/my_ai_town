@@ -1,5 +1,5 @@
-//! 交谈轮次：轮到本人发言时的单次请求。只带聊天规则、人设、累积摘要和本场对话，
-//! 不带地图、道具、记忆工具和生活会话历史；台词本身仍作为事件进入之后的生活轮次。
+//! 交谈轮次：轮到本人发言时的单次请求。只带聊天规则、人设、累积摘要、摘要之后的近期经历和
+//! 本场对话，不带地图、道具、记忆工具和生活会话历史；台词本身仍作为事件进入之后的生活轮次。
 //! 本场对话只在末尾追加：第一轮带全量状态，之后只加新听到的台词和有变化的状态，
 //! 本人说过的话留在自己的调用里。每轮请求都以上一轮为前缀，能命中缓存。
 use super::*;
@@ -12,6 +12,10 @@ const ENTRIES_BYTES: usize = 6_000;
 const ENTRIES_BYTES_MIN: usize = 500;
 /// 交谈期间的重要通知最多带几条。
 const NOTICES_MAX: usize = 6;
+/// 全量里近期经历的字节上限，随台词上限按比例缩；放不下时只留最近的。
+const RECENT_BYTES: usize = 4_000;
+/// 近期经历每条最多这么多字。
+const RECENT_TEXT_CHARS: usize = 200;
 /// 属于本场对话的字段：有变化时放进 chat 里重发，不放在顶层。等人回答的提议没有时为 null，
 /// 交谈变成同行时 kind 跟着变。
 const CHAT_FIELDS: [&str; 3] = ["members", "proposal", "kind"];
@@ -114,6 +118,8 @@ struct TurnState {
     /// 本人听得到的全部台词。
     entries: Vec<ChatEntry>,
     notices: Vec<Value>,
+    /// 摘要之后、本场对话之外的本人经历，每条是「时刻 原文」，按时间排列。
+    recent: Vec<Value>,
 }
 
 impl TurnState {
@@ -149,6 +155,26 @@ impl TurnState {
             .map(|e| json!({"event_id":e.event_id,"at":e.at,"text":e.text}))
             .collect();
         notices.drain(..notices.len().saturating_sub(NOTICES_MAX));
+        // 生活会话里还没折叠进摘要的那段经历，交谈轮次原本看不到：刚听人说过的事，
+        // 转头在聊天里就不记得。本场台词在 chat 里、期间的通知在 notices 里，这里不重复。
+        let chat_id = item.map(|i| i.id.as_str());
+        let listed: Vec<_> = notices
+            .iter()
+            .filter_map(|n| n["event_id"].as_u64())
+            .collect();
+        let mut recent = Vec::new();
+        let mut last = "";
+        for e in actor.journal.events_after(s.cursors.folded_through) {
+            let text = e.text.trim();
+            let this_chat = chat_id.is_some_and(|id| e.objects.iter().any(|o| o == id));
+            // 同一件事常有观察和行动两条同文记录，只留一条。
+            if text.is_empty() || text == last || this_chat || listed.contains(&e.event_id) {
+                continue;
+            }
+            last = text;
+            let text: String = text.chars().take(RECENT_TEXT_CHARS).collect();
+            recent.push(json!(format!("{} {text}", kernel::clock_string(e.at))));
+        }
         let people: Vec<_> = raw["people_here"]
             .as_array()
             .into_iter()
@@ -199,6 +225,7 @@ impl TurnState {
             chat,
             entries,
             notices,
+            recent,
         })
     }
 
@@ -234,7 +261,7 @@ impl TurnState {
         }
     }
 
-    /// 新记录的第一条：全部状态、本场对话（台词过长时只留最近的）、通知与目标。
+    /// 新记录的第一条：全部状态、本场对话（台词过长时只留最近的）、通知、目标与近期经历。
     fn full(&self, s: &mut Session, chat_id: &str, entries_bytes: usize) -> ChatDelta {
         let mut chat = self.chat.clone();
         if let Some(entries) = chat.get_mut("entries").and_then(Value::as_array_mut) {
@@ -257,10 +284,16 @@ impl TurnState {
         }
         body.insert("chat".into(), chat);
         body.insert("notices".into(), json!(self.notices));
+        let mut body = Value::Object(body);
+        if !self.recent.is_empty() {
+            body["recent_events"] = json!(self.recent);
+            let bytes = RECENT_BYTES * entries_bytes / ENTRIES_BYTES;
+            view::recent_field(&mut s.input, &mut body, "recent_events", bytes);
+        }
         ChatDelta {
             chat_id: chat_id.into(),
             restart: true,
-            message: Some(Message::text(Role::User, Value::Object(body).to_string())),
+            message: Some(Message::text(Role::User, body.to_string())),
             seen: self.seen(s),
         }
     }

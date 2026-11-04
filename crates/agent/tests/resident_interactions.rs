@@ -525,6 +525,64 @@ fn invalid_chat_id_reports_the_real_id_without_sending_the_rejected_message() {
     assert!(!system.contains("move_to") && !system.contains("use_prop"));
 }
 
+#[test]
+fn chat_turn_sees_what_was_heard_since_the_summary() {
+    let mut w = world();
+    let mut r = runtime(&mut w, Limits::default());
+    w.spawn("r2", "小禾", "loc_a").unwrap();
+    w.spawn("r3", "老周", "loc_a").unwrap();
+    w.enable_agent("r2").unwrap();
+    w.enable_agent("r3").unwrap();
+    // 第一场：小禾来提醒，阿树回绝了邀请。这句话只在生活会话原文里，还没折叠进摘要。
+    let warn = Command::Offer {
+        partner_id: "r1".into(),
+        interaction: InteractionKind::Talk,
+        message: "有人让我拿刀害你，你当心点".into(),
+    };
+    command(&mut w, "r2", "warn", warn);
+    let q = life_request(&mut r, &mut w);
+    reply(
+        &mut r,
+        &mut w,
+        &q,
+        "reply_invitation",
+        json!({"interaction_id":"warn","accept":false,"message":"知道了，改天细说"}),
+    );
+    // 第二场：老周来问，轮到阿树发言时得记得刚才的提醒；本场的台词不重复。
+    let ask = Command::Offer {
+        partner_id: "r1".into(),
+        interaction: InteractionKind::Talk,
+        message: "刀的事你听说了吗？".into(),
+    };
+    command(&mut w, "r3", "ask", ask);
+    let q = life_request(&mut r, &mut w);
+    reply(
+        &mut r,
+        &mut w,
+        &q,
+        "reply_invitation",
+        json!({"interaction_id":"ask","accept":true,"message":"你说哪件？"}),
+    );
+    let say = Command::Say {
+        interaction_id: "ask".into(),
+        message: "就是有人要动刀那件".into(),
+        to: None,
+    };
+    command(&mut w, "r3", "ask-say", say);
+    let turn = request(&mut r, &mut w);
+    assert_eq!(turn.stamp.kind, protocol::RequestKind::Chat);
+    let body: serde_json::Value =
+        serde_json::from_str(&turn.messages.last().unwrap().content).unwrap();
+    let recent: Vec<_> = body["recent_events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e.as_str().unwrap())
+        .collect();
+    assert!(recent.iter().any(|e| e.contains("有人让我拿刀害你")));
+    assert!(recent.iter().all(|e| !e.contains("刀的事你听说了吗")));
+}
+
 /// 交谈轮次的兜底：一次回复没有调用就倾听；格式错误或模型掉线连续两次后代为倾听。
 /// 都只交出发言权，不替村民说话，也不搁置，交谈照常轮到对方。
 #[test]
