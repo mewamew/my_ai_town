@@ -16,6 +16,8 @@ import { installMapButtons, showConnection } from './shell/topbar'
 import { reopenTown } from './townApi'
 import { installMobileChrome } from './mobile/chrome'
 import { createGuide, guideDone } from './mobile/guide'
+import { prefabOf } from './prefabs'
+import { createPrefabSetup } from './prefabs/setup'
 import { createTips } from './mobile/tips'
 import { trackMapInsets } from './mapView'
 import { onBack, systemBars } from './platform'
@@ -130,16 +132,30 @@ export function startGameShell(
     else if (tries > 0) setTimeout(() => lookAt(id, tries - 1), 100)
   }
   panels.registry.first(guide.panel)
+  // 预制小镇（建镇说明里记着 prefab）：第一次进镇时出开局设置，代替开局向导
+  const prefab = prefabOf(selectedMap.creation?.prefab)
+  const prefabSetup = createPrefabSetup({
+    send: connection.send,
+    worldSettings: panels.worldSettings,
+    modelOptions: () => panels.models.options(),
+    onFinish: (joined) => {
+      tips.start()
+      lookAt(joined[0])
+    },
+  })
+  panels.registry.first(prefabSetup.panel)
+  panels.models.subscribe(prefabSetup.refresh)
   // 回来的玩家（向导已走过）直接从手势提示开始；看过的提示不会再出
   if (guideDone()) tips.start()
   let guideOpened = false
-  // 每个新世界（还没设世界观）都走向导：第一次从头讲起，以后从「请居民」开始
+  // 每个新世界（还没设世界观）都走向导：第一次从头讲起，以后从「请居民」开始；预制小镇走开局设置
   panels.worldSettings.setFirstRun(() => {
     if (!guideOpened) {
       guideOpened = true
       // 在设定里重置了世界：先回到地图，向导走完正好看到新来的人
       if (panels.session.inSettings()) panels.session.exit()
-      guide.open(guideDone() ? 2 : 0)
+      if (prefab) prefabSetup.open(prefab)
+      else guide.open(guideDone() ? 2 : 0)
     }
     return true
   })

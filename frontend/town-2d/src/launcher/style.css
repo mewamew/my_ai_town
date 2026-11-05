@@ -232,6 +232,41 @@ body:has(.map-launcher) {
   border-color: var(--ui-accent);
   color: var(--ui-accent);
 }
+.map-library .prefab-entries {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+.map-library .prefab-entry {
+  display: flex;
+  width: 100%;
+  min-height: 56px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: var(--ui-radius);
+  background: transparent;
+  color: var(--ui-ink);
+  text-align: left;
+}
+.map-library .prefab-entry b {
+  font-size: 15px;
+  font-weight: 600;
+}
+.map-library .prefab-entry small {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ui-ink-muted);
+}
+.map-library .prefab-entry:hover:not(:disabled) {
+  border-color: var(--ui-accent);
+}
+.map-library .prefab-entry:disabled {
+  opacity: 0.6;
+}
 .launcher-panel-footer {
   display: flex;
   align-items: center;

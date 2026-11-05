@@ -1289,6 +1289,100 @@ body:has(.guide:not([hidden])) :is(.pause-hint, .fast-hint) {
   font-size: 15px;
 }
 
+/* ---------- 预制小镇的开局设置：沿用开局向导的卡片，四行设置 ---------- */
+.prefab-title {
+  font-size: 15px;
+}
+.prefab-rows {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 6px;
+}
+.prefab-row {
+  display: grid;
+  grid-template-columns: 4.5em minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.prefab-row > span {
+  padding-top: 7px;
+  font-size: 14px;
+  color: var(--text-2);
+}
+.prefab-count {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.prefab-count b {
+  min-width: 1.6em;
+  font-size: 20px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.prefab-count small {
+  font-size: 13px;
+  color: var(--text-3);
+}
+.prefab-step {
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+}
+.prefab-roster {
+  display: grid;
+  gap: 6px;
+}
+.prefab-slot {
+  display: grid;
+  grid-template-columns: minmax(0, 7.5em) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+.prefab-who {
+  overflow: hidden;
+  font-size: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.prefab-slot select {
+  min-width: 0;
+  min-height: 34px;
+  font-size: 13px;
+}
+.prefab-radio {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.prefab-option {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 14px;
+}
+.prefab-option.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.prefab-seed {
+  width: 8em;
+  min-height: 36px;
+  font-variant-numeric: tabular-nums;
+}
+.prefab-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  font-size: 14px;
+}
+.prefab-status {
+  color: var(--text-2);
+}
+
 /* ---------- 一次性提示：深色小卡，箭头指着人或入口 ---------- */
 .coach:not([hidden]) {
   position: fixed;

@@ -9,6 +9,7 @@ import { loadDocument } from '../assets'
 import { createMapRenderer } from '../mapRenderers'
 import { gameUrl, listMaps, openMap } from './catalog'
 import { initCreator } from './creator'
+import { installPrefabEntries } from './prefabEntry'
 import { api } from './api'
 import { warmSelectedGame } from '../startupWarmup'
 import { createMusicController } from 'town-shared/audio/music'
@@ -391,6 +392,18 @@ initCreator(
     location.assign(gameUrl(runtime))
   }
 )
+// 预制小镇：开一局就建好岛进镇，进镇后出开局设置
+installPrefabEntries({
+  maps: () => maps,
+  status: (text) => {
+    $('pause-status').textContent = text
+  },
+  enter: async (id) => {
+    const runtime = await openMap(id)
+    await pauseWorld(runtime.endpoint)
+    location.assign(gameUrl(runtime))
+  },
+})
 // 安卓返回键：先收起「更多操作」，其余交给应用壳（再按一次退出）
 onBack(() => {
   if (launcher.classList.contains('is-scenic')) {

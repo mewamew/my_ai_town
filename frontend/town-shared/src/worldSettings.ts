@@ -1,4 +1,10 @@
-import type { ClientMsg, PhysiologySwitches, ServerMsg, WorldSettingsState } from './protocol'
+import type {
+  ClientMsg,
+  GameModeChoice,
+  PhysiologySwitches,
+  ServerMsg,
+  WorldSettingsState,
+} from './protocol'
 import type { SettingsPage } from './settingsCenter'
 import { $, button, el, query } from './dom'
 import { newId } from './ids'
@@ -241,6 +247,18 @@ export function createWorldSettings(
           world_id: current.world_id,
           expected_revision: revision,
           switches,
+        }),
+        done
+      )
+    },
+    /** 打开玩法（预制小镇开局时用）；回执同其他设定 */
+    saveGameMode(choice: GameModeChoice, done: Done) {
+      submit(
+        (current, id) => ({
+          type: 'set_game_mode',
+          request_id: id,
+          world_id: current.world_id,
+          game_mode: choice,
         }),
         done
       )
