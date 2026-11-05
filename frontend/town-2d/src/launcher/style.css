@@ -232,38 +232,28 @@ body:has(.map-launcher) {
   border-color: var(--ui-accent);
   color: var(--ui-accent);
 }
-.map-library .prefab-entries {
-  display: grid;
-  gap: 8px;
-  margin-top: 8px;
+/* 内置小镇：左边一道强调色，名字后带「内置」 */
+.map-option.is-builtin {
+  border-left: 3px solid var(--ui-accent);
 }
-.map-library .prefab-entry {
-  display: flex;
-  width: 100%;
-  min-height: 56px;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 2px;
-  padding: 8px 12px;
-  border: 1px solid var(--ui-line-strong);
-  border-radius: var(--ui-radius);
-  background: transparent;
-  color: var(--ui-ink);
-  text-align: left;
+.map-option-badge {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--ui-accent);
+  border-radius: 999px;
+  color: var(--ui-accent);
+  font-size: 11px;
+  font-weight: 500;
+  vertical-align: 2px;
 }
-.map-library .prefab-entry b {
-  font-size: 15px;
-  font-weight: 600;
+/* 预制小镇：点了就开一局，虚线框和已有的小镇区分 */
+.map-option.prefab-entry {
+  border-style: dashed;
 }
-.map-library .prefab-entry small {
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--ui-ink-muted);
+.map-option.prefab-entry .map-option-status {
+  color: var(--ui-accent);
 }
-.map-library .prefab-entry:hover:not(:disabled) {
-  border-color: var(--ui-accent);
-}
+
 .map-library .prefab-entry:disabled {
   opacity: 0.6;
 }

@@ -9,7 +9,7 @@ import { loadDocument } from '../assets'
 import { createMapRenderer } from '../mapRenderers'
 import { gameUrl, listMaps, openMap } from './catalog'
 import { initCreator } from './creator'
-import { installPrefabEntries } from './prefabEntry'
+import { prefabEntries } from './prefabEntry'
 import { api } from './api'
 import { warmSelectedGame } from '../startupWarmup'
 import { createMusicController } from 'town-shared/audio/music'
@@ -135,17 +135,21 @@ async function select(map: MapEntry) {
   url.searchParams.set('map', map.id)
   history.replaceState(null, '', url)
   describe(map)
-  warmSelectedGame(map)
   retry.hidden = true
   dropPendingPreview()
   const key = previewKey(map)
   showPreview(key)
   if (key && previews.has(key)) {
     finishPreview(map)
+    warmSelectedGame(map)
     return
   }
   $('preview-state').hidden = false
   $('preview-state').textContent = '正在加载预览…'
+  // 先把选中状态画出来再干重活；连点时只建最后一张预览
+  await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 120)))
+  if (current !== request) return
+  warmSelectedGame(map)
   try {
     const mapDocument = await loadDocument(map.id, map.mapHash)
     if (current !== request) return
@@ -219,6 +223,13 @@ function mapOption(map: MapEntry) {
   status.textContent = progressText(map)
   text.append(name, status)
   b.append(text)
+  if (map.origin === 'builtin') {
+    b.classList.add('is-builtin')
+    const badge = document.createElement('span')
+    badge.className = 'map-option-badge'
+    badge.textContent = '内置'
+    name.append(badge)
+  }
   b.onclick = () => {
     if (selected?.id === map.id && selected.mapHash === map.mapHash && retry.hidden) return
     void select(map)
@@ -229,7 +240,10 @@ function mapOption(map: MapEntry) {
 async function refresh(id?: string) {
   try {
     maps = await listMaps()
-    $('map-list').replaceChildren(...maps.map(mapOption))
+    const options = maps.map(mapOption)
+    const builtin = maps.findIndex((m) => m.origin === 'builtin')
+    options.splice(builtin + 1, 0, ...prefabButtons())
+    $('map-list').replaceChildren(...options)
     $('map-count').textContent = `${maps.length} 个`
     $('map-empty').hidden = maps.length > 0
     const wanted = id ?? new URLSearchParams(location.search).get('map')
@@ -392,8 +406,8 @@ initCreator(
     location.assign(gameUrl(runtime))
   }
 )
-// 预制小镇：开一局就建好岛进镇，进镇后出开局设置
-installPrefabEntries({
+// 预制小镇：开一局就建好岛进镇，进镇后出开局设置；条目排在内置小镇下面
+const prefabButtons = prefabEntries({
   maps: () => maps,
   status: (text) => {
     $('pause-status').textContent = text

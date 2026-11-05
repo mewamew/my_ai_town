@@ -1,4 +1,3 @@
-import { query } from 'town-shared/dom'
 import { errorText } from 'town-shared/format'
 import { newId } from 'town-shared/ids'
 import type { MapEntry } from 'town-shared/mapDocument'
@@ -9,7 +8,7 @@ import { creationRequest } from './localCreation'
 // 再像「进入游戏」一样打开、停住世界进游戏页；第一次进镇出开局设置（town-shared/prefabs/setup.ts）。
 // 建镇和「创建小镇」走同一条路：电脑版由管理服务生成，手机应用在页面里生成（localCreation.ts）。
 
-export function installPrefabEntries(deps: {
+export function prefabEntries(deps: {
   /** 已有的小镇：数一数这个预制小镇开过几局 */
   maps: () => MapEntry[]
   /** 状态行 */
@@ -17,25 +16,25 @@ export function installPrefabEntries(deps: {
   /** 打开、停住世界并进游戏页；出错时抛出 */
   enter: (id: string) => Promise<void>
 }) {
-  const section = document.createElement('div')
-  section.className = 'prefab-entries'
-  section.setAttribute('aria-label', '预制小镇')
-  for (const prefab of PREFABS) section.append(entry(prefab))
-  query(document, '[data-create-town-slot]').after(section)
-
   let busy = false
+  // 和小镇列表里的条目同一个样子，放在内置小镇下面；不另写说明
   function entry(prefab: Prefab) {
     const b = document.createElement('button')
     b.type = 'button'
-    b.className = 'prefab-entry'
-    const title = document.createElement('b')
-    title.textContent = `开一局 · ${prefab.name}`
-    const text = document.createElement('small')
-    text.textContent = prefab.description
-    b.append(title, text)
+    b.className = 'map-option prefab-entry'
+    b.title = prefab.description
+    const text = document.createElement('span'),
+      name = document.createElement('strong'),
+      status = document.createElement('span')
+    name.textContent = prefab.name
+    status.className = 'map-option-status'
+    status.textContent = '开一局'
+    text.append(name, status)
+    b.append(text)
     b.onclick = () => void start(prefab, b)
     return b
   }
+  return () => PREFABS.map(entry)
 
   async function start(prefab: Prefab, b: HTMLButtonElement) {
     if (busy) return
