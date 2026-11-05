@@ -98,12 +98,14 @@ export function createPrefabSetup(d: {
     )
   }
 
+  // 卡片：顶上一行「开局设置」，下面是名字和一句话简介，再是四组设置，每组标题在上、内容在下
   function render() {
     if (!prefab) return
-    title.textContent = `${prefab.name} · 开局设置`
+    title.textContent = '开局设置'
     skip.hidden = running
     const p = prefab
-    const intro = el('p', p.description)
+    const head = el('header', '', 'prefab-head')
+    head.append(el('h2', p.name), el('p', p.description))
     const rows = el('div', '', 'prefab-rows')
 
     const count = el('div', '', 'prefab-count')
@@ -113,65 +115,94 @@ export function createPrefabSetup(d: {
     more.disabled = running || players >= p.players.max
     less.setAttribute('aria-label', '少一个人')
     more.setAttribute('aria-label', '多一个人')
-    count.append(
-      less,
-      el('b', String(players)),
-      more,
-      el('small', `${p.players.min}～${p.players.max} 人`)
-    )
-    rows.append(row('人数', count))
+    count.append(less, el('b', String(players)), more)
+    rows.append(row('人数', count, `${p.players.min}～${p.players.max} 人`))
 
     const options = d.modelOptions()
     const roster = el('div', '', 'prefab-roster')
+    const modelSelect = (
+      value: ModelOption | null,
+      disabled: boolean,
+      pick: (m: ModelChoice) => void
+    ) => {
+      const select = el('select')
+      select.disabled = disabled
+      for (const o of options) {
+        const option = el('option', `${o.name} · ${o.model}`)
+        option.value = `${o.provider}\n${o.model}`
+        select.append(option)
+      }
+      if (value) select.value = `${value.provider}\n${value.model}`
+      select.onchange = () => {
+        const [provider, model] = select.value.split('\n')
+        pick({ provider, model })
+      }
+      return select
+    }
     for (let i = 0; i < players; i++) {
       const id = p.roster[i]
       const slot = el('label', '', 'prefab-slot')
-      slot.append(el('span', `${i + 1} 号 · ${names.get(id) ?? id}`, 'prefab-who'))
-      if (options.length) {
-        const select = el('select')
-        select.disabled = running || joined[i] !== undefined
-        for (const o of options) {
-          const option = el('option', `${o.name} · ${o.model}`)
-          option.value = `${o.provider}\n${o.model}`
-          select.append(option)
-        }
-        const current = slotModel(i)
-        if (current) select.value = `${current.provider}\n${current.model}`
-        select.onchange = () => {
-          const [provider, model] = select.value.split('\n')
-          models[i] = { provider, model }
-        }
-        slot.append(select)
-      }
+      slot.append(
+        el('span', String(i + 1), 'prefab-no'),
+        el('span', names.get(id) ?? id, 'prefab-who')
+      )
+      if (options.length)
+        slot.append(
+          modelSelect(slotModel(i), running || joined[i] !== undefined, (m) => {
+            models[i] = m
+          })
+        )
       roster.append(slot)
     }
-    rows.append(row('选手', roster))
-    if (!options.length)
-      rows.append(row('', el('p', '还没连接模型：选手先住下，连上模型后才会行动。', 'guide-note')))
-
-    const circles = el('div', '', 'prefab-radio')
-    const random = radio('每局随机', !fixedSeed, () => {
-      fixedSeed = false
-      render()
-    })
-    const fixed = radio('固定种子', fixedSeed, () => {
-      fixedSeed = true
-      render()
-    })
-    const seedInput = el('input', '', 'prefab-seed')
-    seedInput.type = 'number'
-    seedInput.min = '1'
-    seedInput.max = '4294967295'
-    seedInput.value = String(seed)
-    seedInput.disabled = running || !fixedSeed
-    seedInput.setAttribute('aria-label', '种子')
-    seedInput.onchange = () => {
-      const n = Math.floor(Number(seedInput.value))
-      if (Number.isFinite(n) && n >= 1 && n <= 4294967295) seed = n
-      seedInput.value = String(seed)
+    // 模型不止一个时，可以一次给所有人换
+    let all: HTMLElement | undefined
+    if (options.length > 1) {
+      all = el('label', '', 'prefab-all')
+      all.append(
+        el('span', '全部换成'),
+        modelSelect(null, running, (m) => {
+          models = Array.from({ length: p.players.max }, () => m)
+          render()
+        })
+      )
+      ;(all.querySelector('select') as HTMLSelectElement).value = ''
     }
-    circles.append(random, fixed, seedInput)
-    rows.append(row('圈的位置', circles))
+    rows.append(row('选手和模型', roster, undefined, all))
+    if (!options.length)
+      roster.after(el('p', '还没连接模型：选手先住下，连上模型后才会行动。', 'prefab-hint'))
+
+    const circles = el('div', '', 'prefab-segment')
+    circles.setAttribute('role', 'group')
+    circles.append(
+      radio('每局随机', !fixedSeed, () => {
+        fixedSeed = false
+        render()
+      }),
+      radio('固定种子', fixedSeed, () => {
+        fixedSeed = true
+        render()
+      })
+    )
+    const circleBox = el('div', '', 'prefab-circle')
+    circleBox.append(circles)
+    if (fixedSeed) {
+      const seedInput = el('input', '', 'prefab-seed')
+      seedInput.type = 'number'
+      seedInput.min = '1'
+      seedInput.max = '4294967295'
+      seedInput.value = String(seed)
+      seedInput.disabled = running
+      seedInput.setAttribute('aria-label', '种子')
+      seedInput.onchange = () => {
+        const n = Math.floor(Number(seedInput.value))
+        if (Number.isFinite(n) && n >= 1 && n <= 4294967295) seed = n
+        seedInput.value = String(seed)
+      }
+      circleBox.append(seedInput)
+    }
+    rows.append(
+      row('圈的位置', circleBox, fixedSeed ? '同一个种子，每局圈的位置都一样' : undefined)
+    )
 
     const toggle = el('label', '', 'prefab-switch')
     const box = el('input')
@@ -183,25 +214,28 @@ export function createPrefabSetup(d: {
       needs = box.checked
       render()
     }
-    toggle.append(box, el('span', needs ? '开：要吃要喝要睡，站在水里掉体力' : '关：只比谁会躲水'))
-    rows.append(row('吃喝睡', toggle))
-
-    const note = el(
-      'p',
-      '世界观、潮水的时间表和天气已经写好，不用改。用在线模型会产生费用。',
-      'guide-note'
+    const words = el('span', '', 'prefab-switch-text')
+    words.append(
+      el('b', needs ? '要吃喝睡' : '不用吃喝睡'),
+      el('small', needs ? '会饿会渴会困，站在水里掉体力' : '只比谁会躲水')
     )
-    body.replaceChildren(el('h2', p.name), intro, rows, note)
-    if (status) body.append(el('p', status, 'guide-note prefab-status'))
+    toggle.append(words, box)
+    rows.append(row('生存', toggle))
+
+    body.replaceChildren(head, rows)
 
     const go = button(running ? '正在开局…' : '开始这一局', () => void start(), 'primary')
     go.disabled = running
-    foot.replaceChildren(go)
+    foot.replaceChildren(...(status ? [el('p', status, 'prefab-status')] : []), go)
   }
 
-  function row(label: string, content: HTMLElement) {
-    const line = el('div', '', 'prefab-row')
-    line.append(el('span', label), content)
+  function row(label: string, content: HTMLElement, hint?: string, extra?: HTMLElement) {
+    const line = el('section', '', 'prefab-row')
+    const heading = el('div', '', 'prefab-row-head')
+    heading.append(el('h3', label))
+    if (hint) heading.append(el('small', hint))
+    if (extra) heading.append(extra)
+    line.append(heading, content)
     return line
   }
   function radio(label: string, on: boolean, pick: () => void) {

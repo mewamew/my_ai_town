@@ -1289,98 +1289,230 @@ body:has(.guide:not([hidden])) :is(.pause-hint, .fast-hint) {
   font-size: 15px;
 }
 
-/* ---------- 预制小镇的开局设置：沿用开局向导的卡片，四行设置 ---------- */
+/* ---------- 预制小镇的开局设置：沿用开局向导的卡片，四组设置，标题在上 ---------- */
 .prefab-title {
-  font-size: 15px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+.prefab-head {
+  margin: 0 0 18px;
+}
+.prefab-head h2 {
+  margin: 0 0 6px;
+  font-size: 26px;
+}
+.prefab-head p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-2);
 }
 .prefab-rows {
   display: grid;
-  gap: 4px;
-  margin: 0 0 6px;
+  gap: 12px;
 }
 .prefab-row {
-  display: grid;
-  grid-template-columns: 4.5em minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
-  padding: 10px 0;
-  border-top: 1px solid var(--line);
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-m);
+  background: var(--surface);
 }
-.prefab-row > span {
-  padding-top: 7px;
+.prefab-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-bottom: 10px;
+}
+.prefab-row-head h3 {
+  margin: 0;
   font-size: 14px;
-  color: var(--text-2);
+  font-weight: 600;
+}
+.prefab-row-head small {
+  font-size: 12.5px;
+  color: var(--text-3);
 }
 .prefab-count {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  overflow: hidden;
 }
 .prefab-count b {
-  min-width: 1.6em;
-  font-size: 20px;
+  min-width: 2.6em;
+  font-size: 18px;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
-.prefab-count small {
-  font-size: 13px;
+.prefab-step {
+  width: 40px;
+  height: 36px;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface-sunken);
+  font-size: 18px;
+}
+.prefab-step:disabled {
+  opacity: 0.4;
+}
+.prefab-all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 12.5px;
   color: var(--text-3);
 }
-.prefab-step {
-  width: 36px;
-  height: 36px;
-  font-size: 18px;
+.prefab-all select {
+  min-height: 28px;
+  max-width: 12em;
+  font-size: 12.5px;
 }
 .prefab-roster {
   display: grid;
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
 }
 .prefab-slot {
   display: grid;
-  grid-template-columns: minmax(0, 7.5em) minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 26px minmax(0, 1fr);
+  grid-template-areas: 'no who' 'model model';
+  gap: 6px 8px;
   align-items: center;
+  padding: 8px 10px;
+  border-radius: var(--r-s);
+  background: var(--surface-sunken);
+}
+.prefab-no {
+  grid-area: no;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 .prefab-who {
+  grid-area: who;
   overflow: hidden;
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 600;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 .prefab-slot select {
+  grid-area: model;
   min-width: 0;
-  min-height: 34px;
-  font-size: 13px;
+  min-height: 32px;
+  font-size: 12.5px;
 }
-.prefab-radio {
+.prefab-hint {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.prefab-circle {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+}
+.prefab-segment {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
 }
 .prefab-option {
-  min-height: 36px;
-  padding: 0 12px;
+  min-height: 32px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-2);
   font-size: 14px;
 }
 .prefab-option.on {
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--elev-1);
 }
 .prefab-seed {
-  width: 8em;
+  width: 9em;
   min-height: 36px;
   font-variant-numeric: tabular-nums;
 }
 .prefab-switch {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 36px;
-  font-size: 14px;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+}
+.prefab-switch-text {
+  display: grid;
+  gap: 2px;
+}
+.prefab-switch-text b {
+  font-size: 15px;
+}
+.prefab-switch-text small {
+  font-size: 13px;
+  color: var(--text-3);
+}
+/* 开关画成滑块 */
+.prefab-switch input {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 44px;
+  height: 26px;
+  margin: 0;
+  border-radius: var(--r-pill);
+  background: var(--line);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease);
+}
+.prefab-switch input::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--elev-1);
+  transition: transform var(--t-fast) var(--ease);
+}
+.prefab-switch input:checked {
+  background: var(--accent);
+}
+.prefab-switch input:checked::after {
+  transform: translateX(18px);
+}
+.prefab-switch input:disabled {
+  opacity: 0.5;
 }
 .prefab-status {
+  margin: 0 0 8px;
+  font-size: 13px;
   color: var(--text-2);
+}
+.prefab-setup .guide-foot {
+  display: block;
+}
+.prefab-setup .guide-foot button {
+  width: 100%;
 }
 
 /* ---------- 一次性提示：深色小卡，箭头指着人或入口 ---------- */
