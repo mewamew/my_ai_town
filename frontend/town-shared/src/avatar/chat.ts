@@ -60,6 +60,9 @@ function pauseNotice(notice: HTMLElement, notices: Notices) {
     )
 }
 
+/** 别人想和你亲近时卡片上的说法 */
+const TOUCH_WISH = { hold_hands: '牵你的手', lean: '靠着你', hug: '抱抱你' } as const
+
 /** 一张邀请卡：别人邀请我时回应，我邀请别人时等待或取消 */
 function inviteCard(v: ChatView, i: AvatarInteraction) {
   const { interact, nameOf } = v
@@ -74,15 +77,20 @@ function inviteCard(v: ChatView, i: AvatarInteraction) {
           ? walkWish(v, i.kind)
           : i.kind.kind === 'appointment'
             ? `约你${appointmentText(v, i.kind)}`
-            : '送你东西'
+            : i.kind.kind === 'touch'
+              ? TOUCH_WISH[i.kind.gesture]
+              : '送你东西'
     card.append(el('p', `${nameOf(i.initiator)}想${what}${i.message ? `：${i.message}` : ''}`))
     const reply = (accept: boolean, message: string) =>
       interact({ operation: 'reply', interaction_id: i.id, accept, message })
     const yes = panelButton('好', () => reply(true, '好。'), !v.idle)
     yes.className = 'avatar-primary-small'
+    const touch = i.kind.kind === 'touch'
     row.append(
       yes,
-      panelButton('这次先不了', () => reply(false, '这次先不了，谢谢。'), !v.active)
+      touch
+        ? panelButton('躲开', () => reply(false, '别这样。'), !v.active)
+        : panelButton('这次先不了', () => reply(false, '这次先不了，谢谢。'), !v.active)
     )
   } else {
     const partner = nameOf(i.partner)

@@ -241,7 +241,7 @@ fn validate_kind(item: &Interaction, world: &World) -> Result<()> {
                 KernelError::snapshot("存档餐饮服务条件无效")
             );
         }
-        InteractionKind::Talk => {}
+        InteractionKind::Talk | InteractionKind::Touch { .. } => {}
         InteractionKind::Walk { .. } => unreachable!("同行带聊天状态，按聊天校验"),
         // 时刻只查范围：约好的时间和地点在存档里，读档后照常提醒和判定
         InteractionKind::Appointment { locale, at } => ensure!(

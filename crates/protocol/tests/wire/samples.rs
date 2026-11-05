@@ -1262,6 +1262,13 @@ pub fn shape_samples() -> (Vec<ServerMsg>, Vec<ClientMsg>) {
                 message: "下午两点图书馆见？".into(),
                 to: None,
             }),
+            interact(InteractionCommand::Offer {
+                partner_id: "resident_xiaohe".into(),
+                interaction: InteractionKind::Touch {
+                    gesture: Gesture::Hug,
+                },
+                message: "抱一下吧。".into(),
+            }),
             avatar(AvatarCommand::Miracle {
                 revision: 3,
                 recipient: "resident_xiaohe".into(),

@@ -48,7 +48,9 @@ pub use client_msg::{ClientMsg, IntentDraft, UntilPredicate};
 pub use content::{
     ContentCommand, ContentDetail, ContentKind, ContentMetadata, ContentOrigin, ContentText,
 };
-pub use interactions::{Interaction, InteractionCommand, InteractionKind, InteractionStatus};
+pub use interactions::{
+    Gesture, Interaction, InteractionCommand, InteractionKind, InteractionStatus,
+};
 pub use location::{At, Locus};
 pub use model_config::{
     ActiveModelChoice, ModelChoice, ProviderConfigMsg, ProviderKeyMsg, ProviderView,

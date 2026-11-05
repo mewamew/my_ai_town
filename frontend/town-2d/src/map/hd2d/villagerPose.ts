@@ -37,6 +37,9 @@ export type PoseKind =
 const VERBS: [PoseKind, RegExp][] = [
   ['sleep', /睡/],
   ['rest', /歇|避雨|晒太阳/],
+  // 换了姿势的停留（坐下、躺下），以及「坐着看海」这类道具动作
+  ['sitGround', /坐/],
+  ['lie', /躺/],
   ['wash', /洗/],
   ['cook', /面团|烘烤|面包|做饭|冲咖啡|烹|炒/],
   ['carry', /搬|木料|木头|捡|采|堆/],

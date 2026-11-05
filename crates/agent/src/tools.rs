@@ -277,7 +277,7 @@ pub const TOOLS: [ToolSpec; 14] = [
         name: ToolName::RunActions,
         description: || {
             format!(
-                "提交 1–{} 项串行动作，失败停止后续步骤。前往、停留的参数见已知地图的 basic_actions；道具动作给 prop_id；背包转移 intent.verb 填拾取/放下/存放/取回/领取并给 inventory，不填 prop_id；写作给 writing。",
+                "提交 1–{} 项串行动作，失败停止后续步骤。前往、停留的参数见已知地图的 basic_actions；道具动作给 prop_id；背包转移 intent.verb 填拾取/放下/存放/取回/领取并给 inventory，不填 prop_id；写作给 writing；对人动手 intent.verb 填 people_here 里对方的 force_verbs 之一，recipient 填对方 ID，抢和偷再用 prop_id 填对方 carrying 里那件东西的 ID。",
                 limits::ACTIONS_MAX
             )
         },
@@ -288,7 +288,7 @@ pub const TOOLS: [ToolSpec; 14] = [
         name: ToolName::OfferInvitation,
         description: || {
             format!(
-                "向在场的人发起交谈、同行、约定、赠予或用餐邀请；{} 分钟未回应过期。交谈和同行邀请发出后本次醒来结束，对方回应、重要通知或 {} 分钟后返回状态。",
+                "向在场的人发起交谈、同行、约定、赠予、用餐或亲近（牵手、依偎、拥抱）邀请；{} 分钟未回应过期。交谈和同行邀请发出后本次醒来结束，对方回应、重要通知或 {} 分钟后返回状态。",
                 kernel::interactions::INVITE_MINUTES,
                 OFFER_WAIT_MINUTES
             )

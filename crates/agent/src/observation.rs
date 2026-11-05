@@ -1,6 +1,6 @@
 //! 只投影本人状态、眼前对象与已知地图。观察仪的世界全貌不进入村民上下文。
 use crate::{interaction, prompts, resident, AgentError};
-use kernel::{world::ActKind, World};
+use kernel::{intent::BuiltinVerb, world::ActKind, World};
 use serde_json::{json, Value};
 
 /// 一次观察最多带的新事件数。
@@ -100,14 +100,44 @@ fn people_here(world: &World, actor: &str, locale: &str) -> Vec<Value> {
             if let Some(k) = &other.needs.body.killed {
                 body["wound"] = json!(k.wound);
             }
-            Some(json!({
+            let alive = !other.needs.body.dead;
+            let awake = world.awake(&id);
+            let carrying: Vec<_> = world
+                .inventory_view(&id)
+                .slots
+                .into_iter()
+                .map(|s| json!({"name": s.name, "items": s.items}))
+                .collect();
+            // 眼下能对他动手的方式：活人能推；身上有东西时，醒着的能抢，睡着、倒下的能偷
+            let mut force = Vec::new();
+            if alive {
+                force.push(BuiltinVerb::Push.label());
+            }
+            if !carrying.is_empty() {
+                force.push(if awake {
+                    BuiltinVerb::Rob.label()
+                } else {
+                    BuiltinVerb::Steal.label()
+                });
+            }
+            let mut view = json!({
                 "id": id,
                 "name": other.name,
                 "activity": other.current.verb,
                 "available": world.actor(&id).is_some_and(|a| a.interaction_available()),
                 "can_talk": world.talk_available(&id),
                 "body": body
-            }))
+            });
+            if alive && !awake {
+                view["asleep"] = json!(true);
+            }
+            if !carrying.is_empty() {
+                view["carrying"] = json!(carrying);
+            }
+            if !other.is_avatar() && !force.is_empty() {
+                view["force_verbs"] = json!(force);
+            }
+            Some(view)
         })
         .collect()
 }

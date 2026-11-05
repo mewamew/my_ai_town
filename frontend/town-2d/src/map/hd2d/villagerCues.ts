@@ -8,8 +8,10 @@ import type { Sign } from './villagerSigns'
 
 /** 一个人此刻的线索 */
 export interface Cue {
-  /** 在用道具时的动作词（verb_kind 为 prop） */
+  /** 在用道具时的动作词（verb_kind 为 prop），以及坐下、躺下 */
   verb?: string
+  /** 正在牵手、依偎、拥抱：动作词 */
+  touch?: string
   /** 在聊天：这场聊天的编号，轮到不轮到这个人说 */
   chat?: string
   speaking?: boolean
@@ -34,6 +36,11 @@ export interface Cue {
   declined?: string
   goal?: string
 }
+
+/** 换了姿势的停留：名册里是停留，按动作词摆坐、躺的姿势 */
+const POSED_STAYS = new Set(['坐下', '躺下'])
+/** 亲近的几种互动（名册里的动作词） */
+const TOUCHES = new Set(['牵手', '依偎', '拥抱'])
 
 /** 台词多旧以内还算刚说的（游戏分钟）：和聊天气泡一样；治愈、复活多久以内还演一下 */
 const FRESH_SPEECH = 2
@@ -67,7 +74,10 @@ export function cueOf(
     )
   const alive = body?.life !== 'dead'
   return {
-    verb: member.verb_kind === 'prop' ? member.verb : undefined,
+    // 道具动作和换了姿势的停留（坐下、躺下）按动作词摆姿势
+    verb: member.verb_kind === 'prop' || POSED_STAYS.has(member.verb) ? member.verb : undefined,
+    // 正在牵手、依偎、拥抱：头上冒爱心
+    touch: member.verb_kind === 'interaction' && TOUCHES.has(member.verb) ? member.verb : undefined,
     chat: member.chat?.id,
     speaking: !!member.chat && member.chat.turn === member.id,
     speech:
@@ -101,13 +111,14 @@ export function bodyOf(cue: Cue): Body {
   }
 }
 
-/** 一直在的状态隔一阵冒的符号：在反思「…」、想不出要做什么「？」、饿了「咕」、需求告急「汗」 */
+/** 一直在的状态隔一阵冒的符号：在反思「…」、想不出要做什么「？」、饿了「咕」、亲近时「心」、需求告急「汗」 */
 export function standingSigns(cue: Cue, hot: boolean): Sign[] {
   if (cue.dead) return []
   const out: Sign[] = []
   if (cue.state === 'reflecting') out.push('dots')
   if (cue.state === 'undecided') out.push('?')
   if (low(cue.needs?.fullness)) out.push('growl')
+  if (cue.touch) out.push('heart')
   const urgent = Object.values(cue.needs ?? {}).some((b) => b === 'urgent')
   if (urgent || (hot && !cue.indoors)) out.push('sweat')
   return out

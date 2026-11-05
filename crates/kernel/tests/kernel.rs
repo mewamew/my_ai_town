@@ -3,6 +3,7 @@ mod common;
 
 mod agent_actions;
 mod avatar;
+mod force;
 mod harm;
 mod interactions;
 mod inventory;

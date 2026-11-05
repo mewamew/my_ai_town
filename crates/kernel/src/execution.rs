@@ -25,9 +25,18 @@ impl Actor {
             Intent::Goto { locale, station } => {
                 self.start_travel(topo, now, &locale, station.as_deref())
             }
-            Intent::Stay { cond, station } => {
+            Intent::Stay { cond, station, .. } => {
                 self.start_at_station(topo, now, &verb, ActKind::Placeholder { cond }, station)
             }
+            Intent::Force { kind } => self.start_at_station(
+                topo,
+                now,
+                &verb,
+                ActKind::Timed {
+                    cond: StopCond::Duration(kind.minutes()),
+                },
+                None,
+            ),
             Intent::Look => self.start_at_station(
                 topo,
                 now,

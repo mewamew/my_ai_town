@@ -520,7 +520,8 @@ fn validate_plan_item(intent: &Intent, topo: &Topology, affordances: &Affordance
             KernelError::snapshot("存档计划目的地无效")
         ),
         Intent::Stay { cond, .. } => check_cond(cond)?,
-        Intent::Look => {}
+        // 动手的对象和东西在开始那一刻按当时的世界重查
+        Intent::Look | Intent::Force { .. } => {}
         Intent::Do { verb, cond, .. } => {
             ensure!(
                 affordances.is_verb(verb),

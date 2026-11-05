@@ -66,7 +66,7 @@ fn staying(world: &World, s: &Session) -> Option<(bool, Vec<String>)> {
     })?;
     let step = group.results.len();
     let current = group.actions.get(step)?;
-    if BuiltinVerb::parse(&current.intent.verb) != Some(BuiltinVerb::Stay) {
+    if !BuiltinVerb::parse(&current.intent.verb).is_some_and(BuiltinVerb::is_stay) {
         return None;
     }
     let after_trip = group.actions[..step]

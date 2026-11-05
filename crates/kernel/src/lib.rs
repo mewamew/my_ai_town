@@ -34,6 +34,7 @@ pub mod content;
 mod discovery;
 pub mod error;
 mod execution;
+pub mod force;
 pub mod happenings;
 pub mod intent;
 pub mod interactions;

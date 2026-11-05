@@ -4,7 +4,8 @@
 //! 动词、处所、落脚点全部对着封闭集合查。绝对坐标/时刻在草案类型上
 //! 已不可表示（protocol 侧 deny_unknown_fields），这里管的是 id 与取值。
 //!
-//! 动词封闭集合 = 内建 { 前往, 停留, 查看四周 } ∪ 道具动作词（affordance.rs）。
+//! 动词封闭集合 = 内建 { 前往, 停留, 坐下, 躺下, 查看四周, 推搡, 抢, 偷 } ∪ 道具动作词（affordance.rs）。
+//! 坐下、躺下是换了姿势的停留；推搡、抢、偷是对在场的人动手（force.rs）。
 //! 「工作 / 睡觉 / 吃饭」三个泛动词已退役：睡觉、吃饭本来就是道具动作词，
 //! 「工作」没有内容，不能作为当前封闭动作集合中的泛动词。
 
@@ -19,24 +20,73 @@ use protocol::{IntentDraft, UntilPredicate};
 pub enum BuiltinVerb {
     Goto,
     Stay,
+    /// 坐着停留：参数和停留一样，只换姿势。
+    Sit,
+    /// 躺着停留：不算睡觉，只换姿势。
+    Lie,
     /// 查看四周：花几分钟把眼前的地点、东西和人看清，回执逐一写明，没写的就是没有。
     Look,
+    /// 推在场的人一把。
+    Push,
+    /// 当面抢对方身上的东西。
+    Rob,
+    /// 趁对方睡着或倒下时拿走他身上的东西。
+    Steal,
 }
 
 impl BuiltinVerb {
+    const ALL: [Self; 8] = [
+        Self::Goto,
+        Self::Stay,
+        Self::Sit,
+        Self::Lie,
+        Self::Look,
+        Self::Push,
+        Self::Rob,
+        Self::Steal,
+    ];
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Goto => "前往",
             Self::Stay => "停留",
+            Self::Sit => "坐下",
+            Self::Lie => "躺下",
             Self::Look => "查看四周",
+            Self::Push => "推搡",
+            Self::Rob => "抢",
+            Self::Steal => "偷",
         }
     }
 
     /// 草案动词对应的内建动词；道具动作词返回 None。
     pub fn parse(verb: &str) -> Option<Self> {
-        [Self::Goto, Self::Stay, Self::Look]
-            .into_iter()
-            .find(|b| b.label() == verb)
+        Self::ALL.into_iter().find(|b| b.label() == verb)
+    }
+
+    /// 停留的几种姿势：停留、坐下、躺下。
+    pub fn is_stay(self) -> bool {
+        matches!(self, Self::Stay | Self::Sit | Self::Lie)
+    }
+}
+
+/// 停留时的姿势；旧存档没有这一项，按站着读。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Pose {
+    #[default]
+    Stand,
+    Sit,
+    Lie,
+}
+
+impl Pose {
+    fn verb(self) -> BuiltinVerb {
+        match self {
+            Self::Stand => BuiltinVerb::Stay,
+            Self::Sit => BuiltinVerb::Sit,
+            Self::Lie => BuiltinVerb::Lie,
+        }
     }
 }
 
@@ -65,6 +115,8 @@ pub enum Intent {
     Stay {
         cond: StopCond,
         station: Option<String>,
+        #[serde(default)]
+        pose: Pose,
     },
     /// 做一件事：在当时所在的处所用道具做 verb。时长可缺省（None = 道具标称时长）。
     Do {
@@ -74,15 +126,18 @@ pub enum Intent {
     },
     /// 查看四周：在原地花 LOOK_MINUTES 分钟。
     Look,
+    /// 对在场的人动手：对象和东西在动作草案的 recipient、prop_id 里，规则在 force.rs。
+    Force { kind: crate::force::Force },
 }
 
 impl Intent {
     pub fn verb(&self) -> &str {
         match self {
             Intent::Goto { .. } => BuiltinVerb::Goto.label(),
-            Intent::Stay { .. } => BuiltinVerb::Stay.label(),
+            Intent::Stay { pose, .. } => pose.verb().label(),
             Intent::Do { verb, .. } => verb,
             Intent::Look => BuiltinVerb::Look.label(),
+            Intent::Force { kind } => kind.label(),
         }
     }
 
@@ -93,12 +148,15 @@ impl Intent {
     pub fn describe(&self, topo: &Topology) -> String {
         match self {
             Intent::Goto { locale, .. } => format!("前往 {}", topo.locale_name(locale)),
-            Intent::Stay { cond, .. } => format!("停留（{}）", cond_text(cond)),
+            Intent::Stay { cond, pose, .. } => {
+                format!("{}（{}）", pose.verb().label(), cond_text(cond))
+            }
             Intent::Do { verb, cond, .. } => match cond {
                 Some(c) => format!("{verb}（{}）", cond_text(c)),
                 None => verb.clone(),
             },
             Intent::Look => BuiltinVerb::Look.label().into(),
+            Intent::Force { kind } => kind.label().into(),
         }
     }
 }
@@ -174,10 +232,32 @@ pub fn validate(topo: &Topology, aff: &Affordances, d: &IntentDraft) -> Result<I
             }
             Ok(Intent::Goto { locale, station })
         }
-        Some(BuiltinVerb::Stay) => Ok(Intent::Stay {
-            cond: parse_cond(d, true)?,
-            station: check_station(topo, &d.target)?,
-        }),
+        Some(verb @ (BuiltinVerb::Stay | BuiltinVerb::Sit | BuiltinVerb::Lie)) => {
+            Ok(Intent::Stay {
+                cond: parse_cond(d, true)?,
+                station: check_station(topo, &d.target)?,
+                pose: match verb {
+                    BuiltinVerb::Sit => Pose::Sit,
+                    BuiltinVerb::Lie => Pose::Lie,
+                    _ => Pose::Stand,
+                },
+            })
+        }
+        Some(verb @ (BuiltinVerb::Push | BuiltinVerb::Rob | BuiltinVerb::Steal)) => {
+            ensure!(
+                d.locale.is_none()
+                    && d.target.is_none()
+                    && d.until.is_none()
+                    && d.duration_minutes.is_none(),
+                KernelError::action(format!(
+                    "{}只填 recipient（抢和偷再填 prop_id），不填地点、落脚点和时长",
+                    verb.label()
+                ))
+            );
+            Ok(Intent::Force {
+                kind: crate::force::Force::of(verb),
+            })
+        }
         Some(BuiltinVerb::Look) => {
             ensure!(
                 d.locale.is_none() && d.target.is_none() && d.until.is_none(),

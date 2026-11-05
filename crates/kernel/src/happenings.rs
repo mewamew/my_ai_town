@@ -58,7 +58,7 @@ pub enum What {
 
 impl Happenings {
     /// 掷一次百分比；`percent` 已校验在 1–99。
-    fn roll(&mut self, percent: u32) -> bool {
+    pub(crate) fn roll(&mut self, percent: u32) -> bool {
         let mut s = self.dice;
         s ^= s << 13;
         s ^= s >> 17;

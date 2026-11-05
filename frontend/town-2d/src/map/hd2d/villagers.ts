@@ -316,7 +316,7 @@ export class Villagers {
   private readonly heard = new Map<string, Villager['talk']>()
 
   /** 换上新的线索：新说出口的一句开始动嘴；聊完了高兴一阵、冒个心；被治好冒心，复活、神力先惊讶再高兴，
-   *  天上落下光柱；邀请被拒冒怒，有了新目标冒灯泡；身边有人倒下，旁边的人吓一跳 */
+   *  天上落下光柱；邀请被拒冒怒，牵手、依偎、拥抱冒心，有了新目标冒灯泡；身边有人倒下，旁边的人吓一跳 */
   private cue(v: Villager, cue: Cue) {
     const before = v.cue
     v.cue = cue
@@ -342,6 +342,11 @@ export class Villagers {
       }
     }
     if (cue.declined && before.declined !== cue.declined) this.signal(v, 'anger', now)
+    // 牵起手、靠上去、抱在一起的那一下：两人都高兴一阵、冒个心
+    if (cue.touch && cue.touch !== before.touch) {
+      v.react = [{ mood: 'happy', until: now + 2500 }]
+      this.signal(v, 'heart', now)
+    }
     if (cue.goal && before.goal && before.goal !== cue.goal) this.signal(v, 'bulb', now)
     const fell = (cue.down || cue.dead) && !before.down && !before.dead && before !== cue
     if (fell && v.mesh.visible)

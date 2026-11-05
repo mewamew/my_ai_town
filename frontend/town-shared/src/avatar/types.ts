@@ -24,13 +24,14 @@ export interface PlayerAction {
   writing?: { title: string; text: string }
 }
 /** 双方互动的种类：交谈、赠予物品、招待用餐、同行（leader 带路，locale 是说好的目的地）、
- *  约定（at 是约好的世界分钟，locale 是见面的地方） */
+ *  约定（at 是约好的世界分钟，locale 是见面的地方）、亲近（牵手、依偎、拥抱） */
 export type InteractionKind =
   | { kind: 'talk' }
   | { kind: 'give'; items: string[] }
   | { kind: 'serve'; prop_id: string; verb: string }
   | { kind: 'walk'; leader: string; locale?: string }
   | { kind: 'appointment'; locale: string; at: number }
+  | { kind: 'touch'; gesture: 'hold_hands' | 'lean' | 'hug' }
 export type InteractionCommand =
   | { operation: 'offer'; partner_id: string; interaction: InteractionKind; message: string }
   | { operation: 'reply'; interaction_id: string; accept: boolean; message: string }

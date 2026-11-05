@@ -87,6 +87,7 @@ pub(crate) fn interaction_kinds() -> Vec<InteractionKind> {
         Serve => InteractionKind::Serve { prop_id: s(), verb: s() },
         Walk => InteractionKind::Walk { leader: s(), locale: None },
         Appointment => InteractionKind::Appointment { locale: s(), at: 0.0 },
+        Touch => InteractionKind::Touch { gesture: protocol::Gesture::Hug },
     })
 }
 pub(crate) fn interaction_commands() -> Vec<InteractionCommand> {
@@ -266,6 +267,12 @@ fn interaction() -> Value {
                 "at": described(json!({"type":"string"}), "约定时刻，写成 D日数 HH:MM，例如 D3 14:00；要在十分钟以后、一天以内")
             }),
             vec!["locale", "at"],
+        ),
+        InteractionKind::Touch { .. } => (
+            json!({
+                "gesture": described(json!({"type":"string","enum":["hold_hands","lean","hug"]}), "亲近的方式：hold_hands 牵手，lean 依偎，hug 拥抱")
+            }),
+            vec!["gesture"],
         ),
     })
 }

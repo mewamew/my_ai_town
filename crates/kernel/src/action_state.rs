@@ -97,8 +97,11 @@ pub fn draft_verb_kind(draft: &ActionDraft) -> VerbKind {
     }
     match BuiltinVerb::parse(&draft.intent.verb) {
         Some(BuiltinVerb::Goto) => VerbKind::Goto,
-        Some(BuiltinVerb::Stay | BuiltinVerb::Look) => VerbKind::Stay,
-        None => VerbKind::Prop,
+        Some(BuiltinVerb::Stay | BuiltinVerb::Sit | BuiltinVerb::Lie | BuiltinVerb::Look) => {
+            VerbKind::Stay
+        }
+        // 动手和道具动作一样是一件有时长的事
+        Some(BuiltinVerb::Push | BuiltinVerb::Rob | BuiltinVerb::Steal) | None => VerbKind::Prop,
     }
 }
 

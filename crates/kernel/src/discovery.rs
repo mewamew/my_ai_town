@@ -50,6 +50,11 @@ impl World {
     }
 
     /// 能发现东西的人：在场、活着、能行动、没在睡觉；化身是玩家的眼睛，不记。
+    /// 这个人此刻醒着、能留意周围（村民观察里「睡着了」的依据）。
+    pub fn awake(&self, id: &str) -> bool {
+        self.actors.get(id).is_some_and(|a| self.can_notice(a))
+    }
+
     pub(crate) fn can_notice(&self, a: &Actor) -> bool {
         let asleep = crate::physiology::body_spot(self, a)
             .and_then(|s| s.action.as_ref())

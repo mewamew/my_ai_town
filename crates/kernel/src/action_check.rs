@@ -83,6 +83,12 @@ pub(crate) fn check_intent<'a>(
         w.check_inventory(actor, op)?;
         return Ok(None);
     }
+    // 动手的 recipient 和 prop_id 指的是对方和对方身上的东西，不按道具动作查
+    if let Intent::Force { kind } = intent {
+        let draft = draft.ok_or_else(|| KernelError::action("动手要有动作草案"))?;
+        w.check_force(actor, draft, *kind)?;
+        return Ok(None);
+    }
     let prop = draft.and_then(|d| d.prop_id.as_deref());
     let reach = crate::avatar::Reach::new(w);
     if let Some(prop) = prop {
@@ -115,6 +121,7 @@ pub(crate) fn check_intent<'a>(
             );
             None
         }
+        Intent::Force { .. } => unreachable!("动手在上面已经查完"),
         Intent::Do { verb, station, .. } => {
             check_action_station(&w.topo, locale, station.as_deref())?;
             Some(check_prop_action(w, actor, verb, locale, draft)?)

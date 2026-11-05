@@ -39,6 +39,9 @@ pub struct Actor {
     /// 读档时把当时已有的尸体都算作见过，不补发一串发现。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bodies_seen: Option<BTreeSet<String>>,
+    /// 睡着或倒下时被偷走的东西（名字），醒来能留意周围时才发现（force.rs）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lost: Vec<String>,
 }
 
 impl Actor {
@@ -62,6 +65,7 @@ impl Actor {
             home: None,
             needs: Needs::initial(),
             bodies_seen: Some(BTreeSet::new()),
+            lost: vec![],
         }
     }
 

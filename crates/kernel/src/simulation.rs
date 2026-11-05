@@ -62,6 +62,7 @@ impl World {
             }
             self.fire_happenings();
             self.notice_bodies();
+            self.notice_losses();
             self.day_boundary(t0, &ids);
             self.expire_interactions();
             self.withdraw_departed_offers();
@@ -247,6 +248,11 @@ impl World {
         });
         let was_goto = binding
             .is_some_and(|b| BuiltinVerb::parse(&b.draft.intent.verb) == Some(BuiltinVerb::Goto));
+        let force =
+            binding.and_then(|b| crate::force::of_draft(&b.draft).map(|k| (k, b.draft.clone())));
+        if let Some((kind, draft)) = force {
+            return self.finish_force(id, &draft, kind);
+        }
         if let Some((op, key)) = inventory {
             let changes = self.finish_inventory(id, &op, &key)?;
             for text in &changes {

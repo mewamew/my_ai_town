@@ -24,6 +24,28 @@ pub enum InteractionKind {
         locale: String,
         at: f64,
     },
+    /// 亲近：牵手、依偎、拥抱。要对方答应，躲开了双方都记下，旁边的人也看得见。
+    Touch {
+        gesture: Gesture,
+    },
+}
+
+/// 亲近的方式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Gesture {
+    HoldHands,
+    Lean,
+    Hug,
+}
+impl Gesture {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::HoldHands => "牵手",
+            Self::Lean => "依偎",
+            Self::Hug => "拥抱",
+        }
+    }
 }
 impl InteractionKind {
     pub fn label(&self) -> &'static str {
@@ -33,6 +55,7 @@ impl InteractionKind {
             Self::Serve { .. } => "招待用餐",
             Self::Walk { .. } => "同行",
             Self::Appointment { .. } => "约定",
+            Self::Touch { gesture } => gesture.label(),
         }
     }
     /// 带聊天记录的互动：交谈，以及路上可以说话的同行。
