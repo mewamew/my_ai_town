@@ -89,6 +89,61 @@ export interface House {
   /** 窗下花箱的花色，取风格包地面的花 */
   flowers: readonly string[]
   seed: number
+  /** 灯塔：整块占地是石台，塔立在正中（见 lighthouse.ts）；其余房子没有 */
+  tower?: Tower
+}
+
+/** 灯塔各段的尺寸，世界单位：半径从塔中心量，高度从地面量 */
+export interface Tower {
+  /** 石台：底下一圈粗石脚的顶、台面、沿边矮栏墙的顶 */
+  ledge: number
+  deck: number
+  parapet: number
+  /** 塔身：底和顶的半径、起止高度（下面是喇叭形的塔脚，上面是托着瞭望台的一圈牛腿） */
+  foot: number
+  top: number
+  base: number
+  neck: number
+  /** 瞭望台：台面高、外沿半径 */
+  gallery: number
+  rim: number
+  /** 灯室：玻璃的起止高度、半径 */
+  glass: readonly [number, number]
+  lantern: number
+  /** 圆顶顶上、风向标尖（最高点） */
+  dome: number
+  height: number
+  /** 塔上最宽处的半径：点选、摆台上的东西都按它让开 */
+  reach: number
+}
+
+/** 灯塔的尺寸按占地短边定，大中小三档同一个比例：塔身约为塔脚直径的一倍半高，连灯室、圆顶比普通房子高一倍多 */
+export function towerOf(w: number, h: number): Tower {
+  const T = WALL_TEXEL
+  const foot = Math.min(17, Math.max(11, Math.round((Math.min(w, h) / PIXEL) * 0.19)))
+  const top = Math.round(foot * 0.74) * PIXEL
+  const deck = 6 * T
+  const base = deck + 4 * T
+  const neck = base + Math.round(foot * 3.1) * T
+  const gallery = neck + 4.5 * T
+  const glass = [gallery + 4 * T, gallery + 13 * T] as const
+  const dome = glass[1] + 6 * T
+  return {
+    ledge: 2 * T,
+    deck,
+    parapet: deck + 2.5 * T,
+    foot: foot * PIXEL,
+    top,
+    base,
+    neck,
+    gallery,
+    rim: top + 4 * PIXEL,
+    glass,
+    lantern: top - PIXEL,
+    dome,
+    height: dome + 7 * T,
+    reach: Math.max(top + 4 * PIXEL, foot * PIXEL + 4 * PIXEL),
+  }
 }
 
 /** 屋脊在屏幕上至少高出墙顶这么多像素，才放得下老虎窗 */
@@ -174,12 +229,15 @@ export function houseOf(s: Space, theme: MapTheme): House {
     rug: theme.interiors.rugs[kind],
     flowers: theme.ground.flowers,
     seed,
+    ...(look.tower ? { tower: towerOf(w, h) } : {}),
   }
 }
 
-/** 房屋在地图坐标里最高点的 y（屋脊或屋顶最北的屋檐），名字放在它上面。
- *  屏幕上高出 H·cos，折回压扁的地图纵深要再除以 sin */
+/** 高 height 的一点在屏幕上高出它脚下多少，折成地图纵深：屏幕上高出 H·cos，压扁的地图纵深要再除以 sin */
+export const riseOf = (height: number, tilt: Tilt) => (height * tilt.cos) / tilt.sin
+
+/** 房屋在地图坐标里最高点的 y（屋脊或屋顶最北的屋檐，灯塔是塔尖），名字放在它上面 */
 export function houseTop(house: House, tilt: Tilt) {
-  const rise = ((house.wallH + house.ridge) * tilt.cos) / tilt.sin
-  return house.y - rise + (house.alongX ? house.h / 2 : 0)
+  if (house.tower) return house.y + house.h / 2 - riseOf(house.tower.height, tilt)
+  return house.y - riseOf(house.wallH + house.ridge, tilt) + (house.alongX ? house.h / 2 : 0)
 }

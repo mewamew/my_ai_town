@@ -829,8 +829,26 @@ export class TownMap {
       const rise = open
         ? house.y - hd.roomTop(house)
         : house.y + (house.alongX ? house.h / 2 : 0) - hd.roofTop(house)
-      const outline = hull([...foot, ...foot.map(([x, y]) => [x, y - rise] as [number, number])])
-      if (!inside(outline, [vx, vy])) continue
+      const lift = (points: [number, number][], by: number) =>
+        hull([...points, ...points.map(([x, y]) => [x, y - by] as [number, number])])
+      // 灯塔是矮石台加一根细高的塔，分开算：塔两边的空当不算点在灯塔上
+      const tower = open ? undefined : house.tower
+      const column = (r: number) =>
+        (
+          [
+            [-r, -r],
+            [r, -r],
+            [r, r],
+            [-r, r],
+          ] as [number, number][]
+        ).map(([dx, dy]) => this.camera.project([centre[0] + dx, centre[1] + dy]))
+      const outlines = tower
+        ? [
+            lift(foot, hd.rise(tower.parapet)),
+            lift(column(tower.reach), centre[1] - hd.roofTop(house)),
+          ]
+        : [lift(foot, rise)]
+      if (!outlines.some((o) => inside(o, [vx, vy]))) continue
       if (open && !floor && inside(foot, [vx, vy])) continue
       const front = Math.max(...foot.map((p) => p[1]))
       if (!best || front > best.front) best = { id: house.id, front }

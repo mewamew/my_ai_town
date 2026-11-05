@@ -76,12 +76,14 @@ export class RoomCovers {
         [house.x + house.w, house.y + house.h],
       ] as Point[]
       const view = corners.map(project)
-      const [x] = project([house.x + house.w / 2, house.y + house.h / 2])
+      const [x, y] = project([house.x + house.w / 2, house.y + house.h / 2])
       const rise = opened
         ? house.y - hd.roomTop(house)
         : house.y + (house.alongX ? house.h / 2 : 0) - hd.roofTop(house)
       let top = Math.min(...view.map((p) => p[1])) - rise
-      if (!opened) {
+      // 灯塔：名字在塔尖上面
+      if (!opened && house.tower) top = y - (house.y + house.h / 2 - hd.roofTop(house))
+      else if (!opened) {
         const ridge: Point[] = house.alongX
           ? [
               [house.x, house.y + house.h / 2],

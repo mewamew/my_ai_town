@@ -27,7 +27,8 @@ export function groundOcclusion(
   const height = new Float32Array(pw * ph)
   const toPx = (v: number) => Math.floor((v + MARGIN) / PIXEL)
   for (const h of houses) {
-    const top = h.wallH + h.ridge * 0.55
+    // 灯塔挨着地面的只有石台，细高的塔挡不了多少天光
+    const top = h.tower ? h.tower.deck : h.wallH + h.ridge * 0.55
     for (let y = Math.max(0, toPx(h.y)); y < Math.min(ph, toPx(h.y + h.h)); y++)
       for (let x = Math.max(0, toPx(h.x)); x < Math.min(pw, toPx(h.x + h.w)); x++)
         height[y * pw + x] = Math.max(height[y * pw + x], top)

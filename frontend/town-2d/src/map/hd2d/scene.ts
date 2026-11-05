@@ -24,6 +24,7 @@ import {
   WALL_TEXEL,
   houseOf,
   houseTop,
+  riseOf,
   tiltOf,
   type House,
   type Tilt,
@@ -67,7 +68,8 @@ import { ChimneySmoke } from './smoke'
 import { interior, interiorTop, keepInside } from './interior'
 import type { Partition } from './partition'
 import { PROP_BASE, PropStandees, type PropPlacement } from './props'
-import { colonnadeFront, lighthouseTower, vaultRoof } from './structures'
+import { colonnadeFront, vaultRoof } from './structures'
+import { lighthouse } from './lighthouse'
 import { dissolvable } from './dissolve'
 import { onStandee, stand, standee, texture } from './standee'
 import type { MapTheme } from '../themes/types'
@@ -328,8 +330,9 @@ export class HdScene {
   onNotice?: (text: string) => void
   /** 夜里亮灯的程度：日落前后从 0 升到 1，各盏灯按自己的门槛亮起 */
   private lit = 0
-  /** 灯塔转动的光束（冰雪风格） */
+  /** 灯塔转动的光束；光束扫到正对镜头时灯室那一闪 */
   private readonly beams: THREE.Mesh[] = []
+  private readonly flares: { beam: THREE.Object3D; sprite: THREE.Sprite }[] = []
   private readonly smoke = new ChimneySmoke()
   /** 逐帧动画的地标（喷泉）：图集横排，按时间挪贴图的横向偏移 */
   private readonly flipbooks: { maps: THREE.Texture[]; frames: number; fps: number }[] = []
@@ -538,7 +541,7 @@ export class HdScene {
         .map((p) => roomPoint(s.unfold, p.x, p.y))
       const house = this.houses.find((h) => h.id === s.id)!
       const on = houseLightsOn(house)
-      this.addHouse(house, s.door_outside, points, on)
+      this.addHouse(house, s.door_outside, points, on, glowMap)
       const lamp = new THREE.Color(this.theme.light.lamp)
       if (s.door_outside) {
         const [dx, dy] = s.door_outside
@@ -651,6 +654,7 @@ export class HdScene {
       this.motes.step(t)
       this.horizon.step(t / 1000)
       for (const b of this.beams) b.rotation.y -= dt * 0.9
+      this.flare()
       this.smoke.step(t / 1000)
       for (const b of this.flipbooks)
         for (const m of b.maps) m.offset.x = (Math.floor((t / 1000) * b.fps) % b.frames) / b.frames
@@ -719,6 +723,11 @@ export class HdScene {
   /** 掀开后室内墙顶的 y */
   roomTop(house: House) {
     return interiorTop(house, this.tilt)
+  }
+
+  /** 离地 height 高的一点在屏幕上高出它脚下多少，折成地图纵深 */
+  rise(height: number) {
+    return riseOf(height, this.tilt)
   }
 
   setPitch(degrees: number) {
@@ -1115,17 +1124,21 @@ export class HdScene {
     house: House,
     door: [number, number] | undefined,
     points: [number, number][],
-    on: number
+    on: number,
+    glowMap: THREE.Texture
   ) {
     const { x, y, w, h } = house
     const group = new THREE.Group()
     group.position.set(x + w / 2, 0, y + h / 2)
-    // 只有朝南的墙面向镜头；门在南墙上时画出来
-    const onSouth = door && Math.abs(door[1] - (y + h)) <= Math.min(Math.abs(door[1] - y), 40)
-    const top = this.addBody(group, house, onSouth ? (door![0] - x) / PIXEL : undefined, on)
-    this.addRoof(group, house, top, on)
-    this.addFeatures(group, house, onSouth ? door![0] - (x + w / 2) : undefined)
-    this.addChimney(group, house)
+    if (house.tower) this.addLighthouse(group, house, door, on, glowMap)
+    else {
+      // 只有朝南的墙面向镜头；门在南墙上时画出来
+      const onSouth = door && Math.abs(door[1] - (y + h)) <= Math.min(Math.abs(door[1] - y), 40)
+      const top = this.addBody(group, house, onSouth ? (door![0] - x) / PIXEL : undefined, on)
+      this.addRoof(group, house, top, on)
+      this.addFeatures(group, house, onSouth ? door![0] - (x + w / 2) : undefined)
+      this.addChimney(group, house)
+    }
     this.flat.add(group)
     this.houseGroups.set(house.id, group)
     // 外壳的材质都是这栋自己的（看不见的底面除外），共用一个溶解程度
@@ -1325,18 +1338,6 @@ export class HdScene {
       group.add(awning)
     }
     if (look.columns) group.add(colonnadeFront(house))
-    if (look.tower) {
-      // 灯塔立在离镇中心远的那一头，也就是朝海的一头
-      const tower = lighthouseTower(
-        house,
-        Math.sign(house.x + house.w / 2 - this.center[0]) || 1,
-        this.theme.lighthouse
-      )
-      group.add(tower.group)
-      // 灯塔天一暗就最先亮
-      this.glowing.push({ material: tower.lamp, on: 0.02 })
-      if (tower.beam) this.beams.push(tower.beam)
-    }
     if (look.flag) {
       const poleH = 16 * WALL_TEXEL
       const pole = new THREE.Mesh(
@@ -1353,6 +1354,66 @@ export class HdScene {
       flag.position.set(PIXEL / 2, wallH + ridge + poleH - 3 * WALL_TEXEL, 0)
       flag.castShadow = true
       group.add(pole, flag)
+    }
+  }
+
+  /** 灯塔整块占地是石台，塔立在正中（见 lighthouse.ts）。材质接上天气和光照图；灯室天一暗就最先亮，
+   *  塔窗、台阶灯跟这栋房子的灯一起亮。光晕往镜头那边挪一点，不被灯罩自己挡住；火盆的烟和火星从盆口冒 */
+  private addLighthouse(
+    group: THREE.Group,
+    house: House,
+    door: [number, number] | undefined,
+    on: number,
+    glowMap: THREE.Texture
+  ) {
+    const [cx, cz] = [group.position.x, group.position.z]
+    const built = lighthouse(house, door && [door[0] - cx, door[1] - cz], this.theme.lighthouse)
+    group.add(built.group)
+    for (const { material, snow, wet, sway } of built.weathered)
+      this.weather.shade(material, { snow, wet, sway })
+    for (const m of built.walls) this.lightmap.shade(m, 'wall')
+    for (const g of built.glowing) this.glowing.push({ material: g.material, on: g.on ?? on })
+    this.selfLit.push(...built.burning)
+    const glow = (at: THREE.Vector3, size: number) => {
+      const sprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: glowMap,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          transparent: true,
+          opacity: 0,
+        })
+      )
+      sprite.scale.set(size, size, 1)
+      const near = 6 * PIXEL
+      this.upright.push((t) =>
+        sprite.position.set(
+          at.x + near * t.yawSin * t.cos,
+          at.y + near * t.sin,
+          at.z + near * t.yawCos * t.cos
+        )
+      )
+      group.add(sprite)
+      return sprite
+    }
+    for (const g of built.glows) this.glows.push({ sprite: glow(g.at, g.size), on: g.on ?? on })
+    if (built.beam) {
+      this.beams.push(built.beam as THREE.Mesh)
+      if (built.lamp) this.flares.push({ beam: built.beam, sprite: glow(built.lamp, 130 * PIXEL) })
+    }
+    for (const s of built.smoke) {
+      this.smoke.add(cx + s.x, s.y, cz + s.z, house.seed)
+      this.chimneyMouths.push([cx + s.x, s.y, cz + s.z])
+    }
+  }
+
+  /** 光束扫到正对镜头时灯室一闪：两束光里离镜头水平方向最近的那束越正越亮，只在天黑后 */
+  private flare() {
+    const { yawSin, yawCos } = this.tilt
+    for (const { beam, sprite } of this.flares) {
+      const a = beam.rotation.y
+      const facing = Math.abs(Math.cos(a) * yawSin - Math.sin(a) * yawCos)
+      sprite.material.opacity = this.lit * 0.6 * facing ** 24
     }
   }
 
@@ -1883,6 +1944,7 @@ export class HdScene {
     for (const m of this.selfLit) m.emissiveIntensity = lerp(0.3, 0.55, Math.max(night, twilight))
     this.seaSparkle.value = lerp(0.3, 1, day) * (1 - cloud * 0.9)
     for (const b of this.beams) (b.material as THREE.MeshBasicMaterial).opacity = this.lit * 0.45
+    this.flare()
     this.horizon.setAurora(night * L.aurora)
     const dusk = Math.max(night, twilight * 0.8)
     this.bloom.strength = lerp(0.35, 0.5, dusk)

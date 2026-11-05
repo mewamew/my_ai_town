@@ -263,5 +263,5 @@ export const frozen: MapTheme = {
   motes: { dust: [1, 1, 1], strength: 0.9, night: 0.6, drift: 6, lift: -18, fireflies: false },
   lamp: 'street',
   flag: { colors: ['#2e5a9a', '#f0ece4'], torn: false },
-  lighthouse: 'beacon',
+  lighthouse: 'snowy',
 }

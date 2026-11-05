@@ -147,8 +147,9 @@ export interface MapTheme {
     lift: number
     fireflies: boolean
   }
-  /** 路灯画法（none 是不立路灯：野外小径）、旗子配色；灯塔完好、破败，还是夜里有转动的光束 */
+  /** 路灯画法（none 是不立路灯：野外小径）、旗子配色；灯塔是红白条纹、积雪的红塔，还是塌了顶烧着一盆火
+   *  （见 hd2d/lighthouse.ts） */
   lamp: 'street' | 'scrap' | 'none'
   flag: { colors: readonly [string, string]; torn: boolean }
-  lighthouse: 'striped' | 'ruined' | 'beacon'
+  lighthouse: 'striped' | 'snowy' | 'ruined'
 }

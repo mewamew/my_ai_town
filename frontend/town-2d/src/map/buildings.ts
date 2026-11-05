@@ -4,7 +4,7 @@ import type { Atlas } from 'town-shared/mapDocument'
 // 每种功能具体长什么样由风格包给（themes/），这里只有类型、门的尺寸和判断功能的规则。
 // 功能取地图里房间的 kind（建镇生成的地图都有）；默认小镇这类旧地图没有 kind，按编号和名字判断。
 // 平面图的地板、海岸收进的海塔和立体场景的房子都用这里的判断，同一间房只有一种功能。
-// 剧院是拱顶，海塔一端立灯塔，柱廊图书馆门前一排石柱。
+// 剧院是拱顶，柱廊图书馆门前一排石柱；海塔不盖房子，整块占地是石台、正中立灯塔。
 // 屋顶形状、屋面、窗型给了多种的，按房间编号挑一种；同一张地图每次打开都一样。
 
 export type WallStyle =
@@ -95,7 +95,7 @@ export interface BuildingStyle {
   flag?: boolean
   /** 屋顶形状：默认双坡，剧院是半圆的拱顶 */
   vault?: boolean
-  /** 一端立一座红白条纹的灯塔 */
+  /** 不盖房子：整块占地是石台，正中立一座灯塔（hd2d/lighthouse.ts）；墙高只用来定掀开后的室内墙高 */
   tower?: boolean
   /** 南墙前一排石柱 */
   columns?: boolean
