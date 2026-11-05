@@ -183,14 +183,18 @@ impl World {
         Some(list)
     }
 
-    /// 陌生环境里从眼下所在地点出去的路：通到哪个地点、往哪个方向，没去过的不写名字。
-    /// 熟悉的世界、不在地点里（走在路上）时返回 None。
+    /// 陌生环境里从眼下所在的地方出去的路：通到哪个地点、往哪个方向，没去过的不写名字。
+    /// 站在街道、野外这类不算地点的驻留处也有路可走；熟悉的世界、正在路段上赶路时返回 None。
     pub fn exits(&self, actor: &str) -> Option<Vec<Exit>> {
         if !self.strangers {
             return None;
         }
-        let a = self.actors.get(actor)?;
-        let here = self.place_now(actor)?;
+        let a = self.actors.get(actor).filter(|a| a.present())?;
+        let here = match self.place_now(actor) {
+            Some(place) => place,
+            None if self.topo.is_dwell(&a.locus.locale) => a.locus.locale.clone(),
+            None => return None,
+        };
         let exits = self
             .neighbours(&here)
             .into_iter()

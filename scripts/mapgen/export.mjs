@@ -136,9 +136,11 @@ export function exportDocument(plan, graph, library, contours, definitions) {
         )[0]
   if (!standalone)
     station('road_arrival', 'roads', names.arrival, entry.id, entry.x, entry.y, 'town_outdoor')
-  topology.entry = standalone
-    ? { locale: plan.places[0].id, station: `at_${plan.places[0].id}` }
-    : { locale: 'roads', station: 'road_arrival' }
+  // 新来的人落在哪：小镇落在街道上；单地点和野外落在第一个地点里（荒岛上醒来就在海滩，不在小径上）
+  topology.entry =
+    standalone || plan.spec.settlement === 'wild'
+      ? { locale: plan.places[0].id, station: `at_${plan.places[0].id}` }
+      : { locale: 'roads', station: 'road_arrival' }
   for (const p of plan.places) {
     const node = `arrival_${p.id}`,
       r = p.interiorRect ?? rect(p)

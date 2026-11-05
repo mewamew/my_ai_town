@@ -72,6 +72,9 @@ test('default and generated maps are valid, connected, deterministic and obey co
   ].map((x) => x.name)
   assert(roadNames.includes('野外') && roadNames.includes('小径'), roadNames.join('、'))
   assert(!roadNames.some((n) => /小镇|街道/.test(n)), roadNames.join('、'))
+  // 野外图上新来的人落在第一个地点里（荒岛上醒来就在海滩），小镇落在街道上
+  assert.equal(wild.topology.entry.locale, wild.topology.places[0].locale)
+  assert.equal(gen(spatial).document.topology.entry.locale, 'roads')
   // 户外活动区域里有几个带名字的落脚点，各有一条走过去的通道
   const areas = gen({
     ...spatial,

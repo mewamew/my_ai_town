@@ -172,3 +172,35 @@ fn hidden_things_need_searching_and_what_is_hidden_is_known_only_to_those_who_sa
     .unwrap();
     assert!(w.sees_prop("old", "knife"));
 }
+
+/// 站在不算地点的驻留处（野外、街道）上的初来乍到者也看得见从这里出去的路，能走到地点里去。
+#[test]
+fn strangers_standing_on_open_ground_still_see_the_ways_out() {
+    // 野外是个岔口：各有一段小路通甲地和乙地
+    let json = common::two_places_json(|data| {
+        let locales = data["locales"].as_array_mut().unwrap();
+        locales.push(json!({"id": "wild", "name": "野外", "kind": "dwell"}));
+        for (edge, to) in [("edge_wa", "n_a"), ("edge_wb", "n_b")] {
+            locales.push(json!({"id": edge, "name": "小径", "kind": "transit", "minutes": 1.0, "from_node": "n_w", "to_node": to}));
+        }
+        data["stations"].as_array_mut().unwrap().push(
+            json!({"id": "st_wild", "locale": "wild", "name": "野外落脚点", "kind": "arrival", "node": "n_w"}),
+        );
+        let passages = data["passages"].as_array_mut().unwrap();
+        for (edge, place, node) in [("edge_wa", "loc_a", "n_a"), ("edge_wb", "loc_b", "n_b")] {
+            passages.push(json!({"id": format!("{edge}_w"), "a": edge, "b": "wild", "node_a": "n_w", "node_b": "n_w", "minutes": 0.0, "capabilities": ["通行"]}));
+            passages.push(json!({"id": format!("{edge}_p"), "a": edge, "b": place, "node_a": node, "node_b": node, "minutes": 0.0, "capabilities": ["通行"]}));
+        }
+    });
+    let mut w = common::world_with(common::topology(&json), 600.0, &[("lin", "林晚", "wild")]);
+    w.set_strangers(true);
+    let to: Vec<_> = w.exits("lin").unwrap().into_iter().map(|e| e.to).collect();
+    assert_eq!(to, ["loc_a", "loc_b"]);
+    act(
+        &mut w,
+        "lin",
+        "a",
+        json!({"intent":{"verb":"前往","locale":"loc_a"}}),
+    )
+    .unwrap();
+}
