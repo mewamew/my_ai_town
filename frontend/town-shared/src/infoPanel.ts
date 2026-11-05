@@ -256,6 +256,7 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     deps.map.setSelected(id)
     focus.show(id)
     possessBtn.disabled = !id
+    if (following) watchSelected()
     if (!id) {
       if (following) setFollowing(false)
       setCollapsed(true)
@@ -307,11 +308,16 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     followBtn.classList.toggle('on', following)
     followBtn.setAttribute('aria-pressed', String(following))
     lineLabel(followBtn, 'eye', following ? '跟随中' : '跟随')
-    if (on && selectedId) {
+    watchSelected()
+    if (on && selectedId && !deps.map.watch) {
       const pos = deps.map.getMemberPos(selectedId)
       if (pos) deps.map.panTo(pos[0], pos[1])
     }
     syncFocus()
+  }
+  /** 地图能逐帧跟时，镜头锁住选中的人（换了人跟着换）；玩家拖开地图就不再跟随 */
+  function watchSelected() {
+    deps.map.watch?.(following ? selectedId : null, () => setFollowing(false))
   }
   followBtn.onclick = () => setFollowing(!following)
   $('info-edit').onclick = () => deps.onEditResident()
@@ -371,8 +377,8 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     agent.render(m.resident_agent)
     plan.render(m.plan, m.body)
     syncFocus()
-    // 跟随：每次 roster 更新，村民在视野外（带边距）才平移
-    if (following) {
+    // 地图不会逐帧跟时：每次 roster 更新，村民在视野外（带边距）才平移
+    if (following && !deps.map.watch) {
       const pos = deps.map.getMemberPos(m.id)
       if (pos) deps.map.panTo(pos[0], pos[1])
     }

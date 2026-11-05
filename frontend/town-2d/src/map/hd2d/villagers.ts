@@ -530,6 +530,18 @@ export class Villagers {
     ]
   }
 
+  /** 立牌此刻走多快（地图单位 / 毫秒，按播放快慢折成真实时间）：镜头锁住跟随时按它往前补一截。
+   *  照时间轴上这一段算，不按每帧位移估，换位置偏移、进门出门那一下跳不会被当成飞快地走；
+   *  站着、操控中的人为零 */
+  velocity(id: string): [number, number] | undefined {
+    const v = this.all.get(id)
+    if (!v) return
+    const [a, b] = v.path
+    if (v.live || !b || b.t <= a.t || this.play < a.t || this.play >= b.t) return [0, 0]
+    const k = this.rate / (b.t - a.t)
+    return [(b.x - a.x) * k, (b.y - a.y) * k]
+  }
+
   /** 每帧画之前调用（now 是这一帧的时刻）：摆到播放时刻的位置，更新朝向，画好每人这一帧；
    *  有人走动时返回 true */
   step(now: number) {

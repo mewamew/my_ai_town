@@ -1812,6 +1812,10 @@ export class HdScene {
   villagerLag(id: string) {
     return this.villagers.lag(id)
   }
+  /** 立牌此刻的速度（地图单位 / 毫秒），见 Villagers.velocity */
+  villagerVelocity(id: string) {
+    return this.villagers.velocity(id)
+  }
 
   /** 选中的人（金边、脚下光斑）、指着的人（白边） */
   setPickedVillager(picked: string | null, hovered: string | null) {

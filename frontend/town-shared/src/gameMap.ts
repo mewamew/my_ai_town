@@ -112,6 +112,9 @@ export interface GameMap {
   setFrameHook?(hook: ((t: number) => boolean) | null): boolean
   /** 下一帧就画，不等节拍 */
   requestFrame?(): void
+  /** 「跟随中」：镜头每帧锁住这位村民，人始终在露出来那块的正中间，走动、拐弯、停下时平滑跟着；
+   *  null 停止。玩家拖动地图时停止跟随并调 onStop。没有实现时外壳退回人快出画面才挪过去 */
+  watch?(id: string | null, onStop?: () => void): void
   /** 本页发出的化身行走方向（世界方向）和此刻步速（米 / 秒）：地图照着它预先画自己的小人 */
   setAvatarMotion?(direction: [number, number], metresPerSecond: number): void
   /** 自己操控的人此刻画在哪（本地预测的米制位置，就是服务端马上要走到的地方）；不预测时为空 */

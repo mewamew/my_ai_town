@@ -48,6 +48,11 @@ import { el } from 'town-shared/svg'
 import type { DepthBlur, Quality } from 'town-shared/quality'
 // 地图装配：静态图层、人物/气泡、镜头各自拥有状态；公共观察接口保持不变。
 
+/** 跟随中一帧里人挪了这么远（地图单位）算瞬移（进门出门、换地点，立牌也是直接放过去）：镜头慢慢挪过去 */
+const WATCH_JUMP = 400
+/** 隔了这么久（毫秒）才又画一帧，不按这段间隔追：人站着时场景不重画，一起步就是很久以后的一帧 */
+const WATCH_STALE_MS = 250
+
 export interface TownMapOptions {
   atlas: Atlas
   topology: Topology
@@ -245,9 +250,107 @@ export class TownMap {
   /** 立体场景每次画之前调（镜头跟随）：返回这一帧挪了镜头。没有立体场景时返回 false，调用方自己逐帧跑 */
   private frameHook: ((t: number) => boolean) | null = null
   setFrameHook(hook: ((t: number) => boolean) | null): boolean {
-    this.frameHook = hook
-    if (this.hd) this.hd.beforeDraw = hook ?? undefined
+    if (hook !== this.frameHook) {
+      this.frameHook = hook
+      // 化身接手或交还镜头：跟随中的村民再接手时，先慢慢挪回他身上
+      if (this.watched) {
+        this.watched.recentre = true
+        this.watched.last = null
+      }
+      if (!hook) this.startWatchLoop()
+    }
     return !!this.hd
+  }
+  /** 立体场景每次画之前：控制化身时镜头归化身管，不然跟着「跟随中」的村民 */
+  private beforeFrame(t: number): boolean {
+    return this.frameHook ? this.frameHook(t) : this.followWatched(t)
+  }
+
+  /** 「跟随中」的村民（见 watch） */
+  private watched: {
+    id: string
+    onStop?: () => void
+    /** 上一帧人画在哪、是什么时刻 */
+    last: { t: number; p: [number, number] } | null
+    /** 下一帧先慢慢挪回正中间：刚开始跟、刚从整图放大回来、化身交还镜头以后 */
+    recentre: boolean
+  } | null = null
+  /** 没有立体场景（还在加载、退回了平面图）时，跟随自己逐帧跑 */
+  private watchLoop = 0
+  /** 化身给的缩放不动点（见 setZoomAnchor） */
+  private externalAnchor: (() => [number, number] | undefined) | null = null
+
+  /** 「跟随中」：镜头每帧锁住这位村民，人始终在露出来那块的正中间（见 followWatched）；null 停止。
+   *  玩家拖动地图时停止跟随并调 onStop */
+  watch(id: string | null, onStop?: () => void) {
+    if (!id) return this.stopWatching(false)
+    if (this.watched?.id === id) {
+      this.watched.onStop = onStop
+      return
+    }
+    this.watched = { id, onStop, last: null, recentre: true }
+    this.startWatchLoop()
+  }
+  private stopWatching(byUser: boolean) {
+    const w = this.watched
+    if (!w) return
+    this.watched = null
+    cancelAnimationFrame(this.watchLoop)
+    this.watchLoop = 0
+    if (byUser) w.onStop?.()
+  }
+  /** 跟随要动起来了：立体场景马上画一帧（每次画之前跟一帧）；没有立体场景时自己逐帧跑 */
+  private startWatchLoop() {
+    if (!this.watched) return
+    if (this.hd) return this.hd.requestDraw()
+    if (this.watchLoop) return
+    const loop = (t: number) => {
+      this.watchLoop = 0
+      if (!this.watched || this.hd || this.disposed) return
+      this.watchLoop = requestAnimationFrame(loop)
+      if (!this.frameHook && !document.hidden) this.followWatched(t)
+    }
+    this.watchLoop = requestAnimationFrame(loop)
+  }
+  /** 跟随中的一帧：镜头锁住这个人（见 MapCamera.follow 的 lock），对准身子中间。人一下子挪很远
+   *  （进门、出门）、刚开始跟时先慢慢挪回正中间，离得比一屏还远时直接切。返回这一帧挪了镜头 */
+  private followWatched(t: number): boolean {
+    const w = this.watched
+    if (!w) return false
+    const p = this.getDrawnPos(w.id)
+    if (!p) {
+      w.last = null
+      return false
+    }
+    const last = w.last
+    w.last = { t, p }
+    // 看全貌时不跟；放大回来以后先挪回人身上
+    if (this.camera.showingWhole) {
+      w.recentre = true
+      return false
+    }
+    const jumped = !!last && Math.hypot(p[0] - last.p[0], p[1] - last.p[1]) > WATCH_JUMP
+    const how = jumped || w.recentre ? 'centre' : 'lock'
+    w.recentre = false
+    // 隔了很久才又画（人站着时场景不重画、页面切走过）：这一帧不按间隔追，下一帧接着平滑地跟
+    const dt = !last || t - last.t > WATCH_STALE_MS ? 0 : Math.min(100, t - last.t)
+    return this.camera.follow(p[0], p[1], dt, how, {
+      rise: this.watchRise(),
+      velocity: this.hd?.villagerVelocity(w.id) ?? [0, 0],
+    })
+  }
+  /** 对准人脚下往上多高（立着量的地图单位）：立牌或头像标记高度的一半，人整个在画面正中 */
+  private watchRise() {
+    return (this.hd ? VILLAGER_HEIGHT : 108 * this.markerScale) / 2
+  }
+  /** 跟随中缩放的不动点：对准的那一点（人身子中间）此刻在屏幕上的位置；控制化身时不管 */
+  private watchAnchor(): [number, number] | undefined {
+    const w = this.watched
+    if (!w || this.frameHook) return
+    const p = this.getScreenPos(w.id),
+      m = this.svg.getScreenCTM()
+    if (!p || !m) return
+    return [p[0], p[1] - this.watchRise() * Math.abs(m.a)]
   }
   /** 下一帧就画（不等节拍）：镜头要开始挪了之类 */
   requestFrame() {
@@ -402,6 +505,9 @@ export class TownMap {
         if (this.hd) this.hd.setPitch(this.hd.pitch + dy * 0.2)
       }
     )
+    // 化身给的不动点优先；不然跟随中的村民就是缩放的不动点。拖动地图就不再跟随
+    this.camera.zoomAnchor = () => this.externalAnchor?.() ?? this.watchAnchor()
+    this.camera.onDragPan = () => this.stopWatching(true)
     // 控制化身时指针下附近都走不到就换成禁止的指针；每帧最多算一次
     let hover: { client: [number, number]; target: EventTarget | null } | null = null
     this.svg.addEventListener('pointermove', (e) => {
@@ -465,7 +571,8 @@ export class TownMap {
         }
         this.hd.onTilt = () => this.applyTilt()
         this.hd.onVillagersMoved = () => this.followVillagers()
-        this.hd.beforeDraw = this.frameHook ?? undefined
+        this.hd.beforeDraw = (t) => this.beforeFrame(t)
+        if (this.watched) this.hd.requestDraw()
         this.hd.setLiveMotion(this.liveMotion())
         this.hd.onNotice = (text) => this.onRenderNotice?.(text)
         this.hd.setPickedVillager(this.selectedId, this.hoveredId)
@@ -1056,6 +1163,7 @@ export class TownMap {
   }
   dispose() {
     this.disposed = true
+    cancelAnimationFrame(this.watchLoop)
     this.abort.abort()
     this.peek.stop()
     this.markReady()
@@ -1171,9 +1279,9 @@ export class TownMap {
   followTo(x: number, y: number, dt: number, how?: 'window' | 'centre' | 'snap') {
     return this.camera.follow(x, y, dt, how)
   }
-  /** 滚轮缩放的不动点：给了就围着它缩（化身跟随时围着化身），没有就围着鼠标 */
+  /** 缩放的不动点：给了就围着它缩（化身跟随时围着化身）；没给时跟随中的村民是不动点，再没有就围着鼠标 */
   setZoomAnchor(anchor: (() => [number, number] | undefined) | null) {
-    this.camera.zoomAnchor = anchor
+    this.externalAnchor = anchor
   }
   /** 地图被面板盖住的四边；立体场景晚一步建好时补上 */
   private viewInsets: { top: number; right: number; bottom: number; left: number } | undefined

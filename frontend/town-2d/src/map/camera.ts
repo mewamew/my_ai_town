@@ -25,6 +25,14 @@ const RECENTRE_MS = 450
 /** 人顶出取景框超过露出部分短边的这个比例（拖开地图后开始走、刚切回地图），不再贴着框追，
  *  改成慢起慢停地挪回中间，免得整个画面一下子甩过去。平常走路、跑步只顶出几十像素 */
 const GLIDE_FROM = 0.2
+/** 「跟随中」锁住一位村民时弹簧多久贴上去（毫秒）：人起步、拐弯、停下时镜头慢慢加减速，
+ *  不跟着立牌一顿一顿。另按人的速度往前补一截（见 LOCK_LEAD），一直走时人几乎就在正中间 */
+const LOCK_SMOOTH_MS = 200
+/** 按人的速度往前补多少：补满（1）一直走时分毫不差，但人一停镜头会冲过头再退回来；不补（0）镜头
+ *  一直落后一截。补八成：匀速走时落后约 0.2 × LOCK_SMOOTH_MS 走的路，停下时只冲过头几个像素 */
+const LOCK_LEAD = 0.8
+/** 人的速度在起步、拐弯、停下时按这个时长（毫秒）过渡，往前补的那截不一下跳过去 */
+const LOCK_VELOCITY_MS = 60
 /** 「界面动画：减少」或系统要求少动画时，缩放直接到位 */
 const reducedMotion = () =>
   document.body.classList.contains('reduce-ui-motion') ||
@@ -175,12 +183,17 @@ export class MapCamera {
     this.applyViewBox()
   }
 
-  /** 世界点放到露出来那块的中间时，视图中心该在哪 */
-  private centreFor(x: number, y: number): [number, number] {
+  /** 世界点放到露出来那块的中间时，视图中心该在哪；rise 是从那一点往上抬多少（视图单位） */
+  private centreFor(x: number, y: number, rise = 0): [number, number] {
     ;[x, y] = this.project([x, y])
     const [w, h] = this.viewSize()
     const [l, , r] = this.openArea()
-    return [x + (0.5 - (l + r) / 2) * w, y + (0.5 - this.anchorY()) * h]
+    return [x + (0.5 - (l + r) / 2) * w, y - rise + (0.5 - this.anchorY()) * h]
+  }
+
+  /** 点了「整图」在看全貌（跟随在这时不挪镜头） */
+  get showingWhole() {
+    return this.fitted
   }
 
   /** 世界点放在露出来那块的什么高度（占容器高的比例）：正中间；那块很矮时往下放，头顶留出 minAbove */
@@ -198,33 +211,64 @@ export class MapCamera {
   private glide: { elapsed: number } | null = null
   /** 跟着人走时镜头的速度（视图单位 / 毫秒），弹簧带着它起步、停下 */
   private followVelocity: [number, number] = [0, 0]
+  /** 锁住跟随时人的速度（视图单位 / 毫秒），起步、拐弯、停下时平滑过渡（见 LOCK_VELOCITY_MS） */
+  private lockVelocity: [number, number] = [0, 0]
 
   /**
-   * 化身跟随，每帧调一次（dt 是离上一帧的毫秒数），(x, y) 是人此刻画在哪：
-   * - window：人在取景框（见 FOLLOW_WINDOW）里镜头不动，顶出框才平滑地跟上，让人停在框边上；
+   * 镜头跟随，每帧调一次（dt 是离上一帧的毫秒数），(x, y) 是人此刻画在哪：
+   * - window：化身用。人在取景框（见 FOLLOW_WINDOW）里镜头不动，顶出框才平滑地跟上，让人停在框边上；
    *   顶出去太远（见 GLIDE_FROM）改成慢起慢停地挪回中间
-   * - centre：把人慢起慢停地挪回中间（按 C、点「回到化身」）
+   * - lock：「跟随中」的村民用。没有取景框，人一直在露出来那块的正中间：弹簧带着镜头追，再按人的速度
+   *   velocity（地图单位 / 毫秒）往前补一截，一直走时只差几个像素、停下时几乎不冲过头（见 LOCK_LEAD）；
+   *   离正中间太远（刚从整图放大）同样慢起慢停地挪回来，挪到了带着人的速度接着跟
+   * - centre：把人慢起慢停地挪回中间（按 C、点「回到化身」；跟随中刚开始跟、人进门出门）
    * - snap：直接切过去，进门出门。人离得比一屏还远时也直接切，不让整个画面飞过去
+   * rise 是对准人脚下往上多高（立着量的地图单位，和立牌一样）：对准身子中间，人整个在画面正中。
    * 返回这一帧挪了镜头（还在动），场景据此每帧都画
    */
-  follow(x: number, y: number, dt: number, how: 'window' | 'centre' | 'snap' = 'window'): boolean {
+  follow(
+    x: number,
+    y: number,
+    dt: number,
+    how: 'window' | 'lock' | 'centre' | 'snap' = 'window',
+    options: { rise?: number; velocity?: [number, number] } = {}
+  ): boolean {
+    const lock = how === 'lock'
+    if (options.velocity) {
+      // 开始跟、进门出门（centre）没有之前的速度可过渡，直接取这一刻的
+      const [vx, vy] = this.project(options.velocity)
+      const k = how === 'centre' ? 1 : 1 - Math.exp(-Math.max(0, dt) / LOCK_VELOCITY_MS)
+      this.lockVelocity = [
+        this.lockVelocity[0] + (vx - this.lockVelocity[0]) * k,
+        this.lockVelocity[1] + (vy - this.lockVelocity[1]) * k,
+      ]
+    }
     // 点了「整图」在看全貌：人一直在画面里，镜头不跟着挪（进门出门也不切），放大以后再跟
     if (this.fitted && how !== 'centre') {
       this.followVelocity = [0, 0]
       return false
     }
-    const want = this.centreFor(x, y)
+    // 立着的高度在视图里按纵深压缩的比例拉长（视图纵向是压扁的）
+    const want = this.centreFor(x, y, (options.rise ?? 0) / this.vScale)
     const [w, h] = this.viewSize()
     const [l, t, r, b] = this.openArea()
     const [cx, cy] = this.center
     const dx = want[0] - cx,
       dy = want[1] - cy
-    // 取景框的四边（视图单位）；上边不越过头顶要留出的那段
-    const ix = FOLLOW_WINDOW * (r - l) * w
-    const down = FOLLOW_WINDOW * (b - t) * h
-    const up = Math.max(0, Math.min(down, (this.anchorY() - t - this.minAbove()) * h))
-    const ex = dx > ix ? dx - ix : dx < -ix ? dx + ix : 0
-    const ey = dy > down ? dy - down : dy < -up ? dy + up : 0
+    let ex: number, ey: number
+    if (lock) {
+      // 锁住时镜头本来就该落后人一截（见 LOCK_LEAD）：多出来的才算离开了正中间
+      const lag = (1 - LOCK_LEAD) * LOCK_SMOOTH_MS
+      ex = dx - this.lockVelocity[0] * lag
+      ey = dy - this.lockVelocity[1] * lag
+    } else {
+      // 取景框的四边（视图单位）；上边不越过头顶要留出的那段
+      const ix = FOLLOW_WINDOW * (r - l) * w
+      const down = FOLLOW_WINDOW * (b - t) * h
+      const up = Math.max(0, Math.min(down, (this.anchorY() - t - this.minAbove()) * h))
+      ex = dx > ix ? dx - ix : dx < -ix ? dx + ix : 0
+      ey = dy > down ? dy - down : dy < -up ? dy + up : 0
+    }
     // 顶出去多远按屏幕像素比：立体场景里纵深在屏幕上是压扁的
     const box = this.container.getBoundingClientRect()
     const W = box.width || 1,
@@ -251,18 +295,33 @@ export class MapCamera {
       const before = 1 - ease(Math.min(1, this.glide.elapsed / RECENTRE_MS))
       this.glide.elapsed += Math.max(0, dt)
       const after = 1 - ease(Math.min(1, this.glide.elapsed / RECENTRE_MS))
-      if (after <= 0) this.glide = null
+      if (after <= 0) {
+        this.glide = null
+        // 挪到正中间时人可能还在走：镜头带着人的速度接着跟，交接那一下不顿
+        if (lock) this.followVelocity = [...this.lockVelocity]
+      }
       const keep = before > 0 ? after / before : 0
       next = [want[0] - dx * keep, want[1] - dy * keep]
     } else {
-      // 往「人刚好在框边上」的位置追：弹簧带着速度，起步慢慢加速，人停下后慢慢停住
+      // window：往「人刚好在框边上」的位置追；lock：往人前面一点追，一直走时正好落在人身上。
+      // 弹簧带着速度，起步慢慢加速，人停下后慢慢停住
+      const lead = LOCK_LEAD * LOCK_SMOOTH_MS
+      const [tx, ty] = lock
+        ? [want[0] + this.lockVelocity[0] * lead, want[1] + this.lockVelocity[1] * lead]
+        : [cx + ex, cy + ey]
+      const smooth = lock ? LOCK_SMOOTH_MS : FOLLOW_SMOOTH_MS
       const t = Math.max(0, dt)
-      const [nx, vx] = smoothDamp(cx, cx + ex, this.followVelocity[0], FOLLOW_SMOOTH_MS, t)
-      const [ny, vy] = smoothDamp(cy, cy + ey, this.followVelocity[1], FOLLOW_SMOOTH_MS, t)
-      // 换成屏幕像素看：这一帧挪不到四分之一像素、速度也几乎为零就停住，不再每帧重画
+      // 锁住时允许越过目标：人一停，往前补的那截收回来，镜头顺势慢下来，不在原地一下刹住
+      const [nx, vx] = smoothDamp(cx, tx, this.followVelocity[0], smooth, t, lock)
+      const [ny, vy] = smoothDamp(cy, ty, this.followVelocity[1], smooth, t, lock)
+      // 换成屏幕像素看：这一帧挪不到四分之一像素、速度也几乎为零就停住，不再每帧重画。
+      // 锁住时人还在走就不停，起步那几帧镜头还没跟上速度
       const moved = Math.hypot(((nx - cx) / w) * W, ((ny - cy) / h) * H)
       const speed = Math.hypot((vx / w) * W, (vy / h) * H) * 1000
-      if (moved < 0.25 && speed < 4) {
+      const walking = lock
+        ? Math.hypot((this.lockVelocity[0] / w) * W, (this.lockVelocity[1] / h) * H) * 1000
+        : 0
+      if (moved < 0.25 && speed < 4 && walking < 4) {
         this.followVelocity = [0, 0]
         return false
       }
@@ -275,8 +334,22 @@ export class MapCamera {
     return true
   }
 
-  /** 滚轮缩放的不动点（屏幕坐标）：化身跟随时围着化身缩，没有时围着鼠标 */
+  /** 缩放的不动点（屏幕坐标）：跟随时围着跟着的人缩，人不被缩到一边；没有时围着鼠标、手指或画面中心。
+   *  滚轮、触控板和手指捏合、缩放钮、双击都按它；人还在走，缩放动画每帧重新取 */
   zoomAnchor: (() => [number, number] | undefined) | null = null
+  /** 玩家用手拖着平移了地图（过了点击容差）：跟随就此停下 */
+  onDragPan: (() => void) | null = null
+
+  /** 缩放围着哪一点：跟随时是人，不然是给的点 */
+  private anchorOr(cx: number, cy: number): [number, number] {
+    return this.zoomAnchor?.() ?? [cx, cy]
+  }
+
+  /** 缩放动画这一帧的不动点：跟随时取人此刻在屏幕上的位置，不然用开始时定下的 */
+  private anchorNow(fixed: [number, number, number, number]): [number, number, number, number] {
+    const a = this.zoomAnchor?.()
+    return a ? [...this.clientToView(a[0], a[1]), a[0], a[1]] : fixed
+  }
   /** 双击（手指双点）放大两档；控制化身时关掉，连点两下是在走路 */
   doubleClickZoom = true
 
@@ -464,7 +537,7 @@ export class MapCamera {
     const frame = (t: number) => {
       const scale = from * (target / from) ** t
       if ('anchor' in to) {
-        this.scaleAround(scale, ...to.anchor)
+        this.scaleAround(scale, ...this.anchorNow(to.anchor))
         return
       }
       this.scale = scale
@@ -501,8 +574,7 @@ export class MapCamera {
    * 画面每帧按指数追向目标，连着滚只是把目标往前推，动画不重新起步，停在哪就是哪。
    */
   private wheelZoom(notches: number, cx: number, cy: number) {
-    const anchored = this.zoomAnchor?.()
-    if (anchored) [cx, cy] = anchored
+    ;[cx, cy] = this.anchorOr(cx, cy)
     const levels = this.levels()
     const base = this.wheel?.target ?? this.zoomTarget ?? this.scale
     const target = Math.max(
@@ -530,15 +602,21 @@ export class MapCamera {
       const done = Math.abs(gap) < 0.002
       const k = 1 - Math.exp(-Math.max(0, now - w.last) / WHEEL_EASE_MS)
       w.last = now
-      this.scaleAround(done ? w.target : this.scale * Math.exp(gap * k), ...w.anchor)
+      this.scaleAround(
+        done ? w.target : this.scale * Math.exp(gap * k),
+        ...this.anchorNow(w.anchor)
+      )
       if (done) this.stopZoomAnimation()
       else this.zoomAnimation = requestAnimationFrame(tick)
     }
     this.zoomAnimation = requestAnimationFrame(tick)
   }
 
-  /** 换 steps 档，并把世界点 (wx, wy) 移到画面中心（双击） */
+  /** 换 steps 档，并把世界点 (wx, wy) 移到画面中心（双击）。跟随时不把点的地方拉到中间
+   *  （马上又会被拉回人身上），只围着人放大 */
   private zoomCenter(steps: number, wx: number, wy: number) {
+    const anchored = this.zoomAnchor?.()
+    if (anchored) return this.zoomAt(steps, ...anchored)
     this.animateZoom(this.stepped(steps), { center: [wx, wy] })
   }
 
@@ -677,12 +755,13 @@ export class MapCamera {
           if (notches) this.wheelZoom(notches, ev.clientX, ev.clientY)
           return
         }
-        begin(ev.clientX, ev.clientY)
+        const [ax, ay] = this.anchorOr(ev.clientX, ev.clientY)
+        begin(ax, ay)
         // 行、页换成像素；捏合（ctrlKey）每次的数值小，给得灵敏些；一次最多变 1.6 倍，猛滑也不跳太远
         const pixels =
           ev.deltaY * (ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? this.size()[1] || 800 : 1)
         const amount = Math.max(-0.5, Math.min(0.5, pixels * (ev.ctrlKey ? 0.01 : 0.002)))
-        zoomTo(this.scale * Math.exp(-amount), ev.clientX, ev.clientY)
+        zoomTo(this.scale * Math.exp(-amount), ax, ay)
         window.clearTimeout(settle)
         settle = window.setTimeout(finish, WHEEL_SETTLE_MS)
       },
@@ -695,7 +774,7 @@ export class MapCamera {
         ev.preventDefault()
         const e = ev as GestureEvent
         pinching = true
-        begin(e.clientX, e.clientY)
+        begin(...this.anchorOr(e.clientX, e.clientY))
         pinch0 = this.scale
       },
       { signal }
@@ -706,8 +785,9 @@ export class MapCamera {
         ev.preventDefault()
         const e = ev as GestureEvent
         if (!pinching || !e.scale) return
-        begin(e.clientX, e.clientY)
-        zoomTo(pinch0 * e.scale, e.clientX, e.clientY)
+        const [ax, ay] = this.anchorOr(e.clientX, e.clientY)
+        begin(ax, ay)
+        zoomTo(pinch0 * e.scale, ax, ay)
       },
       { signal }
     )
@@ -781,6 +861,9 @@ export class MapCamera {
       mode: 'pinch' | 'tilt' | null
     } | null = null
     let lastTap: { t: number; x: number; y: number } | null = null
+    /** 这次按下以后已经告诉外面「拖动了地图」（见 onDragPan）；捏合松开一指后，剩下那根从 panFrom 起算容差 */
+    let panned = false
+    let panFrom: [number, number] | null = null
     const twoPoints = () => [...pointers.values()].slice(0, 2)
     const startPair = () => {
       const [a, b] = twoPoints()
@@ -828,6 +911,8 @@ export class MapCamera {
         }
         if (pointers.size > 2) return
         drag = [ev.clientX, ev.clientY]
+        panned = false
+        panFrom = null
         down = {
           pos: [ev.clientX, ev.clientY],
           slop: touch ? 10 : 5,
@@ -866,7 +951,11 @@ export class MapCamera {
           }
           pair.mid = [mx, my]
           if (pair.mode === 'pinch') {
-            this.scaleAround(pair.scale0 * (d / pair.d0), pair.world[0], pair.world[1], mx, my)
+            // 跟随时围着人缩（人还在走，每次按他此刻的位置），不然两指中点下的地方不动
+            const anchored = this.zoomAnchor?.()
+            const scale = pair.scale0 * (d / pair.d0)
+            if (anchored) this.scaleAround(scale, ...this.clientToView(...anchored), ...anchored)
+            else this.scaleAround(scale, pair.world[0], pair.world[1], mx, my)
           } else {
             // 往下拖更接近正俯视，与右键拖动一致
             this.onTilt(my - pair.y0)
@@ -879,6 +968,14 @@ export class MapCamera {
           const dist = Math.hypot(ev.clientX - down.pos[0], ev.clientY - down.pos[1])
           if (dist <= down.dead) return
           if (dist > down.slop) down.moved = true
+        }
+        // 真拖起来了（不是点击时手抖）才算：跟随停下，不然镜头每帧又被拉回人身上
+        const away = down
+          ? down.moved
+          : !!panFrom && Math.hypot(ev.clientX - panFrom[0], ev.clientY - panFrom[1]) > 10
+        if (!panned && away) {
+          panned = true
+          this.onDragPan?.()
         }
         const m = this.svg.getScreenCTM() // a / d 即屏幕像素 ↔ 世界单位的比例
         if (!m) return
@@ -902,6 +999,7 @@ export class MapCamera {
           // 剩下的那根手指接着平移，不算点击
           const [rest] = pointers.values()
           drag = rest ? [rest.x, rest.y] : null
+          panFrom = rest ? [rest.x, rest.y] : null
           down = null
         }
         if (!pointers.size) mapEl.classList.remove('drag')
@@ -958,14 +1056,15 @@ function wheelNotches(ev: WheelEvent): number | undefined {
 
 /**
  * 临界阻尼的弹簧（同 Unity 的 SmoothDamp）：从 current 追向 target，velocity 是带着的速度（每毫秒），
- * smooth 是大约多久追上（毫秒）。返回新的位置和速度；不会冲过 target
+ * smooth 是大约多久追上（毫秒）。返回新的位置和速度；overshoot 为 false 时不会冲过 target
  */
 function smoothDamp(
   current: number,
   target: number,
   velocity: number,
   smooth: number,
-  dt: number
+  dt: number,
+  overshoot = false
 ): [number, number] {
   if (dt <= 0) return [current, velocity]
   const omega = 2 / smooth
@@ -976,7 +1075,7 @@ function smoothDamp(
   let v = (velocity - omega * temp) * exp
   let out = target + (change + temp) * exp
   // 冲过头就停在 target（target 就是当前位置时只是带着速度滑一段，不算冲过头）
-  if (change !== 0 && target - current > 0 === out > target) {
+  if (!overshoot && change !== 0 && target - current > 0 === out > target) {
     out = target
     v = 0
   }
