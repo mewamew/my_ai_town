@@ -17,8 +17,9 @@ export const maxPlacesForKind = (kind, activeLimits = limits) =>
   activeLimits.max_by_kind[kind] ?? activeLimits.max_same_kind
 export const resources = ['normal-life', 'no-food', 'no-water', 'no-rest', 'poisoned-food']
 // 地点之间怎么连：town 是小镇街道（默认，旧参数不带这一项）；wild 是野外小径，荒岛、野地用，
-// 路和落脚点的名字里不出现「小镇」「街道」，村民走在路上看到的也是这些名字。
-export const settlements = ['town', 'wild']
+// 路和落脚点的名字里不出现「小镇」「街道」，村民走在路上看到的也是这些名字；ring 是环岛：
+// 野外小径围成一圈，户外地点沿海岸排开、岛中间留空（ring.mjs），只排户外地点。
+export const settlements = ['town', 'wild', 'ring']
 export const MAX_SEED = 4294967295
 const environmentPresets = STYLE_PRESETS.map((preset) => preset.id)
 const sizes = ['small', 'medium', 'large']
@@ -65,7 +66,7 @@ export function validateSpec(value, templates) {
     throw Error('不支持的生成版本')
   if (!resources.includes(spec.resources)) throw Error('不支持的资源组合')
   if (spec.settlement !== undefined && !settlements.includes(spec.settlement))
-    throw Error('地点之间的连法只能是街道或野外小径')
+    throw Error('地点之间的连法只能是街道、野外小径或环岛小径')
   if (!Array.isArray(spec.places) || spec.places.length > templates.length * sizes.length)
     throw Error('地点列表无效')
   const seen = new Set()
@@ -103,6 +104,11 @@ export function validateSpec(value, templates) {
     throw Error(
       `需要 ${activeLimits.min_places}–${activeLimits.max_places} 处活动地点，住宅可为 0，最多 ${activeLimits.max_homes} 处`
     )
+  if (spec.settlement === 'ring') {
+    if (count < 3) throw Error('环岛小径至少要三处地点')
+    if (spec.places.some((p) => !templates.find((t) => t.kind === p.kind)?.outdoor))
+      throw Error('环岛小径只排户外地点（活动区域、广场、公园这类）')
+  }
   spec.constraints ??= []
   if (!Array.isArray(spec.constraints) || spec.constraints.length > limits.max_constraints)
     throw Error('空间要求最多 12 项')

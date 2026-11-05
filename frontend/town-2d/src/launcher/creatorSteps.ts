@@ -37,7 +37,7 @@ function stepSummary(c: CreatorContext, step: CreatorStep) {
   const chosen = (id: string) => c.select(id).selectedOptions[0]?.text ?? ''
   if (step === 'basics') return c.input('town-name').value
   if (step === 'environment')
-    return `${chosen('town-style')} · 树丛${chosen('town-vegetation')} · ${chosen('town-resources')}${c.select('town-settlement').value === 'wild' ? ' · 野外小径' : ''}`
+    return `${chosen('town-style')} · 树丛${chosen('town-vegetation')} · ${chosen('town-resources')}${c.select('town-settlement').value === 'town' ? '' : ` · ${chosen('town-settlement')}`}`
   const count = (c.picker?.selection() ?? []).reduce((n, p) => n + p.count, 0)
   return step === 'places' ? `${count} 处地点` : ''
 }

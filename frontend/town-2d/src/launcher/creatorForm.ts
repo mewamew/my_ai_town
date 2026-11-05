@@ -36,7 +36,9 @@ export function spec(c: CreatorContext): Spec {
     resources: c.select('town-resources').value,
     terrain_source: 'auto',
     // 街道是默认值，不写进参数：旧参数和新参数生成同一张图
-    ...(c.select('town-settlement').value === 'wild' ? { settlement: 'wild' as const } : {}),
+    ...(c.select('town-settlement').value !== 'town'
+      ? { settlement: c.select('town-settlement').value as 'wild' | 'ring' }
+      : {}),
     places,
     ...(Object.keys(names).length ? { names } : {}),
     constraints: c.languageMode

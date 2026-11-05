@@ -25,8 +25,8 @@ export type Spec = {
   constraints: Constraint[]
   resources: string
   terrain_source?: string
-  /** 地点之间怎么连：不写是小镇街道；wild 是野外小径（荒岛、野地） */
-  settlement?: 'town' | 'wild'
+  /** 地点之间怎么连：不写是小镇街道；wild 是野外小径（荒岛、野地）；ring 是环岛小径（户外地点沿海岸一圈） */
+  settlement?: 'town' | 'wild' | 'ring'
 }
 export type EditableSpec = Omit<Spec, 'places'> & { places: EditableSpecPlace[] }
 export type Constraint = {

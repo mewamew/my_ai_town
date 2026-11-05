@@ -60,7 +60,9 @@ export interface MapDocument {
   assets?: AssetManifest
   views?: { available: string[]; default: string }
   /** 生成的地图带着建镇参数；environment.preset 决定 2D 地图的风格，settlement 为 wild 时路边不立路灯 */
-  generation?: { spec?: { environment?: { preset?: string }; settlement?: 'town' | 'wild' } }
+  generation?: {
+    spec?: { environment?: { preset?: string }; settlement?: 'town' | 'wild' | 'ring' }
+  }
 
   schema_version: number
   id: string

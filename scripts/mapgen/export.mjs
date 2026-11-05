@@ -73,6 +73,7 @@ const ROAD_NAMES = {
   town: { roads: '小镇街道', street: '街道路段', access: '地点入口通道', arrival: '街道落脚点' },
   wild: { roads: '野外', street: '小径', access: '岔路', arrival: '野外落脚点' },
 }
+ROAD_NAMES.ring = ROAD_NAMES.wild
 
 export function exportDocument(plan, graph, library, contours, definitions) {
   const standalone = plan.places.length === 1
@@ -138,7 +139,7 @@ export function exportDocument(plan, graph, library, contours, definitions) {
     station('road_arrival', 'roads', names.arrival, entry.id, entry.x, entry.y, 'town_outdoor')
   // 新来的人落在哪：小镇落在街道上；单地点和野外落在第一个地点里（荒岛上醒来就在海滩，不在小径上）
   topology.entry =
-    standalone || plan.spec.settlement === 'wild'
+    standalone || ['wild', 'ring'].includes(plan.spec.settlement)
       ? { locale: plan.places[0].id, station: `at_${plan.places[0].id}` }
       : { locale: 'roads', station: 'road_arrival' }
   for (const p of plan.places) {

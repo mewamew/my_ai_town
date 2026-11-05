@@ -98,12 +98,13 @@ export const creatorTemplate = `
             </section>
             <section class="creator-setting-block" aria-label="地点之间">
               <h3>地点之间</h3>
-              <select id="town-settlement" hidden><option value="town" selected>街道相连</option><option value="wild">野外小径</option></select>
+              <select id="town-settlement" hidden><option value="town" selected>街道相连</option><option value="wild">野外小径</option><option value="ring">环岛小径</option></select>
               <div class="creator-choice-cards" data-choice-for="town-settlement">
                 <button type="button" data-value="town" aria-pressed="true" title="小镇：地点之间是街道"><span aria-hidden="true">⌂</span>街道相连</button>
                 <button type="button" data-value="wild" aria-pressed="false" title="荒岛、野地：地点之间是踩出来的小路"><span aria-hidden="true">⋯</span>野外小径</button>
+                <button type="button" data-value="ring" aria-pressed="false" title="大的荒岛：户外地点沿海岸排一圈，一条小路绕岛，岛中间是林地"><span aria-hidden="true">◯</span>环岛小径</button>
               </div>
-              <p class="creator-hint">按选的地点生成道路、建筑和周边环境；港口与海塔会安排在岸边。荒岛、野地选「野外小径」，路上不会出现「小镇」「街道」的字样。</p>
+              <p class="creator-hint">按选的地点生成道路、建筑和周边环境；港口与海塔会安排在岸边。荒岛、野地选「野外小径」，路上不会出现「小镇」「街道」的字样；「环岛小径」把户外地点沿海岸排成一圈，地点越多岛越大，只能选户外地点。</p>
             </section>
           </div>
         </section>

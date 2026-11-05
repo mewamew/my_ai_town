@@ -9,6 +9,7 @@ import { contour, placeProps } from './layout.mjs'
 import { measureConstraints } from './constraints.mjs'
 import { buildGraph, distances } from './graph.mjs'
 import { addStreetShortcuts } from './street-shortcuts.mjs'
+import { ringLayout } from './ring.mjs'
 import { connectOuterStreetEnds } from './outer-street-loops.mjs'
 import { auditStreetVisualQuality } from './street-finish.mjs'
 import { resourceReport, exportDocument } from './export.mjs'
@@ -33,6 +34,9 @@ export function generate(input, library, contours, definitions, options = {}) {
     p.y = Math.ceil(p.h / (2 * cell)) * cell + LAYOUT.standalone_margin
     // An isolated place has an internal arrival point, not an outside doorway.
     p.door = [p.x, p.y]
+  } else if (spec.settlement === 'ring') {
+    options.onStage?.('districts')
+    ringLayout(plan)
   } else {
     options.onStage?.('districts')
     if (!fitOriginalTopology(plan, library, definitions)) {
@@ -83,7 +87,9 @@ export function generate(input, library, contours, definitions, options = {}) {
   }
   // 普通布局补最多两条捷径修正过长的绕行；按建筑足迹放大的路网已经成环，
   // 落位后再补捷径会从院子里穿出新路。
-  if (!plan.preserveOriginalTopology) graph = addStreetShortcuts(plan, graph)
+  // 环岛只留那一圈小径，不从岛中间抄近路：绕到对面就得沿着海岸走
+  if (!plan.preserveOriginalTopology && spec.settlement !== 'ring')
+    graph = addStreetShortcuts(plan, graph)
   // 最终几何由 Rust 的 town-map validate 统一校验；这里只导出。
   const reachable = distances(graph, `arrival_${plan.places[0].id}`)
   const unreachablePlaces = plan.places.filter((p) => !reachable.has(`arrival_${p.id}`))
