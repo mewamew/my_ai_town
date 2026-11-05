@@ -16,6 +16,9 @@ export const limits = {
 export const maxPlacesForKind = (kind, activeLimits = limits) =>
   activeLimits.max_by_kind[kind] ?? activeLimits.max_same_kind
 export const resources = ['normal-life', 'no-food', 'no-water', 'no-rest', 'poisoned-food']
+// 地点之间怎么连：town 是小镇街道（默认，旧参数不带这一项）；wild 是野外小径，荒岛、野地用，
+// 路和落脚点的名字里不出现「小镇」「街道」，村民走在路上看到的也是这些名字。
+export const settlements = ['town', 'wild']
 export const MAX_SEED = 4294967295
 const environmentPresets = STYLE_PRESETS.map((preset) => preset.id)
 const sizes = ['small', 'medium', 'large']
@@ -34,6 +37,7 @@ export function validateSpec(value, templates) {
     'constraints',
     'resources',
     'terrain_source',
+    'settlement',
   ]
   if (Object.keys(value).some((k) => !allowed.includes(k))) throw Error('地图要求包含不支持的字段')
   const spec = structuredClone(value)
@@ -60,6 +64,8 @@ export function validateSpec(value, templates) {
   } else if (spec.schema_version !== undefined || spec.style_id !== 'svg-town-v1')
     throw Error('不支持的生成版本')
   if (!resources.includes(spec.resources)) throw Error('不支持的资源组合')
+  if (spec.settlement !== undefined && !settlements.includes(spec.settlement))
+    throw Error('地点之间的连法只能是街道或野外小径')
   if (!Array.isArray(spec.places) || spec.places.length > templates.length * sizes.length)
     throw Error('地点列表无效')
   const seen = new Set()

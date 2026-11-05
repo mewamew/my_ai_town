@@ -12,7 +12,14 @@ export type InstantEffect =
   | { kind: 'harm'; amount: number; wound: string }
   | { kind: 'give_item'; item: Definition; count: number }
   | { kind: 'place_prop'; prop: Definition }
-  | { kind: 'chance'; percent: number; effects: InstantEffect[]; miss?: string }
+  | {
+      kind: 'chance'
+      percent: number
+      effects: InstantEffect[]
+      miss?: string
+      /** 随身带着这样东西时按更高的概率掷 */
+      boost?: { item: string; name: string; percent: number }
+    }
   | {
       kind: 'schedule'
       key: string

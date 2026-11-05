@@ -3,6 +3,7 @@ pub(crate) mod catalog;
 mod commands;
 mod description;
 mod making;
+pub use making::MissingMaterial;
 mod state;
 pub(crate) mod views;
 use crate::error::{KernelError, Result};
@@ -159,12 +160,15 @@ pub enum InstantEffect {
     PlaceProp {
         prop: Box<Definition>,
     },
-    /// 按百分比概率发生的一组效果；没发生时回执写 `miss`。
+    /// 按百分比概率发生的一组效果；没发生时回执写 `miss`。`boost` 是带着某样工具时更高的概率
+    /// （带着木矛摸鱼更容易摸到）。
     Chance {
         percent: u32,
         effects: Vec<InstantEffect>,
         #[serde(default)]
         miss: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        boost: Option<ChanceBoost>,
     },
     /// 过一段时间发生的世界事件：在场村民都会得知，可带一件限时出现的道具。
     /// 同一 `key` 还没发生时不重复安排。
@@ -179,6 +183,15 @@ pub enum InstantEffect {
     Depart {
         text: String,
     },
+}
+/// 带着某样东西时的概率：随身带着 `item`（物品定义编号，不含版本）时按 `percent` 掷，比基础概率高。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChanceBoost {
+    pub item: String,
+    /// 给村民和玩家看的物品名。
+    pub name: String,
+    pub percent: u32,
 }
 /// 定时事件带来的道具：放在 `locale`（默认是安排事件的地点），过 `lasts_minutes` 撤走并告知 `leave_text`。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -518,6 +531,7 @@ impl InstantEffect {
                 percent,
                 effects,
                 miss,
+                boost,
             } => {
                 ensure!(
                     !in_chance
@@ -526,6 +540,18 @@ impl InstantEffect {
                         && miss.chars().count() <= 200,
                     KernelError::props("概率须为 1–99%，包含 1–4 项效果，不能嵌套")
                 );
+                if let Some(b) = boost {
+                    ensure!(
+                        identifier(&b.item, true)
+                            && !b.item.starts_with("portion:")
+                            && !b.name.trim().is_empty()
+                            && b.name.chars().count() <= 40
+                            && (percent + 1..=99).contains(&b.percent),
+                        KernelError::props(
+                            "带工具时的概率须比基础概率高、不超过 99%，工具名 1–40 字"
+                        )
+                    );
+                }
                 for e in effects {
                     e.validate(depth, true)?;
                 }

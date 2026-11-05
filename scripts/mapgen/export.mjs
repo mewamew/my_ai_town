@@ -68,11 +68,18 @@ export function resourceReport(plan, graph) {
   return report
 }
 
+/** 路和落脚点的名字：野外小径用于荒岛、野地，不带「小镇」「街道」 */
+const ROAD_NAMES = {
+  town: { roads: '小镇街道', street: '街道路段', access: '地点入口通道', arrival: '街道落脚点' },
+  wild: { roads: '野外', street: '小径', access: '岔路', arrival: '野外落脚点' },
+}
+
 export function exportDocument(plan, graph, library, contours, definitions) {
   const standalone = plan.places.length === 1
+  const names = ROAD_NAMES[plan.spec.settlement ?? 'town']
   const topology = {
     schema_version: 1,
-    locales: standalone ? [] : [{ id: 'roads', name: '小镇街道', kind: 'dwell' }],
+    locales: standalone ? [] : [{ id: 'roads', name: names.roads, kind: 'dwell' }],
     passages: [],
     stations: [],
     places: [],
@@ -91,7 +98,7 @@ export function exportDocument(plan, graph, library, contours, definitions) {
   for (const e of graph.edges) {
     topology.locales.push({
       id: e.id,
-      name: e.road_class === 'access' ? '地点入口通道' : '街道路段',
+      name: e.road_class === 'access' ? names.access : names.street,
       kind: 'transit',
       from_node: e.from_node,
       to_node: e.to_node,
@@ -128,7 +135,7 @@ export function exportDocument(plan, graph, library, contours, definitions) {
             ) || a.id.localeCompare(b.id)
         )[0]
   if (!standalone)
-    station('road_arrival', 'roads', '街道落脚点', entry.id, entry.x, entry.y, 'town_outdoor')
+    station('road_arrival', 'roads', names.arrival, entry.id, entry.x, entry.y, 'town_outdoor')
   topology.entry = standalone
     ? { locale: plan.places[0].id, station: `at_${plan.places[0].id}` }
     : { locale: 'roads', station: 'road_arrival' }
@@ -177,7 +184,7 @@ export function exportDocument(plan, graph, library, contours, definitions) {
   if (!standalone)
     layout.regions.unshift({
       id: 'roads',
-      name: '小镇街道',
+      name: names.roads,
       kind: 'road',
       ...roadCells(
         graph.edges,

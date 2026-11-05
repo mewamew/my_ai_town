@@ -377,7 +377,7 @@ impl World {
         let target = recipient.unwrap_or_else(|| id.to_string());
         let was = self.actors[&target].needs.abilities();
         let key = format!("{}/{}@{}", spot.prop, action.id, self.minutes.to_bits());
-        let (effects, misses) = self.roll_effects(&action.on_complete);
+        let (effects, misses) = self.roll_effects(id, &action.on_complete);
         self.check_made_items(id, &effects, &key)?;
         // 以上检查都通过才改世界；产出在消耗之前，放不下道具时什么都没用掉。
         let mut changes = self.make_things(id, &effects, &key)?;

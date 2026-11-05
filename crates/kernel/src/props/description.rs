@@ -96,7 +96,10 @@ fn instant_text(e: &InstantEffect, s: PhysiologySwitches) -> Option<String> {
         }
         InstantEffect::PlaceProp { prop } => format!("完成时在这里建成「{}」", prop.name),
         InstantEffect::Chance {
-            percent, effects, ..
+            percent,
+            effects,
+            boost,
+            ..
         } => {
             let inner: Vec<_> = effects
                 .iter()
@@ -106,7 +109,10 @@ fn instant_text(e: &InstantEffect, s: PhysiologySwitches) -> Option<String> {
             if inner.is_empty() {
                 return None;
             }
-            format!("完成时有 {percent}% 可能：{}", inner.join("，"))
+            let with = boost.as_ref().map_or(String::new(), |b| {
+                format!("（随身带着{}时 {}%）", b.name, b.percent)
+            });
+            format!("完成时有 {percent}% 可能{with}：{}", inner.join("，"))
         }
         // 后续会发生什么由世界决定；只说会有后续，不提前剧透。
         InstantEffect::Schedule { .. } => "完成后过一段时间可能会有动静".into(),

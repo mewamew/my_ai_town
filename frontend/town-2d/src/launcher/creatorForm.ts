@@ -35,6 +35,8 @@ export function spec(c: CreatorContext): Spec {
     },
     resources: c.select('town-resources').value,
     terrain_source: 'auto',
+    // 街道是默认值，不写进参数：旧参数和新参数生成同一张图
+    ...(c.select('town-settlement').value === 'wild' ? { settlement: 'wild' as const } : {}),
     places,
     ...(Object.keys(names).length ? { names } : {}),
     constraints: c.languageMode
@@ -111,6 +113,7 @@ export function fill(c: CreatorContext, s: EditableSpec) {
   if (!name.dataset.edited) name.value = s.name
   c.input('town-seed').value = String(s.seed)
   c.select('town-resources').value = s.resources
+  c.select('town-settlement').value = s.settlement ?? 'town'
   c.picker?.set(s.places)
   c.parsedConstraints = s.constraints
   c.parsedNames = s.names ?? {}

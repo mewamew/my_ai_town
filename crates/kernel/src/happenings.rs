@@ -83,9 +83,11 @@ impl Happenings {
 }
 
 impl World {
-    /// 概率效果先掷定，展开成实际发生的效果；没发生的写进 misses。
+    /// 概率效果先掷定，展开成实际发生的效果；没发生的写进 misses。`actor` 随身带着概率写明的工具时
+    /// 按带工具的概率掷。
     pub(crate) fn roll_effects(
         &mut self,
+        actor: &str,
         effects: &[InstantEffect],
     ) -> (Vec<InstantEffect>, Vec<String>) {
         let mut happened = Vec::new();
@@ -96,8 +98,13 @@ impl World {
                     percent,
                     effects,
                     miss,
+                    boost,
                 } => {
-                    if self.happenings.roll(*percent) {
+                    let percent = match boost {
+                        Some(b) if !self.carried_of(actor, &b.item).is_empty() => b.percent,
+                        _ => *percent,
+                    };
+                    if self.happenings.roll(percent) {
                         happened.extend(effects.iter().cloned());
                     } else {
                         misses.push(if miss.trim().is_empty() {

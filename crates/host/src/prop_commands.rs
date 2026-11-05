@@ -2,9 +2,10 @@
 //! 世界标识与就绪门槛在 runtime 统一检查，这里只做各自的事务。
 use crate::runtime::{Outcome, Runtime};
 use host::{props::CORE_PREFIX, HostError};
-use kernel::props::{Definition, Instance, Placement};
+use kernel::props::{Definition, Instance, MissingMaterial, Placement};
 use protocol::{ContentCommand, PlaceNear, PlaceRef, PropPreview, PropsCatalog, ServerMsg};
 use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl Runtime {
     pub(crate) fn props_message(&self) -> ServerMsg {
@@ -41,8 +42,18 @@ impl Runtime {
 
     /// 道具命令的统一回执：失败时带说明文字；成功后全员刷新道具列表。
     fn prop_reply(&self, request_id: String, result: Result<PropPreview, String>) -> Outcome {
+        self.prop_reply_saying(request_id, result, "操作完成".into())
+    }
+
+    /// 成功时回执写 `done`，其余同 prop_reply。
+    fn prop_reply_saying(
+        &self,
+        request_id: String,
+        result: Result<PropPreview, String>,
+        done: String,
+    ) -> Outcome {
         let (ok, message, preview) = match result {
-            Ok(preview) => (true, "操作完成".into(), Some(preview)),
+            Ok(preview) => (true, done, Some(preview)),
             Err(e) => (false, e, None),
         };
         let outcome = Outcome::reply(ServerMsg::PropResult {
@@ -83,11 +94,13 @@ impl Runtime {
 
     /// 移除是事务：世界改动加存盘，失败时恢复移除前的状态。
     pub(crate) fn remove_prop(&mut self, request_id: String, id: &str) -> Outcome {
+        let before = self.world.missing_materials();
         let result = self
             .transact(|rt| rt.world.remove_prop(id))
             .map(|()| PropPreview::Done {})
             .map_err(|aborted| aborted.to_string());
-        self.prop_reply(request_id, result)
+        let done = self.done_noting(&before);
+        self.prop_reply_saying(request_id, result, done)
     }
 
     pub(crate) fn place_prop(
@@ -96,8 +109,31 @@ impl Runtime {
         instance: Value,
         near: Option<PlaceNear>,
     ) -> Outcome {
+        let before = self.world.missing_materials();
         let result = self.place_library_prop(instance, near);
-        self.prop_reply(request_id, result)
+        let done = self.done_noting(&before);
+        self.prop_reply_saying(request_id, result, done)
+    }
+
+    /// 布置检查：这次放下或拿走以后新出现的材料缺口写进回执，比如放了营地空地却没有木头的来处。
+    fn done_noting(&self, before: &BTreeSet<MissingMaterial>) -> String {
+        let mut gaps: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
+        for m in self.world.missing_materials().difference(before) {
+            gaps.entry((m.prop.clone(), m.action.clone()))
+                .or_default()
+                .push(m.item.clone());
+        }
+        if gaps.is_empty() {
+            return "操作完成".into();
+        }
+        let gaps: Vec<String> = gaps
+            .into_iter()
+            .map(|((prop, action), items)| format!("{prop}的「{action}」要{}", items.join("、")))
+            .collect();
+        format!(
+            "操作完成。注意：{}，这张图上没有地方能弄到",
+            gaps.join("；")
+        )
     }
 
     pub(crate) fn content_command(

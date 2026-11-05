@@ -1,5 +1,5 @@
-//! 荒岛玩法用到的道具规则：物品前提与产出、原地搭建、每日补回、概率收获、定时来船与离开，
-//! 以及天气影响身体和遮蔽处。都走 run_actions 与 step 的完整路径。
+//! 荒岛玩法用到的道具规则：物品前提与产出、原地搭建、布置检查、每日补回、概率收获（带工具更容易）、
+//! 定时来船与离开，以及天气影响身体和遮蔽处。都走 run_actions 与 step 的完整路径。
 use crate::common;
 use kernel::{weather::WeatherRequest, World};
 use protocol::{BodyConditionKind, Exposure, GroupStatus, WeatherKind, WeatherMode};
@@ -71,6 +71,16 @@ fn on_map(w: &World, name: &str) -> Option<String> {
         .map(|p| p.id.clone())
 }
 
+/// 营地：搭棚子要两根木头，完成时用掉、在原地建起棚子。
+fn camp() -> Value {
+    json!({"id":"test:camp","version":1,"name":"营地","actions":[{
+        "id":"build","label":"搭棚子","duration_minutes":30,"completion":"activity",
+        "requires":[{"item":"test:wood","name":"木头","count":2,"consume":true}],
+        "on_complete":[{"kind":"place_prop","prop":{"id":"test:shelter","version":1,"name":"棚子",
+            "shelter":true,"actions":[{"id":"rest","label":"避雨","duration_minutes":30,"completion":"activity","rest":true}]}}]
+    }]})
+}
+
 #[test]
 fn gathering_and_building_consume_requirements_restock_at_dawn_and_survive_reload() {
     let mut w = world();
@@ -84,15 +94,20 @@ fn gathering_and_building_consume_requirements_restock_at_dawn_and_survive_reloa
             "on_complete":[{"kind":"give_item","item":wood,"count":1}]
         }]}),
     );
-    put(
-        &mut w,
-        "camp",
-        json!({"id":"test:camp","version":1,"name":"营地","actions":[{
-            "id":"build","label":"搭棚子","duration_minutes":30,"completion":"activity",
-            "requires":[{"item":"test:wood","name":"木头","count":2,"consume":true}],
-            "on_complete":[{"kind":"place_prop","prop":{"id":"test:shelter","version":1,"name":"棚子",
-                "shelter":true,"actions":[{"id":"rest","label":"避雨","duration_minutes":30,"completion":"activity","rest":true}]}}]
-        }]}),
+    put(&mut w, "camp", camp());
+    // 布置检查：有漂流木堆，营地要的木头就有来处；只放营地的图上就弄不到。
+    assert!(w.missing_materials().is_empty());
+    let mut lonely = world();
+    put(&mut lonely, "camp", camp());
+    let gaps: Vec<_> = lonely.missing_materials().into_iter().collect();
+    assert_eq!(gaps.len(), 1);
+    assert_eq!(
+        (
+            gaps[0].prop.as_str(),
+            gaps[0].action.as_str(),
+            gaps[0].item.as_str()
+        ),
+        ("营地", "搭棚子", "木头")
     );
     let (ok, why) = act(&mut w, "b0", "camp", "搭棚子");
     assert!(!ok && why.contains("需要随身带着木头×2"), "{why}");
@@ -176,6 +191,51 @@ fn chance_is_replayable_and_signal_brings_a_boat_that_leaves_or_takes_the_reside
     let a = rolls(&mut w);
     assert_eq!(a, rolls(&mut twin));
     assert!(a.contains(&true) && a.contains(&false), "{a:?}");
+
+    // 带着工具时按更高的概率掷：没有木矛几乎叉不到，带上木矛几乎都能叉到；说明里写着这一条。
+    let spear = json!({"id":"test:spear","version":1,"name":"木矛","portable":true,"actions":[]});
+    put(
+        &mut w,
+        "rack",
+        json!({"id":"test:rack","version":1,"name":"木料","actions":[{
+            "id":"carve","label":"削木矛","duration_minutes":5,"completion":"activity",
+            "on_complete":[{"kind":"give_item","item":spear,"count":1}]
+        }]}),
+    );
+    put(
+        &mut w,
+        "deep",
+        json!({"id":"test:deep","version":1,"name":"深潭","actions":[{
+            "id":"fish","label":"叉鱼","duration_minutes":10,"completion":"activity",
+            "on_complete":[{"kind":"chance","percent":1,
+                "boost":{"item":"test:spear","name":"木矛","percent":99},
+                "effects":[{"kind":"restore","need":"fullness","amount":1.0}],"miss":"什么也没叉到"}]
+        }]}),
+    );
+    let caught = |w: &mut World, tag: &str| {
+        (0..5)
+            .filter(|i| {
+                act(w, &format!("{tag}{i}"), "deep", "叉鱼")
+                    .1
+                    .contains("饱腹恢复")
+            })
+            .count()
+    };
+    assert_eq!(caught(&mut w, "bare"), 0);
+    assert!(act(&mut w, "carve", "rack", "削木矛").0);
+    assert_eq!(caught(&mut w, "spear"), 5);
+    let deep = w.topo.prop("deep").unwrap().verbs[0]
+        .action
+        .clone()
+        .unwrap();
+    let view = kernel::props::action_description_for(&deep, w.physiology());
+    assert!(
+        view.effects
+            .iter()
+            .any(|e| e.contains("随身带着木矛时 99%")),
+        "{:?}",
+        view.effects
+    );
 
     // 点火后过一阵来船；没人上船就按时开走。
     let (ok, text) = act(&mut w, "l1", "pyre", "点火");

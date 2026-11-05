@@ -5,6 +5,7 @@ use crate::error::{KernelError, Result};
 use crate::{inventory::Inventory, World};
 use protocol::ItemLocation;
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 
 /// 道具实例引用的定义编号（去掉 @版本）。
 fn definition_id(reference: &str) -> &str {
@@ -13,7 +14,7 @@ fn definition_id(reference: &str) -> &str {
 
 impl World {
     /// 本人背包里属于某个物品定义的道具，按编号排序。
-    fn carried_of(&self, actor: &str, item: &str) -> Vec<String> {
+    pub(crate) fn carried_of(&self, actor: &str, item: &str) -> Vec<String> {
         let mut ids: Vec<_> = self
             .topo
             .props()
@@ -161,6 +162,83 @@ impl World {
                 definition: item.clone(),
             })
             .collect()
+    }
+}
+
+/// 布置检查发现的一处缺口：哪个道具的哪个动作，缺哪样东西。
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct MissingMaterial {
+    pub prop: String,
+    pub action: String,
+    pub item: String,
+}
+
+/// 布置检查走过的东西：能弄到的物品定义，和所有可能做得到的动作（连同所属道具的名字）。
+#[derive(Default)]
+struct Reachable<'a> {
+    items: BTreeSet<&'a str>,
+    actions: Vec<(&'a str, &'a Action)>,
+}
+
+impl<'a> Reachable<'a> {
+    fn action(&mut self, owner: &'a str, action: &'a Action) {
+        self.actions.push((owner, action));
+        for e in &action.on_complete {
+            self.effect(e);
+        }
+    }
+    fn effect(&mut self, e: &'a InstantEffect) {
+        match e {
+            InstantEffect::GiveItem { item, .. } => self.definition(item, true),
+            InstantEffect::PlaceProp { prop } => self.definition(prop, prop.portable),
+            InstantEffect::Schedule {
+                place: Some(scheduled),
+                ..
+            } => self.definition(&scheduled.prop, scheduled.prop.portable),
+            InstantEffect::Chance { effects, .. } => effects.iter().for_each(|e| self.effect(e)),
+            _ => {}
+        }
+    }
+    /// 动作产出或建起的道具：能随身带的算作弄得到，它自己的动作也可能做得到。
+    fn definition(&mut self, d: &'a Definition, carried: bool) {
+        if carried {
+            self.items.insert(&d.id);
+        }
+        for a in &d.actions {
+            self.action(&d.name, a);
+        }
+    }
+}
+
+impl World {
+    /// 布置检查：地图上每个道具动作要随身带的东西，在这张图上有没有来处。来处是现成的可携带道具，
+    /// 或者某个动作能给出、建出的东西；带概率的、建出来的新道具和定时出现的道具上的动作也算。
+    /// 只看有没有来处，不管够不够数、要不要运气。放道具、拿走道具后由 host 比较前后，提示新出现的缺口。
+    pub fn missing_materials(&self) -> BTreeSet<MissingMaterial> {
+        let mut reach = Reachable::default();
+        for p in self.topo.props().iter().filter(|p| !p.withdrawn) {
+            if p.portable {
+                if let Some(d) = &p.definition {
+                    reach.items.insert(definition_id(d));
+                }
+            }
+            for a in p.verbs.iter().filter_map(|v| v.action.as_ref()) {
+                reach.action(&p.name, a);
+            }
+        }
+        let mut missing = BTreeSet::new();
+        for (owner, a) in &reach.actions {
+            for r in &a.requires {
+                if !reach.items.contains(r.item.as_str()) {
+                    missing.insert(MissingMaterial {
+                        prop: owner.to_string(),
+                        action: a.label.clone(),
+                        item: r.name.clone(),
+                    });
+                }
+            }
+        }
+        missing
     }
 }
 

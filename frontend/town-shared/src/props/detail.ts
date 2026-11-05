@@ -56,6 +56,7 @@ function effectSentence(a: Action, needLabel: (n: BodyNeed) => string) {
       parts.push([
         el('b', `${e.percent}%`),
         e.effects.some((x) => x.kind === 'harm') ? ' 的可能得手' : ' 的可能有收获',
+        e.boost ? `（带着${e.boost.name}时 ${e.boost.percent}%）` : '',
       ])
     else if (e.kind === 'schedule') parts.push(['过一阵会有动静'])
     else if (e.kind === 'depart') parts.push([el('b', '离开这里')])

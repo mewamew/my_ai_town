@@ -62,6 +62,16 @@ test('default and generated maps are valid, connected, deterministic and obey co
   for (const name of ['老书馆', '灯塔下的屋', '渔家 1', '渔家 3', '广场'])
     assert(topologyNames.includes(name), name)
   assert.equal(new Set(topologyNames).size, topologyNames.length)
+  // 野外小径：路和落脚点的名字里没有「小镇」「街道」，村民走在路上看到的就是这些名字
+  const wild = gen({ ...spatial, settlement: 'wild' }).document
+  gate(wild)
+  const roadNames = [
+    ...wild.topology.locales,
+    ...wild.topology.stations,
+    ...wild.layout.regions,
+  ].map((x) => x.name)
+  assert(roadNames.includes('野外') && roadNames.includes('小径'), roadNames.join('、'))
+  assert(!roadNames.some((n) => /小镇|街道/.test(n)), roadNames.join('、'))
   assert.deepEqual(gen(spec), gen(spec))
   assert.deepEqual(
     gen(spec).document.layout,

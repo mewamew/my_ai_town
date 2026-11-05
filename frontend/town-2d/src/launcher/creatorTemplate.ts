@@ -96,9 +96,14 @@ export const creatorTemplate = `
               </div>
               <p id="town-resources-effect" class="creator-hint creator-effect" role="status"></p>
             </section>
-            <section class="creator-setting-block" aria-label="四周地貌">
-              <h3>四周地貌</h3>
-              <p class="creator-hint">按选的地点生成道路、建筑和周边环境；港口与海塔会安排在岸边。</p>
+            <section class="creator-setting-block" aria-label="地点之间">
+              <h3>地点之间</h3>
+              <select id="town-settlement" hidden><option value="town" selected>街道相连</option><option value="wild">野外小径</option></select>
+              <div class="creator-choice-cards" data-choice-for="town-settlement">
+                <button type="button" data-value="town" aria-pressed="true" title="小镇：地点之间是街道"><span aria-hidden="true">⌂</span>街道相连</button>
+                <button type="button" data-value="wild" aria-pressed="false" title="荒岛、野地：地点之间是踩出来的小路"><span aria-hidden="true">⋯</span>野外小径</button>
+              </div>
+              <p class="creator-hint">按选的地点生成道路、建筑和周边环境；港口与海塔会安排在岸边。荒岛、野地选「野外小径」，路上不会出现「小镇」「街道」的字样。</p>
             </section>
           </div>
         </section>
