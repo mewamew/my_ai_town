@@ -1,5 +1,5 @@
 //! 观察仪的 Agent 投影与调用额度、用量、请求台账。只读，不作为村民观察输入。
-use crate::{ActionResult, InteractionStatus, VerbKind, WorldFact};
+use crate::{ActionResult, FactKind, InteractionStatus, VerbKind, WorldFact};
 use serde::{Deserialize, Serialize};
 
 /// 会话停止的原因类别。前三种让全镇暂停：停下的村民不再做决定，世界却照走的话，
@@ -183,6 +183,9 @@ pub enum EvidenceSource {
 pub struct ResidentAgentView {
     pub state: AgentState,
     pub reason: String,
+    /// 在等时等什么、最迟几点醒来；没在等就省略
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wait: Option<AgentWaitView>,
     pub goals: Vec<ResidentGoalView>,
     pub results: Vec<ActionResultView>,
     #[serde(default)]
@@ -201,6 +204,15 @@ pub struct ResidentAgentView {
     pub replies: u64,
     #[serde(default)]
     pub stale_replies: u64,
+}
+
+/// 村民在等什么：自己写的理由、最迟醒来的时刻，以及哪类事件来了会提前醒（只按时间等时没有）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentWaitView {
+    pub reason: String,
+    pub until: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event: Option<FactKind>,
 }
 
 /// 观察仪里的一条动作结果：动作结果本身加上动作种类。

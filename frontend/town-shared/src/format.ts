@@ -15,6 +15,12 @@ export function clock(at: number): string {
   return `第 ${day} 天 ${time}`
 }
 
+/** 「11:47」；和 now 不在同一天时写「第 2 天 08:47」 */
+export function clockNear(at: number, now: number): string {
+  const { day, time } = dayAndTime(at)
+  return day === dayAndTime(now).day ? time : `第 ${day} 天 ${time}`
+}
+
 /** 「DN HH:MM」，与服务端 roster 的 clock 字段同一种写法。 */
 export function shortClock(at: number): string {
   const { day, time } = dayAndTime(at)

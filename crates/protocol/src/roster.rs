@@ -52,6 +52,9 @@ pub enum MovementPhase {
 pub struct PlanView {
     pub current: String,
     pub upcoming: Vec<String>,
+    /// 身体闲着、什么也没安排（`current` 是「等待新计划」）；角色卡这时改说 Agent 在等什么、想什么
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub idle: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

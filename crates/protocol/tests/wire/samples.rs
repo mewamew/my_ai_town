@@ -42,8 +42,13 @@ fn action_result() -> ActionResult {
 
 fn agent_view() -> ResidentAgentView {
     ResidentAgentView {
-        state: AgentState::Thinking,
-        reason: "正在等待模型响应".into(),
+        state: AgentState::Waiting,
+        reason: "等小禾带木头回来 · 最迟 D1 08:10 再看".into(),
+        wait: Some(AgentWaitView {
+            reason: "等小禾带木头回来".into(),
+            until: 490.0,
+            event: Some(FactKind::Presence),
+        }),
         goals: vec![ResidentGoalView {
             id: "read".into(),
             title: "去图书馆读书".into(),
@@ -203,6 +208,7 @@ fn member(id: &str, at: At, activity: ActivityKind) -> RosterMember {
         plan: PlanView {
             current: "前往 花房咖啡馆".into(),
             upcoming: vec!["工作（30 分钟）".into()],
+            idle: false,
         },
         thought: Some(thought()),
         resident_agent: Some(agent_view()),

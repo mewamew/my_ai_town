@@ -375,7 +375,7 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     inventory.render(m.inventory)
     thought.render(m.thought, minutes)
     agent.render(m.resident_agent)
-    plan.render(m.plan, m.body)
+    plan.render(m.plan, m.body, m.resident_agent, minutes)
     syncFocus()
     // 地图不会逐帧跟时：每次 roster 更新，村民在视野外（带边距）才平移
     if (following && !deps.map.watch) {

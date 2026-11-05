@@ -8,7 +8,8 @@ use crate::{
 };
 use kernel::{world::Actor, World};
 use protocol::{
-    AgentState, ResidentAgentView, ResidentGoalView, ResidentMemoryView, ResidentUsage,
+    AgentState, AgentWaitView, FactKind, ResidentAgentView, ResidentGoalView, ResidentMemoryView,
+    ResidentUsage,
 };
 
 /// 观察仪各列表的上限。
@@ -27,19 +28,25 @@ pub(crate) fn actor_name(world: &World, id: &str) -> String {
 }
 
 /// 村民此刻的状态与说明；按严重程度从前往后判断。状态是枚举，前端按值查文案。
-fn state_label(world: &World, s: &Session, a: &Actor) -> (AgentState, String) {
+/// 在等时另给结构化的等待：角色卡「正在」一栏按它写等什么、几点醒。
+fn state_label(
+    world: &World,
+    s: &Session,
+    a: &Actor,
+) -> (AgentState, String, Option<AgentWaitView>) {
     let actor = s.actor_id.as_str();
+    let plain = |state, text: &str| (state, text.to_string(), None);
     if a.needs.body.dead {
-        return (AgentState::Dead, "停止决策；需要明确的复活手段".into());
+        return plain(AgentState::Dead, "停止决策；需要明确的复活手段");
     }
     if a.possession.is_some() {
-        return (AgentState::Manual, "玩家正在附身，AI 暂停决策".into());
+        return plain(AgentState::Manual, "玩家正在附身，AI 暂停决策");
     }
     if let Some(reason) = s.pause_reason() {
-        return (AgentState::paused(s.pause_kind()), reason.into());
+        return plain(AgentState::paused(s.pause_kind()), reason);
     }
     if a.needs.incapacitated() {
-        return (AgentState::Rescue, a.needs.limitation().into());
+        return plain(AgentState::Rescue, a.needs.limitation());
     }
     if world.active_chat(actor).is_some() {
         let doing = if world.chat_turn(actor) {
@@ -47,34 +54,30 @@ fn state_label(world: &World, s: &Session, a: &Actor) -> (AgentState, String) {
         } else {
             "正在听其他人说话"
         };
-        return (AgentState::Chatting, doing.into());
+        return plain(AgentState::Chatting, doing);
     }
     if a.current.interaction.is_some() {
-        return (
-            AgentState::Interacting,
-            format!("{}；等待双方活动结束", a.current.verb),
-        );
+        let text = format!("{}；等待双方活动结束", a.current.verb);
+        return plain(AgentState::Interacting, &text);
     }
     if s.in_flight.is_some() {
         return if s.notebook.request.is_some() {
-            (
-                AgentState::Reflecting,
-                "正在根据新增经历总结并提炼主题".into(),
-            )
+            plain(AgentState::Reflecting, "正在根据新增经历总结并提炼主题")
         } else {
-            (AgentState::Thinking, "正在等待模型响应".into())
+            plain(AgentState::Thinking, "正在等待模型响应")
         };
     }
     match s.pending.first() {
         Some(PendingTool::Actions { .. }) => {
-            return (AgentState::Acting, "等待世界返回动作结果".into())
+            return plain(AgentState::Acting, "等待世界返回动作结果")
         }
         Some(PendingTool::Interaction { .. }) => {
-            return (AgentState::Interacting, "等待世界返回双方活动结果".into())
+            return plain(AgentState::Interacting, "等待世界返回双方活动结果")
         }
         Some(PendingTool::Wait {
             until,
             call,
+            event,
             invitation,
             ..
         }) => {
@@ -84,13 +87,18 @@ fn state_label(world: &World, s: &Session, a: &Actor) -> (AgentState, String) {
                 call.arguments["reason"].as_str().unwrap_or("等待事件")
             };
             let text = format!("{reason} · 最迟 {} 再看", kernel::clock_string(*until));
-            return (AgentState::Waiting, text);
+            let wait = AgentWaitView {
+                reason: reason.into(),
+                until: *until,
+                event: *event,
+            };
+            return (AgentState::Waiting, text, Some(wait));
         }
         None => {}
     }
     if s.streaks.model_failures > 0 && s.streaks.retry_at > 0 {
         let text = format!("模型请求失败 {} 次，稍后自动重试", s.streaks.model_failures);
-        return (AgentState::Waiting, text);
+        return plain(AgentState::Waiting, &text);
     }
     if let Some(sleep) = s.sleep() {
         let text = format!(
@@ -98,9 +106,15 @@ fn state_label(world: &World, s: &Session, a: &Actor) -> (AgentState, String) {
             sleep.reason,
             kernel::clock_string(sleep.until)
         );
-        return (AgentState::Waiting, text);
+        // 搁置的唤醒：到点再看；收得到要紧通知的，通知来了也会提前醒
+        let wait = AgentWaitView {
+            reason: sleep.reason.clone(),
+            until: sleep.until,
+            event: sleep.wake_on_notice.then_some(FactKind::Notice),
+        };
+        return (AgentState::Waiting, text, Some(wait));
     }
-    (AgentState::Undecided, "等世界继续后决定下一步".into())
+    plain(AgentState::Undecided, "等世界继续后决定下一步")
 }
 
 impl Session {
@@ -212,10 +226,11 @@ impl ResidentRuntime {
     pub fn view(&self, world: &World, actor: &str) -> Option<ResidentAgentView> {
         let s = self.session(actor)?;
         let a = world.actor(actor)?;
-        let (state, reason) = state_label(world, s, a);
+        let (state, reason, wait) = state_label(world, s, a);
         Some(ResidentAgentView {
             state,
             reason,
+            wait,
             goals: goal_views(s),
             results: recent_results(a),
             interactions: world

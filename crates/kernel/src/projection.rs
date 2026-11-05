@@ -117,19 +117,27 @@ fn roster(world: &World, speed: f64) -> ServerMsg {
                 activity: a.current.kind(),
                 needs: a.needs.states(),
                 body: world.body_view(&a.id),
-                plan: PlanView {
-                    current: if a.needs.incapacitated() {
-                        a.needs.limitation().into()
-                    } else if let Some(walk) = world.walk_plan(&a.id) {
-                        walk
-                    } else {
-                        a.current.plan_text(&world.topo)
-                    },
-                    upcoming: a
-                        .plan
-                        .iter()
-                        .map(|intent| intent.describe(&world.topo))
-                        .collect(),
+                plan: {
+                    let walk = world.walk_plan(&a.id);
+                    let idle = !a.needs.incapacitated()
+                        && walk.is_none()
+                        && a.current.is_idle()
+                        && a.plan.is_empty();
+                    PlanView {
+                        current: if a.needs.incapacitated() {
+                            a.needs.limitation().into()
+                        } else if let Some(walk) = walk {
+                            walk
+                        } else {
+                            a.current.plan_text(&world.topo)
+                        },
+                        upcoming: a
+                            .plan
+                            .iter()
+                            .map(|intent| intent.describe(&world.topo))
+                            .collect(),
+                        idle,
+                    }
                 },
                 thought: a.journal.view(),
                 resident_agent: None,

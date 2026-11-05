@@ -39,6 +39,8 @@ export interface NeedStateView {
 export interface PlanView {
   current: string
   upcoming: string[]
+  /** 身体闲着、什么也没安排（current 是「等待新计划」） */
+  idle?: boolean
 }
 
 /// 一次规划的触发原因；标签按 kind 决定，纯文字来源直接显示 text
@@ -198,7 +200,7 @@ export type RequestStatus =
   'in_flight' | 'adopted' | 'format_retry' | 'outdated' | 'failed' | 'dropped' | 'controlled'
 
 /** 世界事件的种类；旧存档里的 job 读入时按 observation */
-type FactKind =
+export type FactKind =
   'observation' | 'readable' | 'notice' | 'action' | 'speech' | 'interaction' | 'presence'
 /** 村民经历过的一条世界事件 */
 interface WorldFact {
@@ -219,6 +221,8 @@ interface WorldFact {
 export interface ResidentAgentView {
   state: AgentState
   reason: string
+  /** 在等时等什么、最迟几点醒来；event 是哪类事件来了会提前醒，只按时间等时没有 */
+  wait?: { reason: string; until: number; event?: FactKind }
   daily_calls: number
   daily_limit: number
   daily_tokens: number

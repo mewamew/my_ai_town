@@ -216,6 +216,7 @@
   border-left: 7px solid var(--accent);
 }
 .plan-next-head,
+.plan-wake,
 .plan-note {
   margin-top: 8px;
   font-size: 12px;
