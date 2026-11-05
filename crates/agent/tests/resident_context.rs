@@ -398,3 +398,26 @@ fn strangers_carry_their_known_map_in_the_observation_instead_of_the_prefix() {
     assert_eq!(exits[0]["to"], "loc_b");
     assert!(exits[0]["name"].is_null(), "没去过的路只知道方向");
 }
+
+/// 建镇生成的落脚点跟着观察给出，停留时 target 填它就站过去；只列这个地方的。
+#[test]
+fn spots_of_the_current_place_are_listed_for_staying() {
+    let mut data: Value = serde_json::from_str(include_str!("fixtures/two_places.json")).unwrap();
+    data["stations"].as_array_mut().unwrap().extend([
+        json!({"id":"spot_loc_a_1","locale":"loc_a","name":"水边","kind":"slot"}),
+        json!({"id":"spot_loc_b_1","locale":"loc_b","name":"北边","kind":"slot"}),
+    ]);
+    let mut w = kernel::World::new(
+        kernel::Topology::from_json(&data.to_string(), &catalog()).unwrap(),
+        420.0,
+        need_rules(),
+    );
+    w.spawn("r1", "阿树", "loc_a").unwrap();
+    let mut r = runtime(&mut w, spacious());
+    let q = request(&mut r, &mut w);
+    let body: Value = serde_json::from_str(&q.messages.last().unwrap().content).unwrap();
+    assert_eq!(
+        body["observation"]["spots"],
+        json!([{"id":"spot_loc_a_1","name":"水边"}])
+    );
+}

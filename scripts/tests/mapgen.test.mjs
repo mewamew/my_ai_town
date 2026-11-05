@@ -72,6 +72,25 @@ test('default and generated maps are valid, connected, deterministic and obey co
   ].map((x) => x.name)
   assert(roadNames.includes('野外') && roadNames.includes('小径'), roadNames.join('、'))
   assert(!roadNames.some((n) => /小镇|街道/.test(n)), roadNames.join('、'))
+  // 户外活动区域里有几个带名字的落脚点，各有一条走过去的通道
+  const areas = gen({
+    ...spatial,
+    settlement: 'wild',
+    places: [{ kind: 'area', count: 2, size: 'large' }],
+  }).document
+  gate(areas)
+  for (const locale of ['area_1', 'area_2']) {
+    const here = areas.topology.stations.filter(
+      (s) => s.locale === locale && s.id.startsWith('spot_')
+    )
+    assert(here.length >= 2, `${locale} 的落脚点：${here.map((s) => s.name)}`)
+    assert.equal(new Set(here.map((s) => s.name)).size, here.length)
+    for (const s of here)
+      assert(
+        areas.spatial.routes.some((r) => r.to === s.node),
+        `${s.id} 没有走过去的通道`
+      )
+  }
   assert.deepEqual(gen(spec), gen(spec))
   assert.deepEqual(
     gen(spec).document.layout,

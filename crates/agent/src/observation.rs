@@ -3,6 +3,9 @@ use crate::{interaction, prompts, resident, AgentError};
 use kernel::{intent::BuiltinVerb, world::ActKind, World};
 use serde_json::{json, Value};
 
+/// 建镇生成器给户外活动区域生成的落脚点编号前缀（scripts/mapgen/spatial.mjs 的 spots）。
+const SPOT_PREFIX: &str = "spot_";
+
 /// 一次观察最多带的新事件数。
 const EVENTS_PER_OBSERVATION: usize = 24;
 /// 事件正文进入观察时的截断长度。
@@ -210,6 +213,17 @@ pub fn observe(world: &World, actor: &str, after: u64) -> Result<(Value, u64), A
         "interactions": interactions,
         "nearby_chats": world.nearby_chats(actor),
     });
+    // 建镇时生成的落脚点（水边、东头……）：停留时 target 填它的 id 就走过去
+    let spots: Vec<_> = world
+        .topo
+        .stations
+        .values()
+        .filter(|s| s.locale == a.locus.locale && s.id.starts_with(SPOT_PREFIX))
+        .map(|s| json!({"id": s.id, "name": s.name}))
+        .collect();
+    if !spots.is_empty() {
+        value["spots"] = json!(spots);
+    }
     // 陌生环境：记得的地方和眼前出去的路随探索变，跟着观察走（没变时按慢变字段省略）
     if let Some(known) = world.known_places(actor) {
         value["known_places"] = json!(known);

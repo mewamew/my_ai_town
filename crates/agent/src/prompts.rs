@@ -73,7 +73,7 @@ pub const STALE_AFTER_NOTICE: &str = "请求期间收到重要通知，请先重
 pub const GO_PARAMETERS: &str =
     "intent.locale 填 known_places.id，没去过的地方填 exits 里的 to；不填 target 和 prop_id，地名不拼进 verb";
 pub const STAY_PARAMETERS: &str =
-    "intent.duration_minutes 填分钟数；想坐着或躺着歇就把 verb 写成「坐下」「躺下」，参数一样，不算睡觉";
+    "intent.duration_minutes 填分钟数；想坐着或躺着歇就把 verb 写成「坐下」「躺下」，参数一样，不算睡觉；想换个位置待着（比如水边），intent.target 填观察里 spots 的 id，会先走过去";
 pub const SEARCH_PARAMETERS: &str =
     "不填别的参数；在原地花 20 分钟翻找藏着的东西，有一定可能找到，回执写明找到了什么";
 pub const HIDE_PARAMETERS: &str =

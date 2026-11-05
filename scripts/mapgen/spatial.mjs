@@ -521,6 +521,89 @@ function interiorRoutes(scene, floors, propsByFloor, routes, navNodes, timer, pu
   }
 }
 
+// 户外活动区域里几个有名字的落脚点：靠海的叫「水边」，其余按在区域里的方向叫「东头」「北边」「西南角」。
+// 从离到达点远的格点里挑，彼此隔开、避开家具，每个从到达点有一条走过去的通道；村民停留时可以指定站到哪儿。
+const SPOT_LIMIT = 3
+const SPOT_GAP = 3
+const SPOT_CLEAR = 1.2
+const SPOT_SHORE = 4
+const SPOT_DIRECTIONS = ['东头', '东北角', '北边', '西北角', '西头', '西南角', '南边', '东南角']
+function spotName(terrain, p, center, used) {
+  const landAt = ([x, z]) => {
+    const ix = Math.round((x - terrain.origin[0]) / terrain.step),
+      iz = Math.round((z - terrain.origin[1]) / terrain.step)
+    if (ix < 0 || iz < 0 || ix >= terrain.columns || iz >= terrain.rows) return 0
+    return terrain.land[iz * terrain.columns + ix]
+  }
+  const nearSea = [0, 1, 2, 3, 4, 5, 6, 7].some((k) => {
+    const a = (k * Math.PI) / 4
+    return !landAt([p[0] + Math.cos(a) * SPOT_SHORE, p[1] + Math.sin(a) * SPOT_SHORE])
+  })
+  if (nearSea && !used.has('水边')) return '水边'
+  // 地图上北是 z 减小的方向
+  const angle = (Math.atan2(center[1] - p[1], p[0] - center[0]) * 180) / Math.PI
+  const name = SPOT_DIRECTIONS[Math.round((((angle % 360) + 360) % 360) / 45) % 8]
+  return used.has(name) ? null : name
+}
+function spots(scene, floors, propsByFloor, routes, navNodes) {
+  for (const f of floors) {
+    if (f.indoor || scene.regions.get(f.id)?.kind !== 'area') continue
+    const arrival = scene.world(scene.visualStations.get(`at_${f.id}`)),
+      obstacles = furnitureObstacles(propsByFloor.get(f.id)),
+      valid = (p) => contains(f.bounds, p, 0.0001),
+      { x, y, w, h } = f.bounds,
+      center = [x + w / 2, y + h / 2],
+      clear = (p) =>
+        !obstacles.some(
+          (r) =>
+            p[0] > r.x - SPOT_CLEAR &&
+            p[0] < r.x + r.w + SPOT_CLEAR &&
+            p[1] > r.y - SPOT_CLEAR &&
+            p[1] < r.y + r.h + SPOT_CLEAR
+        )
+    const candidates = []
+    for (let i = 1; i <= 5; i++)
+      for (let j = 1; j <= 5; j++) {
+        const p = [q(x + (w * i) / 6), q(y + (h * j) / 6)]
+        if (clear(p)) candidates.push(p)
+      }
+    candidates.sort((a, b) => dist(b, arrival) - dist(a, arrival) || a[0] - b[0] || a[1] - b[1])
+    const chosen = [],
+      used = new Set()
+    for (const p of candidates) {
+      if (chosen.length >= SPOT_LIMIT) break
+      if (dist(p, arrival) < SPOT_GAP || chosen.some((c) => dist(c.p, p) < SPOT_GAP)) continue
+      const name = spotName(scene.terrain, p, center, used)
+      const path = name && route(arrival, p, obstacles, valid)
+      if (!path) continue
+      used.add(name)
+      chosen.push({ p, name, path })
+    }
+    chosen.forEach(({ p, name, path }, k) => {
+      const id = `spot_${f.id}_${k + 1}`,
+        node = `node_${id}`
+      routes.push({
+        id: `walk_${id}`,
+        from: `arrival_${f.id}`,
+        to: node,
+        from_locale: f.id,
+        to_locale: f.id,
+        width: 0.7,
+        points: path.map(scene.point),
+        indoor: false,
+        owner: f.id,
+      })
+      navNodes.push({ id: node, position: scene.point(p) })
+      const station = { id, locale: f.id, name, kind: 'slot', node },
+        mark = { id, space: 'town_outdoor', x: q(p[0] * S), y: q(p[1] * S) }
+      scene.topology.stations.push(station)
+      scene.layout.stations.push(mark)
+      scene.stations.set(id, station)
+      scene.visualStations.set(id, mark)
+    })
+  }
+}
+
 // 路线长度和分钟数以三维折线为准；室外道路更新拓扑与二维折线，室内通道新增处所、通道、边和节点。
 function writeBackTopology(scene, routes, navNodes) {
   const { layout, topology, locales, edges } = scene
@@ -672,6 +755,7 @@ export function addSpatial(document, plan, timer) {
     navNodes = layout.nodes.map((n) => ({ id: n.id, position: point(world(n)) }))
   const publicLoops = publicSpaceRoutes(scene, spaces, propsByFloor, routes, navNodes)
   interiorRoutes(scene, spaces, propsByFloor, routes, navNodes, timer, publicLoops)
+  spots(scene, spaces, propsByFloor, routes, navNodes)
   writeBackTopology(scene, routes, navNodes)
   const stations = layout.stations.map((s) => ({
     id: s.id,
