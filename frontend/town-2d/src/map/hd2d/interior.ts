@@ -220,14 +220,55 @@ const DECOR: Partial<Record<BuildingKind, Decor>> = {
     rect(c - 4, 4, 8, 6, hash(a, b, seed) < 0.5 ? '#8e3f33' : '#44566e')
     rect(c - 2, 6, 4, 2, '#e8d8a8')
   },
-  lighthouse: (rect, a, b) => {
-    // 船舵
+  lighthouse: (rect, a, b, panelTop, _h, seed) => {
+    // 守塔人的墙：船舵、晴雨表、标着航线的海图、壁灯和放航海日志的小搁板，按位置轮换
     const c = Math.round((a + b) / 2)
-    rect(c - 3, 4, 7, 7, '#6a4a2e')
-    rect(c - 2, 5, 5, 5, '#dfe7ee')
-    rect(c - 1, 6, 3, 3, '#6a4a2e')
-    rect(c, 3, 1, 9, '#6a4a2e')
-    rect(c - 4, 7, 9, 1, '#6a4a2e')
+    const pick = b - a < 13 && seed % 4 === 2 ? 1 : seed % 4
+    if (pick === 0) {
+      rect(c - 3, 4, 7, 7, '#6a4a2e')
+      rect(c - 2, 5, 5, 5, '#dfe7ee')
+      rect(c - 1, 6, 3, 3, '#6a4a2e')
+      rect(c, 3, 1, 9, '#6a4a2e')
+      rect(c - 4, 7, 9, 1, '#6a4a2e')
+    } else if (pick === 1) {
+      rect(c, 2, 1, 1, '#b8913e')
+      rect(c - 2, 3, 5, 1, '#b8913e')
+      rect(c - 3, 4, 7, 5, '#b8913e')
+      rect(c - 2, 9, 5, 1, '#b8913e')
+      rect(c - 2, 4, 5, 5, '#f1ead8')
+      rect(c - 3, 6, 1, 1, '#f1ead8')
+      rect(c + 3, 6, 1, 1, '#f1ead8')
+      rect(c, 6, 1, 1, '#2b282c')
+      rect(c + 1, 5, 1, 1, '#2b282c')
+      rect(c - 1, 8, 3, 1, '#c8453b')
+    } else if (pick === 2) {
+      rect(c - 6, 3, 12, 8, '#6a4a2e')
+      rect(c - 5, 4, 10, 6, '#e8dcc0')
+      rect(c - 5, 4, 4, 6, '#9cc0d6')
+      rect(c - 1, 5, 1, 3, '#9cc0d6')
+      rect(c - 2, 8, 1, 2, '#e8dcc0')
+      for (const [i, j] of [
+        [-4, 5],
+        [-3, 7],
+        [-1, 8],
+        [1, 6],
+        [3, 5],
+      ])
+        rect(c + i, j, 1, 1, '#c8453b')
+      rect(c + 3, 8, 1, 1, '#44566e')
+    } else {
+      rect(c - 4, 5, 1, 4, '#3a3634')
+      rect(c - 4, 5, 3, 1, '#3a3634')
+      rect(c - 2, 6, 2, 3, '#f3dca0')
+      rect(c - 2, 5, 2, 1, '#3a3634')
+      if (panelTop > 9) {
+        rect(c + 1, panelTop - 3, 6, 1, '#6a4a2e')
+        rect(c + 1, panelTop - 6, 1, 3, '#8e3f33')
+        rect(c + 2, panelTop - 5, 1, 2, '#44566e')
+        rect(c + 3, panelTop - 6, 2, 3, '#c9a04e')
+        rect(c + 5, panelTop - 5, 1, 2, '#5b7352')
+      }
+    }
   },
 }
 

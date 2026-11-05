@@ -14,7 +14,7 @@ import { texture } from './standee'
 // - 塔：方石砌的喇叭形塔脚，红白相间的塔身，小拱窗沿着里面的楼梯一路往上；塔门朝着台阶，
 //   门上一个小山墙门廊，门两边两盆花。
 // - 塔顶：一圈牛腿托着瞭望台和铁栏杆，十边形的玻璃灯室里一具透镜，红色圆顶、通风球、风向标。
-// - 台上：信号旗杆、雾钟、几只木桶和一盘缆绳，栏墙外挂一只救生圈。
+// - 台上：信号旗杆、雾钟、朝海的铜望远镜、几只木桶和一盘缆绳，栏墙外挂一只救生圈。
 // 夜里灯室最先亮，两束光绕着转；塔窗、台阶灯随后亮。圆的面（塔身、圆顶、木桶）光照分四档，像手画的明暗。
 // 风格：striped 红白条纹；snowy 冰雪（红塔身一道白带，台上积雪、檐下冰柱）；
 // ruined 废土（灯室塌了、栏杆断了，瞭望台上架一盆火冒着烟，台上是锈桶和碎砖）。
@@ -600,6 +600,17 @@ const square = ([x, z]: Pt, half: number): Pt[] => [
   [x + half, z - half],
   [x - half, z - half],
 ]
+
+/** 两点之间的一根圆杆（三脚架的腿、望远镜筒）：a 端半径 ra、b 端半径 rb */
+function rod(a: THREE.Vector3, b: THREE.Vector3, ra: number, rb = ra) {
+  const dir = b.clone().sub(a)
+  const g = new THREE.CylinderGeometry(rb, ra, dir.length(), 6)
+  g.translate(0, dir.length() / 2, 0)
+  g.applyQuaternion(
+    new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize())
+  )
+  return g.translate(a.x, a.y, a.z)
+}
 
 /** 点到线段的距离 */
 function segmentDistance([x, z]: Pt, [[ax, az], [bx, bz]]: [Pt, Pt]) {
@@ -1410,6 +1421,13 @@ export function lighthouse(house: House, door: Pt | undefined, style: Style): Li
         (mast && Math.sign(x) !== Math.sign(mast[0]) ? 30 : 0)
     )
     if (bell) fogBell(bell)
+    // 望远镜放在朝海的那边（塔门的反方向），靠近栏墙
+    const sea: Pt = [-Math.sin(toward), -Math.cos(toward)]
+    const scope = spot(
+      2.5 * P,
+      (x, z) => (x * sea[0] + z * sea[1]) / P - (Math.abs(x * sea[1] - z * sea[0]) / P) * 0.15
+    )
+    if (scope) telescope(scope, Math.atan2(sea[0], sea[1]))
   }
   const barrels = spot(5 * P, (x, z) => z * 0.8 + Math.abs(x) * 0.2 + far(x, z) * 0.2)
   if (barrels) cargo(barrels)
@@ -1506,6 +1524,38 @@ export function lighthouse(house: House, door: Pt | undefined, style: Style): Li
       false
     )
     rope.position.set(x, tower.deck + postH - 4.4 * T, z)
+  }
+
+  /** 铜望远镜：木三脚架上一支铜筒，朝着海微微抬头 */
+  function telescope([x, z]: Pt, facing: number) {
+    const top = new THREE.Vector3(x, tower.deck + 4.2 * T, z)
+    const legs = [0, 1, 2].map((k) => {
+      const a = facing + Math.PI / 3 + (k * 2 * Math.PI) / 3
+      return rod(
+        new THREE.Vector3(x + Math.sin(a) * 2 * P, tower.deck, z + Math.cos(a) * 2 * P),
+        top,
+        0.3 * P
+      )
+    })
+    add(new THREE.Mesh(mergeGeometries(legs), weather(lambert({ color: '#6b4b34' }), 1, 0.5)))
+    const ahead = new THREE.Vector3(Math.sin(facing), 0.22, Math.cos(facing)).normalize()
+    add(
+      new THREE.Mesh(
+        rod(
+          top
+            .clone()
+            .addScaledVector(ahead, -2.6 * P)
+            .setY(top.y + 0.4 * T),
+          top
+            .clone()
+            .addScaledVector(ahead, 3.8 * P)
+            .setY(top.y + 0.4 * T + 0.22 * 6.4 * P),
+          0.55 * P,
+          0.85 * P
+        ),
+        banded(lambert({ color: '#c9a04e' }))
+      )
+    )
   }
 
   /** 几只木桶，完好的灯塔再加一只木箱、一盘缆绳 */

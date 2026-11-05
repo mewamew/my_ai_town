@@ -314,6 +314,8 @@ export class HdScene {
   private readonly fauna: Fauna
   /** 冒烟的烟囱口（世界坐标）：夜里飘火星 */
   private readonly chimneyMouths: [number, number, number][] = []
+  /** 灯塔：地图坐标和灯室的高度，海鸥绕着塔顶飞 */
+  private readonly beacons: [number, number, number][] = []
   /** 地面哪些像素是水：脚印落在水里是涟漪 */
   private readonly groundWet: { wet: Uint8Array; width: number; height: number }
   /** GPU 计时（见 perf.ts）：开发版浮层、「自动」画质跑不动时降档 */
@@ -472,6 +474,7 @@ export class HdScene {
         flowers: decor.vegetation.filter((v) => v.kind === 'flowers').map((v) => [v.x, v.y]),
         shallows: theme.outer === 'sea' ? shallowsOf(ground) : [],
         chimneys: this.chimneyMouths,
+        towers: this.beacons,
         center: this.center,
       },
       theme,
@@ -1397,9 +1400,10 @@ export class HdScene {
       return sprite
     }
     for (const g of built.glows) this.glows.push({ sprite: glow(g.at, g.size), on: g.on ?? on })
+    if (built.lamp) this.beacons.push([cx, cz, built.lamp.y])
     if (built.beam) {
       this.beams.push(built.beam as THREE.Mesh)
-      if (built.lamp) this.flares.push({ beam: built.beam, sprite: glow(built.lamp, 130 * PIXEL) })
+      if (built.lamp) this.flares.push({ beam: built.beam, sprite: glow(built.lamp, 100 * PIXEL) })
     }
     for (const s of built.smoke) {
       this.smoke.add(cx + s.x, s.y, cz + s.z, house.seed)
@@ -1413,7 +1417,7 @@ export class HdScene {
     for (const { beam, sprite } of this.flares) {
       const a = beam.rotation.y
       const facing = Math.abs(Math.cos(a) * yawSin - Math.sin(a) * yawCos)
-      sprite.material.opacity = this.lit * 0.6 * facing ** 24
+      sprite.material.opacity = this.lit * 0.5 * facing ** 24
     }
   }
 

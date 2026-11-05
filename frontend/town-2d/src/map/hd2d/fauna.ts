@@ -8,7 +8,7 @@ import { REFLECTION_SKIP } from './reflection'
 import { sprite } from './sprite'
 import { standee, texture } from './standee'
 
-// 环境里的小动静：白天鸟群从镇子一头飞到另一头、影子扫过屋顶，港口上空几只海鸥盘旋，花丛边有蝴蝶，
+// 环境里的小动静：白天鸟群从镇子一头飞到另一头、影子扫过屋顶，港口上空、灯塔顶上几只海鸥盘旋，花丛边有蝴蝶，
 // 傍晚镇中心上空几只蝙蝠，近岸偶尔一条鱼跃出水面（落水处在踩踏图上起一圈涟漪），夜里烟囱口零星飘出火星。
 // 纯装饰：按地图种子和时间确定性地动，不能点、不进协议，和世界里发生的事无关。减少动画时全部隐去。
 
@@ -72,6 +72,8 @@ export interface FaunaWorld {
   /** 主岛（含海岸）的范围，世界坐标 */
   box: { x0: number; z0: number; x1: number; z1: number }
   docks: Dock[]
+  /** 灯塔（地图坐标和灯室的高度），海鸥绕着塔顶飞 */
+  towers: [number, number, number][]
   /** 花丛（地图坐标），蝴蝶围着它们飞 */
   flowers: [number, number][]
   /** 近岸的水（地图坐标），鱼在这里跳 */
@@ -93,7 +95,7 @@ export class Fauna {
   readonly group = new THREE.Group()
   private readonly birds: Flyer[] = []
   private readonly gulls: (Flyer & {
-    dock: Dock
+    dock: { x: number; y: number }
     phase: number
     radius: number
     height: number
@@ -136,6 +138,16 @@ export class Fauna {
             height: (34 + random() * 18 + d * 4) * PIXEL,
           })
       })
+    if (theme.outer === 'sea')
+      for (const [x, y, height] of world.towers.slice(0, 2))
+        for (let i = 0; i < 3; i++)
+          this.gulls.push({
+            ...make(GULL, 2),
+            dock: { x, y },
+            phase: random() * Math.PI * 2,
+            radius: (22 + random() * 16) * PIXEL,
+            height: height + (random() * 12 - 2) * PIXEL,
+          })
     const colors = theme.ground.flowers
     const flowers = world.flowers.slice()
     for (let i = 0; i < Math.min(10, flowers.length); i++) {
@@ -245,7 +257,7 @@ void main() { gl_FragColor = vec4(vec3(1.0, 0.55, 0.2) * vAlpha * amount * 1.8, 
       )
       flap(b, 6, i * 0.37)
     })
-    // 海鸥：港口上空慢慢盘旋，偶尔扇几下
+    // 海鸥：港口上空、灯塔顶上慢慢盘旋，偶尔扇几下
     for (const g of this.gulls) {
       g.mesh.visible = day > 0.3 && rain < 0.5
       const a = seconds * 0.25 + g.phase
