@@ -716,3 +716,39 @@ fn structured_local_turns_move_use_props_and_reject_partial_or_ambiguous_replies
                     })
         }));
 }
+
+/// 等的人迟迟不来：只填事件的等待一小时内也会醒来重看，不空等到饥渴才被叫醒（海难环岛里周屿
+/// 等林晚带木头回来，一等就是一天的上限）；等自己的动作结果是等不到的，当场退回并指出该等什么。
+#[test]
+fn an_event_only_wait_wakes_within_the_hour_and_unreachable_events_are_refused() {
+    let mut w = world();
+    let mut r = runtime(&mut w, Limits::default());
+    let q = life_request(&mut r, &mut w);
+    reply(
+        &mut r,
+        &mut w,
+        &q,
+        "wait_for",
+        json!({"event":"action","reason":"等别人捡完木头腾出木堆"}),
+    );
+    let q = life_request(&mut r, &mut w);
+    let said = |q: &agent::runtime::AgentRequest, text: &str| {
+        q.messages.iter().any(|m| m.content.contains(text))
+    };
+    assert!(said(&q, "等别人到来用 presence"), "等不到的事件当场退回");
+    reply(
+        &mut r,
+        &mut w,
+        &q,
+        "wait_for",
+        json!({"event":"presence","reason":"等何青带木头回来"}),
+    );
+    w.step(59.0);
+    assert!(
+        r.poll(&mut w, true).is_empty(),
+        "等的人没来，一小时之内照常等"
+    );
+    w.step(2.0);
+    let woke = life_request(&mut r, &mut w);
+    assert!(said(&woke, r#""woke_by":"deadline""#), "到点醒来重看");
+}

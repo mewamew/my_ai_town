@@ -25,7 +25,14 @@ macro_rules! variants {
     }};
 }
 
-pub(crate) fn fact_kinds() -> Vec<FactKind> {
+/// 等待能等到的事件。动作结果和阅读结果只来自自己手上的动作，等待时手上没有动作，永远等不到。
+pub(super) fn wait_events() -> Vec<FactKind> {
+    fact_kinds()
+        .into_iter()
+        .filter(|k| !matches!(k, FactKind::Action | FactKind::Readable))
+        .collect()
+}
+fn fact_kinds() -> Vec<FactKind> {
     variants!(FactKind {
         Observation,
         Readable,
@@ -461,7 +468,7 @@ pub(super) fn wait_for() -> Value {
     object(
         json!({
             "minutes": {"type":"number","minimum":WAIT_MINUTES.start(),"maximum":WAIT_MINUTES.end()},
-            "event": enumeration(&fact_kinds()),
+            "event": enumeration(&wait_events()),
             "reason": string(WAIT_REASON_CHARS)
         }),
         &["reason"],

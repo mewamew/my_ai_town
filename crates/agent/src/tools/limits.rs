@@ -40,4 +40,6 @@ pub const DURATION_MINUTES_MAX: f64 = 1440.0;
 pub const MESSAGE_CHARS: usize = 400;
 
 pub const WAIT_MINUTES: RangeInclusive<f64> = 1.0..=1440.0;
+/// 只填事件的等待到点也醒来重看：等的人一直不来，不至于空等一整天才被饥渴叫醒。
+pub const EVENT_WAIT_MINUTES: f64 = 60.0;
 pub const WAIT_REASON_CHARS: usize = 300;
