@@ -522,11 +522,14 @@ function interiorRoutes(scene, floors, propsByFloor, routes, navNodes, timer, pu
 }
 
 // 户外活动区域里几个有名字的落脚点：靠海的叫「水边」，其余按在区域里的方向叫「东头」「北边」「西南角」。
-// 从离到达点远的格点里挑，彼此隔开、避开家具，每个从到达点有一条走过去的通道；村民停留时可以指定站到哪儿。
+// 落脚点挑在地块边缘一圈上，彼此隔开、避开家具；走过去的通道贴着地块边缘走，不从中间斜穿，
+// 地块中间留给后来摆的东西。村民停留时可以指定站到哪儿。
 const SPOT_LIMIT = 3
 const SPOT_GAP = 3
 const SPOT_CLEAR = 1.2
 const SPOT_SHORE = 10
+/** 落脚点和贴边通道离地块边缘多远（米） */
+const SPOT_EDGE = 0.9
 const SPOT_DIRECTIONS = ['东头', '东北角', '北边', '西北角', '西头', '西南角', '南边', '东南角']
 function spotName(terrain, p, center, used) {
   const landAt = ([x, z]) => {
@@ -547,6 +550,46 @@ function spotName(terrain, p, center, used) {
   const name = SPOT_DIRECTIONS[Math.round((((angle % 360) + 360) % 360) / 45) % 8]
   return used.has(name) ? null : name
 }
+/** 沿矩形 r 的边走一圈的坐标：从左上角顺时针量的长度和对应的点，以及把任意点投到边上 */
+function perimeter(r) {
+  const corners = [
+    [r.x, r.y],
+    [r.x + r.w, r.y],
+    [r.x + r.w, r.y + r.h],
+    [r.x, r.y + r.h],
+  ]
+  const total = 2 * (r.w + r.h)
+  const at = (s) => {
+    s = ((s % total) + total) % total
+    if (s <= r.w) return [r.x + s, r.y]
+    if (s <= r.w + r.h) return [r.x + r.w, r.y + s - r.w]
+    if (s <= 2 * r.w + r.h) return [r.x + r.w - (s - r.w - r.h), r.y + r.h]
+    return [r.x, r.y + r.h - (s - 2 * r.w - r.h)]
+  }
+  const project = ([px, pz]) => {
+    const cx = Math.min(r.x + r.w, Math.max(r.x, px)),
+      cz = Math.min(r.y + r.h, Math.max(r.y, pz))
+    const sides = [
+      [cz - r.y, cx - r.x],
+      [r.x + r.w - cx, r.w + (cz - r.y)],
+      [r.y + r.h - cz, r.w + r.h + (r.x + r.w - cx)],
+      [cx - r.x, 2 * r.w + r.h + (r.y + r.h - cz)],
+    ]
+    return sides.reduce((best, side) => (side[0] < best[0] ? side : best))[1]
+  }
+  // 从 a 到 b 沿边走（dir 为 1 顺时针、-1 逆时针）经过的拐角
+  const corner = [0, r.w, r.w + r.h, 2 * r.w + r.h]
+  const walk = (a, b, dir) => {
+    const span = ((((b - a) * dir) % total) + total) % total
+    const turns = corner
+      .map((c, i) => [((((c - a) * dir) % total) + total) % total, corners[i]])
+      .filter(([d]) => d > 1e-6 && d < span - 1e-6)
+      .sort((x, y) => x[0] - y[0])
+      .map(([, p]) => p)
+    return { length: span, turns }
+  }
+  return { total, at, project, walk }
+}
 function spots(scene, floors, propsByFloor, routes, navNodes) {
   for (const f of floors) {
     if (f.indoor || scene.regions.get(f.id)?.kind !== 'area') continue
@@ -563,23 +606,45 @@ function spots(scene, floors, propsByFloor, routes, navNodes) {
             p[1] > r.y - SPOT_CLEAR &&
             p[1] < r.y + r.h + SPOT_CLEAR
         )
-    const candidates = []
-    for (let i = 1; i <= 5; i++)
-      for (let j = 1; j <= 5; j++) {
-        const p = [q(x + (w * i) / 6), q(y + (h * j) / 6)]
-        if (clear(p)) candidates.push(p)
+    if (w < 4 * SPOT_EDGE || h < 4 * SPOT_EDGE) continue
+    const edge = perimeter({
+      x: x + SPOT_EDGE,
+      y: y + SPOT_EDGE,
+      w: w - 2 * SPOT_EDGE,
+      h: h - 2 * SPOT_EDGE,
+    })
+    // 贴边走过去：先落到边上，再顺着边绕到落脚点，两个方向挑短的、不碰家具的
+    const from = edge.project(arrival)
+    const along = (to) => {
+      const options = [1, -1]
+        .map((dir) => edge.walk(from, to, dir))
+        .sort((a, b) => a.length - b.length)
+      for (const { turns } of options) {
+        const path = [arrival, edge.at(from), ...turns, edge.at(to)].map((p) => [q(p[0]), q(p[1])])
+        const ok =
+          path.every(valid) &&
+          path.every((p, i) => !i || !obstacles.some((r) => segmentRect(path[i - 1], p, r)))
+        if (ok) return path
       }
-    candidates.sort((a, b) => dist(b, arrival) - dist(a, arrival) || a[0] - b[0] || a[1] - b[1])
+      return null
+    }
+    const candidates = []
+    for (let s = 0; s < edge.total; s += 1.5) {
+      const p = edge.at(s)
+      if (clear(p)) candidates.push(s)
+    }
+    candidates.sort((a, b) => dist(edge.at(b), arrival) - dist(edge.at(a), arrival) || a - b)
     const chosen = [],
       used = new Set()
-    for (const p of candidates) {
+    for (const s of candidates) {
       if (chosen.length >= SPOT_LIMIT) break
+      const p = edge.at(s)
       if (dist(p, arrival) < SPOT_GAP || chosen.some((c) => dist(c.p, p) < SPOT_GAP)) continue
       const name = spotName(scene.terrain, p, center, used)
-      const path = name && route(arrival, p, obstacles, valid)
+      const path = name && along(s)
       if (!path) continue
       used.add(name)
-      chosen.push({ p, name, path })
+      chosen.push({ p: path[path.length - 1], name, path })
     }
     chosen.forEach(({ p, name, path }, k) => {
       const id = `spot_${f.id}_${k + 1}`,

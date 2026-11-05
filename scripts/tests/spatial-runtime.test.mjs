@@ -199,7 +199,7 @@ test('one world commits dynamic book geometry and removals together across resta
 })
 
 /** 起管理服务，用生成器建一座海边小镇并打开，设好世界观 */
-async function startTown(root, places) {
+async function startTown(root, places, extra = {}) {
   const m = await createManager({ root, port: 0, mockLlm: true })
   const api = async (route, body) => {
     const r = await fetch(`http://127.0.0.1:${m.server.address().port}/api/towns${route}`, {
@@ -220,6 +220,7 @@ async function startTown(root, places) {
     places,
     resources: 'normal-life',
     constraints: [],
+    ...extra,
   }
   const draft = await api('/preview', { spec }),
     saved = await api('/save', {
@@ -246,6 +247,49 @@ async function startTown(root, places) {
   )
   return { m, town, map: path.join(root, 'towns', saved.id, 'map.json') }
 }
+
+// 环岛南边的地点，入口开在朝岛心的北边：操作锚点一律放南边时，从入口走过去都要穿过道具本身，
+// 放一两件就满了。锚点可以换到北边，同一处地点能接连放下多件。
+test('a place entered from the north still takes several props', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'town-space-north-'))
+  let m
+  try {
+    const started = await startTown(root, [{ kind: 'area', count: 6, size: 'large' }], {
+      settlement: 'ring',
+    })
+    m = started.m
+    const { town } = started
+    const query = (command, type) => worldQuery(town.endpoint, command, (m) => m.type === type)
+    const map = JSON.parse(await fs.readFile(started.map, 'utf8'))
+    const north = map.spatial.floors.find((f) => {
+      const [, , z] = map.spatial.stations.find((s) => s.id === `at_${f.id}`).position
+      return !f.indoor && z < f.bounds.y + f.bounds.h / 3
+    })
+    assert.ok(north, '环岛上总有入口在北边的地点')
+    for (let i = 0; i < 6; i++) {
+      const placed = await query(
+        {
+          type: 'place_prop',
+          request_id: `north-${i}`,
+          world_id: town.worldId,
+          instance: { id: `user:north-${i}`, definition: 'core:island-can@1', locale: north.id },
+        },
+        'prop_result'
+      )
+      assert.ok(placed.ok, JSON.stringify(placed))
+    }
+    const overrides = Object.values(
+      (await query({ type: 'get_props' }, 'props')).catalog.spatial.overrides
+    )
+    assert.ok(
+      overrides.some((o) => o.prop.anchor[2] < o.prop.position[2]),
+      '有的锚点在北边'
+    )
+  } finally {
+    await m?.stop()
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
 
 test('placing a prop where the player clicked puts it beside that spot', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'town-space-near-'))

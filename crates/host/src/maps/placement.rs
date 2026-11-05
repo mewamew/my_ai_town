@@ -97,7 +97,7 @@ impl Placer for ScenePlacer {
 }
 
 /// 在区域的格点里取第一个满足全部留白的位置：玩家点了位置就从离它最近的格点试起，
-/// 否则从区域一角一行行扫过去。
+/// 否则从区域一角一行行扫过去。每个格点先试操作锚点朝南，从入口走不过去再试朝北。
 fn find_free_position(
     s: &Space,
     site: &Site,
@@ -127,17 +127,22 @@ fn find_free_position(
     }
     spots.into_iter().find_map(|[x, z]| {
         let y = s.height_at(x, z, site.arrival.position[1]);
-        let az = z + depth / 2. + ANCHOR_OFFSET;
-        let pp = PropPosition {
-            id: prop.id.clone(),
-            locale: prop.locale.clone(),
-            model: model.clone(),
-            position: [x, y, z],
-            anchor: [x, s.height_at(x, az, y), az],
-            yaw: 0.,
-            footprint: [w, depth],
-        };
-        position_is_free(s, site, &pp).then_some(pp)
+        // 操作锚点默认在南边（正对镜头）；入口在北边时，走到南边的锚点要穿过道具本身，就换到北边
+        [(1., 0.), (-1., std::f64::consts::PI)]
+            .into_iter()
+            .find_map(|(side, yaw)| {
+                let az = z + side * (depth / 2. + ANCHOR_OFFSET);
+                let pp = PropPosition {
+                    id: prop.id.clone(),
+                    locale: prop.locale.clone(),
+                    model: model.clone(),
+                    position: [x, y, z],
+                    anchor: [x, s.height_at(x, az, y), az],
+                    yaw,
+                    footprint: [w, depth],
+                };
+                position_is_free(s, site, &pp).then_some(pp)
+            })
     })
 }
 
