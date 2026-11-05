@@ -118,11 +118,16 @@ vec3 seaCoast(vec2 cell) {
 }
 `
 
+/** 海面着色器里留给玩法的位置：算完离岸像素数 d 和是不是外海 open 之后，玩法可以在这里改它们
+ *  （见 gameModes/tide.ts）。只在海上有，干海床、冰原没有 */
+export const SEA_DEPTH_HOOK = '// 玩法：在这里改水深 d 和是不是外海 open'
+
 const COLOR = /* glsl */ `
   vec2 cell = floor(vSeaPos / uPixel);
   vec3 coast = seaCoast(cell);
   float d = coast.x;
   bool open = coast.y == 1.0;
+  ${SEA_DEPTH_HOOK}
   float t = floor(uSeaTime * 8.0) / 8.0;
   float dither = seaBayer(cell);
   // 码头一带不起浪：平静程度按有序抖动过渡，浪线到这里一格格断掉，不是齐刷刷一条边
@@ -332,19 +337,21 @@ const ICE = /* glsl */ `
 `
 
 /** 离岸距离、岸边地物（见 Ground.shore）和码头一带的平静程度（见 Ground.calm）合成一张贴图，
- *  海面和沙滩上的浪共用 */
+ *  海面和沙滩上的浪共用。给了 wet 时 a 通道标出原来的地（255），玩法把淹掉的地画成海时用 */
 export function coastTexture(
   depth: Uint8Array,
   shore: Uint8Array,
   calm: Uint8Array,
   pw: number,
-  ph: number
+  ph: number,
+  wet?: Uint8Array
 ) {
   const data = new Uint8Array(pw * ph * 4)
   for (let i = 0; i < pw * ph; i++) {
     data[i * 4] = depth[i]
     data[i * 4 + 1] = shore[i]
     data[i * 4 + 2] = calm[i]
+    if (wet && !wet[i]) data[i * 4 + 3] = 255
   }
   const map = new THREE.DataTexture(data, pw, ph, THREE.RGBAFormat, THREE.UnsignedByteType)
   map.magFilter = map.minFilter = THREE.NearestFilter

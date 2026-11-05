@@ -15,8 +15,10 @@ import { Villagers, type LiveMotion, type VillagerPlacement } from './villagers'
 import { villagerLight } from './villagerLight'
 import { VILLAGER_HALF, VILLAGER_HEIGHT, VILLAGER_SCALE } from './villagerSprite'
 import { Weather3D } from './weather'
+import { gameModeLooks, type GameModeLook } from './gameModes'
 import { DOORS } from '../buildings'
 import type { WeatherKind } from 'town-shared/weather/types'
+import type { GameModeView } from 'town-shared/protocol'
 import {
   DEFAULT_PITCH,
   PITCH_MAX,
@@ -382,9 +384,10 @@ export class HdScene {
   /** 场景的雾，颜色由 applyLight 跟着天色改 */
   private readonly fog: THREE.FogExp2
   private readonly motes: Motes
-  private readonly villagers = new Villagers(this.scene, this.tilt, (m) =>
+  private readonly villagers = new Villagers(this.scene, this.tilt, (m) => {
     this.lightmap.shade(m, 'standee')
-  )
+    for (const look of this.looks) look.shadeStanding(m, 'villager')
+  })
   private readonly swayAt = (x: number, z: number) => this.weather.swayAt(x, z)
   /** 灯笼的光：和路灯同色，暗一些 */
   private get lanternColor() {
@@ -399,11 +402,16 @@ export class HdScene {
     this.scene,
     this.tilt,
     () => this.request(),
-    (m) => this.lightmap.shade(m, 'standee')
+    (m) => {
+      this.lightmap.shade(m, 'standee')
+      for (const look of this.looks) look.shadeStanding(m, 'thing')
+    }
   )
   private lastTick = performance.now()
 
   private readonly theme: MapTheme
+  /** 玩法的画面（gameModes/）：地面、海面、立着的东西和村民的着色先装好，名册来了交给它们 */
+  private readonly looks: GameModeLook[]
 
   /** ground 是这张地图算好的地面（pixel/terrain.ts 的 groundOf），场景只读它 */
   constructor(
@@ -414,6 +422,7 @@ export class HdScene {
   ) {
     const { seed, decor, theme } = ground
     this.theme = theme
+    this.looks = gameModeLooks(theme)
     this.renderer = createRenderer(container, svg)
     this.scene.add(this.flat)
     this.center = [atlas.canvas.width / 2, atlas.canvas.height / 2]
@@ -464,6 +473,7 @@ export class HdScene {
     this.grass = new Grass(tuftsOf(decor, clear, seed, grassDensity), theme, this.tilt)
     Object.assign(this.grass.uniforms, this.weather.windUniforms, this.trail.uniforms)
     this.lightmap.shade(this.grass.surface, 'standee')
+    for (const look of this.looks) look.shadeStanding(this.grass.surface, 'thing')
     this.grass.group.traverse((o) => o.layers.set(REFLECTION_SKIP))
     this.scene.add(this.grass.group)
     this.upright.push((t) => this.grass.setTilt(t))
@@ -1098,7 +1108,7 @@ export class HdScene {
     ground.rotation.x = -Math.PI / 2
     ground.position.set(-MARGIN + w / 2, 0, -MARGIN + h / 2)
     ground.receiveShadow = true
-    const coast = coastTexture(terrain.depth, terrain.shore, terrain.calm, pw, ph)
+    const coast = coastTexture(terrain.depth, terrain.shore, terrain.calm, pw, ph, wet)
     const { material, time, sparkle, sunPath } = outerMaterial(
       coast,
       this.horizon.haze,
@@ -1111,6 +1121,10 @@ export class HdScene {
     if (this.theme.outer === 'sea') surfOnLand(landMaterial, coast, time, this.theme)
     this.lightmap.shade(landMaterial, 'ground')
     wetReflection(landMaterial, this.reflection.uniforms, 'ground')
+    for (const look of this.looks) {
+      look.shadeGround(landMaterial, 'land')
+      look.shadeGround(material, 'sea')
+    }
     this.landMaterial = landMaterial
     const sea = new THREE.Mesh(new THREE.PlaneGeometry(w * 6, h * 6), material)
     sea.rotation.x = -Math.PI / 2
@@ -1480,6 +1494,7 @@ export class HdScene {
       }
       this.weather.shade(material, { snow: 1, wet: 0.4 })
       this.lightmap.shade(material, 'standee')
+      this.standing(mesh)
       const sx = Math.round(s.x / PIXEL) * PIXEL,
         sy = Math.round(s.y / PIXEL) * PIXEL
       this.upright.push((t) => stand(mesh, sx, sy, t))
@@ -1531,6 +1546,7 @@ export class HdScene {
         const mesh = standee(texture(canvas))
         this.weather.shade(mesh.material as THREE.MeshLambertMaterial, { snow: 1, wet: 0.4 })
         this.lightmap.shade(mesh.material as THREE.Material, 'standee')
+        this.standing(mesh)
         const sx = fromPx(x),
           sy = fromPx(y)
         this.upright.push((t) => stand(mesh, sx, sy, t))
@@ -1600,6 +1616,7 @@ export class HdScene {
       })
       this.lightmap.shade(mesh.material as THREE.Material, 'standee')
       if (mesh.customDepthMaterial) this.weather.swayShadow(mesh.customDepthMaterial)
+      this.standing(mesh)
       const sx = Math.round(x / PIXEL) * PIXEL,
         sy = Math.round(y / PIXEL) * PIXEL
       this.upright.push((t) => stand(mesh, sx, sy, t))
@@ -1749,6 +1766,24 @@ export class HdScene {
       this.contacts.push({ x: sx, y: sy, r: 2.5, strength: 0.3 })
     })
   }
+
+  /** 立在岛上的东西接上玩法的着色（潮水圈里按水深往下沉），投影跟着 */
+  private standing(mesh: THREE.Mesh) {
+    for (const look of this.looks) {
+      look.shadeStanding(mesh.material as THREE.Material, 'thing')
+      if (mesh.customDepthMaterial) look.shadeStanding(mesh.customDepthMaterial, 'thing')
+    }
+  }
+
+  /** 名册里开着的玩法此刻的状态（没开时 null）；metre 是每米的地图单位。状态没变时不重画 */
+  setGameMode(view: GameModeView | null, metre: number) {
+    const key = view ? `${metre}|${JSON.stringify(view)}` : ''
+    if (key === this.gameModeKey) return
+    this.gameModeKey = key
+    for (const look of this.looks) look.apply(view, metre)
+    this.ambient = true
+  }
+  private gameModeKey = ''
 
   /** 世界时间与天气 */
   setClock(minutes: number, weather?: string) {
@@ -2015,7 +2050,8 @@ export class HdScene {
   /** 视野里有没有水：视野四角在地面上的外接框碰到有水的格子，或者伸出了地面画布（外面都是海） */
   private waterInView(target: THREE.Vector3, w: number, h: number) {
     const grid = this.waterGrid
-    if (!grid) return true
+    // 开着玩法时（潮水圈）圈外到处都可能是水
+    if (!grid || this.looks.some((look) => look.waterAnywhere)) return true
     const { yawSin, yawCos } = this.tilt
     const ex = (Math.abs(yawCos) * w + Math.abs(yawSin) * h) / 2,
       ez = (Math.abs(yawSin) * w + Math.abs(yawCos) * h) / 2

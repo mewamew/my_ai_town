@@ -1151,6 +1151,7 @@ export class TownMap {
         DEV_CLOCK?.weather ?? msg.environment?.kind,
       ]
       this.hd?.setClock(...this.clock)
+      if (this.metre) this.hd?.setGameMode(msg.game_mode ?? null, this.metre)
     }
     if (msg.type === 'population') {
       this.templates = new Map(msg.population.residents.map((r) => [r.id, r.template_id]))
