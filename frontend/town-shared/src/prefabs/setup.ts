@@ -1,6 +1,7 @@
 import { button, el } from '../dom'
 import { newId } from '../ids'
 import type { ModelOption } from '../models/session'
+import { portraitFor, templateKey } from '../portraits'
 import type {
   ClientMsg,
   JoinOutcome,
@@ -9,6 +10,7 @@ import type {
   PhysiologySwitches,
   ServerMsg,
 } from '../protocol'
+import { segmented, settingRow, switchControl } from '../settings/controls'
 import type { ShellPanel } from '../shell/panel'
 import type { createWorldSettings } from '../worldSettings'
 import type { Prefab } from '.'
@@ -59,8 +61,9 @@ export function createPrefabSetup(d: {
   let fixedSeed = false
   let seed = 51
   let needs = true
-  /** 村民库里的名字（模板编号 → 名字），读到之前显示编号 */
+  /** 村民库里的名字和头像编号（模板编号 → …），读到之前显示号码 */
   const names = new Map<string, string>()
+  const keys = new Map<string, string>()
   // 做到哪一步了：出错后从这里接着做
   let running = false
   let status = ''
@@ -68,6 +71,8 @@ export function createPrefabSetup(d: {
   let needsSaved = false
   let modeSaved = false
   const joined: (string | null)[] = []
+  /** 正在请入住的号码（从 0 数），头像上的号码变成橙色 */
+  let joining = -1
 
   const waiters: Waiter[] = []
   function waitFor<T>(match: (m: ServerMsg) => T | undefined, ms = 15000) {
@@ -98,152 +103,193 @@ export function createPrefabSetup(d: {
     )
   }
 
-  // 卡片：顶上一行「开局设置」，下面是名字和一句话简介，再是四组设置，每组标题在上、内容在下
+  /** 下拉框里一个模型的取值 */
+  const choiceValue = (m: ModelChoice) => `${m.provider}\n${m.model}`
+  const parseChoice = (value: string): ModelChoice => {
+    const [provider, model] = value.split('\n')
+    return { provider, model }
+  }
+  /** 模型的叫法：可选的模型一个服务一个，写服务名就分得清；有同名的服务才带上模型名 */
+  const modelLabel = (o: ModelOption, options: ModelOption[]) =>
+    options.filter((x) => x.name === o.name).length > 1 ? `${o.name} · ${o.model}` : o.name
+  function modelSelect(options: ModelOption[]) {
+    const select = el('select')
+    for (const o of options) {
+      const option = el('option', modelLabel(o, options))
+      option.value = choiceValue(o)
+      select.append(option)
+    }
+    return select
+  }
+
+  // 卡片从上到下：名字和一句话简介；一排选手头像（人数加减只是点亮、熄灭，卡片高度不变）；
+  // 三行设置用设定页的同款控件（settings/controls.ts）。不再一组一个框，一屏放得下、不用滚动。
   function render() {
     if (!prefab) return
+    const p = prefab
     title.textContent = '开局设置'
     skip.hidden = running
-    const p = prefab
     const head = el('header', '', 'prefab-head')
     head.append(el('h2', p.name), el('p', p.description))
-    const rows = el('div', '', 'prefab-rows')
-
-    const count = el('div', '', 'prefab-count')
-    const less = button('−', () => setPlayers(players - 1), 'prefab-step')
-    const more = button('+', () => setPlayers(players + 1), 'prefab-step')
-    less.disabled = running || players <= p.players.min
-    more.disabled = running || players >= p.players.max
-    less.setAttribute('aria-label', '少一个人')
-    more.setAttribute('aria-label', '多一个人')
-    count.append(less, el('b', String(players)), more)
-    rows.append(row('人数', count, `${p.players.min}～${p.players.max} 人`))
-
     const options = d.modelOptions()
-    const roster = el('div', '', 'prefab-roster')
-    const modelSelect = (
-      value: ModelOption | null,
-      disabled: boolean,
-      pick: (m: ModelChoice) => void
-    ) => {
-      const select = el('select')
-      select.disabled = disabled
-      for (const o of options) {
-        const option = el('option', `${o.name} · ${o.model}`)
-        option.value = `${o.provider}\n${o.model}`
-        select.append(option)
-      }
-      if (value) select.value = `${value.provider}\n${value.model}`
-      select.onchange = () => {
-        const [provider, model] = select.value.split('\n')
-        pick({ provider, model })
-      }
-      return select
-    }
-    for (let i = 0; i < players; i++) {
-      const id = p.roster[i]
-      const slot = el('label', '', 'prefab-slot')
-      slot.append(
-        el('span', String(i + 1), 'prefab-no'),
-        el('span', names.get(id) ?? id, 'prefab-who')
-      )
-      if (options.length)
-        slot.append(
-          modelSelect(slotModel(i), running || joined[i] !== undefined, (m) => {
-            models[i] = m
-          })
-        )
-      roster.append(slot)
-    }
-    // 模型不止一个时，可以一次给所有人换
-    let all: HTMLElement | undefined
-    if (options.length > 1) {
-      all = el('label', '', 'prefab-all')
-      all.append(
-        el('span', '全部换成'),
-        modelSelect(null, running, (m) => {
-          models = Array.from({ length: p.players.max }, () => m)
-          render()
-        })
-      )
-      ;(all.querySelector('select') as HTMLSelectElement).value = ''
-    }
-    rows.append(row('选手和模型', roster, undefined, all))
-    if (!options.length)
-      roster.after(el('p', '还没连接模型：选手先住下，连上模型后才会行动。', 'prefab-hint'))
-
-    const circles = el('div', '', 'prefab-segment')
-    circles.setAttribute('role', 'group')
-    circles.append(
-      radio('每局随机', !fixedSeed, () => {
-        fixedSeed = false
-        render()
-      }),
-      radio('固定种子', fixedSeed, () => {
-        fixedSeed = true
-        render()
-      })
+    // 上场的人用了哪几个模型：不止一个时头像下面写各自的模型，都一样就不写（下面「模型」一行写了）
+    const used = new Set(
+      Array.from({ length: players }, (_, i) => slotModel(i)).map((m) => m && choiceValue(m))
     )
-    const circleBox = el('div', '', 'prefab-circle')
-    circleBox.append(circles)
-    if (fixedSeed) {
-      const seedInput = el('input', '', 'prefab-seed')
-      seedInput.type = 'number'
-      seedInput.min = '1'
-      seedInput.max = '4294967295'
-      seedInput.value = String(seed)
-      seedInput.disabled = running
-      seedInput.setAttribute('aria-label', '种子')
-      seedInput.onchange = () => {
-        const n = Math.floor(Number(seedInput.value))
-        if (Number.isFinite(n) && n >= 1 && n <= 4294967295) seed = n
-        seedInput.value = String(seed)
-      }
-      circleBox.append(seedInput)
-    }
-    rows.append(
-      row('圈的位置', circleBox, fixedSeed ? '同一个种子，每局圈的位置都一样' : undefined)
-    )
-
-    const toggle = el('label', '', 'prefab-switch')
-    const box = el('input')
-    box.type = 'checkbox'
-    box.setAttribute('role', 'switch')
-    box.checked = needs
-    box.disabled = running || needsSaved
-    box.onchange = () => {
-      needs = box.checked
-      render()
-    }
-    const words = el('span', '', 'prefab-switch-text')
-    words.append(
-      el('b', needs ? '要吃喝睡' : '不用吃喝睡'),
-      el('small', needs ? '会饿会渴会困，站在水里掉体力' : '只比谁会躲水')
-    )
-    toggle.append(words, box)
-    rows.append(row('生存', toggle))
-
-    body.replaceChildren(head, rows)
+    const rows = el('div', '', 'set-rows prefab-settings')
+    rows.append(modelRow(p, options, used), circleRow(), needsRow())
+    body.replaceChildren(head, lineup(p, options, used.size > 1), rows)
 
     const go = button(running ? '正在开局…' : '开始这一局', () => void start(), 'primary')
     go.disabled = running
     foot.replaceChildren(...(status ? [el('p', status, 'prefab-status')] : []), go)
   }
 
-  function row(label: string, content: HTMLElement, hint?: string, extra?: HTMLElement) {
-    const line = el('section', '', 'prefab-row')
-    const heading = el('div', '', 'prefab-row-head')
-    heading.append(el('h3', label))
-    if (hint) heading.append(el('small', hint))
-    if (extra) heading.append(extra)
-    line.append(heading, content)
-    return line
+  /** 选手：所有号码排成两行，前 players 位亮着；模型不止一个时，点头像给这一位换模型 */
+  function lineup(p: Prefab, options: ModelOption[], mixed: boolean) {
+    const section = el('section', '', 'prefab-lineup')
+    const bar = el('div', '', 'prefab-lineup-bar')
+    const stepper = el('div', '', 'prefab-stepper')
+    stepper.setAttribute('role', 'group')
+    stepper.setAttribute('aria-label', '人数')
+    const less = button('−', () => setPlayers(players - 1))
+    const more = button('+', () => setPlayers(players + 1))
+    less.disabled = running || players <= p.players.min
+    more.disabled = running || players >= p.players.max
+    less.setAttribute('aria-label', '少一个人')
+    more.setAttribute('aria-label', '多一个人')
+    stepper.append(less, el('b', `${players} 人`), more)
+    bar.append(el('h3', '选手'), el('small', `${p.players.min}～${p.players.max} 人`), stepper)
+
+    const grid = el('div', '', 'prefab-players')
+    const pickable = options.length > 1
+    for (let i = 0; i < p.players.max; i++) {
+      const id = p.roster[i]
+      const name = names.get(id) ?? ''
+      const on = i < players
+      const cell = el('div', '', 'prefab-player')
+      cell.classList.toggle('off', !on)
+      cell.classList.toggle('joined', !!joined[i])
+      cell.classList.toggle('joining', running && joining === i)
+      const face = el('span', '', 'prefab-face')
+      const key = keys.get(id)
+      const url = key ? portraitFor(key) : undefined
+      if (url) {
+        const img = el('img')
+        img.src = url
+        img.alt = ''
+        face.append(img)
+      } else face.textContent = name.slice(0, 1)
+      face.append(el('i', joined[i] ? '✓' : String(i + 1), 'prefab-no'))
+      cell.append(face, el('b', name || `${i + 1} 号`))
+      const model = on ? slotModel(i) : null
+      // 各用各的时名字下面写用哪个模型；没上场的空着，格子一样高
+      if (mixed) cell.append(el('small', model ? modelLabel(model, options) : ''))
+      if (pickable && model) {
+        // 整格盖一个透明下拉框：点头像就弹出统一样式的模型列表
+        const select = modelSelect(options)
+        select.className = 'prefab-pick'
+        select.value = choiceValue(model)
+        select.disabled = running || joined[i] !== undefined
+        select.setAttribute('aria-label', `${name || `${i + 1} 号`}用的模型`)
+        select.onchange = () => {
+          models[i] = parseChoice(select.value)
+          render()
+        }
+        cell.append(select)
+      }
+      grid.append(cell)
+    }
+    section.append(bar, grid)
+    return section
   }
-  function radio(label: string, on: boolean, pick: () => void) {
-    const b = button(label, pick, 'prefab-option' + (on ? ' on' : ''))
-    b.setAttribute('aria-pressed', String(on))
-    b.disabled = running
-    return b
+
+  /** 模型：只有一个时写出来；多个时下拉框一次给所有人换，各用各的时框里写「各用各的」 */
+  function modelRow(p: Prefab, options: ModelOption[], used: Set<string | null>) {
+    if (!options.length)
+      return settingRow(
+        '模型',
+        '还没连接模型：选手先住下，连上后才会行动',
+        el('span', '未连接', 'ui-chip')
+      )
+    if (options.length === 1)
+      return settingRow(
+        '模型',
+        '所有选手都用它',
+        el('span', `${options[0].name} · ${options[0].model}`, 'prefab-model')
+      )
+    const select = modelSelect(options)
+    if (used.size > 1) {
+      const mixed = el('option', '各用各的')
+      mixed.value = ''
+      mixed.hidden = true
+      select.prepend(mixed)
+      select.value = ''
+    } else select.value = [...used][0] ?? choiceValue(options[0])
+    select.disabled = running
+    select.setAttribute('aria-label', '所有选手用的模型')
+    select.onchange = () => {
+      const choice = parseChoice(select.value)
+      // 已经住进来的人模型定了，不跟着换
+      models = Array.from({ length: p.players.max }, (_, i) =>
+        joined[i] ? (models[i] ?? slotModel(i)) : choice
+      )
+      render()
+    }
+    return settingRow('模型', '点头像可以给某一位单独换', select)
   }
+
+  /** 圈的位置：每局随机，或填一个种子让每局都一样 */
+  function circleRow() {
+    const seg = segmented(
+      '圈的位置',
+      [
+        { value: 'random', label: '每局随机' },
+        { value: 'fixed', label: '固定种子' },
+      ],
+      (value) => {
+        if (fixedSeed === (value === 'fixed')) return
+        fixedSeed = value === 'fixed'
+        render()
+        if (fixedSeed) body.querySelector<HTMLInputElement>('.prefab-seed')?.select()
+      }
+    )
+    seg.set(fixedSeed ? 'fixed' : 'random')
+    seg.el.querySelectorAll('button').forEach((b) => (b.disabled = running))
+    const row = settingRow('圈的位置', fixedSeed ? '' : '每一局圈缩向哪里都不一样', seg.el)
+    if (fixedSeed) {
+      const line = el('label', '', 'set-row-desc prefab-seed-line')
+      const input = el('input', '', 'prefab-seed')
+      input.type = 'number'
+      input.min = '1'
+      input.max = '4294967295'
+      input.value = String(seed)
+      input.disabled = running
+      input.onchange = () => {
+        const n = Math.floor(Number(input.value))
+        if (Number.isFinite(n) && n >= 1 && n <= 4294967295) seed = n
+        input.value = String(seed)
+      }
+      line.append('种子', input)
+      row.querySelector('.set-row-text')?.append(line)
+    }
+    return row
+  }
+
+  function needsRow() {
+    const toggle = switchControl('吃喝睡', (on) => {
+      needs = on
+      render()
+    })
+    toggle.set(needs)
+    toggle.el.disabled = running || needsSaved
+    return settingRow(
+      '吃喝睡',
+      needs ? '会饿会渴会困，站在水里会掉体力' : '只比谁会躲水',
+      toggle.el
+    )
+  }
+
   function setPlayers(n: number) {
     if (!prefab) return
     players = Math.min(prefab.players.max, Math.max(prefab.players.min, n))
@@ -305,8 +351,10 @@ export function createPrefabSetup(d: {
       for (let i = 0; i < players; i++) {
         if (joined[i]) continue
         status = `正在请 ${i + 1} 号入住…`
+        joining = i
         render()
         joined[i] = await join(p.roster[i], slotModel(i))
+        joining = -1
       }
       if (!modeSaved) {
         status = '正在打开玩法…'
@@ -320,6 +368,7 @@ export function createPrefabSetup(d: {
       d.onFinish(joined.filter((id): id is string => !!id))
     } catch (error) {
       running = false
+      joining = -1
       status = `${status.replace(/…$/, '')}时出错：${error instanceof Error ? error.message : String(error)}。再点一次「开始这一局」从这一步接着做。`
       render()
     }
@@ -335,7 +384,10 @@ export function createPrefabSetup(d: {
   const panel: ShellPanel = {
     handleMsg(m: ServerMsg) {
       if (m.type === 'resident_library') {
-        for (const t of m.templates) names.set(t.template_id, t.name)
+        for (const t of m.templates) {
+          names.set(t.template_id, t.name)
+          keys.set(t.template_id, templateKey(t))
+        }
         if (!root.hidden) render()
       }
       for (const w of [...waiters]) {

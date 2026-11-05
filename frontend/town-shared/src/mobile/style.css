@@ -1289,19 +1289,18 @@ body:has(.guide:not([hidden])) :is(.pause-hint, .fast-hint) {
   font-size: 15px;
 }
 
-/* ---------- 预制小镇的开局设置：沿用开局向导的卡片，四组设置，标题在上 ---------- */
+/* ---------- 预制小镇的开局设置：一排选手头像，下面三行设定页同款的设置（settings/controls.css），
+   不再一组一个框；人数加减只点亮、熄灭头像，卡片高度不变，一屏放得下 ---------- */
 .prefab-title {
   font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--accent);
+  color: var(--text-2);
 }
 .prefab-head {
-  margin: 0 0 18px;
+  margin-bottom: 18px;
 }
 .prefab-head h2 {
-  margin: 0 0 6px;
-  font-size: 26px;
+  margin: 0 0 4px;
 }
 .prefab-head p {
   margin: 0;
@@ -1309,210 +1308,210 @@ body:has(.guide:not([hidden])) :is(.pause-hint, .fast-hint) {
   line-height: 1.6;
   color: var(--text-2);
 }
-.prefab-rows {
-  display: grid;
-  gap: 12px;
-}
-.prefab-row {
-  padding: 14px;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--r-m);
-  background: var(--surface);
-}
-.prefab-row-head {
+.prefab-lineup-bar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
-  margin-bottom: 10px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
 }
-.prefab-row-head h3 {
+.prefab-lineup-bar h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
 }
-.prefab-row-head small {
-  font-size: 12.5px;
+.prefab-lineup-bar small {
+  font-size: 12px;
   color: var(--text-3);
 }
-.prefab-count {
+/* 人数：和分段按钮（.ui-seg）同一套外观 */
+.prefab-stepper {
   display: inline-flex;
   align-items: center;
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
-  overflow: hidden;
-}
-.prefab-count b {
-  min-width: 2.6em;
-  font-size: 18px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-.prefab-step {
-  width: 40px;
-  height: 36px;
-  border: 0;
-  border-radius: 0;
-  background: var(--surface-sunken);
-  font-size: 18px;
-}
-.prefab-step:disabled {
-  opacity: 0.4;
-}
-.prefab-all {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   margin-left: auto;
-  font-size: 12.5px;
-  color: var(--text-3);
-}
-.prefab-all select {
-  min-height: 28px;
-  max-width: 12em;
-  font-size: 12.5px;
-}
-.prefab-roster {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 8px;
-}
-.prefab-slot {
-  display: grid;
-  grid-template-columns: 26px minmax(0, 1fr);
-  grid-template-areas: 'no who' 'model model';
-  gap: 6px 8px;
-  align-items: center;
-  padding: 8px 10px;
+  padding: 2px;
+  border: 1px solid var(--line);
   border-radius: var(--r-s);
   background: var(--surface-sunken);
 }
-.prefab-no {
-  grid-area: no;
-  display: grid;
-  place-items: center;
-  width: 26px;
+.prefab-stepper button {
+  width: 30px;
   height: 26px;
-  border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent-strong);
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 16px;
+  line-height: 1;
+}
+.prefab-stepper button:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--text);
+}
+.prefab-stepper b {
+  min-width: 3.4em;
   font-size: 13px;
-  font-weight: 700;
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }
-.prefab-who {
-  grid-area: who;
-  overflow: hidden;
-  font-size: 15px;
+.prefab-players {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px 4px;
+}
+.prefab-player {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 0 4px;
+  border-radius: var(--r-s);
+  transition: opacity var(--t-fast) var(--ease);
+}
+.prefab-player.off {
+  opacity: 0.32;
+}
+.prefab-player.off img {
+  filter: grayscale(1);
+}
+.prefab-face {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 4px;
+  border-radius: 12px;
+  background: var(--surface-sunken);
+  color: var(--text-3);
+  font-size: 18px;
   font-weight: 600;
+  transition: box-shadow var(--t-fast) var(--ease);
+}
+.prefab-face img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  image-rendering: pixelated;
+}
+/* 号码：头像左上角的小圆牌；住进来了换成对勾，正在请的变橙 */
+.prefab-no {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: var(--r-pill);
+  background: var(--accent-fill);
+  box-shadow: 0 0 0 2px var(--surface-page);
+  color: var(--on-accent);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.prefab-player.off .prefab-no {
+  background: var(--text-3);
+}
+.prefab-player.joined .prefab-no {
+  background: var(--ok);
+}
+.prefab-player.joining .prefab-no {
+  background: var(--busy);
+}
+.prefab-player b,
+.prefab-player small {
+  max-width: 100%;
+  overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.prefab-slot select {
-  grid-area: model;
-  min-width: 0;
-  min-height: 32px;
-  font-size: 12.5px;
-}
-.prefab-hint {
-  margin: 8px 0 0;
+.prefab-player b {
   font-size: 13px;
+}
+.prefab-player small {
+  min-height: 1.5em;
+  font-size: 11.5px;
   color: var(--text-3);
 }
-.prefab-circle {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
+/* 能单独换模型的格子：整格盖一个透明下拉框，点开是统一样式的模型列表 */
+.prefab-pick {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
 }
-.prefab-segment {
-  display: inline-flex;
-  padding: 3px;
-  border-radius: var(--r-pill);
-  background: var(--surface-sunken);
+.prefab-player:has(.prefab-pick:not(:disabled)):hover .prefab-face,
+.prefab-player:has(.prefab-pick.ui-select-open) .prefab-face {
+  box-shadow: 0 0 0 2px var(--accent);
 }
-.prefab-option {
-  min-height: 32px;
-  padding: 0 16px;
-  border: 0;
-  border-radius: var(--r-pill);
-  background: transparent;
+.prefab-player:has(.prefab-pick:not(:disabled)):hover small,
+.prefab-player:has(.prefab-pick.ui-select-open) small {
+  color: var(--accent-strong);
+}
+.prefab-player:has(.prefab-pick:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.prefab-settings {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.prefab-settings .set-row:last-child {
+  border-bottom: 0;
+}
+.prefab-settings select {
+  max-width: 13em;
+  font-size: 13px;
+}
+.prefab-model {
+  font-size: 13px;
   color: var(--text-2);
-  font-size: 14px;
 }
-.prefab-option.on {
-  background: var(--surface-raised);
-  color: var(--text);
-  font-weight: 600;
-  box-shadow: var(--elev-1);
+.prefab-seed-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
-.prefab-seed {
-  width: 9em;
-  min-height: 36px;
+input.prefab-seed {
+  width: 8em;
+  height: 26px;
+  padding: 2px 8px;
   font-variant-numeric: tabular-nums;
 }
-.prefab-switch {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  cursor: pointer;
-}
-.prefab-switch-text {
-  display: grid;
-  gap: 2px;
-}
-.prefab-switch-text b {
-  font-size: 15px;
-}
-.prefab-switch-text small {
-  font-size: 13px;
-  color: var(--text-3);
-}
-/* 开关画成滑块 */
-.prefab-switch input {
-  appearance: none;
-  flex: none;
-  position: relative;
-  width: 44px;
-  height: 26px;
-  margin: 0;
-  border-radius: var(--r-pill);
-  background: var(--line);
-  cursor: pointer;
-  transition: background var(--t-fast) var(--ease);
-}
-.prefab-switch input::after {
-  content: '';
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: var(--elev-1);
-  transition: transform var(--t-fast) var(--ease);
-}
-.prefab-switch input:checked {
-  background: var(--accent);
-}
-.prefab-switch input:checked::after {
-  transform: translateX(18px);
-}
-.prefab-switch input:disabled {
-  opacity: 0.5;
-}
 .prefab-status {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 13px;
   color: var(--text-2);
 }
-.prefab-setup .guide-foot {
-  display: block;
+/* 手机竖屏：间距收一点，小屏也一屏放得下 */
+[data-layout='compact'] .prefab-head {
+  margin-bottom: 12px;
 }
-.prefab-setup .guide-foot button {
-  width: 100%;
+[data-layout='compact'] .prefab-lineup-bar {
+  margin-bottom: 8px;
+}
+[data-layout='compact'] .prefab-players {
+  gap: 6px 4px;
+}
+[data-layout='compact'] .prefab-settings {
+  margin-top: 10px;
+}
+[data-layout='compact'] .prefab-player small {
+  font-size: 11px;
+}
+@media (max-width: 370px) {
+  [data-layout='compact'] .prefab-player small {
+    font-size: 10.5px;
+  }
 }
 
 /* ---------- 一次性提示：深色小卡，箭头指着人或入口 ---------- */
