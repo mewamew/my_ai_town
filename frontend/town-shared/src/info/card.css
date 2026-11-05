@@ -366,7 +366,7 @@
   gap: 8px;
 }
 /* 「状态」标题右边的治愈、补满（开着化身神力时） */
-.card-tools {
+.card-caption-tools {
   display: flex;
   gap: 6px;
   margin-left: auto;

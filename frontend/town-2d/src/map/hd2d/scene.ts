@@ -1624,6 +1624,7 @@ export class HdScene {
 
   /** 沿室外路段每隔一段立一盏路灯，灯光画进光照图。入夜时从镇中心往外一盏盏亮起 */
   private addLamps(atlas: Atlas, wet: Uint8Array, pw: number, glowMap: THREE.Texture) {
+    if (this.theme.lamp === 'none') return
     const rooms = this.houses
     const inRoom = (x: number, y: number, pad: number) =>
       rooms.some(

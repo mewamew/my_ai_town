@@ -3,7 +3,8 @@ import { registerPropArtwork } from 'town-shared/props/picture'
 import './propArt.css'
 
 // 道具像素图：文件名与定义 ID（去掉 core:）一致；功能版本共用素材，实例 ID 不参与匹配。
-// 由原来的手绘图缩成 24 格像素图，没有手绘图的几种单独画。
+// 由原来的手绘图缩成 24 格像素图，没有手绘图的几种单独画。玩家照着内置道具改的变体
+// （shipwreck:island-palms）编号后半段和内置道具同名时沿用同一张图。
 const files = import.meta.glob<string>('../assets/props/pixel/*.png', {
   eager: true,
   query: '?url',
@@ -25,10 +26,11 @@ export function bookCover(id: string) {
 
 export function propArtwork(reference: string): string | undefined {
   const id = reference.split('@')[0]
-  if (!id.startsWith('core:')) return undefined
-  const name = id.slice(5)
+  const [namespace, name] = id.split(':')
+  if (!name) return undefined
   const own = files[`../assets/props/pixel/${name}.png`]
   if (own) return own
+  if (namespace !== 'core') return undefined
   // 内置的书 book-5、book-6……没有单画的封面：按编号轮流用四张，相邻几本颜色不同
   const n = Number(/^book-(\d+)$/.exec(name)?.[1])
   return n ? BOOK_COVERS[(n - 1) % BOOK_COVERS.length] : undefined

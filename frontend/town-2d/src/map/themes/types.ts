@@ -147,8 +147,8 @@ export interface MapTheme {
     lift: number
     fireflies: boolean
   }
-  /** 路灯画法、旗子配色；灯塔完好、破败，还是夜里有转动的光束 */
-  lamp: 'street' | 'scrap'
+  /** 路灯画法（none 是不立路灯：野外小径）、旗子配色；灯塔完好、破败，还是夜里有转动的光束 */
+  lamp: 'street' | 'scrap' | 'none'
   flag: { colors: readonly [string, string]; torn: boolean }
   lighthouse: 'striped' | 'ruined' | 'beacon'
 }
