@@ -131,6 +131,15 @@ impl Journal {
         self.today.push(Receipt { at, text, alert });
     }
 
+    /// 只进今天的流水（日志页照常看得到），不另记事实：同一件事已经有别的事件记着。
+    pub(crate) fn record_diary(&mut self, at: f64, text: String) {
+        self.today.push(Receipt {
+            at,
+            text,
+            alert: None,
+        });
+    }
+
     /// 记一条亲眼看到的事实，带上涉及的人和地点（recall 按对象查得到），同时进今天的流水。
     pub(crate) fn record_seen(&mut self, at: f64, text: String, objects: Vec<String>) {
         self.fact(

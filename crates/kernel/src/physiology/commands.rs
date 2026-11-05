@@ -172,9 +172,21 @@ impl World {
         text: String,
         alert: Option<Alert>,
     ) {
+        self.record_body_event(id, kind, source, text, alert, true);
+    }
+
+    fn record_body_event(
+        &mut self,
+        id: &str,
+        kind: BodyEventKind,
+        source: &str,
+        text: String,
+        alert: Option<Alert>,
+        fact: bool,
+    ) {
         let now = self.minutes;
         let a = self.actor_mut(id);
-        let log = a.body_event(now, kind, source, text, alert.clone());
+        let log = a.body_event(now, kind, source, text, alert.clone(), fact);
         let info = a.event_info().with_alert(alert);
         self.log(info, log);
     }
@@ -368,7 +380,13 @@ impl World {
             .action
             .as_ref()
             .and_then(|b| b.draft.recipient.clone());
-        let source: String = format!("{}使用{}／{}", a.name, spot.prop_name, action.label)
+        // 给自己用时句子里不写自己的名字：这些句子会进本人的经历，第三人称的「林晚使用……
+        // 林晚饱腹恢复」会让村民把自己当成另一个人。给别人用时照写，对方要知道是谁。
+        let user = match &recipient {
+            Some(r) if r != id => a.name.as_str(),
+            _ => "",
+        };
+        let source: String = format!("{user}使用{}／{}", spot.prop_name, action.label)
             .chars()
             .take(240)
             .collect();
@@ -386,7 +404,7 @@ impl World {
             changes.push(crate::outcome::supply_used(s.cost, remaining));
         }
         changes.extend(self.use_up_requirements(id, &action));
-        changes.extend(self.apply_instant_effects(&target, &effects, &source)?);
+        changes.extend(self.apply_instant_effects(id, &target, &effects, &source)?);
         changes.extend(misses);
         if action.consumes_item {
             self.consume_carried_prop(&spot.prop);
@@ -415,12 +433,16 @@ impl World {
         if attacked && self.actors[&target].needs.body.dead {
             changes.push(crate::outcome::killed(&self.actors[&target].name));
         }
-        self.body_event(
+        // 自己用道具：这些变化已经写在自己的动作结果里，身体事件只进身体记录和当天流水，
+        // 不再给本人另记一条事实，免得一次吃饭在经历里出现好几回。
+        let reported = target == id && self.actors[id].current.action.is_some();
+        self.record_body_event(
             &target,
             BodyEventKind::Prop,
             &source,
             format!("{source}：{}", changes.join("；")),
             None,
+            !reported,
         );
         if target != id {
             let received = if action.harms() { "遭到" } else { "接受" };
@@ -439,22 +461,25 @@ impl World {
     }
 
     /// 身体效果与后续安排；产出物品和建道具已在 `make_things` 里做完。
+    /// 作用在使用者自己身上时，句子里不写名字（见 finish_body_use）。
     fn apply_instant_effects(
         &mut self,
+        user: &str,
         target: &str,
         effects: &[InstantEffect],
         source: &str,
     ) -> Result<Vec<String>> {
+        let name = if target == user {
+            String::new()
+        } else {
+            self.actors[target].name.clone()
+        };
         let mut changes = Vec::new();
         for e in effects {
             match e {
                 InstantEffect::Restore { need, amount } => {
                     let gained = self.actor_mut(target).needs.restore(*need, *amount);
-                    changes.push(crate::outcome::restored(
-                        &self.actors[target].name,
-                        *need,
-                        gained,
-                    ));
+                    changes.push(crate::outcome::restored(&name, *need, gained));
                 }
                 // 健康机制关闭时，状况既不新增也不解除。
                 InstantEffect::ApplyCondition { .. } | InstantEffect::CureCondition { .. }
@@ -473,11 +498,7 @@ impl World {
                 // 只扣健康；死没死、是不是遇害，由 finish_body_use 随后统一结算。
                 InstantEffect::Harm { amount, wound } => {
                     let lost = self.actor_mut(target).needs.lose_health(*amount);
-                    changes.push(crate::outcome::harmed(
-                        &self.actors[target].name,
-                        wound,
-                        lost,
-                    ));
+                    changes.push(crate::outcome::harmed(&name, wound, lost));
                 }
                 InstantEffect::Revive {
                     values,

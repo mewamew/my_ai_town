@@ -187,7 +187,8 @@ impl Actor {
     }
 
     /// 生命事件：进生命历史与日记；除道具回执外也作为显著通知。返回观察日志一行。
-    /// alert 是需要提示卡时的细节，随日记一起记下。
+    /// alert 是需要提示卡时的细节，随日记一起记下。`fact` 为假时只进当天流水、不记事件：
+    /// 自己用道具的变化已经写在自己的动作结果里。
     pub(crate) fn body_event(
         &mut self,
         now: f64,
@@ -195,6 +196,7 @@ impl Actor {
         source: &str,
         text: String,
         alert: Option<protocol::Alert>,
+        fact: bool,
     ) -> String {
         let source: String = source.chars().take(250).collect();
         let text: String = text.chars().take(1000).collect();
@@ -204,7 +206,11 @@ impl Actor {
             source,
             text: text.clone(),
         });
-        self.journal.record_alert(now, text.clone(), alert);
+        if fact {
+            self.journal.record_alert(now, text.clone(), alert);
+        } else {
+            self.journal.record_diary(now, text.clone());
+        }
         let log = format!("{} {text}", self.name);
         // 自己使用道具的完成回执由动作系统返回，不额外打断已经安排的后续动作。
         if kind != BodyEventKind::Prop {

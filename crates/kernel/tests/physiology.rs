@@ -128,6 +128,20 @@ fn exhausted_supply_and_competing_consumers_cannot_duplicate_effects() {
     // 两人同样经过了这段时间，差别只是吃到的那一份（夹具里每份 25 点）。
     let fullness = |id: &str| w.actor(id).unwrap().needs.fullness.value;
     close(fullness("a") - fullness("b"), 25.0);
+    // 自己吃的变化只在自己的动作结果里记一次，句子不写自己的名字：海难环岛里林晚读到
+    // 「林晚使用旧罐头……林晚饱腹恢复」，整理记忆时把自己当成了另一个人。
+    let meal: Vec<_> = w
+        .actor("a")
+        .unwrap()
+        .journal
+        .events
+        .iter()
+        .filter(|e| e.text.contains("饱腹恢复"))
+        .collect();
+    assert_eq!(meal.len(), 1, "{meal:?}");
+    assert_eq!(meal[0].kind, protocol::FactKind::Action);
+    let name = &w.actor("a").unwrap().name;
+    assert!(!meal[0].text.contains(&format!("{name}饱腹")), "{meal:?}");
     assert_eq!(json!(w.snapshot())["supplies"][&key], 0);
     assert!(common::run(
         &mut w,
