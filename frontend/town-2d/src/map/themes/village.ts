@@ -6,8 +6,9 @@ import { WALL_COLORS } from './walls'
 
 // 原作山水小镇：四面环海的孤岛，草地、土路、灰泥和木墙的房子、红蓝绿的瓦顶。
 
-/** 海水从岸边往外六档，平面图、立体场景的海面和远处小岛的浅水都用它 */
-const SEA = ['#8fd4c8', '#5cb8b4', '#439aac', '#36799c', '#2c5f88', '#27527a'] as const
+/** 海水从岸边往外六档，平面图、立体场景的海面和远处小岛的浅水都用它。
+ *  外海几乎只用最深两档：饱和度要给足，亮度别再往上提，夜里的海也按它算，提亮了会比岛还亮 */
+const SEA = ['#94e0d2', '#4cc6c4', '#25a2c4', '#1a7fba', '#155e9e', '#10508f'] as const
 /** 近岸的白沫 */
 const FOAM = '#e8f6f2'
 
@@ -205,7 +206,7 @@ export const village: MapTheme = {
     gardenLeaf: ['#4d7a45', '#5a8a4c'],
     outer: SEA,
     outerEdge: '#d8eee8',
-    seaSurface: { foam: FOAM, ripple: '#60aac8', glint: '#e8f8ff' },
+    seaSurface: { foam: FOAM, ripple: '#58b4e0', glint: '#e8f8ff' },
     sand: ['#e2d3a4', '#d8c795', '#ccb986'],
     wetSand: '#b8a57a',
     wetSandDither: '#c4b286',
