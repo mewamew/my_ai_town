@@ -1,5 +1,6 @@
 use crate::support::*;
 use agent::{
+    budget::Limits,
     memory::MemoryKind,
     notebook::{self, apply_reflection, plan_reflection},
     runtime::ResidentRuntime,
@@ -178,4 +179,66 @@ fn invalid_evidence_is_atomic_and_duplicate_receipts_do_not_prove_a_belief() {
     apply_reflection(&w, &mut s, serde_json::from_value(body).unwrap()).unwrap();
     s.notebook.pages.get_mut("summaries/D001.md").unwrap().path = "summaries/D.md".into();
     assert!(s.notebook.validate(&w, "r1").is_err());
+}
+
+/// 没读过任何东西时整理不给 read_content；模型硬拿它查别的事件，报错也接着这一批，交了 reflect 就完成，
+/// 不整批推迟（海难环岛里两人都拿 read_content 查聊天，整理各推迟了两小时）。
+#[test]
+fn reflection_without_readings_offers_no_read_content_and_a_wrong_lookup_keeps_the_batch() {
+    let mut w = world();
+    let mut r = runtime(&mut w, Limits::default());
+    w.set_need_values("r1", Some(30.0), None).unwrap();
+    let is_reflection = |q: &agent::runtime::AgentRequest| {
+        q.messages
+            .iter()
+            .any(|m| m.content.contains("reflection_task"))
+    };
+    let mut q = request(&mut r, &mut w);
+    for _ in 0..5 {
+        if is_reflection(&q) {
+            break;
+        }
+        reply(
+            &mut r,
+            &mut w,
+            &q,
+            "wait_for",
+            json!({"minutes":1,"reason":"歇一下"}),
+        );
+        w.step(1.1);
+        q = request(&mut r, &mut w);
+    }
+    assert!(is_reflection(&q), "饿了的通知应当触发一次整理");
+    let names: Vec<_> = q
+        .tools
+        .iter()
+        .map(|t| t["function"]["name"].clone())
+        .collect();
+    assert!(!names.contains(&json!("read_content")), "{names:?}");
+    let batch = r.session("r1").unwrap().notebook.request.clone().unwrap();
+    reply(
+        &mut r,
+        &mut w,
+        &q,
+        "read_content",
+        json!({"event_id":batch.through}),
+    );
+    let book = &r.session("r1").unwrap().notebook;
+    assert_eq!(
+        book.request.as_ref().map(|b| b.through),
+        Some(batch.through)
+    );
+    assert_eq!(book.failures, 0, "查错了不算这一批失败");
+    let q = request(&mut r, &mut w);
+    assert!(is_reflection(&q), "接着整理同一批");
+    reply(
+        &mut r,
+        &mut w,
+        &q,
+        "reflect",
+        json!({"through_event":batch.through,"summary":"饿了，先记下。","notes":[]}),
+    );
+    let book = &r.session("r1").unwrap().notebook;
+    assert!(book.request.is_none());
+    assert_eq!(book.through_event, batch.through);
 }

@@ -90,6 +90,15 @@ pub(crate) fn observation_field_digest(observation: &Value, key: &str) -> u64 {
     digest(&[&observation[key].to_string(), &source])
 }
 
+/// 到这个事件为止，本人有没有读完过东西；整理记忆时据此决定给不给 read_content。
+fn has_read(world: &World, actor: &str, through: u64) -> bool {
+    world
+        .contents()
+        .readings
+        .get(actor)
+        .is_some_and(|read| read.range(..=through).next().is_some())
+}
+
 fn unix_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -376,7 +385,12 @@ impl ResidentRuntime {
         }
         let round = self.plan_round(world, s)?;
         let kind = round.kind();
-        let tools = tools::definitions(kind);
+        let tools = match &round {
+            PlannedRound::Reflection(batch) => {
+                tools::reflection_definitions(has_read(world, &s.actor_id, batch.through))
+            }
+            _ => tools::definitions(kind),
+        };
         let tools_json = serde_json::to_string(&tools).expect("工具定义可序列化");
         let draft = match &round {
             PlannedRound::Reflection(batch) => self.reflection_draft(world, s, batch, &tools_json),

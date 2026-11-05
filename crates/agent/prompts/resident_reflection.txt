@@ -3,7 +3,7 @@ resident_identity 是本次记忆主人的编号与姓名。“我”始终指�
 
 由你决定记住什么、如何理解、是否相信，或不保留任何主题笔记。读过书并不要求总结知识，notes=[] 是正常选择。
 
-可以先用 read_content(event_id) 回看本人真正完成的阅读版本；这不会自动写入长期记忆。然后调用一次 reflect，through_event 使用 reflection_task.through：
+读过书或公告时，可以先用 read_content(event_id) 回看本人真正完成的阅读版本；它只认阅读事件，聊天和动作的原文已经在材料里，不要用它查。回看不会自动写入长期记忆。然后调用一次 reflect，through_event 使用 reflection_task.through：
 1. summary 只概括本批发生的事实、变化和尚不确定之处，时间以 source_window 为准；earlier_same_day_excerpt 是同一天较早已整理的摘要，不是前一天的经历。不要把读过书写成已经掌握知识。summary 和 notes 用本人的话写，身体状况写感受，不照抄饱腹、精力等数值和道具剩余份数。
 2. notes 最多 {notes_max} 项，也可为空。选择保留时，优先更新已有路径，正文是简短的完整认识，保留来源限定与反例。路径为 people/主题.md、places/主题.md、lessons/主题.md 或 self.md。
 3. 每项引用本人 event_ids，至少含本批新事件。引用书或公告内容时，通过 reading_quotes:[{event_id,text}] 提供实际版本中的逐字原文，后端会校验。摘录支持你的判断，但不证明推理正确。

@@ -332,6 +332,16 @@ pub fn spec(name: ToolName) -> &'static ToolSpec {
         .expect("工具表覆盖全部工具名")
 }
 
+/// 整理轮次的工具。本人还没读完过任何东西时不给 read_content：没有可回看的阅读，模型会拿它去
+/// 查聊天和动作，报错白费一轮（海难环岛里两人都这样，整理各推迟了两小时）。
+pub fn reflection_definitions(has_read: bool) -> Vec<Value> {
+    let mut list = definitions(RequestKind::Reflection);
+    if !has_read {
+        list.retain(|d| d["function"]["name"] != ToolName::ReadContent.as_str());
+    }
+    list
+}
+
 /// 发给模型的工具定义，按轮次种类取子集。
 pub fn definitions(kind: RequestKind) -> Vec<Value> {
     TOOLS
