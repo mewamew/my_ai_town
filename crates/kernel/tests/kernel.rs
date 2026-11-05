@@ -5,6 +5,7 @@ mod agent_actions;
 mod avatar;
 mod exploration;
 mod force;
+mod game_mode;
 mod harm;
 mod interactions;
 mod inventory;

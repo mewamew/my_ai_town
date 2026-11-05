@@ -4,7 +4,9 @@ use host::{
     world_settings::{instructions_chars, WorldSettings, INSTRUCTIONS_MAX_CHARS},
     HostError,
 };
-use protocol::{AgentState, Life, PhysiologySwitches, ServerMsg, WorldSettingsView};
+use protocol::{
+    AgentState, GameModeChoice, Life, PhysiologySwitches, ServerMsg, WorldSettingsView,
+};
 
 impl Runtime {
     /// 保存世界观是事务：所有居民改用新指令并存盘，任一步失败都回到修改前；无论成败都回发当前设定与 roster。
@@ -79,6 +81,38 @@ impl Runtime {
                     } else {
                         "化身神力已关闭".into()
                     }
+                }),
+            })
+    }
+
+    /// 打开或关掉玩法（不带 choice 是关掉）。潮水圈没给种子时随机取一个，从下一个天亮起公布第一圈。
+    /// 不暂停世界：玩法的公告到点会自己写进每个人的经历。
+    pub(crate) fn save_game_mode(
+        &mut self,
+        request_id: String,
+        choice: Option<GameModeChoice>,
+    ) -> Outcome {
+        let choice = choice.map(|c| match c {
+            GameModeChoice::Tide { seed } => GameModeChoice::Tide {
+                seed: Some(seed.unwrap_or_else(|| rand::random::<u32>().max(1))),
+            },
+        });
+        let result = self
+            .transact(|rt| {
+                rt.world.set_game_mode(choice.as_ref())?;
+                Ok::<_, HostError>(())
+            })
+            .map_err(|aborted| aborted.to_string());
+        Outcome::none()
+            .and_all(self.world_settings_msg())
+            .and_reply(ServerMsg::WorldSettingsSaved {
+                request_id,
+                ok: result.is_ok(),
+                message: result.err().unwrap_or_else(|| match choice {
+                    Some(GameModeChoice::Tide { .. }) => {
+                        "潮水圈已打开：每天 06:00 公布下一圈，12:00 开始涨，18:00 涨到".into()
+                    }
+                    None => "玩法已关掉，世界恢复原样".into(),
                 }),
             })
     }
@@ -185,6 +219,7 @@ impl Runtime {
 
     pub(crate) fn world_settings_msg(&self) -> ServerMsg {
         let state = WorldSettingsView {
+            game_mode: self.world.game_mode().map(str::to_owned),
             max_chars: host::world_settings::MAX_WORLDVIEW_CHARS,
             miracles: self.world.miracles(),
             strangers: self.world.strangers(),

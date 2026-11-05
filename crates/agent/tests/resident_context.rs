@@ -420,4 +420,8 @@ fn spots_of_the_current_place_are_listed_for_staying() {
         body["observation"]["spots"],
         json!([{"id":"spot_loc_a_1","name":"水边"}])
     );
+    assert!(
+        body["observation"].get("tide").is_none(),
+        "没开玩法时观察里没有玩法那一栏，内置模型的题面不变"
+    );
 }

@@ -597,6 +597,30 @@ export interface WorldSettingsState {
   miracles: boolean
   /** 陌生环境：村民初来乍到，只知道到过的地方。随存档保存，缺省为关 */
   strangers: boolean
+  /** 开着的玩法（如 'tide'）；没开时没有这一项。随存档保存 */
+  game_mode?: GameModeId
+}
+
+/** 玩法：有自己的目标、时间表和输赢的一套规则，一个世界同时最多开一个 */
+export type GameModeId = GameModeView['kind']
+/** 名册里开着的玩法此刻的状态，按 kind 认出是哪个玩法 */
+export type GameModeView = { kind: 'tide' } & TideView
+/** 打开哪个玩法、带什么设置；set_game_mode 不带它就是关掉 */
+export type GameModeChoice = { kind: 'tide'; seed?: number }
+
+/** 潮水圈里的一个圈：圆心和半径都是行走地图上的米（x 和地面上的 z） */
+export interface TideCircle {
+  center: [number, number]
+  radius: number
+}
+export type TidePhase = 'waiting' | 'announced' | 'rising' | 'holding' | 'closed'
+/** 潮水圈：此刻的水边（圈外的地被水盖住）、已公布还没涨到的下一圈、第几圈 */
+export interface TideView {
+  edge: TideCircle
+  next?: TideCircle
+  phase: TidePhase
+  ring: number
+  rings: number
 }
 
 export type ServerMsg =
@@ -643,6 +667,8 @@ export type ServerMsg =
   | {
       type: 'roster'
       environment?: WeatherView
+      /** 开着的玩法此刻的状态（潮水圈：水边和下一圈）；没开时没有 */
+      game_mode?: GameModeView
       sim_minutes: number
       clock: string
       /** 选定的速度：正常速度的倍数，1 是正常速度（村民在画面上像散步），0 为暂停 */
@@ -818,6 +844,13 @@ export type ClientMsg =
   /** 打开或关掉化身神力：只是开关，不暂停世界，不核对设定修订号 */
   | { type: 'set_miracles'; request_id: string; world_id: string; enabled: boolean }
   | { type: 'set_strangers'; request_id: string; world_id: string; enabled: boolean }
+  /** 打开或关掉玩法：带 game_mode 是打开，不带（或 null）是关掉；已开着同一个玩法时不重来 */
+  | {
+      type: 'set_game_mode'
+      request_id: string
+      world_id: string
+      game_mode?: GameModeChoice | null
+    }
   | { type: 'get_props' }
   | {
       type: 'validate_prop' | 'save_prop'

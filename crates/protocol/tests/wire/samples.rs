@@ -492,6 +492,7 @@ pub fn server_samples() -> Vec<ServerMsg> {
         },
         ServerMsg::WorldSettings {
             state: WorldSettingsView {
+                game_mode: Some("tide".into()),
                 max_chars: 6000,
                 miracles: true,
                 mock: false,
@@ -536,6 +537,19 @@ pub fn server_samples() -> Vec<ServerMsg> {
         },
         ServerMsg::Roster {
             environment: None,
+            game_mode: Some(GameModeView::Tide(TideView {
+                edge: TideCircle {
+                    center: [61.5, 40.25],
+                    radius: 38.5,
+                },
+                next: Some(TideCircle {
+                    center: [66.0, 42.0],
+                    radius: 24.0,
+                }),
+                phase: TidePhase::Rising,
+                ring: 2,
+                rings: 5,
+            })),
             sim_minutes: 432.5,
             clock: "D1 07:12".into(),
             speed: 1.0,
@@ -1370,6 +1384,11 @@ pub fn client_samples() -> Vec<ClientMsg> {
             request_id: "strangers-1".into(),
             world_id: "w1".into(),
             enabled: true,
+        },
+        ClientMsg::SetGameMode {
+            request_id: "mode-1".into(),
+            world_id: "w1".into(),
+            game_mode: Some(GameModeChoice::Tide { seed: Some(51) }),
         },
         ClientMsg::SetPhysiology {
             request_id: "r1".into(),

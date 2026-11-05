@@ -55,9 +55,9 @@ pub(crate) struct Rates {
 }
 
 /// 速率来源的文案收集器：只有 body_view 需要，推进时传 None。
-type Trace<'a> = Option<&'a mut Vec<String>>;
+pub(crate) type Trace<'a> = Option<&'a mut Vec<String>>;
 
-fn note(trace: &mut Trace<'_>, text: impl FnOnce() -> String) {
+pub(crate) fn note(trace: &mut Trace<'_>, text: impl FnOnce() -> String) {
     if let Some(t) = trace {
         t.push(text());
     }
@@ -528,6 +528,7 @@ pub(crate) fn rates(w: &World) -> Vec<(String, Rates)> {
         .map(|a| {
             let mut r = a.needs.rates(body_spot(w, a), None);
             weather_rates(w, a, &mut r, &mut None);
+            w.game_mode_rates(a, &mut r, &mut None);
             (a.id.clone(), r)
         })
         .collect()
@@ -586,11 +587,12 @@ fn weather_rates(w: &World, a: &Actor, r: &mut Rates, trace: &mut Trace<'_>) {
     }
 }
 
-/// 当前速率的来源说明，加上天气的影响（观察仪与提示词用）。
+/// 当前速率的来源说明，加上天气和玩法的影响（观察仪与提示词用）。
 pub(crate) fn world_causes(w: &World, a: &Actor) -> Vec<String> {
     let mut causes = a.needs.causes(body_spot(w, a));
     let mut r = Rates::default();
     weather_rates(w, a, &mut r, &mut Some(&mut causes));
+    w.game_mode_rates(a, &mut r, &mut Some(&mut causes));
     causes
 }
 

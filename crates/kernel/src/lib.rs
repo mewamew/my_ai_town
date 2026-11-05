@@ -36,6 +36,7 @@ pub mod error;
 mod execution;
 pub mod exploration;
 pub mod force;
+pub mod game_mode;
 pub mod happenings;
 pub mod intent;
 pub mod interactions;

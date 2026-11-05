@@ -224,6 +224,10 @@ pub fn observe(world: &World, actor: &str, after: u64) -> Result<(Value, u64), A
     if !spots.is_empty() {
         value["spots"] = json!(spots);
     }
+    // 玩法（潮水圈……）：开着的世界才有这一栏，键名是玩法的名字；没开时观察和原来一字不差
+    if let Some(context) = world.game_mode_context(actor) {
+        value[context.key()] = json!(context);
+    }
     // 陌生环境：记得的地方和眼前出去的路随探索变，跟着观察走（没变时按慢变字段省略）
     if let Some(known) = world.known_places(actor) {
         value["known_places"] = json!(known);

@@ -11,6 +11,9 @@ use serde::Serialize;
 /// 运行世界的设定：世界观、模型与生理开关。线上按字段名字母序输出。
 #[derive(Debug, Clone, Serialize)]
 pub struct WorldSettingsView {
+    /// 开着的玩法（如 "tide"）；没开时不出现。随存档保存。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub game_mode: Option<String>,
     pub max_chars: usize,
     /// 化身神力：化身能对够得着的人复活、治愈、补满。随存档保存，缺省为关。
     pub miracles: bool,
@@ -90,6 +93,9 @@ pub enum ServerMsg {
     Roster {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         environment: Option<crate::WeatherView>,
+        /// 开着的玩法此刻的状态（潮水圈：水边和下一圈）；没开时不出现
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        game_mode: Option<crate::GameModeView>,
         sim_minutes: f64,
         /// 展示用时钟，如 "D1 07:32"
         clock: String,

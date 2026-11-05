@@ -107,6 +107,14 @@ pub enum ClientMsg {
         world_id: String,
         enabled: bool,
     },
+    /// 打开或关掉玩法：带 game_mode 是打开它，不带是关掉；回执与世界观相同（WorldSettingsSaved），
+    /// 随后广播世界设定。已经开着同一个玩法时不重来。
+    SetGameMode {
+        request_id: String,
+        world_id: String,
+        #[serde(default)]
+        game_mode: Option<crate::GameModeChoice>,
+    },
     GetProps,
     Content {
         request_id: String,
@@ -304,6 +312,7 @@ impl ClientMsg {
             | SetPhysiology { request_id, .. }
             | SetMiracles { request_id, .. }
             | SetStrangers { request_id, .. }
+            | SetGameMode { request_id, .. }
             | Content { request_id, .. }
             | ValidateProp { request_id, .. }
             | SaveProp { request_id, .. }

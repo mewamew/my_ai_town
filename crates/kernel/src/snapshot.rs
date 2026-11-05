@@ -67,6 +67,9 @@ pub struct WorldSnapshot {
     /// 陌生环境开关和藏着的东西；旧存档没有，按熟悉、什么也没藏读入。没用过时不写。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     strangers: bool,
+    /// 开着的玩法；旧存档没有，按没开读入。没开时不写。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    game_mode: Option<crate::game_mode::GameMode>,
     #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
     concealed: std::collections::BTreeSet<String>,
     /// 旧存档没有这一项：没有待发生的事，随机流从固定起点开始。
@@ -104,6 +107,7 @@ impl World {
             physiology: self.physiology,
             miracles: self.miracles,
             strangers: self.strangers,
+            game_mode: self.game_mode.clone(),
             concealed: self.concealed.clone(),
             happenings: self.happenings.clone(),
         }
@@ -141,6 +145,7 @@ impl World {
         candidate.physiology = snapshot.physiology;
         candidate.miracles = snapshot.miracles;
         candidate.strangers = snapshot.strangers;
+        candidate.game_mode = snapshot.game_mode.clone();
         candidate.concealed = snapshot.concealed.clone();
         snapshot.validate(&candidate)?;
         candidate.minutes = snapshot.minutes;

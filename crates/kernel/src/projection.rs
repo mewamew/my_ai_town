@@ -137,6 +137,7 @@ fn roster(world: &World, speed: f64) -> ServerMsg {
     }
     ServerMsg::Roster {
         environment: world.weather.as_ref().map(|w| w.view.clone()),
+        game_mode: world.game_mode_view(),
         sim_minutes: world.minutes,
         clock: world.clock(),
         speed,

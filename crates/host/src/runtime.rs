@@ -151,7 +151,8 @@ impl Runtime {
             ClientMsg::SetWorldview { request_id, .. }
             | ClientMsg::SetPhysiology { request_id, .. }
             | ClientMsg::SetMiracles { request_id, .. }
-            | ClientMsg::SetStrangers { request_id, .. } => ServerMsg::WorldSettingsSaved {
+            | ClientMsg::SetStrangers { request_id, .. }
+            | ClientMsg::SetGameMode { request_id, .. } => ServerMsg::WorldSettingsSaved {
                 request_id: request_id.clone(),
                 ok: false,
                 message,
@@ -260,6 +261,11 @@ impl Runtime {
                 enabled,
                 ..
             } => self.save_strangers(request_id, enabled),
+            SetGameMode {
+                request_id,
+                game_mode,
+                ..
+            } => self.save_game_mode(request_id, game_mode),
             SetSpeed { speed, .. } => self.set_speed(speed, clients),
             ResetWorld { .. } => self.reset(),
             GetProps => Outcome::reply(self.props_message()),
@@ -674,6 +680,7 @@ fn world_id_of(msg: &ClientMsg) -> Option<&str> {
         | ClientMsg::SetPhysiology { world_id, .. }
         | ClientMsg::SetMiracles { world_id, .. }
         | ClientMsg::SetStrangers { world_id, .. }
+        | ClientMsg::SetGameMode { world_id, .. }
         | ClientMsg::RemoveProp { world_id, .. }
         | ClientMsg::PlaceProp { world_id, .. }
         | ClientMsg::JoinResident { world_id, .. }
@@ -733,6 +740,7 @@ fn requires_ready(msg: &ClientMsg) -> bool {
         | ClientMsg::SetPhysiology { .. }
         | ClientMsg::SetMiracles { .. }
         | ClientMsg::SetStrangers { .. }
+        | ClientMsg::SetGameMode { .. }
         | ClientMsg::GetProps
         | ClientMsg::ValidateProp { .. }
         | ClientMsg::SaveProp { .. }

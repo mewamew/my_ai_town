@@ -29,6 +29,8 @@ pub enum Event {
 
 pub struct World {
     pub(crate) weather: Option<crate::weather::WeatherState>,
+    /// 开着的玩法（game_mode/），随快照保存；没开时为 None。
+    pub(crate) game_mode: Option<crate::game_mode::GameMode>,
     /// 加载时注入的二维自由行走几何，不写入世界快照。
     pub walk_map: Option<std::sync::Arc<crate::avatar::WalkMap>>,
     pub topo: Topology,
@@ -67,6 +69,7 @@ impl World {
     pub fn new(topo: Topology, start_minutes: f64, need_rules: NeedRules) -> Self {
         World {
             weather: None,
+            game_mode: None,
             walk_map: None,
             affordances: Affordances::build(&topo),
             contents: ContentState::from_topology(&topo),

@@ -11,6 +11,9 @@
 mod weather;
 pub use weather::*;
 
+mod game_mode;
+pub use game_mode::*;
+
 mod actions;
 mod avatar;
 mod chat;
