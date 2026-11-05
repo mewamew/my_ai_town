@@ -221,6 +221,7 @@ fn created_maps_are_validated_before_they_become_towns() {
                     "description": "海边的小渔村，村口有一家小酒馆",
                     "worldview": "这里的人想靠海吃饭。",
                     "residents": ["在村口酒馆当老板娘的寡妇"],
+                    "prefab": "battle-royale",
                 },
             }),
         )
@@ -238,6 +239,8 @@ fn created_maps_are_validated_before_they_become_towns() {
     // 一句话建镇的说明和小镇存在一起：列表简介是玩家那句话，条目里带着世界观建议和适合住进来的人
     assert!(list.contains("海边的小渔村，村口有一家小酒馆"), "{list}");
     assert!(list.contains("在村口酒馆当老板娘的寡妇"), "{list}");
+    // 从预制小镇开的一局记着是哪个预制小镇，进镇时据此出开局设置
+    assert!(list.contains(r#""prefab":"battle-royale""#), "{list}");
     let saved: serde_json::Value = serde_json::from_slice(
         &fs::read(manager.dir.join("home/towns").join(id).join("map.json")).unwrap(),
     )

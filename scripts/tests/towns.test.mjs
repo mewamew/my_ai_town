@@ -83,6 +83,7 @@ test('preview/save/open/reopen/reset/isolation work with actual hosts and persis
         description: '海边的小渔村，村口有一家小酒馆',
         worldview: '这里的人想靠海吃饭。',
         residents: ['在村口酒馆当老板娘的寡妇'],
+        prefab: 'battle-royale',
       },
     }
     await assert.rejects(api('/save', { ...body, expected_version: 'wrong' }), /版本/)
@@ -100,6 +101,12 @@ test('preview/save/open/reopen/reset/isolation work with actual hosts and persis
     const listed = (await api('')).towns.find((town) => town.id === saved.id)
     assert.equal(listed.description, '海边的小渔村，村口有一家小酒馆')
     assert.deepEqual(listed.creation.residents, ['在村口酒馆当老板娘的寡妇'])
+    // 从预制小镇开的一局记着是哪个预制小镇，进镇时据此出开局设置
+    assert.equal(listed.creation.prefab, 'battle-royale')
+    await assert.rejects(
+      api('/save', { ...body, request_id: 'bad-prefab', creation: { prefab: '../x' } }),
+      /建镇说明无效/
+    )
     assert.equal((await api('')).towns.find((town) => town.id === a.id).running, true)
     const b = await api('/default-town/open', {})
     assert.notEqual(a.worldId, b.worldId)

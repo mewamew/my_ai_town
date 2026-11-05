@@ -82,6 +82,8 @@ export interface TownCreation {
   description: string
   worldview: string
   residents: string[]
+  /** 从预制小镇开的一局：预制小镇的编号（prefabs/），进镇时出开局设置 */
+  prefab?: string
 }
 
 export interface MapEntry {

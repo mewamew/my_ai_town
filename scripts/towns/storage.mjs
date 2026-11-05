@@ -50,7 +50,8 @@ export function dataRoot() {
 }
 /**
  * 一句话建镇时的描述、世界观建议和推荐的居民，和小镇放在一起（creation.json）：换设备、换成 mac 版
- * 打开也还在。逐步设置的小镇没有这个文件。手机上的管理服务（crates/manager/src/storage.rs）规则相同。
+ * 打开也还在。逐步设置的小镇没有这个文件。从预制小镇开的一局另记 prefab（预制小镇的编号，见
+ * frontend/town-shared/src/prefabs），进镇时按它出开局设置。手机上的管理服务（crates/manager/src/storage.rs）规则相同。
  */
 export function townCreation(value) {
   if (value === undefined || value === null) return null
@@ -63,6 +64,9 @@ export function townCreation(value) {
   }
   const residents = value.residents ?? []
   if (!Array.isArray(residents) || residents.length > 5) throw invalid()
+  const prefab = value.prefab ?? null
+  if (prefab !== null && (typeof prefab !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(prefab)))
+    throw invalid()
   return {
     description: text(value.description, 2000),
     worldview: text(value.worldview, 6000),
@@ -71,6 +75,7 @@ export function townCreation(value) {
       if (!line) throw invalid()
       return line
     }),
+    ...(prefab ? { prefab } : {}),
   }
 }
 export function safeId(id) {

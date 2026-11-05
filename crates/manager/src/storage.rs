@@ -65,7 +65,8 @@ pub fn check_identity(document: &Value) -> Result<(), ApiError> {
 }
 
 /// 一句话建镇时的描述、世界观建议和推荐的居民，和小镇放在一起（creation.json）：换设备、换成电脑版
-/// 打开也还在。逐步设置的小镇没有这个文件。规则与电脑版（scripts/towns/storage.mjs 的 townCreation）相同。
+/// 打开也还在。逐步设置的小镇没有这个文件。从预制小镇开的一局另记 prefab（预制小镇的编号），进镇时按它
+/// 出开局设置。规则与电脑版（scripts/towns/storage.mjs 的 townCreation）相同。
 pub fn town_creation(value: &Value) -> Result<Option<Value>, ApiError> {
     if value.is_null() {
         return Ok(None);
@@ -89,11 +90,27 @@ pub fn town_creation(value: &Value) -> Result<Option<Value>, ApiError> {
             .collect::<Result<_, _>>()?,
         _ => return Err(invalid()),
     };
-    Ok(Some(json!({
+    let mut creation = json!({
         "description": text(&value["description"], 2000)?,
         "worldview": text(&value["worldview"], 6000)?,
         "residents": residents,
-    })))
+    });
+    match &value["prefab"] {
+        Value::Null => {}
+        Value::String(id) if prefab_id(id) => creation["prefab"] = json!(id),
+        _ => return Err(invalid()),
+    }
+    Ok(Some(creation))
+}
+
+/// 预制小镇的编号：小写字母、数字和连字符，字母或数字开头，最多 40 个字符。
+fn prefab_id(id: &str) -> bool {
+    let mut chars = id.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && id.len() <= 40
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 pub struct TownMap {
