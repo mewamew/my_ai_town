@@ -50,7 +50,19 @@ impl World {
     pub(crate) fn actor_spot(&self, id: &str) -> Option<Spot> {
         let a = self.actors.get(id)?;
         let map = self.walk_map.as_ref()?;
-        map.station_locus(&a.locus)
+        map.station_locus(&a.locus).or_else(|| {
+            // 运行时道具的操作点在导航覆盖里，不在初始 WalkMap 中。道具拿走或耗尽后，
+            // 人仍可停在原处；保留的历史站位也必须能接管和判断交谈距离。
+            if !matches!(a.locus.at, protocol::At::Station { .. }) {
+                return None;
+            }
+            let p = self.topo.point(&a.locus.locale, &a.locus.at)?;
+            Some(Spot {
+                locale: a.locus.locale.clone(),
+                space: map.space_of(&a.locus.locale).into(),
+                position: [p[0], p[2]],
+            })
+        })
     }
     /// 道具在行走地图上的操作位置：落地的在落地点，空间道具在操作锚点，其余在地图标记处。
     pub(crate) fn avatar_prop_spot(&self, id: &str) -> Option<Spot> {

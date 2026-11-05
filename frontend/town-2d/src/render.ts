@@ -2,7 +2,7 @@ import { WeatherLayer } from './weather'
 import type { ServerMsg } from 'town-shared/protocol'
 import { heightAt, position as spatialPosition, type Spatial } from 'town-shared/spatial'
 import { savedAppearance, defaultAppearance } from 'town-shared/props/appearances'
-import type { Appearance, PropView } from 'town-shared/props/types'
+import type { Appearance, PropCatalog, PropView } from 'town-shared/props/types'
 import type { Atlas, Topology } from 'town-shared/mapDocument'
 import type {
   AvatarPrompt,
@@ -256,6 +256,7 @@ export class TownMap {
   private readonly scene: ReturnType<typeof buildStaticMap>
   private readonly sourceAtlas: Atlas
   private readonly spatial?: Spatial
+  private runtimeSpatial: PropCatalog['spatial'] = null
   private readonly topology: Topology
   private readonly theme: MapTheme
   /** 这张地图的地面，只算一次；立体场景建好或平面图画好后就不再留着 */
@@ -720,7 +721,7 @@ export class TownMap {
 
   private positionOf(locale: string, at: ResidentEntry['member']['at']) {
     if (!this.spatial) return this.scene.position(locale, at)
-    const p = spatialPosition(this.spatial, locale, at)
+    const p = spatialPosition(this.spatial, locale, at, this.runtimeSpatial)
     const metre = this.spatial.svg_units_per_metre
     return p ? ([p[0] * metre, p[2] * metre] as [number, number]) : undefined
   }
@@ -1069,8 +1070,11 @@ export class TownMap {
     this.applyRouteObstacles()
   }
 
-  setProps(props: PropView[]) {
+  setProps(props: PropView[], spatial: PropCatalog['spatial'] = null) {
+    this.runtimeSpatial = spatial
     this.positions.update(props)
+    // 道具目录和名册独立到达；补齐站位后立即重画，暂停时也不必等下一次名册。
+    this.update(this.entries)
   }
   /** 这件道具画在一摞书里：点它打开「书与公告」里这个地点的书，不弹单本的卡片 */
   isBookPile(id: string) {

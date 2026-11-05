@@ -1,4 +1,5 @@
 import type { At } from './protocol'
+import type { PropCatalog } from './props/types'
 type Vec3 = [number, number, number]
 export interface SpatialProp {
   id: string
@@ -93,12 +94,25 @@ export function along(points: Vec3[], fraction: number): Vec3 {
   }
   return points[points.length - 1]
 }
-export function position(s: Spatial, locale: string, at: At): Vec3 | undefined {
+export function position(
+  s: Spatial,
+  locale: string,
+  at: At,
+  runtime?: PropCatalog['spatial']
+): Vec3 | undefined {
   if (at.kind === 'free')
     return [at.position[0], at.elevation ?? heightAt(s.terrain, ...at.position), at.position[1]]
   if (at.kind === 'offstage') return
-  if (at.kind === 'station') return s.stations.find((st) => st.id === at.station)?.position
-  const route = s.routes.find((r) => r.id === locale)
+  // 操作点使用地图协议的 use_ 前缀。耗尽或拿走的道具仍保留历史站位和通路，
+  // 人可能还停在这里，不能随道具可见性一起过滤。
+  if (at.kind === 'station')
+    return (
+      runtime?.overrides.find(({ prop }) => `use_${prop.id}` === at.station)?.prop.anchor ??
+      s.stations.find((st) => st.id === at.station)?.position
+    )
+  const route =
+    runtime?.overrides.find(({ route }) => route.id === locale)?.route ??
+    s.routes.find((r) => r.id === locale)
   return route ? along(route.points, at.elapsed / (at.total || 1)) : undefined
 }
 export function heightAt(t: Terrain, x: number, z: number) {

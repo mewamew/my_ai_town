@@ -201,7 +201,7 @@ class PropsPage implements PropsView {
       'prop-appearance-changed',
       () => {
         state.mapSignature = ''
-        if (state.catalog) deps.onUpdate(visibleOnMap(state.catalog))
+        if (state.catalog) deps.onUpdate(visibleOnMap(state.catalog), state.catalog.spatial)
       },
       { signal: this.listeners.signal }
     )
@@ -443,7 +443,8 @@ class PropsPage implements PropsView {
 
   /** 道具的地点、定义、名字或位置变了才重画地图上的道具 */
   private updateMap(next: PropCatalog) {
-    const structure = JSON.stringify(
+    const structure = JSON.stringify([
+      next.spatial?.revision,
       next.instances.map((p) => [
         p.id,
         p.locale,
@@ -452,11 +453,11 @@ class PropsPage implements PropsView {
         p.withdrawn,
         p.location,
         p.position,
-      ])
-    )
+      ]),
+    ])
     if (structure === this.state.mapSignature) return
     this.state.mapSignature = structure
-    this.deps.onUpdate(visibleOnMap(next))
+    this.deps.onUpdate(visibleOnMap(next), next.spatial)
   }
 
   private onResult(msg: Extract<ServerMsg, { type: 'prop_result' }>) {

@@ -1,6 +1,6 @@
 import type { AvatarLook, AvatarState } from './avatar/types'
 import type { RosterMember, ServerMsg } from './protocol'
-import type { PropView } from './props/types'
+import type { PropCatalog, PropView } from './props/types'
 import type { Insets } from './mapView'
 import type { DepthBlur, Quality } from './quality'
 export type ResidentEntry = { locale: string; member: RosterMember }
@@ -92,7 +92,7 @@ export interface GameMap {
   /** 没在摆道具时点了空地（控制化身时 onAvatarWalkTo 同时收到走过去的目标） */
   onGroundClick?: (() => void) | null
   onPropClick: ((id: string) => void) | null
-  setProps(props: PropView[]): void
+  setProps(props: PropView[], spatial?: PropCatalog['spatial']): void
   locateProp(id: string, locale: string): void
   /** 这件道具画在一摞书里（只有书合成一摞的地图有） */
   isBookPile?(id: string): boolean

@@ -324,7 +324,8 @@ export class ResidentLayer {
       seen.add(member.id)
       const v = this.villagers.get(member.id) ?? this.create(member)
       const at = member.at
-      if (at.kind === 'offstage') {
+      const pos = at.kind === 'offstage' ? undefined : this.position(locale, at)
+      if (!pos) {
         v.g.setAttribute('display', 'none')
         this.positions.delete(member.id)
         this.anchors.delete(member.id)
@@ -332,8 +333,6 @@ export class ResidentLayer {
         continue
       }
       v.g.removeAttribute('display')
-      const pos = this.position(locale, at)
-      if (!pos) continue
       const group = at.kind === 'station' ? (atStation.get(`${locale}/${at.station}`) ?? []) : []
       const [dx, dy] = this.offsetOf(member, group, spatialOffsets)
       this.anchors.set(member.id, pos)

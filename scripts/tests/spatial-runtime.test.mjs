@@ -6,6 +6,121 @@ import path from 'node:path'
 import { createManager } from '../town-manager.mjs'
 import { worldQuery } from '../towns/hosts.mjs'
 import { APPEARANCE_SET } from '../mapgen/budget.mjs'
+import { position } from '../../frontend/town-shared/src/spatial.ts'
+
+test('residents at runtime prop stations remain visible and possessable after removal and reload', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'town-runtime-station-'))
+  let m
+  try {
+    const started = await startTown(root, [{ kind: 'home', count: 1, size: 'large' }])
+    m = started.m
+    let town = started.town
+    const query = (command, type) => worldQuery(town.endpoint, command, (v) => v.type === type)
+    const prop = 'user:station-can'
+    assert.ok(
+      (
+        await query(
+          {
+            type: 'place_prop',
+            request_id: 'can',
+            world_id: town.worldId,
+            instance: { id: prop, definition: 'core:island-can@1', locale: 'home_1' },
+          },
+          'prop_result'
+        )
+      ).ok
+    )
+    const preview = (
+      await query({ type: 'preview_resident_join', template_id: 'builtin_ashu' }, 'join_preview')
+    ).preview
+    const joined = await query(
+      {
+        type: 'join_resident',
+        op_id: 'join',
+        world_id: town.worldId,
+        template_id: 'builtin_ashu',
+        template_version: preview.template_version,
+        name: preview.name,
+        home: preview.home,
+      },
+      'resident_joined'
+    )
+    assert.ok(joined.outcome.ok)
+    const resident = joined.outcome.resident_id
+    const file = path.join(root, 'towns', town.id, 'world.json')
+    const map = JSON.parse(await fs.readFile(started.map, 'utf8'))
+    await m.hosts.close(town.id)
+    // 复现旧存档里 NPC 已走到后来摆放的道具旁的合法站位；测试全程暂停，模型不安排动作。
+    const saved = JSON.parse(await fs.readFile(file, 'utf8'))
+    saved.world.actors[resident].locus = {
+      locale: 'home_1',
+      at: { kind: 'station', station: `use_${prop}` },
+    }
+    await fs.writeFile(file, JSON.stringify(saved))
+    for (const removed of [false, true]) {
+      town = await m.hosts.open(town.id)
+      if (removed) {
+        assert.ok(
+          (
+            await query(
+              { type: 'remove_prop', request_id: 'remove', world_id: town.worldId, id: prop },
+              'prop_result'
+            )
+          ).ok
+        )
+        // 墓碑和历史站位经保存、重启后仍必须可用。
+        await m.hosts.close(town.id)
+        town = await m.hosts.open(town.id)
+      }
+      const catalog = (await query({ type: 'get_props' }, 'props')).catalog
+      const override = catalog.spatial.overrides.find((v) => v.prop.id === prop)
+      assert.equal(
+        catalog.instances.some((p) => p.id === prop),
+        !removed
+      )
+      const locus = saved.world.actors[resident].locus
+      assert.deepEqual(
+        position(map.spatial, locus.locale, locus.at, catalog.spatial),
+        override.prop.anchor
+      )
+      assert.deepEqual(
+        position(
+          map.spatial,
+          override.route.id,
+          { kind: 'transit', elapsed: override.route.minutes, total: override.route.minutes },
+          catalog.spatial
+        ),
+        override.prop.anchor
+      )
+      const result = await query(
+        {
+          type: 'avatar',
+          request_id: 'possess',
+          world_id: town.worldId,
+          epoch: '',
+          sequence: 1,
+          command: { kind: 'possess', resident },
+        },
+        'avatar_result'
+      )
+      assert.ok(result.ok, result.reason)
+      assert.equal(result.state.actor.id, resident)
+      assert.deepEqual(result.state.actor.locus.at.position, [
+        override.prop.anchor[0],
+        override.prop.anchor[2],
+      ])
+      await m.hosts.close(town.id)
+      const after = JSON.parse(await fs.readFile(file, 'utf8'))
+      assert.equal(after.world.minutes, saved.world.minutes, '附身与读档不能推进暂停中的世界')
+      // 下一轮仍从历史站位出发，不能用第一次附身转换出的自由坐标掩盖问题。
+      after.world.actors[resident].locus = locus
+      await fs.writeFile(file, JSON.stringify(after))
+    }
+  } finally {
+    await m?.stop()
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
 
 test('one world commits dynamic book geometry and removals together across restart', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'town-space-runtime-'))

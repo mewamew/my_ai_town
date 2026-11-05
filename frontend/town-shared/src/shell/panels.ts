@@ -153,7 +153,7 @@ export function createPanels(input: ShellInputs) {
       books.board(id)
     },
     onLocate: locateProp,
-    onUpdate: (list) => map.setProps(list),
+    onUpdate: (list, spatial) => map.setProps(list, spatial),
     map: map.placeSpotAt ? map : undefined,
     personName: (id) => observed.get(id)?.name,
   })
