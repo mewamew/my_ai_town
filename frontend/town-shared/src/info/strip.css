@@ -159,6 +159,35 @@ html.avatar-controlling :is(.resident-strip, .strip-peek) {
   opacity: 0.55;
 }
 
+/* 末尾的「邀请」：虚线框里一个加号，看得出是空位；空镇子时整条只剩它，用主色描出来指向第一步 */
+.strip-add .strip-face {
+  border-style: dashed;
+  background: var(--surface);
+  box-shadow: none;
+  color: var(--text-2);
+}
+.strip-add .strip-face .game-icon {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2.6;
+}
+.strip-add:hover .strip-face {
+  border-style: solid;
+  color: var(--accent);
+  box-shadow: 0 3px 0 var(--text);
+}
+html[data-empty-town] .strip-add .strip-face {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: 0 3px 0 var(--accent);
+}
+html[data-empty-town] .strip-add .strip-name {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+
 /* 人多：只留头像，名字看悬停的近况卡；触屏没有悬停，名字照留 */
 .resident-strip.many {
   gap: 8px;

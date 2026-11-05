@@ -607,7 +607,7 @@ export function createGuide(d: GuideDeps) {
       free.length ? grid : el('p', '正在读取村民库…', 'dim'),
       el(
         'p',
-        `以后可以随时在${phone() ? '「居民」' : '顶栏'}新建自己的村民，或从村民库再请几位。`,
+        `以后可以随时点${phone() ? '「居民」' : '地图左上角的「邀请」'}新建自己的村民，或从村民库再请几位。`,
         'guide-note'
       ),
     ]

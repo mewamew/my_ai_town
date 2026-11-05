@@ -99,6 +99,7 @@ export function createPanels(input: ShellInputs) {
       props.closeCard()
       infoPanel.open(id)
     },
+    invite: () => void open.residents(),
     selected: () => infoPanel.selected(),
     avatarActive: () => avatar.active(),
   })
@@ -226,7 +227,6 @@ export function createPanels(input: ShellInputs) {
     fixHold: (fix, provider) => fixHold(fix, provider),
   })
   const open = createOpeners({ avatar, pages, props, books, session })
-  $('open-residents').onclick = open.residents
   $('open-usage').onclick = open.usage
   $('open-settings').onclick = () => session.enter()
   lineLabel($('open-usage'), 'chart', '消耗')

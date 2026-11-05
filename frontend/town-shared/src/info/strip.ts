@@ -4,6 +4,8 @@
 // 鼠标悬停弹出近况卡；触屏没有悬停，点一下直接看角色卡。人多了收成只有头像的小格（触屏照样留名字）。
 // 控制化身时整条藏起来（样式按 html.avatar-controlling）：那时点人是走过去，角色卡也不开。
 // 地图顶部正中的提示（暂停、快进、等模型、提示卡）和头像条左右叠上时，往下让出头像条的高度。
+// 末尾的「邀请」打开村民页（新建村民、从村民库挑选、名册）：电脑上请人入住只走这里，顶栏不再单放
+// 一个村民按钮；空镇子时整条只剩它，用主色描出来（样式按 html[data-empty-town]）。
 import { button, el } from '../dom'
 import { chip } from '../design/ui'
 import { agentStopped } from '../display'
@@ -69,6 +71,8 @@ interface StripDeps {
   localeName: (id: string) => string
   /** 点头像：选中并打开角色卡 */
   open: (id: string) => void
+  /** 点末尾的「邀请」：打开村民页 */
+  invite: () => void
   /** 正在选中谁 */
   selected: () => string | null
   /** 控制化身中：点头像和数字键都不接 */
@@ -94,6 +98,13 @@ export function createResidentStrip(deps: StripDeps) {
   root.setAttribute('role', 'toolbar')
   root.setAttribute('aria-label', '村民')
   root.hidden = true
+  // 和头像同一种格子，虚线框里一个加号：看得出是空位，不是一位村民
+  const add = button('', () => deps.invite(), 'strip-tile strip-add')
+  const addFace = el('span', '', 'strip-face')
+  addFace.append(gameIcon('plus', true))
+  add.append(addFace, el('span', '邀请', 'strip-name'))
+  add.title = '邀请村民：新建，或从村民库挑选'
+  add.setAttribute('aria-label', '邀请村民')
   const fold = button('', () => setFolded(true), 'strip-fold')
   fold.append(gameIcon('chevron', true))
   fold.title = '收起头像条'
@@ -102,7 +113,7 @@ export function createResidentStrip(deps: StripDeps) {
   const alerts = el('span', '', 'strip-alerts')
   const unfold = button('', () => setFolded(false), 'strip-unfold')
   unfold.append(gameIcon('people', true), count, alerts)
-  root.append(fold, unfold)
+  root.append(add, fold, unfold)
   const peek = el('div', '', 'strip-peek')
   peek.id = 'strip-peek'
   peek.setAttribute('role', 'tooltip')
@@ -121,6 +132,8 @@ export function createResidentStrip(deps: StripDeps) {
   let order: string[] = []
   /** 上次写到收起钮上的人数和要留意的人数 */
   let counted = ''
+  /** 收到过名册：之前整条不出，免得先只露一个「邀请」、人到了再把它挤到后面 */
+  let rostered = false
   let folded = false
   try {
     folded = localStorage.getItem(FOLD_KEY) === '1'
@@ -213,13 +226,16 @@ export function createResidentStrip(deps: StripDeps) {
       paint(tile, entries.get(id)!.member)
       if (tile.root.dataset.tone === 'busy' || tile.root.dataset.tone === 'danger') attention++
     }
-    const shown = [...root.querySelectorAll<HTMLElement>(':scope > .strip-tile')]
+    const shown = [...root.querySelectorAll<HTMLElement>(':scope > .strip-tile[data-id]')]
     if (shown.map((node) => node.dataset.id).join('\n') !== order.join('\n'))
-      for (const id of order) root.insertBefore(tiles.get(id)!.root, fold)
-    const summary = `${order.length}/${attention}`
+      for (const id of order) root.insertBefore(tiles.get(id)!.root, add)
+    const summary = `${rostered}/${order.length}/${attention}`
     if (summary !== counted) {
       counted = summary
-      root.hidden = !order.length
+      root.hidden = !rostered
+      // 空镇子没什么可收的：收起钮不出，收起过也照样露出「邀请」
+      fold.hidden = !order.length
+      root.classList.toggle('folded', folded && order.length > 0)
       root.classList.toggle('many', order.length > MANY)
       count.textContent = `村民 ${order.length}`
       alerts.hidden = !attention
@@ -432,6 +448,7 @@ export function createResidentStrip(deps: StripDeps) {
 
   return {
     roster({ residents }: RosterFrame) {
+      rostered = true
       entries = new Map(residents.map((e) => [e.member.id, e]))
       order = byJoinOrder([...entries.keys()], (id) => id)
       render()

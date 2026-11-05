@@ -2,7 +2,7 @@
 // 不暂停世界；人物只由服务器创建，页面只呈现名册和登记表。各视图在 residents/ 下，状态在 residents/state.ts。
 import { $, button, el, statusLine } from './dom'
 import { displayClock } from './format'
-import { gameIcon, iconLabel, lineLabel } from './game/icons'
+import { gameIcon, iconLabel } from './game/icons'
 import { newId } from './ids'
 import { observationPage } from './observationPage'
 import type { JoinOutcome, JoinPreview, ModelChoice, PopulationView, ServerMsg } from './protocol'
@@ -145,7 +145,6 @@ export function initResidentsPage(deps: ResidentsDeps) {
     deps.onJoined(joined, failed, model)
   }
   const page = $('residents-page')
-  const openBtn = $('open-residents')
   const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('.rv-tab'))
   const lifecycle = observationPage(
     $('residents-view'),
@@ -220,17 +219,6 @@ export function initResidentsPage(deps: ResidentsDeps) {
   $('residents-back').onclick = ctx.close
   if (game) iconLabel($('residents-back'), 'close', '关闭')
 
-  let countLabel = ''
-  function residentCount() {
-    const n = state.population?.residents.length ?? state.roster.length
-    if (game) return iconLabel(openBtn, 'people', `居民 · ${n}`, true)
-    // 镇上还没人时这里就是第一步：写成「邀请村民」，用主色描出来（样式看 html[data-empty-town]）
-    const empty = state.population !== null && n === 0
-    const label = empty ? '邀请村民' : `村民 · ${n} 人`
-    if (label === countLabel) return
-    countLabel = label
-    lineLabel(openBtn, empty ? 'plus' : 'people', label)
-  }
   /** 原型村民库：标题栏放「＋ 新建人物」primary 按钮（仅库 tab 显示） */
   function syncHeaderNew() {
     if (!game) return
@@ -248,7 +236,6 @@ export function initResidentsPage(deps: ResidentsDeps) {
     headNew.hidden = state.view.kind !== 'library'
   }
   function render() {
-    residentCount()
     syncHeaderNew()
     const handle = renderView(ctx, state.view)
     current = { handle, notice: state.notice }
@@ -275,7 +262,6 @@ export function initResidentsPage(deps: ResidentsDeps) {
     roster({ residents, msg }: RosterFrame) {
       state.roster = residents
       $('residents-clock').textContent = displayClock(msg.clock)
-      residentCount()
       if (!lifecycle.isOpen() || state.view.kind !== 'roster') return
       const signature = rosterSignature(ctx)
       if (signature === state.rosterSignature) return
@@ -313,7 +299,7 @@ export function initResidentsPage(deps: ResidentsDeps) {
         waiters.splice(waiters.indexOf(waiter), 1)
         waiter.resolve(value)
       }
-      return handleResidentsMsg(ctx, msg, { residentCount, refresh })
+      return handleResidentsMsg(ctx, msg, refresh)
     },
   }
 }
@@ -322,20 +308,19 @@ export function initResidentsPage(deps: ResidentsDeps) {
 function handleResidentsMsg(
   ctx: ResidentsContext,
   msg: ServerMsg,
-  page: { residentCount(): void; refresh(...kinds: ResidentsView['kind'][]): void }
+  refresh: (...kinds: ResidentsView['kind'][]) => void
 ): boolean {
   const { state, deps } = ctx
   switch (msg.type) {
     case 'population': {
       state.population = msg.population
-      page.residentCount()
-      page.refresh('roster', 'library')
+      refresh('roster', 'library')
       return true
     }
     case 'resident_library':
       state.cards = msg.templates
       state.customRoot = msg.custom_root
-      page.refresh('library', 'roster')
+      refresh('library', 'roster')
       deps.onLibrary(msg.templates)
       return true
     case 'resident_template':
@@ -346,7 +331,7 @@ function handleResidentsMsg(
       )
         return true
       state.detail = { template: msg.template, persona: msg.persona, error: msg.error }
-      page.refresh('template', 'join')
+      refresh('template', 'join')
       return true
     case 'join_preview':
       if (state.view.kind === 'join' && msg.preview.template_id === state.view.id) {

@@ -287,28 +287,19 @@ body:not(.game-theme) #audio-controls button {
   padding-inline: 7px;
 }
 /* 顶栏右边的入口：图标加字、字重和「开始」一样，底色深一档，免得在白底上看不出是按钮 */
-body:not(.game-theme) #topbar > :is(#open-residents, #open-usage, #open-settings) {
+body:not(.game-theme) #topbar > :is(#open-usage, #open-settings) {
   padding-inline: 11px;
   font-weight: 600;
   background: var(--surface-sunken);
 }
-body:not(.game-theme) #topbar > :is(#open-residents, #open-usage, #open-settings):hover {
+body:not(.game-theme) #topbar > :is(#open-usage, #open-settings):hover {
   background: var(--surface-hover);
 }
-body:not(.game-theme) #topbar > :is(#open-residents, #open-usage, #open-settings) .game-icon {
+body:not(.game-theme) #topbar > :is(#open-usage, #open-settings) .game-icon {
   width: 16px;
   height: 16px;
 }
-/* 空镇子（emptyTown.ts）：第一步是请村民，「邀请村民」用主色描出来；「开始」和暂停提示先让位 */
-html[data-empty-town] body:not(.game-theme) #topbar > #open-residents {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-html[data-empty-town] body:not(.game-theme) #topbar > #open-residents:hover {
-  color: var(--accent-strong);
-  border-color: var(--accent-strong);
-}
+/* 空镇子（emptyTown.ts）：第一步是请村民，醒目留给头像条上的「邀请」（info/strip.css）；「开始」和暂停提示先让位 */
 html[data-empty-town] .speed-toggle.go:not(:disabled) {
   background: var(--surface);
   border-color: var(--line);

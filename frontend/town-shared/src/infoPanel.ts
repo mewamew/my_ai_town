@@ -287,7 +287,7 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     )
     if (!entries.length && !selectedId) {
       $('info-name').textContent = '还没有村民'
-      $('info-place').textContent = '点顶栏的「邀请村民」请几位住进来'
+      $('info-place').textContent = '点地图左上角的「邀请」请几位住进来'
     }
     const me = selectedId ? entries.find((e) => e.member.id === selectedId) : undefined
     if (!me) return

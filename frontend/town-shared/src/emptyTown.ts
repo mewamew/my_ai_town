@@ -1,7 +1,7 @@
 // 空镇子：世界观设好了、镇上还没有村民时，在地图正中请玩家先请人入住，有人入住就收起。
 // 卡片写明推荐谁、为什么（人选固定，见 residents/recommend.ts），一下请进来；想换人就「自己挑」。
 // 底下一行写明用哪个模型思考。同一个判断写在 <html data-empty-town> 上，样式据此让「开始」不用主色、
-// 暂停提示不出，把醒目给顶栏的「邀请村民」和手机底部的「居民」——空镇子点开始，时间走了也没人动。
+// 暂停提示不出，把醒目给头像条上的「邀请」和手机底部的「居民」——空镇子点开始，时间走了也没人动。
 import { button, el } from './dom'
 import type { ModelOption } from './models/session'
 import { portraitFor, templateKey } from './portraits'
