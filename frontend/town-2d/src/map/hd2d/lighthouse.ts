@@ -5,8 +5,10 @@ import { bayer, hash, hexRgb, mixHex, noise } from '../pixel/noise'
 import { ICE, LAMP_GLOW, SNOW, SNOW_SHADE } from '../palette'
 import type { MapTheme } from '../themes/types'
 import { WALL_TEXEL, type House, type Tower } from './layout'
+import { interiorTexels, lighthouseDecor, type Rect } from './interior'
 import { pixelMaterial } from './pixelSampling'
 import { texture } from './standee'
+import type { InteriorPalette } from '../themes/interiors'
 
 // 灯塔：整块占地是一座两层的石台，塔立在正中，不附带房子。尺寸见 layout.ts 的 towerOf。
 // - 石台：底下一圈湿漉漉的粗石脚，上面一层方石砌的平台，台面铺石板、塔脚一圈放射状的小方石；
@@ -16,6 +18,7 @@ import { texture } from './standee'
 // - 塔顶：一圈牛腿托着瞭望台和铁栏杆，十边形的玻璃灯室里一具透镜，红色圆顶、通风球、风向标。
 // - 台上：信号旗杆、雾钟、朝海的铜望远镜、几只木桶和一盘缆绳，栏墙外挂一只救生圈。
 // 夜里灯室最先亮，两束光绕着转；塔窗、台阶灯随后亮。圆的面（塔身、圆顶、木桶）光照分四档，像手画的明暗。
+// 掀开屋顶时不变成普通房间，而是剖开的灯塔（见 cutaway）：屋里的人站在地面上，台子也落到地面。
 // 风格：striped 红白条纹；snowy 冰雪（红塔身一道白带，台上积雪、檐下冰柱）；
 // ruined 废土（灯室塌了、栏杆断了，瞭望台上架一盆火冒着烟，台上是锈桶和碎砖）。
 // 原点在占地中心的地面上，x 向东、z 向南。竖直面上一个贴图像素高 WALL_TEXEL、宽 PIXEL，水平面上一格 PIXEL。
@@ -115,6 +118,16 @@ export interface Lighthouse {
   lamp?: THREE.Vector3
   /** 冒烟的地方（组内坐标） */
   smoke: THREE.Vector3[]
+  /** 地面：接光照图，掀开后屋里的灯照得到 */
+  grounds: THREE.Material[]
+  /** 掀开屋顶后的样子：剖开的灯塔（见 cutaway），和别的房子的室内一样由场景开合；glowing 是夜里亮的窗 */
+  room: { group: THREE.Group; glowing: THREE.Material[] }
+}
+
+/** 台上的东西摆在哪一层：剖开前在台面上，剖开后台子落到地面 */
+interface Stage {
+  y: number
+  add: (mesh: THREE.Mesh, shadow?: boolean) => THREE.Mesh
 }
 
 // ───────────── 像素图 ─────────────
@@ -152,6 +165,9 @@ class Pixmap {
   fill(color: (i: number, j: number) => string | null) {
     for (let j = 0; j < this.h; j++) for (let i = 0; i < this.w; i++) this.set(i, j, color(i, j))
     return this
+  }
+  rect(i: number, j: number, w: number, h: number, c: string | null) {
+    for (let y = j; y < j + h; y++) for (let x = i; x < i + w; x++) this.set(x, y, c)
   }
   /** 按字符画一块：key 里查颜色，空格不画 */
   stamp(i: number, j: number, rows: readonly string[], key: Record<string, string | null>) {
@@ -237,59 +253,125 @@ function copingTile(p: Palette) {
   })
 }
 
-/** 台面：石板错缝铺，塔脚一圈放射状的小方石；靠栏墙、塔脚的一圈发暗，缝里、墙角长青苔；
- *  冰雪时一片雪，从台阶到塔门踩出一条道 */
+/** 台面上一格：石板错缝铺，塔脚一圈放射状的小方石；靠墙根（edge 格以内）、塔脚发暗，缝里、墙角长青苔；
+ *  冰雪时一片雪，从台阶到塔门踩出一条道。ring0 是塔脚外沿离塔中心几格 */
+function paving(
+  p: Palette,
+  i: number,
+  j: number,
+  x: number,
+  z: number,
+  edge: number,
+  ring0: number,
+  path: [Pt, Pt]
+) {
+  const r = Math.hypot(x, z) / P
+  if (p.snow) {
+    const trodden = segmentDistance([x, z], path) < 2.6 * P
+    let c = trodden
+      ? (i + j) % 3 === 0
+        ? SNOW_SHADE
+        : '#dbe4ec'
+      : hash(i, j, 61) < 0.08
+        ? '#e6edf3'
+        : SNOW
+    if (edge < 4 || r < ring0 + 1) c = mixHex(c, SNOW_SHADE, 0.6)
+    return c
+  }
+  let c: string
+  if (r >= ring0 - 1 && r < ring0 + 5) {
+    // 放射状的小方石：一圈一圈，每圈按周长分格
+    const ring = Math.floor((r - ring0 + 1) / 2.5)
+    const rr = ring0 + ring * 2.5
+    const n = Math.max(8, Math.round((2 * Math.PI * rr) / 3))
+    const a = (Math.atan2(x, z) / (2 * Math.PI) + 0.5) * n + ring * 0.5
+    const cell = Math.floor(a)
+    const seam = a - cell < 0.3 || (r - ring0 + 1) % 2.5 < 0.6
+    c = seam ? p.joint : p.paving[Math.floor(hash(cell, ring, 62) * 3)]
+  } else {
+    const row = Math.floor(j / 5),
+      off = Math.floor(hash(row, 1, 63) * 7)
+    const col = Math.floor((i + off) / 7)
+    c = j % 5 === 0 || (i + off) % 7 === 0 ? p.joint : p.paving[Math.floor(hash(col, row, 64) * 3)]
+    if (p.ruined && noise(i / 5, j / 5, 65) > 0.7) c = dark(c, 0.2)
+  }
+  // 青苔：石板缝里零星，靠墙根、墙角成片
+  const moss = noise(i / 4, j / 4, 66) + (edge < 7 ? 0.25 : 0) - (edge < 3 ? 1 : 0)
+  if (!p.ruined && moss > 0.82) c = moss > 0.95 ? '#6f8450' : mixHex(c, '#7f9258', 0.55)
+  if (p.ruined && moss > 0.9) c = '#7a6a4a'
+  // 墙根和塔脚的阴影
+  if (edge < 4) c = dark(c, edge < 3 ? 0.3 : 0.14)
+  if (r < ring0) c = dark(c, 0.2)
+  return c
+}
+
+/** 台面一整张图：从台阶到塔门是 path */
 function deckCanvas(p: Palette, X: number, Z: number, tower: Tower, path: [Pt, Pt]) {
   const W = Math.max(4, Math.round((2 * X) / P)),
     H = Math.max(4, Math.round((2 * Z) / P))
-  const ring0 = tower.foot / P + 4,
-    ring1 = ring0 + 5
+  return new Pixmap(W, H)
+    .fill((i, j) =>
+      paving(
+        p,
+        i,
+        j,
+        -X + ((i + 0.5) * 2 * X) / W,
+        -Z + ((j + 0.5) * 2 * Z) / H,
+        Math.min(i, j, W - 1 - i, H - 1 - j),
+        tower.foot / P + 4,
+        path
+      )
+    )
+    .canvas()
+}
+
+/** 剖开后的地面，铺满整块占地：台面的石板一直铺到塔墙脚，台子边外那一圈是湿石脚；
+ *  塔里是一圈圈的石板，正中嵌一个八角罗盘。inside 判断一点在不在台子里（含台阶口） */
+function floorCanvas(
+  p: Palette,
+  w: number,
+  h: number,
+  X: number,
+  Z: number,
+  rIn: number,
+  rOut: number,
+  inside: (x: number, z: number) => boolean,
+  path: [Pt, Pt]
+) {
+  const W = Math.max(4, Math.round(w / P)),
+    H = Math.max(4, Math.round(h / P))
+  const inset = Math.round((w / 2 - X) / P)
+  const star = rIn / P - 1.5
   return new Pixmap(W, H)
     .fill((i, j) => {
-      const x = -X + ((i + 0.5) * 2 * X) / W,
-        z = -Z + ((j + 0.5) * 2 * Z) / H
-      const r = Math.hypot(x, z) / P
-      const edge = Math.min(i, j, W - 1 - i, H - 1 - j)
-      if (p.snow) {
-        const trodden = segmentDistance([x, z], path) < 2.6 * P
-        let c = trodden
-          ? (i + j) % 3 === 0
-            ? SNOW_SHADE
-            : '#dbe4ec'
-          : hash(i, j, 61) < 0.08
-            ? '#e6edf3'
-            : SNOW
-        if (edge < 4 || r < ring0 + 1) c = mixHex(c, SNOW_SHADE, 0.6)
-        return c
+      const x = -w / 2 + ((i + 0.5) * w) / W,
+        z = -h / 2 + ((j + 0.5) * h) / H
+      const r = Math.hypot(x, z)
+      if (r >= rIn && r < rOut) return p.stone[2]
+      if (r < rIn) {
+        // 罗盘：四个长尖指东南西北、四个短尖指四角，每个尖一半亮一半暗；外面一圈圈石板
+        const a = Math.atan2(x, z),
+          d = r / P
+        const quarter = Math.PI / 2
+        const main = a - Math.round(a / quarter) * quarter
+        const minor = a - quarter / 2 - Math.round((a - quarter / 2) / quarter) * quarter
+        const reachMain = star * (1 - Math.abs(main) / (quarter / 2)) ** 1.6
+        const reachMinor = star * 0.55 * (1 - Math.abs(minor) / (quarter / 2)) ** 1.6
+        if (d < 1.2) return '#c9a04e'
+        if (d < reachMain) return main > 0 ? '#e8dcc0' : '#4e5866'
+        if (d < reachMinor) return '#b8913e'
+        if (Math.abs(d - star - 0.6) < 0.6) return '#4e5866'
+        const ring = Math.floor((rIn / P - d) / 2.5)
+        const seam = (rIn / P - d) % 2.5 < 0.6
+        return seam ? p.joint : p.paving[Math.floor(hash(ring, Math.floor(a * 3), 67) * 3)]
       }
-      let c: string
-      if (r >= ring0 - 1 && r < ring1) {
-        // 放射状的小方石：一圈一圈，每圈按周长分格
-        const ring = Math.floor((r - ring0 + 1) / 2.5)
-        const rr = ring0 + ring * 2.5
-        const n = Math.max(8, Math.round((2 * Math.PI * rr) / 3))
-        const a = (Math.atan2(x, z) / (2 * Math.PI) + 0.5) * n + ring * 0.5
-        const cell = Math.floor(a)
-        const seam = a - cell < 0.3 || (r - ring0 + 1) % 2.5 < 0.6
-        c = seam ? p.joint : p.paving[Math.floor(hash(cell, ring, 62) * 3)]
-      } else {
-        const row = Math.floor(j / 5),
-          off = Math.floor(hash(row, 1, 63) * 7)
-        const col = Math.floor((i + off) / 7)
-        c =
-          j % 5 === 0 || (i + off) % 7 === 0
-            ? p.joint
-            : p.paving[Math.floor(hash(col, row, 64) * 3)]
-        if (p.ruined && noise(i / 5, j / 5, 65) > 0.7) c = dark(c, 0.2)
+      if (!inside(x, z)) {
+        // 台子边外：剖开前是石脚顶，湿石头上长着海藻
+        if (p.snow) return hash(i, j, 68) < 0.3 ? SNOW_SHADE : '#dfe7ee'
+        return noise(i / 2.5, j / 2.5, 69) > 0.6 ? p.weed : p.rock[Math.floor(hash(i, j, 70) * 2)]
       }
-      // 青苔：石板缝里零星，靠墙根、墙角成片
-      const moss = noise(i / 4, j / 4, 66) + (edge < 7 ? 0.25 : 0) - (edge < 3 ? 1 : 0)
-      if (!p.ruined && moss > 0.82) c = moss > 0.95 ? '#6f8450' : mixHex(c, '#7f9258', 0.55)
-      if (p.ruined && moss > 0.9) c = '#7a6a4a'
-      // 墙根和塔脚的阴影
-      if (edge < 4) c = dark(c, edge < 3 ? 0.3 : 0.14)
-      if (r < ring0) c = dark(c, 0.2)
-      return c
+      const edge = Math.min(i, j, W - 1 - i, H - 1 - j) - inset
+      return paving(p, i, j, x, z, edge, rOut / P, path)
     })
     .canvas()
 }
@@ -312,13 +394,20 @@ function deckGlow(X: number, Z: number, lights: readonly Pt[]) {
 }
 
 /** 塔身：几道漆，漆底下隐约看得出石块；窗是带石框的小拱窗，窗台下一道水渍；墙脚溅脏。
- *  windows 是窗的 [横向像素, 离塔身底几格]；返回贴图和夜里亮的窗 */
-function bodyPixmaps(p: Palette, W: number, H: number, windows: [number, number][], seed: number) {
+ *  windows 是窗的 [横向像素, 离塔身底几格]；colorAt 换掉按高度分匀的几道漆（剖开后的残墙用）；返回贴图和夜里亮的窗 */
+function bodyPixmaps(
+  p: Palette,
+  W: number,
+  H: number,
+  windows: [number, number][],
+  seed: number,
+  colorAt?: (y: number) => string
+) {
   const nb = p.bands.length
   const band = (y: number) => Math.min(nb - 1, Math.floor((y / H) * nb))
   const map = new Pixmap(W, H, true).fill((i, j) => {
     const y = H - 1 - j
-    let c = p.bands[band(y)]
+    let c = colorAt ? colorAt(y) : p.bands[band(y)]
     const course = Math.floor(y / 3)
     if (y % 3 === 2 && hash(i >> 2, course, seed) < 0.55) c = dark(c, 0.05)
     else if ((i + (course & 1) * 4) % 8 === 0) c = dark(c, 0.035)
@@ -353,6 +442,45 @@ function bodyPixmaps(p: Palette, W: number, H: number, windows: [number, number]
     glow.stamp(u - 1, j - 3, ['ggg', 'ggg', 'ggg', 'ggg', 'ggg'], { g: LAMP_GLOW })
     if (p.ruined) map.stamp(u - 1, j - 3, ['g  ', ' g ', '  g'], { g: '#4a5866' })
   }
+  return { map, glow }
+}
+
+/** 剖开后塔墙里面：刷白的墙、下半截护墙板和踢脚线；背面开两扇深窗，窗间挂陈设（画法同灯塔房间的北墙）。
+ *  从塔里看不左右颠倒：列号按角度从大到小排。windows、decor 是列号；返回贴图和夜里亮的窗 */
+function plasterPixmaps(
+  p: Palette,
+  pal: InteriorPalette,
+  W: number,
+  H: number,
+  windows: number[],
+  decor: number[],
+  seed: number
+) {
+  const panelTop = H - Math.round(H * 0.34)
+  // 塔里窄、光进不来，护墙板比房间里的浅一档，不然看着像个黑洞
+  const panel = mixHex(pal.panel, pal.paper, 0.45)
+  const map = new Pixmap(W, H, true).fill((i, j) => {
+    if (j === 0) return pal.trim
+    if (j >= H - 2) return pal.trim
+    if (j >= panelTop) return j === panelTop || (i % 8 === 3 && j < H - 3) ? pal.trim : panel
+    let c = i % 4 < 2 ? pal.paper : pal.stripe
+    if (p.ruined && noise(i / 3, j / 3, seed + 9) > 0.66) c = mixHex(c, '#8a7a62', 0.4)
+    return c
+  })
+  const glow = new Pixmap(W, H, true).fill(() => '#000000')
+  const wy = 3,
+    wh = Math.min(8, panelTop - 5)
+  for (const u of windows) {
+    // 深窗：窗洞两边是墙的厚度，暗一档
+    map.rect(u - 3, wy - 1, 7, wh + 2, pal.trim)
+    map.rect(u - 2, wy, 5, wh, dark(pal.paper, 0.25))
+    map.rect(u - 1, wy, 3, wh, '#9cc8e0')
+    map.rect(u - 1, wy, 3, 1, '#c8e4f0')
+    map.rect(u - 3, wy + wh + 1, 7, 1, light(pal.paper, 0.2))
+    glow.rect(u - 1, wy, 3, wh, LAMP_GLOW)
+  }
+  const rect: Rect = (i, j, w, h, c) => map.rect(i, j, w, h, c)
+  decor.forEach((u, k) => lighthouseDecor(rect, u - 7, u + 7, panelTop, H, seed + k, pal))
   return { map, glow }
 }
 
@@ -620,6 +748,85 @@ function segmentDistance([x, z]: Pt, [[ax, az], [bx, bz]]: [Pt, Pt]) {
   return Math.hypot(x - ax - t * dx, z - az - t * dz)
 }
 
+/** 剖开的一圈塔墙：外半径 rOut、里半径 rIn，高度按角度给（height 返回世界单位）；门洞 gap = [中心角, 半宽角] 不砌。
+ *  外面的 u 绕一圈 0→1，里面反过来（从塔里看不左右颠倒），v 按 top 归一；墙顶和高低错开的截面是一块，不贴图 */
+function ringWall(
+  rIn: number,
+  rOut: number,
+  height: (a: number) => number,
+  top: number,
+  gap: readonly [number, number],
+  n = 64
+) {
+  const outer = new Builder(),
+    inner = new Builder(),
+    cut = new Builder()
+  const at = (r: number, a: number, y: number) => [Math.sin(a) * r, y, Math.cos(a) * r]
+  const angle = (k: number) => (k / n) * 2 * Math.PI
+  const hs = Array.from({ length: n }, (_, k) => {
+    const mid = (angle(k) + angle(k + 1)) / 2
+    const off = Math.atan2(Math.sin(mid - gap[0]), Math.cos(mid - gap[0]))
+    return Math.abs(off) < gap[1] ? 0 : height(mid)
+  })
+  const none: Pt = [0, 0]
+  for (let k = 0; k < n; k++) {
+    const a0 = angle(k),
+      a1 = angle(k + 1),
+      y = hs[k]
+    if (y > 0) {
+      const u0 = k / n,
+        u1 = (k + 1) / n
+      outer.quad(
+        at(rOut, a0, 0),
+        at(rOut, a1, 0),
+        at(rOut, a1, y),
+        at(rOut, a0, y),
+        [u0, 0],
+        [u1, 0],
+        [u1, y / top],
+        [u0, y / top]
+      )
+      inner.quad(
+        at(rIn, a1, 0),
+        at(rIn, a0, 0),
+        at(rIn, a0, y),
+        at(rIn, a1, y),
+        [1 - u1, 0],
+        [1 - u0, 0],
+        [1 - u0, y / top],
+        [1 - u1, y / top]
+      )
+      cut.quad(
+        at(rOut, a0, y),
+        at(rOut, a1, y),
+        at(rIn, a1, y),
+        at(rIn, a0, y),
+        none,
+        none,
+        none,
+        none
+      )
+    }
+    // 和下一段高低不一样的地方（含门洞两边）露出截面
+    const next = hs[(k + 1) % n]
+    if (next !== y) {
+      const lo = Math.min(y, next),
+        hi = Math.max(y, next)
+      cut.quad(
+        at(rOut, a1, lo),
+        at(rIn, a1, lo),
+        at(rIn, a1, hi),
+        at(rOut, a1, hi),
+        none,
+        none,
+        none,
+        none
+      )
+    }
+  }
+  return { outer: outer.geometry(), inner: inner.geometry(), cut: cut.geometry() }
+}
+
 /** 台阶口：门那一面的边上往台子里切进去；a、b 是口子两角（在边上），inward 往里、along 沿边 */
 interface Notch {
   a: Pt
@@ -794,6 +1001,8 @@ export function lighthouse(house: House, door: Pt | undefined, style: Style): Li
     burning: [],
     glows: [],
     smoke: [],
+    grounds: [],
+    room: { group: new THREE.Group(), glowing: [] },
   }
   const add = (mesh: THREE.Mesh, shadow = true) => {
     mesh.castShadow = mesh.receiveShadow = shadow
@@ -1410,31 +1619,38 @@ export function lighthouse(house: House, door: Pt | undefined, style: Style): Li
     return best
   }
   const far = (x: number, z: number) => segmentDistance([x, z], path) / P
-  if (!p.ruined) {
-    const mast = spot(3 * P, (x, z) => Math.abs(x) - Math.abs(z) * 0.8 + far(x, z) * 0.3)
-    if (mast) signalMast(mast)
-    const bell = spot(
-      5 * P,
-      (x, z) =>
-        -Math.abs(z) * 0.6 +
-        Math.abs(x) * 0.4 +
-        (mast && Math.sign(x) !== Math.sign(mast[0]) ? 30 : 0)
-    )
-    if (bell) fogBell(bell)
-    // 望远镜放在朝海的那边（塔门的反方向），靠近栏墙
-    const sea: Pt = [-Math.sin(toward), -Math.cos(toward)]
-    const scope = spot(
-      2.5 * P,
-      (x, z) => (x * sea[0] + z * sea[1]) / P - (Math.abs(x * sea[1] - z * sea[0]) / P) * 0.15
-    )
-    if (scope) telescope(scope, Math.atan2(sea[0], sea[1]))
-  }
+  const sea: Pt = [-Math.sin(toward), -Math.cos(toward)]
+  const mast = p.ruined
+    ? undefined
+    : spot(3 * P, (x, z) => Math.abs(x) - Math.abs(z) * 0.8 + far(x, z) * 0.3)
+  const bell = p.ruined
+    ? undefined
+    : spot(
+        5 * P,
+        (x, z) =>
+          -Math.abs(z) * 0.6 +
+          Math.abs(x) * 0.4 +
+          (mast && Math.sign(x) !== Math.sign(mast[0]) ? 30 : 0)
+      )
+  // 望远镜放在朝海的那边（塔门的反方向），靠近栏墙
+  const scope = p.ruined
+    ? undefined
+    : spot(
+        2.5 * P,
+        (x, z) => (x * sea[0] + z * sea[1]) / P - (Math.abs(x * sea[1] - z * sea[0]) / P) * 0.15
+      )
   const barrels = spot(5 * P, (x, z) => z * 0.8 + Math.abs(x) * 0.2 + far(x, z) * 0.2)
-  if (barrels) cargo(barrels)
-  if (p.ruined) {
-    const pile = spot(6 * P, (x, z) => -z * 0.3 + far(x, z) * 0.3)
-    if (pile) rubble(pile)
-  } else lifeRing()
+  const pile = p.ruined ? spot(6 * P, (x, z) => -z * 0.3 + far(x, z) * 0.3) : undefined
+  /** 台上的东西摆到一层上：旗杆太高，只在剖开前立着 */
+  const furnish = (stage: Stage, ring: number) => {
+    if (bell) fogBell(bell, stage)
+    if (scope) telescope(scope, Math.atan2(sea[0], sea[1]), stage)
+    if (barrels) cargo(barrels, stage)
+    if (pile) rubble(pile, stage)
+    if (!p.ruined) lifeRing(stage, ring)
+  }
+  if (mast) signalMast(mast)
+  furnish({ y: tower.deck, add }, tower.deck + 0.2 * T)
 
   /** 信号旗杆：白漆木杆、一道横桁，两头各垂一串信号旗，杆顶一面长三角旗 */
   function signalMast([x, z]: Pt) {
@@ -1485,19 +1701,19 @@ export function lighthouse(house: House, door: Pt | undefined, style: Style): Li
   }
 
   /** 雾钟：两根木柱一道横梁、一个小坡顶，挂一口铜钟，钟下垂一根绳 */
-  function fogBell([x, z]: Pt) {
+  function fogBell([x, z]: Pt, { y, add }: Stage) {
     const wood = weather(lambert({ color: '#6b4b34' }), 1, 0.6)
     const postH = 9 * T
     for (const s of [-1, 1]) {
       const post = add(new THREE.Mesh(new THREE.BoxGeometry(1.2 * P, postH, 1.2 * P), wood))
-      post.position.set(x + s * 3.4 * P, tower.deck + postH / 2, z)
+      post.position.set(x + s * 3.4 * P, y + postH / 2, z)
     }
     const beam = add(new THREE.Mesh(new THREE.BoxGeometry(8.6 * P, T, 1.6 * P), wood))
-    beam.position.set(x, tower.deck + postH + 0.5 * T, z)
+    beam.position.set(x, y + postH + 0.5 * T, z)
     const shingle = weather(lambert({ color: p.snow ? SNOW : paint[1] }), 1, 0.6)
     for (const s of [-1, 1]) {
       const plank = add(new THREE.Mesh(new THREE.BoxGeometry(10.5 * P, 0.5 * T, 3 * P), shingle))
-      plank.position.set(x, tower.deck + postH + 1.9 * T, z + s * 1.2 * P)
+      plank.position.set(x, y + postH + 1.9 * T, z + s * 1.2 * P)
       plank.rotation.x = s * 0.5
     }
     const profile = [
@@ -1508,14 +1724,14 @@ export function lighthouse(house: House, door: Pt | undefined, style: Style): Li
       [1.5, 2.4],
       [1.1, 3],
       [0, 3.2],
-    ].map(([r, y]) => new THREE.Vector2(r * P, y * T))
+    ].map(([r, h]) => new THREE.Vector2(r * P, h * T))
     const bell = add(
       new THREE.Mesh(
         new THREE.LatheGeometry(profile, 12),
         banded(lambert({ color: '#b08a3a', side: THREE.DoubleSide }))
       )
     )
-    bell.position.set(x, tower.deck + postH - 3.2 * T, z)
+    bell.position.set(x, y + postH - 3.2 * T, z)
     const rope = add(
       new THREE.Mesh(
         new THREE.BoxGeometry(0.3 * P, 2.6 * T, 0.3 * P),
@@ -1523,16 +1739,16 @@ export function lighthouse(house: House, door: Pt | undefined, style: Style): Li
       ),
       false
     )
-    rope.position.set(x, tower.deck + postH - 4.4 * T, z)
+    rope.position.set(x, y + postH - 4.4 * T, z)
   }
 
   /** 铜望远镜：木三脚架上一支铜筒，朝着海微微抬头 */
-  function telescope([x, z]: Pt, facing: number) {
-    const top = new THREE.Vector3(x, tower.deck + 4.2 * T, z)
+  function telescope([x, z]: Pt, facing: number, { y, add }: Stage) {
+    const top = new THREE.Vector3(x, y + 4.2 * T, z)
     const legs = [0, 1, 2].map((k) => {
       const a = facing + Math.PI / 3 + (k * 2 * Math.PI) / 3
       return rod(
-        new THREE.Vector3(x + Math.sin(a) * 2 * P, tower.deck, z + Math.cos(a) * 2 * P),
+        new THREE.Vector3(x + Math.sin(a) * 2 * P, y, z + Math.cos(a) * 2 * P),
         top,
         0.3 * P
       )
@@ -1559,7 +1775,7 @@ export function lighthouse(house: House, door: Pt | undefined, style: Style): Li
   }
 
   /** 几只木桶，完好的灯塔再加一只木箱、一盘缆绳 */
-  function cargo([x, z]: Pt) {
+  function cargo([x, z]: Pt, { y, add }: Stage) {
     const barrelH = 4 * T
     const staves = weather(
       banded(lambert({ map: wrapped(barrelPixmap(p, Math.round(barrelH / T))) })),
@@ -1580,7 +1796,7 @@ export function lighthouse(house: House, door: Pt | undefined, style: Style): Li
       const b = add(
         new THREE.Mesh(new THREE.CylinderGeometry(2 * P, 2 * P, tall, 12), [staves, lid, lid])
       )
-      b.position.set(x + dx * P, tower.deck + tall / 2, z + dz * P)
+      b.position.set(x + dx * P, y + tall / 2, z + dz * P)
       b.rotation.y = k
     })
     if (p.ruined) return
@@ -1598,7 +1814,7 @@ export function lighthouse(house: House, door: Pt | undefined, style: Style): Li
         )
       )
     )
-    crate.position.set(x + 4.8 * P, tower.deck + 1.5 * T, z + 1.8 * P)
+    crate.position.set(x + 4.8 * P, y + 1.5 * T, z + 1.8 * P)
     crate.rotation.y = 0.3
     const coil = add(
       new THREE.Mesh(
@@ -1607,11 +1823,11 @@ export function lighthouse(house: House, door: Pt | undefined, style: Style): Li
       )
     )
     coil.rotation.x = Math.PI / 2
-    coil.position.set(x - 4.6 * P, tower.deck + 0.6 * P, z + 2.6 * P)
+    coil.position.set(x - 4.6 * P, y + 0.6 * P, z + 2.6 * P)
   }
 
   /** 碎砖和锈铁皮堆 */
-  function rubble([x, z]: Pt) {
+  function rubble([x, z]: Pt, { y, add }: Stage) {
     const bits: THREE.BufferGeometry[] = []
     for (let k = 0; k < 8; k++) {
       const s = (1.2 + hash(k, 8, 171) * 2) * P
@@ -1620,7 +1836,7 @@ export function lighthouse(house: House, door: Pt | undefined, style: Style): Li
       box.rotateZ((hash(k, 10, 171) - 0.5) * 0.6)
       box.translate(
         x + (hash(k, 11, 171) - 0.5) * 7 * P,
-        tower.deck + s * 0.3,
+        y + s * 0.3,
         z + (hash(k, 12, 171) - 0.5) * 5 * P
       )
       bits.push(box)
@@ -1630,8 +1846,8 @@ export function lighthouse(house: House, door: Pt | undefined, style: Style): Li
     )
   }
 
-  /** 救生圈：挂在朝南那面栏墙外，避开台阶口，红白四段 */
-  function lifeRing() {
+  /** 救生圈：挂在朝南那面栏墙外，避开台阶口，红白四段；height 是圈心的高度 */
+  function lifeRing({ add }: Stage, height: number) {
     const south = notch.inward[1] === -1
     const x = (south && mouth[0] < 0 ? 1 : -1) * X * 0.42
     const ring = add(
@@ -1648,7 +1864,141 @@ export function lighthouse(house: House, door: Pt | undefined, style: Style): Li
         )
       )
     )
-    ring.position.set(x, tower.deck + 0.2 * T, Z + 0.9 * P)
+    ring.position.set(x, height, Z + 0.9 * P)
+  }
+
+  // ── 掀开屋顶后：剖开的灯塔 ──
+  out.room = cutaway()
+
+  /** 剖开的灯塔：屋里的人站在地面上，所以台子落到地面，只沿台子边留一圈矮石边、台阶口留缺口；
+   *  塔从中间剖开，留一圈塔墙，朝南（镜头）那面矮、背面高，按石层一阶一阶截断，看得见墙厚；
+   *  外面还是红白漆，里面刷白、开两扇深窗、挂着海图船舵；沿墙一圈螺旋石阶，地上嵌一个罗盘；
+   *  塔墙在门那个方向开门洞。台上矮的东西（雾钟、木桶、望远镜、救生圈）照原样摆着，旗杆不立 */
+  function cutaway() {
+    const g = new THREE.Group()
+    g.visible = false
+    const glowing: THREE.Material[] = []
+    const put = (mesh: THREE.Mesh, shadow = true) => {
+      mesh.castShadow = mesh.receiveShadow = shadow
+      g.add(mesh)
+      return mesh
+    }
+    const back = interiorTexels(house) * T,
+      low = 4 * T
+    const rOut = tower.foot,
+      rIn = tower.foot - 3 * P
+    // 地面
+    const inPolygon = (x: number, z: number) => {
+      let inside = false
+      for (let k = 0, m = outline.length - 1; k < outline.length; m = k++) {
+        const [ax, az] = outline[k],
+          [bx, bz] = outline[m]
+        if (az > z !== bz > z && x < ((bx - ax) * (z - az)) / (bz - az) + ax) inside = !inside
+      }
+      return inside || inNotch([x, z])
+    }
+    const floor = lambert({
+      map: texture(floorCanvas(p, w, h, X, Z, rIn, rOut, inPolygon, path)),
+    })
+    out.grounds.push(floor)
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, h), floor)
+    plane.rotation.x = -Math.PI / 2
+    plane.position.y = 0.6
+    put(plane, false).receiveShadow = true
+    // 台子边：外面方石、顶上压顶石，台阶口不砌
+    const rimSides = new Builder(),
+      rimTops = new Builder()
+    outline.forEach((a, k) => {
+      const b = outline[(k + 1) % outline.length]
+      if (!(inNotch(a) && inNotch(b))) bar(rimSides, rimTops, a, b, 2 * P, 0, 3 * T)
+    })
+    const rimStone = lambert({ map: tile(ashlar(p, seed % 97)) })
+    out.walls.push(rimStone)
+    put(new THREE.Mesh(rimSides.geometry(), rimStone))
+    put(new THREE.Mesh(rimTops.geometry(), lambert({ map: tile(copingTile(p)) })))
+    // 塔墙：前低后高，高度一层石（两格）一阶
+    const height = (a: number) =>
+      Math.max(low, Math.floor((low + ((back - low) * (1 - Math.cos(a))) / 2) / (2 * T)) * 2 * T)
+    const gap = [toward, (6.5 * P) / rOut] as const
+    const ring = ringWall(rIn, rOut, height, back, gap)
+    const rows = Math.round(back / T)
+    // 外面：最下两格石基，往上红白一道四格交替（比真塔身的条纹密，剖开的矮墙上也认得出是灯塔）
+    const stub = (y: number) =>
+      y < 2 ? p.stone[1] : p.bands[1 + (Math.floor((y - 2) / 4) % (p.bands.length - 1))]
+    const outerMap = bodyPixmaps(p, Math.round(around(rOut)), rows, [], seed % 997, stub).map
+    const outerMat = banded(lambert({ map: texture(outerMap.canvas()) }))
+    out.walls.push(outerMat)
+    put(new THREE.Mesh(ring.outer, outerMat))
+    // 螺旋石阶贴着墙往上（让开门洞），背面留给一扇深窗和一样陈设
+    const IW = Math.round(around(rIn))
+    const col = (a: number) => Math.round((1 - ((((a / (2 * Math.PI)) % 1) + 1) % 1)) * IW) % IW
+    const apart = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)))
+    const clearOfDoor = (a: number) => apart(a, toward) > gap[1] + 0.2
+    const steps = 6,
+      turn = 0.3,
+      rise = 1.8 * T
+    // 从侧面起步、一级级往背面爬（东边逆时针、西边顺时针），越高的一级越靠背面的高墙；背面正中空着开窗
+    let stairs: number[] = []
+    let best = -Infinity
+    for (let k = 0; k < 72; k++)
+      for (const dir of [1, -1]) {
+        const a0 = (k / 72) * 2 * Math.PI
+        const arc = Array.from({ length: steps }, (_, i) => a0 + dir * i * turn)
+        if (!arc.every((a) => clearOfDoor(a) && apart(a, Math.PI) > 0.6)) continue
+        const score = arc.reduce((sum, a, i) => sum + (i + 1) * (1 - Math.cos(a)), 0)
+        if (score > best) ((best = score), (stairs = arc))
+      }
+    // 窗和陈设：从背面正中往两边一点点找，离门洞、石阶和彼此都够远（half 是它在墙上占的半个角度）
+    const hung: [number, number][] = []
+    const place = (half: number) => {
+      for (let i = 0; i <= 16; i++) {
+        const a = Math.PI + (i % 2 ? -1 : 1) * Math.ceil(i / 2) * 0.12
+        if (apart(a, toward) < gap[1] + half) continue
+        if (stairs.some((b) => apart(a, b) < half + turn / 2)) continue
+        if (hung.some(([b, h]) => apart(a, b) < half + h)) continue
+        hung.push([a, half])
+        return [col(a)]
+      }
+      return []
+    }
+    const windows = place(0.34)
+    const decor = place(0.63)
+    const plaster = plasterPixmaps(p, house.interior, IW, rows, windows, decor, seed)
+    const innerMat = lambert({
+      map: texture(plaster.map.canvas()),
+      emissiveMap: texture(plaster.glow.canvas()),
+      emissive: new THREE.Color('#ffffff'),
+      emissiveIntensity: 0,
+    })
+    glowing.push(innerMat)
+    out.walls.push(innerMat)
+    put(new THREE.Mesh(ring.inner, innerMat))
+    put(
+      new THREE.Mesh(
+        ring.cut,
+        lambert({ color: p.snow ? '#e6ecf1' : dark(p.stone[1], 0.08), side: THREE.DoubleSide })
+      )
+    )
+    // 石阶：比墙矮的才画（剖掉的不画）
+    const treads: THREE.BufferGeometry[] = []
+    const depth = 4.5 * P
+    stairs.forEach((a, k) => {
+      const top = (k + 1) * rise
+      if (top > height(a) - 0.5 * T) return
+      const tread = new THREE.BoxGeometry(rIn * turn * 1.08, rise, depth)
+      tread.translate(0, top - rise / 2, rIn - depth / 2)
+      tread.rotateY(a)
+      treads.push(tread)
+    })
+    if (treads.length)
+      put(
+        new THREE.Mesh(
+          mergeGeometries(treads),
+          lambert({ color: p.snow ? '#d9dde2' : light(p.stone[0], 0.06) })
+        )
+      )
+    furnish({ y: 0, add: put }, 1.8 * T)
+    return { group: g, glowing }
   }
 
   return out

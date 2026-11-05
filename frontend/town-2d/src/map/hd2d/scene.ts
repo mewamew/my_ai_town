@@ -1133,8 +1133,12 @@ export class HdScene {
     const { x, y, w, h } = house
     const group = new THREE.Group()
     group.position.set(x + w / 2, 0, y + h / 2)
-    if (house.tower) this.addLighthouse(group, house, door, on, glowMap)
+    // 灯塔掀开后是剖开的灯塔，别的房子是矮墙围起来的房间（见 interior.ts）
+    let room: { group: THREE.Group; glowing: THREE.Material[]; partition?: Partition }
+    if (house.tower) room = this.addLighthouse(group, house, door, on, glowMap)
     else {
+      const inside = interior(house, door, points)
+      room = { ...inside, glowing: [inside.glowing] }
       // 只有朝南的墙面向镜头；门在南墙上时画出来
       const onSouth = door && Math.abs(door[1] - (y + h)) <= Math.min(Math.abs(door[1] - y), 40)
       const top = this.addBody(group, house, onSouth ? (door![0] - x) / PIXEL : undefined, on)
@@ -1154,11 +1158,10 @@ export class HdScene {
     for (const m of materials)
       dissolvable(m, { uDissolve: amount, uDissolveCell: this.dissolveCell })
     this.reveals.set(house.id, { amount, open: false, from: 0, at: 0, moving: false })
-    const room = interior(house, door, points)
     this.flat.add(room.group)
     this.rooms.set(house.id, room.group)
     this.partitions.set(house.id, room.partition)
-    this.glowing.push({ material: room.glowing, on })
+    for (const material of room.glowing) this.glowing.push({ material, on })
   }
 
   /** 房子的墙：朝镜头的墙面贴画好的墙（夜里窗户发光），墙顶压深色；door 是门离墙左端的像素数。
@@ -1361,7 +1364,8 @@ export class HdScene {
   }
 
   /** 灯塔整块占地是石台，塔立在正中（见 lighthouse.ts）。材质接上天气和光照图；灯室天一暗就最先亮，
-   *  塔窗、台阶灯跟这栋房子的灯一起亮。光晕往镜头那边挪一点，不被灯罩自己挡住；火盆的烟和火星从盆口冒 */
+   *  塔窗、台阶灯跟这栋房子的灯一起亮。光晕往镜头那边挪一点，不被灯罩自己挡住；火盆的烟和火星从盆口冒。
+   *  返回掀开屋顶后的样子：剖开的灯塔 */
   private addLighthouse(
     group: THREE.Group,
     house: House,
@@ -1375,6 +1379,7 @@ export class HdScene {
     for (const { material, snow, wet, sway } of built.weathered)
       this.weather.shade(material, { snow, wet, sway })
     for (const m of built.walls) this.lightmap.shade(m, 'wall')
+    for (const m of built.grounds) this.lightmap.shade(m, 'ground')
     for (const g of built.glowing) this.glowing.push({ material: g.material, on: g.on ?? on })
     this.selfLit.push(...built.burning)
     const glow = (at: THREE.Vector3, size: number) => {
@@ -1409,6 +1414,8 @@ export class HdScene {
       this.smoke.add(cx + s.x, s.y, cz + s.z, house.seed)
       this.chimneyMouths.push([cx + s.x, s.y, cz + s.z])
     }
+    built.room.group.position.copy(group.position)
+    return built.room
   }
 
   /** 光束扫到正对镜头时灯室一闪：两束光里离镜头水平方向最近的那束越正越亮，只在天黑后 */
