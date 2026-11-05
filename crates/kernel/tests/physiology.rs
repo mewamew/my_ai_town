@@ -212,3 +212,43 @@ fn ignored_thirst_warning_wakes_the_sleeper_again_at_the_collapse_line() {
     );
     assert!(w.actor("a").unwrap().needs.water.value > 0.0);
 }
+
+/// 走路比闲着累：同样过这段时间，走路的人精力按劳作速率、水分按劳作的水分消耗，各多掉一半；
+/// 身体面板的原因里写着。海难环岛里走了半天路的林晚和原地空等的周屿数值一模一样。
+#[test]
+fn walking_costs_half_of_labor_on_energy_and_water() {
+    let mut w = common::world_with(
+        common::two_places(json!([])),
+        420.0,
+        &[("a", "a", "loc_a"), ("b", "b", "loc_a")],
+    );
+    common::run(
+        &mut w,
+        "a",
+        "go",
+        json!({"intent":{"verb":"前往","locale":"loc_b"}}),
+    )
+    .unwrap();
+    w.step(0.5);
+    let causes = w.body_view("a").unwrap().causes;
+    assert!(
+        causes.iter().any(|c| c.contains("走路额外消耗")),
+        "{causes:?}"
+    );
+    let arrived = common::finish(&mut w, "a", "go");
+    let walked = arrived.ended_at - arrived.started_at.unwrap();
+    assert!(walked > 1.0, "要真走一段路：{walked}");
+    let needs = |id: &str| w.actor(id).unwrap().needs.clone();
+    let (a, b) = (needs("a"), needs("b"));
+    close(
+        b.energy.value - a.energy.value,
+        a.tuning.labor_rate * 0.5 * walked,
+    );
+    close(b.water.value - a.water.value, 0.02 * walked);
+    assert!(!w
+        .body_view("a")
+        .unwrap()
+        .causes
+        .iter()
+        .any(|c| c.contains("走路")));
+}

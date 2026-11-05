@@ -342,13 +342,17 @@ impl Action {
             KernelError::props("对他人施用须使用完成时效果，不能包含持续效果")
         );
         if let Some(supply) = &self.supply {
+            // 补给在完成时统一扣、统一生效，过程中不能先拿到好处；劳作可以，那是做事的人自己的消耗，
+            // 不从补给里拿东西（捡木头、采棕榈叶）。
             ensure!(
                 supply.initial <= 1_000_000
                     && supply.cost > 0
                     && supply.cost <= 1_000_000
                     && !self.on_complete.is_empty()
-                    && self.during.is_empty(),
-                KernelError::props("有限补给须在完成时统一消耗和生效，数量不得超过一百万")
+                    && self.during.iter().all(|e| matches!(e, Effect::Labor)),
+                KernelError::props(
+                    "有限补给须在完成时统一消耗和生效，过程中只能有劳作消耗，数量不得超过一百万"
+                )
             );
             ensure!(
                 supply.restock.as_ref().is_none_or(

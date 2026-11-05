@@ -24,7 +24,7 @@ export function bodyEffects(container: HTMLElement, action: Action) {
   root.append(
     el(
       'p',
-      '消耗品在完成时扣除和生效；中断不扣数量、不获得效果。有限补给和对他人施用不能同时配置每分钟效果。',
+      '消耗品在完成时扣除和生效；中断不扣数量、不获得效果。有限补给不能同时配置每分钟恢复（可以算劳作），对他人施用不能配置每分钟效果。',
       'prop-muted'
     )
   )

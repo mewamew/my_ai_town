@@ -21,6 +21,8 @@ pub const HEAL_RATE: f64 = 0.08;
 pub const EXPOSURE_NEEDS: [Need; 3] = [Need::Fullness, Need::Water, Need::Energy];
 /// 劳作时水分的额外消耗（每分钟）。
 const LABOR_WATER_COST: f64 = 0.04;
+/// 走路的额外消耗占劳作的几成。走路不像劳作那样累到一定程度就不让做：累了也得能走回去歇着。
+const WALK_SHARE: f64 = 0.5;
 /// 淋湿进度的上限：到这里着凉生病，进度清零。
 pub const WET_LIMIT: f64 = 90.0;
 /// 不淋雨雪时每分钟变干多少。
@@ -527,6 +529,7 @@ pub(crate) fn rates(w: &World) -> Vec<(String, Rates)> {
         .filter(|a| a.present() && !a.is_avatar())
         .map(|a| {
             let mut r = a.needs.rates(body_spot(w, a), None);
+            walking_rates(a, &mut r, &mut None);
             weather_rates(w, a, &mut r, &mut None);
             w.game_mode_rates(a, &mut r, &mut None);
             (a.id.clone(), r)
@@ -544,6 +547,25 @@ fn precipitation(kind: protocol::WeatherKind) -> Option<(f64, f64)> {
         K::HeavyRain => Some((0.04, 1.0)),
         K::Thunderstorm => Some((0.06, 1.5)),
     }
+}
+
+/// 走路比闲着累：精力按需求参数里的劳作速率、水分按劳作的水分消耗，各取 `WALK_SHARE`。
+fn walking_rates(a: &Actor, r: &mut Rates, trace: &mut Trace<'_>) {
+    let n = &a.needs;
+    if n.body.dead || !a.current.is_travel() {
+        return;
+    }
+    if n.on(Need::Energy) {
+        r.values[Need::Energy] -= n.tuning.labor_rate * WALK_SHARE;
+    }
+    if n.on(Need::Water) {
+        r.values[Need::Water] -= LABOR_WATER_COST * WALK_SHARE;
+    }
+    n.note_enabled(
+        trace,
+        "走路额外消耗",
+        &[(Need::Energy, "精力"), (Need::Water, "水分")],
+    );
 }
 
 /// 天气影响身体：开启时露天淋雨雪额外消耗精力、越来越湿；在室内、遮蔽处或不下雨雪时慢慢变干。
@@ -591,6 +613,7 @@ fn weather_rates(w: &World, a: &Actor, r: &mut Rates, trace: &mut Trace<'_>) {
 pub(crate) fn world_causes(w: &World, a: &Actor) -> Vec<String> {
     let mut causes = a.needs.causes(body_spot(w, a));
     let mut r = Rates::default();
+    walking_rates(a, &mut r, &mut Some(&mut causes));
     weather_rates(w, a, &mut r, &mut Some(&mut causes));
     w.game_mode_rates(a, &mut r, &mut Some(&mut causes));
     causes

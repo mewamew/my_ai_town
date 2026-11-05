@@ -1975,7 +1975,7 @@
   },
   {
     "id": "core:island-driftwood",
-    "version": 1,
+    "version": 2,
     "name": "漂流木堆",
     "description": "海浪冲上岸的木头。每天天亮潮水会再冲上来一些。",
     "actions": [
@@ -1984,6 +1984,11 @@
         "label": "捡木头",
         "duration_minutes": 20,
         "completion": "activity",
+        "during": [
+          {
+            "kind": "labor"
+          }
+        ],
         "supply": {
           "initial": 4,
           "cost": 1,
@@ -2012,7 +2017,7 @@
   },
   {
     "id": "core:island-palms",
-    "version": 1,
+    "version": 2,
     "name": "棕榈树",
     "description": "几棵歪脖子棕榈树，叶子和椰子都有限。",
     "actions": [
@@ -2021,6 +2026,11 @@
         "label": "采棕榈叶",
         "duration_minutes": 15,
         "completion": "activity",
+        "during": [
+          {
+            "kind": "labor"
+          }
+        ],
         "supply": {
           "initial": 6,
           "cost": 1,
