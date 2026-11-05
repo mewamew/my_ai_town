@@ -24,22 +24,37 @@ impl World {
             })
             .collect();
         let Some(seen) = self.places_seen.as_mut() else {
+            // 刚开始记：开局所在的地方算到过，不算「来到」
+            for (id, place) in &now_places {
+                if let Some(place) = place {
+                    self.visit(id, place, true);
+                }
+            }
             self.places_seen = Some(now_places.into_iter().collect::<BTreeMap<_, _>>());
             return;
         };
         let mut moves = Vec::new();
+        let mut fresh = Vec::new();
         for (id, place) in now_places {
             match seen.insert(id.clone(), place.clone()) {
                 Some(before) if before != place => moves.push((id, before, place)),
+                None => fresh.extend(place.map(|p| (id, p))),
                 _ => {}
             }
         }
+        // 新入住的人：所在的地方算到过
+        for (id, place) in fresh {
+            self.visit(&id, &place, true);
+        }
         for (id, before, place) in moves {
             if let Some(old) = &before {
+                // 离开时的样子就是记忆里那里的样子
+                self.remember_place(&id, old);
                 let text = self.departure_text(&id, old, place.as_deref());
                 self.tell_place(&id, old, LEFT, text);
             }
             if let Some(new) = &place {
+                self.visit(&id, new, false);
                 let text = self.arrival_text(&id);
                 self.tell_place(&id, new, ARRIVED, text);
             }
@@ -48,7 +63,7 @@ impl World {
 
     /// 处所算在哪个已知地点里：地点本身；两头都只通到同一个地点的路段（走到地点里道具跟前的
     /// 通道）也算在那个地点里，在广场上走到公告栏跟前不算离开了广场。街道和别的路段不算。
-    fn enclosing_place(&self, locale: &str) -> Option<String> {
+    pub(crate) fn enclosing_place(&self, locale: &str) -> Option<String> {
         if self.topo.place_of(locale).is_some() {
             return Some(locale.into());
         }
@@ -78,7 +93,8 @@ impl World {
             (_, Some(new)) => Some(new),
             _ => None,
         };
-        match heading.filter(|d| *d != old) {
+        // 陌生环境里看的人未必知道那地方叫什么：只说离开了
+        match heading.filter(|d| *d != old && !self.strangers) {
             Some(dest) => format!("{}往{}去了", a.name, self.topo.locale_name(dest)),
             None => format!("{}离开了{}", a.name, self.topo.locale_name(old)),
         }

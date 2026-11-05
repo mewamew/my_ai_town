@@ -21,6 +21,8 @@ pub struct WorldSettingsView {
     pub provider: String,
     pub ready: bool,
     pub revision: u64,
+    /// 陌生环境：村民初来乍到，只知道到过的地方。随存档保存，缺省为关。
+    pub strangers: bool,
     pub world_id: String,
     pub worldview: String,
 }

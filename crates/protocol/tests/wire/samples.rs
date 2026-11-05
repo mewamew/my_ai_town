@@ -501,6 +501,7 @@ pub fn server_samples() -> Vec<ServerMsg> {
                 provider: "p".into(),
                 ready: true,
                 revision: 1,
+                strangers: true,
                 world_id: "w1".into(),
                 worldview: "小镇".into(),
             },
@@ -1362,6 +1363,11 @@ pub fn client_samples() -> Vec<ClientMsg> {
         },
         ClientMsg::SetMiracles {
             request_id: "r1".into(),
+            world_id: "w1".into(),
+            enabled: true,
+        },
+        ClientMsg::SetStrangers {
+            request_id: "strangers-1".into(),
             world_id: "w1".into(),
             enabled: true,
         },

@@ -117,6 +117,7 @@ impl World {
             .filter(|p| {
                 self.locale_exposure(&p.locale) == Exposure::Indoor
                     && (!p.residential || a.home.as_deref() == Some(&p.locale))
+                    && self.remembers(actor, &p.locale)
             })
             .filter_map(|p| {
                 route(&self.topo, &start, &p.locale, None).ok().map(|r| {

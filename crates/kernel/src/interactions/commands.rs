@@ -573,9 +573,19 @@ fn check_kind(w: &World, actor: &str, partner: &str, kind: &InteractionKind) -> 
     let locale = &w.actors[actor].locus.locale;
     match kind {
         InteractionKind::Walk { leader, locale } => {
+            // 陌生环境里带路的人得认得要去的地方
+            if let Some(place) = locale.as_deref() {
+                let guide = if leader == "self" || leader == actor {
+                    actor
+                } else {
+                    leader.as_str()
+                };
+                ensure!(w.knows_way(guide, place), World::unknown_way());
+            }
             super::walk::check_walk(w, actor, partner, leader, locale.as_deref())
         }
         InteractionKind::Appointment { locale, at } => {
+            ensure!(w.remembers(actor, locale), World::unknown_way());
             super::appointments::check_appointment(w, locale, *at)
         }
         InteractionKind::Talk => {

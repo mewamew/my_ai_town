@@ -48,6 +48,10 @@ pub struct World {
     pub(crate) physiology: PhysiologySwitches,
     /// 化身神力开关（miracle.rs），随快照保存。
     pub(crate) miracles: bool,
+    /// 陌生环境：村民只知道到过的地方（exploration.rs），随快照保存。
+    pub(crate) strangers: bool,
+    /// 藏着的东西（道具编号）：找到过的人才看得见（exploration.rs），随快照保存。
+    pub(crate) concealed: std::collections::BTreeSet<String>,
     /// 空间放置器：由 host 注入，内核放置道具时向它要位置与通路。
     pub(crate) placer: Option<Box<dyn Placer>>,
     /// 道具动作引发的后续：定时事件、随机流（happenings.rs），随快照保存。
@@ -76,6 +80,8 @@ impl World {
             need_rules,
             physiology: Default::default(),
             miracles: false,
+            strangers: false,
+            concealed: Default::default(),
             placer: None,
             happenings: Default::default(),
             walk_trails: Default::default(),

@@ -73,12 +73,14 @@ fn digest(parts: &[&str]) -> u64 {
 }
 
 /// 观察里变化慢的字段：和本段会话上次发出的相同时省略。
-pub(crate) const SLOW_OBSERVATION_FIELDS: [&str; 5] = [
+pub(crate) const SLOW_OBSERVATION_FIELDS: [&str; 7] = [
     "visible_props",
     "environment",
     "people_here",
     "inventory",
     "body",
+    "known_places",
+    "exits",
 ];
 
 /// 字段连同它的来源引用一起计摘要，截断方式变了也算变化。

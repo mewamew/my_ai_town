@@ -83,10 +83,15 @@ pub(crate) fn check_intent<'a>(
         w.check_inventory(actor, op)?;
         return Ok(None);
     }
-    // 动手的 recipient 和 prop_id 指的是对方和对方身上的东西，不按道具动作查
+    // 动手的 recipient 和 prop_id 指的是对方和对方身上的东西，藏的 prop_id 是自己身上的东西，不按道具动作查
     if let Intent::Force { kind } = intent {
         let draft = draft.ok_or_else(|| KernelError::action("动手要有动作草案"))?;
         w.check_force(actor, draft, *kind)?;
+        return Ok(None);
+    }
+    if let Intent::Hide = intent {
+        let draft = draft.ok_or_else(|| KernelError::action("藏要有动作草案"))?;
+        w.check_hide(actor, draft)?;
         return Ok(None);
     }
     let prop = draft.and_then(|d| d.prop_id.as_deref());
@@ -105,8 +110,9 @@ pub(crate) fn check_intent<'a>(
         );
     }
     let spot = match intent {
-        Intent::Goto { .. } => {
+        Intent::Goto { locale, .. } => {
             ensure!(prop.is_none(), KernelError::action("前往不接受道具参数"));
+            ensure!(w.knows_way(actor, locale), World::unknown_way());
             None
         }
         Intent::Stay { station, .. } => {
@@ -121,7 +127,14 @@ pub(crate) fn check_intent<'a>(
             );
             None
         }
-        Intent::Force { .. } => unreachable!("动手在上面已经查完"),
+        Intent::Search => {
+            ensure!(
+                prop.is_none() && draft.is_none_or(|d| d.recipient.is_none()),
+                KernelError::action("搜寻不接受道具和对象参数")
+            );
+            None
+        }
+        Intent::Force { .. } | Intent::Hide => unreachable!("动手和藏在上面已经查完"),
         Intent::Do { verb, station, .. } => {
             check_action_station(&w.topo, locale, station.as_deref())?;
             Some(check_prop_action(w, actor, verb, locale, draft)?)
@@ -164,6 +177,11 @@ fn check_prop_action<'a>(
             spot
         }
     };
+    // 藏着、自己还没找到的东西用不了
+    ensure!(
+        w.sees_prop(actor, &spot.prop),
+        KernelError::action(format!("这里没有能{verb}的东西"))
+    );
     if let Some(action) = &spot.action {
         let recipient = draft.and_then(|d| d.recipient.as_deref());
         crate::physiology::check_body_use(w, actor, locale, &spot.prop, action, recipient)?;

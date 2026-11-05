@@ -106,6 +106,59 @@ export function createWorldSettings(
     notify()
     send(build(state, id))
   }
+  /** 陌生环境开关：放在世界观页底，切换就保存，不走底部保存条；显示值始终来自后端回读 */
+  function strangersSwitch() {
+    const root = el('section', '', 'physiology-switches miracles-switch')
+    const row = el('label', '', 'physiology-row')
+    const input = el('input')
+    input.type = 'checkbox'
+    input.id = 'settings-strangers'
+    input.setAttribute('role', 'switch')
+    row.htmlFor = input.id
+    const description = el('small')
+    const text = el('span', '', 'physiology-text')
+    text.append(el('b', '村民初来乍到'), description)
+    row.append(input, text)
+    const status = el('p', '', 'physiology-status')
+    status.setAttribute('role', 'status')
+    root.append(
+      el('h3', '对这里熟不熟'),
+      row,
+      el(
+        'p',
+        '适合荒岛、野地这类新地方。切换就保存，跟着这个小镇的存档；改了世界会暂停，村民重新观察。',
+        'physiology-note'
+      ),
+      status
+    )
+    function render() {
+      input.checked = !!state?.strangers
+      input.disabled = !state || !online || !!pending
+      row.classList.toggle('off', !input.checked)
+      description.textContent = input.checked
+        ? '只知道眼下所在的地方和家，别处要顺着路走过去才知道。'
+        : '知道每个地方在哪、能做什么。'
+    }
+    input.addEventListener('change', () => {
+      status.textContent = '正在保存…'
+      submit(
+        (current, id) => ({
+          type: 'set_strangers',
+          request_id: id,
+          world_id: current.world_id,
+          enabled: input.checked,
+        }),
+        (ok, message) => {
+          status.textContent = ok ? `✓ ${message}` : message
+          render()
+        }
+      )
+      render()
+    })
+    listeners.add(render)
+    render()
+    return root
+  }
   function save(text: string, revision: number, done: Done) {
     if (!text.trim()) {
       done(false, '请填写世界观')
@@ -267,6 +320,7 @@ export function createWorldSettings(
         <p class="world-save-status" role="status"></p>`
       const text = query<HTMLTextAreaElement>(el, 'textarea'),
         status = query(el, '[role=status]')
+      el.append(strangersSwitch())
       let base = '',
         revision = -1,
         world = ''

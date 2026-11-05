@@ -60,6 +60,9 @@ pub struct Definition {
     /// 遮蔽处：在这件道具上做事（避雨、睡觉）时按室内算，不淋雨雪，雷暴也不打断。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub shelter: bool,
+    /// 藏着的：放下后到了也看不见，要搜寻才找得到（礁石缝里卡着的罐头）。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
 }
 /// 动作的物品前提：开始和完成时本人背包里要有这么多件；`consume` 的在完成时用掉。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

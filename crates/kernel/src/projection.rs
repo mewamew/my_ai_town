@@ -215,9 +215,10 @@ impl World {
     // ---------- 道具与背包 ----------
 
     pub fn can_access_prop(&self, actor: &str, prop: &Prop) -> bool {
-        self.actors.get(actor).is_some_and(|a| {
-            self.inventory
-                .at_hand(&self.props, actor, prop, &a.locus.locale)
-        })
+        self.sees_prop(actor, &prop.id)
+            && self.actors.get(actor).is_some_and(|a| {
+                self.inventory
+                    .at_hand(&self.props, actor, prop, &a.locus.locale)
+            })
     }
 }

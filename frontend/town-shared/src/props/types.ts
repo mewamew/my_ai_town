@@ -73,6 +73,8 @@ export interface Definition {
   bulletin_board: boolean
   /** 遮蔽处：在上面做事按室内算 */
   shelter?: boolean
+  /** 藏着的：放下后到了也看不见，要搜寻才找得到 */
+  hidden?: boolean
 }
 export interface Instance {
   id: string

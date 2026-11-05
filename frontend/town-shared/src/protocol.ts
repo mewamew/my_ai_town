@@ -595,6 +595,8 @@ export interface WorldSettingsState {
   physiology: PhysiologySwitches
   /** 化身神力：化身能对够得着的人复活、治愈、补满。随存档保存，缺省为关 */
   miracles: boolean
+  /** 陌生环境：村民初来乍到，只知道到过的地方。随存档保存，缺省为关 */
+  strangers: boolean
 }
 
 export type ServerMsg =
@@ -815,6 +817,7 @@ export type ClientMsg =
     }
   /** 打开或关掉化身神力：只是开关，不暂停世界，不核对设定修订号 */
   | { type: 'set_miracles'; request_id: string; world_id: string; enabled: boolean }
+  | { type: 'set_strangers'; request_id: string; world_id: string; enabled: boolean }
   | { type: 'get_props' }
   | {
       type: 'validate_prop' | 'save_prop'

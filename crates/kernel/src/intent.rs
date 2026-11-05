@@ -4,8 +4,8 @@
 //! 动词、处所、落脚点全部对着封闭集合查。绝对坐标/时刻在草案类型上
 //! 已不可表示（protocol 侧 deny_unknown_fields），这里管的是 id 与取值。
 //!
-//! 动词封闭集合 = 内建 { 前往, 停留, 坐下, 躺下, 查看四周, 推搡, 抢, 偷 } ∪ 道具动作词（affordance.rs）。
-//! 坐下、躺下是换了姿势的停留；推搡、抢、偷是对在场的人动手（force.rs）。
+//! 动词封闭集合 = 内建 { 前往, 停留, 坐下, 躺下, 查看四周, 搜寻, 藏, 推搡, 抢, 偷 } ∪ 道具动作词（affordance.rs）。
+//! 坐下、躺下是换了姿势的停留；搜寻、藏管藏着的东西（exploration.rs）；推搡、抢、偷是对在场的人动手（force.rs）。
 //! 「工作 / 睡觉 / 吃饭」三个泛动词已退役：睡觉、吃饭本来就是道具动作词，
 //! 「工作」没有内容，不能作为当前封闭动作集合中的泛动词。
 
@@ -26,6 +26,10 @@ pub enum BuiltinVerb {
     Lie,
     /// 查看四周：花几分钟把眼前的地点、东西和人看清，回执逐一写明，没写的就是没有。
     Look,
+    /// 在原地翻找藏着的东西。
+    Search,
+    /// 把随身的一样东西藏在这里。
+    Hide,
     /// 推在场的人一把。
     Push,
     /// 当面抢对方身上的东西。
@@ -35,12 +39,14 @@ pub enum BuiltinVerb {
 }
 
 impl BuiltinVerb {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 10] = [
         Self::Goto,
         Self::Stay,
         Self::Sit,
         Self::Lie,
         Self::Look,
+        Self::Search,
+        Self::Hide,
         Self::Push,
         Self::Rob,
         Self::Steal,
@@ -53,6 +59,8 @@ impl BuiltinVerb {
             Self::Sit => "坐下",
             Self::Lie => "躺下",
             Self::Look => "查看四周",
+            Self::Search => "搜寻",
+            Self::Hide => "藏",
             Self::Push => "推搡",
             Self::Rob => "抢",
             Self::Steal => "偷",
@@ -128,6 +136,10 @@ pub enum Intent {
     Look,
     /// 对在场的人动手：对象和东西在动作草案的 recipient、prop_id 里，规则在 force.rs。
     Force { kind: crate::force::Force },
+    /// 搜寻：在原地花一段时间翻找藏着的东西。
+    Search,
+    /// 藏：把草案 prop_id 里那件随身的东西藏在这里。
+    Hide,
 }
 
 impl Intent {
@@ -138,6 +150,8 @@ impl Intent {
             Intent::Do { verb, .. } => verb,
             Intent::Look => BuiltinVerb::Look.label(),
             Intent::Force { kind } => kind.label(),
+            Intent::Search => BuiltinVerb::Search.label(),
+            Intent::Hide => BuiltinVerb::Hide.label(),
         }
     }
 
@@ -157,6 +171,8 @@ impl Intent {
             },
             Intent::Look => BuiltinVerb::Look.label().into(),
             Intent::Force { kind } => kind.label().into(),
+            Intent::Search => BuiltinVerb::Search.label().into(),
+            Intent::Hide => BuiltinVerb::Hide.label().into(),
         }
     }
 }
@@ -264,6 +280,20 @@ pub fn validate(topo: &Topology, aff: &Affordances, d: &IntentDraft) -> Result<I
                 KernelError::action("查看四周只看眼前，不填地点、落脚点和结束条件")
             );
             Ok(Intent::Look)
+        }
+        Some(verb @ (BuiltinVerb::Search | BuiltinVerb::Hide)) => {
+            ensure!(
+                d.locale.is_none()
+                    && d.target.is_none()
+                    && d.until.is_none()
+                    && d.duration_minutes.is_none(),
+                KernelError::action(format!("{}在原地做，不填地点、落脚点和时长", verb.label()))
+            );
+            Ok(if verb == BuiltinVerb::Search {
+                Intent::Search
+            } else {
+                Intent::Hide
+            })
         }
         None if aff.is_verb(&d.verb) => Ok(Intent::Do {
             verb: d.verb.clone(),

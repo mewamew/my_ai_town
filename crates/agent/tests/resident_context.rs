@@ -376,3 +376,25 @@ fn context_rejections_shrink_requests_persist_limits_and_stop_without_replaying_
     }
     assert_eq!(r.state().lifetime.calls, old_calls);
 }
+
+/// 陌生环境：已知地图不在 system 消息里（前缀照样稳定），观察带着记得的地方和眼前出去的路，
+/// 没去过的路不写名字；熟悉的世界照旧把全图放在 system 消息里。
+#[test]
+fn strangers_carry_their_known_map_in_the_observation_instead_of_the_prefix() {
+    let mut w = world();
+    let mut r = runtime(&mut w, spacious());
+    let familiar = request(&mut r, &mut w);
+    assert!(familiar.messages[0].content.contains("\"known_places\":"));
+    w.set_strangers(true);
+    let mut r = runtime(&mut w, spacious());
+    let q = request(&mut r, &mut w);
+    assert!(!q.messages[0].content.contains("\"known_places\":"));
+    let body: Value = serde_json::from_str(&q.messages.last().unwrap().content).unwrap();
+    let known = body["observation"]["known_places"].as_array().unwrap();
+    assert_eq!(known.len(), 1);
+    assert_eq!(known[0]["id"], "loc_a");
+    let exits = body["observation"]["exits"].as_array().unwrap();
+    assert_eq!(exits.len(), 1);
+    assert_eq!(exits[0]["to"], "loc_b");
+    assert!(exits[0]["name"].is_null(), "没去过的路只知道方向");
+}

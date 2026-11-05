@@ -71,6 +71,7 @@ fn portions(
         readable: None,
         bulletin_board: false,
         shelter: false,
+        hidden: false,
     };
     def.validate()?;
     let prefix = format!("{:x}", Sha256::digest(format!("{}/{key}", actor.id)));

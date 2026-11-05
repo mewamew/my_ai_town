@@ -28,6 +28,24 @@ impl Actor {
             Intent::Stay { cond, station, .. } => {
                 self.start_at_station(topo, now, &verb, ActKind::Placeholder { cond }, station)
             }
+            Intent::Search => self.start_at_station(
+                topo,
+                now,
+                &verb,
+                ActKind::Timed {
+                    cond: StopCond::Duration(crate::exploration::SEARCH_MINUTES),
+                },
+                None,
+            ),
+            Intent::Hide => self.start_at_station(
+                topo,
+                now,
+                &verb,
+                ActKind::Timed {
+                    cond: StopCond::Duration(crate::exploration::HIDE_MINUTES),
+                },
+                None,
+            ),
             Intent::Force { kind } => self.start_at_station(
                 topo,
                 now,

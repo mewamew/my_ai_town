@@ -253,6 +253,15 @@ impl World {
         if let Some((kind, draft)) = force {
             return self.finish_force(id, &draft, kind);
         }
+        let builtin = binding.and_then(|b| {
+            BuiltinVerb::parse(&b.draft.intent.verb)
+                .map(|verb| (verb, b.draft.clone(), b.action_id.clone()))
+        });
+        match builtin {
+            Some((BuiltinVerb::Search, ..)) => return Ok(self.finish_search(id)),
+            Some((BuiltinVerb::Hide, draft, key)) => return self.finish_hide(id, &draft, &key),
+            _ => {}
+        }
         if let Some((op, key)) = inventory {
             let changes = self.finish_inventory(id, &op, &key)?;
             for text in &changes {

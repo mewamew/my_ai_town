@@ -71,9 +71,13 @@ pub const STALE_AFTER_NOTICE: &str = "请求期间收到重要通知，请先重
 
 /// 静态地图里的基础动作说明；「前往」的参数写法只在这里说明。
 pub const GO_PARAMETERS: &str =
-    "intent.locale 填 known_places.id；不填 target 和 prop_id，地名不拼进 verb";
+    "intent.locale 填 known_places.id，没去过的地方填 exits 里的 to；不填 target 和 prop_id，地名不拼进 verb";
 pub const STAY_PARAMETERS: &str =
     "intent.duration_minutes 填分钟数；想坐着或躺着歇就把 verb 写成「坐下」「躺下」，参数一样，不算睡觉";
+pub const SEARCH_PARAMETERS: &str =
+    "不填别的参数；在原地花 20 分钟翻找藏着的东西，有一定可能找到，回执写明找到了什么";
+pub const HIDE_PARAMETERS: &str =
+    "prop_id 填自己随身带着的一件东西；把它藏在这里，只有自己和当时看见的人知道，别人要搜寻才找得到";
 pub const LOOK_PARAMETERS: &str =
     "不填别的参数；在原地花几分钟把眼前的东西和人看清，回执逐一写明，没写到的就是这里没有";
 

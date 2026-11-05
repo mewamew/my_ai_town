@@ -42,6 +42,12 @@ pub struct Actor {
     /// 睡着或倒下时被偷走的东西（名字），醒来能留意周围时才发现（force.rs）。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lost: Vec<String>,
+    /// 到过的地方和当时的样子：陌生环境里的已知地图（exploration.rs）。
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub places_known: std::collections::BTreeMap<String, crate::exploration::PlaceMemory>,
+    /// 找到过、亲眼看见被藏起来的东西（道具编号）。
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub found: BTreeSet<String>,
 }
 
 impl Actor {
@@ -66,6 +72,8 @@ impl Actor {
             needs: Needs::initial(),
             bodies_seen: Some(BTreeSet::new()),
             lost: vec![],
+            places_known: Default::default(),
+            found: Default::default(),
         }
     }
 

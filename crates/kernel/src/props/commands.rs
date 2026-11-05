@@ -42,7 +42,9 @@ impl World {
             self.props.walk_positions.insert(prop.id.clone(), spot);
         }
         self.contents.capture(&prop);
+        let (id, hidden) = (prop.id.clone(), placement.definition.hidden);
         self.props.insert(&mut self.topo, placement, prop);
+        self.conceal_if_hidden(&id, hidden);
         self.affordances.rebuild(&self.topo);
         Ok(())
     }

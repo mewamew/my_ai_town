@@ -9,8 +9,19 @@ const EVENTS_PER_OBSERVATION: usize = 24;
 pub const EVENT_TEXT_CHARS: usize = 400;
 
 /// 不随位置变化的部分：家、已知地图与基础动作。放在 system 消息里，请求前缀保持稳定。
+/// 陌生环境里已知地图随探索变化，挪进观察（known_places、exits），这里不列。
 pub fn static_map(world: &World, actor: &str) -> Result<Value, AgentError> {
     let a = resident(world, actor)?;
+    let basic_actions = json!([
+        {"verb":"前往","parameters":prompts::GO_PARAMETERS},
+        {"verb":"停留","parameters":prompts::STAY_PARAMETERS},
+        {"verb":"查看四周","parameters":prompts::LOOK_PARAMETERS},
+        {"verb":"搜寻","parameters":prompts::SEARCH_PARAMETERS},
+        {"verb":"藏","parameters":prompts::HIDE_PARAMETERS}
+    ]);
+    if world.strangers() {
+        return Ok(json!({"home": a.home, "basic_actions": basic_actions}));
+    }
     let places: Vec<_> = world
         .topo
         .places
@@ -34,11 +45,7 @@ pub fn static_map(world: &World, actor: &str) -> Result<Value, AgentError> {
     Ok(json!({
         "home": a.home,
         "known_places": places,
-        "basic_actions": [
-            {"verb":"前往","parameters":prompts::GO_PARAMETERS},
-            {"verb":"停留","parameters":prompts::STAY_PARAMETERS},
-            {"verb":"查看四周","parameters":prompts::LOOK_PARAMETERS}
-        ]
+        "basic_actions": basic_actions
     }))
 }
 
@@ -162,7 +169,7 @@ pub fn observe(world: &World, actor: &str, after: u64) -> Result<(Value, u64), A
         .topo
         .props()
         .iter()
-        .filter(|p| p.locale == a.locus.locale && !p.withdrawn)
+        .filter(|p| p.locale == a.locus.locale && !p.withdrawn && world.sees_prop(actor, &p.id))
         .map(|p| prop_view(world, actor, p))
         .collect();
     let remaining = match &a.current.kind {
@@ -179,7 +186,7 @@ pub fn observe(world: &World, actor: &str, after: u64) -> Result<(Value, u64), A
         .iter()
         .map(|i| interaction::observation(world, actor, i))
         .collect();
-    let value = json!({
+    let mut value = json!({
         "actor_id": actor,
         "environment": world.weather_context(actor),
         "inventory": world.inventory_view(actor),
@@ -203,6 +210,13 @@ pub fn observe(world: &World, actor: &str, after: u64) -> Result<(Value, u64), A
         "interactions": interactions,
         "nearby_chats": world.nearby_chats(actor),
     });
+    // 陌生环境：记得的地方和眼前出去的路随探索变，跟着观察走（没变时按慢变字段省略）
+    if let Some(known) = world.known_places(actor) {
+        value["known_places"] = json!(known);
+    }
+    if let Some(exits) = world.exits(actor) {
+        value["exits"] = json!(exits);
+    }
     Ok((value, cursor))
 }
 
@@ -260,7 +274,10 @@ pub fn inspect(world: &World, actor: &str, id: &str) -> Result<Value, AgentError
         with_description(&mut view, prop);
         return Ok(view);
     }
-    if let Some(place) = world.topo.places.iter().find(|p| p.locale == id) {
+    let known = world
+        .known_places(actor)
+        .is_none_or(|list| list.iter().any(|p| p.id == id));
+    if let Some(place) = world.topo.places.iter().find(|p| p.locale == id && known) {
         return Ok(json!({"at":world.minutes(),"place_id":id,"name":place.name}));
     }
     Err(AgentError::NotFound(

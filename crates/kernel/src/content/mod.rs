@@ -270,6 +270,7 @@ pub fn book_placement(
         readable: Some(content),
         bulletin_board: false,
         shelter: false,
+        hidden: false,
     };
     Placement {
         instance: Instance {

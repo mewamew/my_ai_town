@@ -1,5 +1,5 @@
 //! 背包结算的世界入口：转移完成后刷新修订号、可供性和空间修订号。
-use crate::error::Result;
+use crate::error::{KernelError, Result};
 use crate::World;
 use protocol::InventoryAction as Op;
 
@@ -14,7 +14,14 @@ impl World {
     /// 背包操作的全部检查：背包规则读到的部件由这里给出，化身的可达判断也在这里接上。
     pub(crate) fn check_inventory(&self, actor: &str, op: &Op) -> Result<()> {
         let within = crate::avatar::Reach::new(self);
-        let reach = |actor: &str, prop: &str| within.prop(actor, prop);
+        // 藏着、自己还没找到的东西够不着
+        let reach = |actor: &str, prop: &str| {
+            ensure!(
+                self.sees_prop(actor, prop),
+                KernelError::inventory("眼前没有这件东西")
+            );
+            within.prop(actor, prop)
+        };
         let cx = crate::inventory::Surroundings {
             topo: &self.topo,
             props: &self.props,
@@ -38,6 +45,12 @@ impl World {
         let changes = self
             .inventory
             .finish(&mut self.topo, &mut self.props, a, op, key)?;
+        // 拾起来的东西不再藏着
+        if let Op::PickUp { items } = op {
+            for item in items {
+                self.reveal(item);
+            }
+        }
         self.refresh_inventory();
         Ok(changes)
     }

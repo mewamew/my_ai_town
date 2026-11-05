@@ -100,6 +100,13 @@ pub enum ClientMsg {
         world_id: String,
         enabled: bool,
     },
+    /// 打开或关掉陌生环境（村民初来乍到，只知道到过的地方）；回执与世界观相同（WorldSettingsSaved），
+    /// 随后广播世界设定。改了就暂停世界，居民重新观察；打开时每人只记得眼下所在的地方和家。
+    SetStrangers {
+        request_id: String,
+        world_id: String,
+        enabled: bool,
+    },
     GetProps,
     Content {
         request_id: String,
@@ -296,6 +303,7 @@ impl ClientMsg {
             | SetWorldview { request_id, .. }
             | SetPhysiology { request_id, .. }
             | SetMiracles { request_id, .. }
+            | SetStrangers { request_id, .. }
             | Content { request_id, .. }
             | ValidateProp { request_id, .. }
             | SaveProp { request_id, .. }

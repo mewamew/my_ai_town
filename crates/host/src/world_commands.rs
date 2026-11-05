@@ -83,6 +83,39 @@ impl Runtime {
             })
     }
 
+    /// 打开或关掉陌生环境：世界暂停，居民的旧安排作废、重新观察（已知地图变了）。
+    pub(crate) fn save_strangers(&mut self, request_id: String, enabled: bool) -> Outcome {
+        let result = self
+            .transact(|rt| {
+                if rt.world.strangers() != enabled {
+                    rt.speed = 0.0;
+                    rt.world.set_strangers(enabled);
+                    for r in rt.population.residents.values() {
+                        rt.driver.runtime.world_changed(
+                            &mut rt.world,
+                            &r.id,
+                            "世界设定已修改，请重新观察和安排",
+                        );
+                    }
+                }
+                Ok::<_, HostError>(())
+            })
+            .map_err(|aborted| aborted.to_string());
+        Outcome::none()
+            .and_all(self.world_settings_msg())
+            .and_reply(ServerMsg::WorldSettingsSaved {
+                request_id,
+                ok: result.is_ok(),
+                message: result.err().unwrap_or_else(|| {
+                    if enabled {
+                        "村民现在初来乍到：只知道眼下所在的地方和家，别处要走过去才知道".into()
+                    } else {
+                        "村民现在熟悉这里：知道每个地方在哪、能做什么".into()
+                    }
+                }),
+            })
+    }
+
     /// 开关变化后世界暂停，所有居民的旧安排作废、重新观察；数值不动。
     fn set_physiology(
         &mut self,
@@ -154,6 +187,7 @@ impl Runtime {
         let state = WorldSettingsView {
             max_chars: host::world_settings::MAX_WORLDVIEW_CHARS,
             miracles: self.world.miracles(),
+            strangers: self.world.strangers(),
             mock: self.driver.mock,
             model: self.driver.target.model.clone(),
             persistent: self.store.is_some(),

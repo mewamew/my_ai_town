@@ -64,6 +64,11 @@ pub struct WorldSnapshot {
     /// 化身神力开关；旧存档没有这一项，按关闭读入。关着时不写，没开过神力的存档换回旧版本照样能读。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     miracles: bool,
+    /// 陌生环境开关和藏着的东西；旧存档没有，按熟悉、什么也没藏读入。没用过时不写。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    strangers: bool,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    concealed: std::collections::BTreeSet<String>,
     /// 旧存档没有这一项：没有待发生的事，随机流从固定起点开始。
     #[serde(default)]
     happenings: crate::happenings::Happenings,
@@ -98,6 +103,8 @@ impl World {
             supplies: self.props.supplies.clone(),
             physiology: self.physiology,
             miracles: self.miracles,
+            strangers: self.strangers,
+            concealed: self.concealed.clone(),
             happenings: self.happenings.clone(),
         }
     }
@@ -133,6 +140,8 @@ impl World {
         let mut candidate = self.restore_candidate(&snapshot)?;
         candidate.physiology = snapshot.physiology;
         candidate.miracles = snapshot.miracles;
+        candidate.strangers = snapshot.strangers;
+        candidate.concealed = snapshot.concealed.clone();
         snapshot.validate(&candidate)?;
         candidate.minutes = snapshot.minutes;
         candidate.actors = snapshot.actors;
@@ -521,7 +530,7 @@ fn validate_plan_item(intent: &Intent, topo: &Topology, affordances: &Affordance
         ),
         Intent::Stay { cond, .. } => check_cond(cond)?,
         // 动手的对象和东西在开始那一刻按当时的世界重查
-        Intent::Look | Intent::Force { .. } => {}
+        Intent::Look | Intent::Force { .. } | Intent::Search | Intent::Hide => {}
         Intent::Do { verb, cond, .. } => {
             ensure!(
                 affordances.is_verb(verb),
