@@ -526,7 +526,7 @@ function interiorRoutes(scene, floors, propsByFloor, routes, navNodes, timer, pu
 const SPOT_LIMIT = 3
 const SPOT_GAP = 3
 const SPOT_CLEAR = 1.2
-const SPOT_SHORE = 4
+const SPOT_SHORE = 10
 const SPOT_DIRECTIONS = ['东头', '东北角', '北边', '西北角', '西头', '西南角', '南边', '东南角']
 function spotName(terrain, p, center, used) {
   const landAt = ([x, z]) => {
@@ -537,7 +537,9 @@ function spotName(terrain, p, center, used) {
   }
   const nearSea = [0, 1, 2, 3, 4, 5, 6, 7].some((k) => {
     const a = (k * Math.PI) / 4
-    return !landAt([p[0] + Math.cos(a) * SPOT_SHORE, p[1] + Math.sin(a) * SPOT_SHORE])
+    return [0.25, 0.5, 0.75, 1].some(
+      (f) => !landAt([p[0] + Math.cos(a) * SPOT_SHORE * f, p[1] + Math.sin(a) * SPOT_SHORE * f])
+    )
   })
   if (nearSea && !used.has('水边')) return '水边'
   // 地图上北是 z 减小的方向
