@@ -151,7 +151,15 @@ impl Drafts {
         let document = renamed(document, &body["name"])?;
         let creation = town_creation(&body["creation"])?;
         let hash = document["content_hash"].clone();
-        let town_id = draft_id.replacen("draft-", "town-", 1);
+        // 预制小镇存成固定编号 prefab-<编号>，列表里当内置小镇
+        let town_id = match &body["town_id"] {
+            Value::Null => draft_id.replacen("draft-", "town-", 1),
+            id => id
+                .as_str()
+                .filter(|id| id.starts_with("prefab-") && id.len() <= 67 && safe_id(id).is_ok())
+                .ok_or_else(|| ApiError::bad("预制小镇编号无效"))?
+                .to_owned(),
+        };
         storage.create(
             &town_id,
             &document,

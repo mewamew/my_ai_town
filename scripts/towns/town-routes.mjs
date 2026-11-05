@@ -88,6 +88,17 @@ export function createTownRoutes({ source, storage, hosts, serial }) {
     ],
     [
       'POST',
+      /^\/api\/towns\/([a-z0-9-]+)\/reset$/,
+      ({ params: [id] }) =>
+        inTown(id, async () => {
+          if (!id.startsWith('prefab-')) throw new HttpError(403, '只有预制小镇能重新开始')
+          await hosts.close(id)
+          await storage.remove(id, true)
+          return { ok: true }
+        }),
+    ],
+    [
+      'POST',
       /^\/api\/towns\/([a-z0-9-]+)\/positions$/,
       ({ params: [id], body }) =>
         inTown(id, async () => {

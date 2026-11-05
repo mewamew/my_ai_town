@@ -246,17 +246,6 @@ body:has(.map-launcher) {
   font-weight: 500;
   vertical-align: 2px;
 }
-/* 预制小镇：点了就开一局，虚线框和已有的小镇区分 */
-.map-option.prefab-entry {
-  border-style: dashed;
-}
-.map-option.prefab-entry .map-option-status {
-  color: var(--ui-accent);
-}
-
-.map-library .prefab-entry:disabled {
-  opacity: 0.6;
-}
 .launcher-panel-footer {
   display: flex;
   align-items: center;

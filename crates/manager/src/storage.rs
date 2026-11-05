@@ -280,12 +280,15 @@ impl Storage {
             .unwrap_or_else(|| id.to_owned())
     }
 
+    /// 内置小镇：随应用发的 default-town，和预制玩法的 prefab-<编号>（第一次选中时生成，只能重新开始）
     pub fn can_delete(&self, id: &str) -> bool {
-        id != BUILTIN_TOWN
+        id != BUILTIN_TOWN && !id.starts_with("prefab-")
     }
 
-    pub fn remove(&self, id: &str) -> Result<(), ApiError> {
-        if !self.can_delete(id) {
+    /// reset：重新开始预制小镇，允许删掉内置的 prefab-<编号>
+    pub fn remove(&self, id: &str, reset: bool) -> Result<(), ApiError> {
+        let allowed = if reset { id.starts_with("prefab-") } else { self.can_delete(id) };
+        if !allowed {
             return Err(ApiError::new(403, "内置地图不能删除"));
         }
         self.map(id)?;
@@ -368,9 +371,14 @@ impl Storage {
             }
         }
         towns.sort_by(|a, b| {
-            let builtin = |t: &Value| t["id"] != BUILTIN_TOWN;
-            builtin(a)
-                .cmp(&builtin(b))
+            // 自带的小镇、预制小镇，再是玩家建的
+            let rank = |t: &Value| match t["id"].as_str() {
+                Some(BUILTIN_TOWN) => 0,
+                Some(id) if id.starts_with("prefab-") => 1,
+                _ => 2,
+            };
+            rank(a)
+                .cmp(&rank(b))
                 .then_with(|| a["name"].as_str().cmp(&b["name"].as_str()))
         });
         Ok(towns)

@@ -9,7 +9,8 @@ import { loadDocument } from '../assets'
 import { createMapRenderer } from '../mapRenderers'
 import { gameUrl, listMaps, openMap } from './catalog'
 import { initCreator } from './creator'
-import { prefabEntries } from './prefabEntry'
+import { PREFABS, type Prefab } from 'town-shared/prefabs/index'
+import { generatePrefab, isBuiltinTown, missingPrefabs, prefabTownId } from './prefabEntry'
 import { api } from './api'
 import { warmSelectedGame } from '../startupWarmup'
 import { createMusicController } from 'town-shared/audio/music'
@@ -223,7 +224,7 @@ function mapOption(map: MapEntry) {
   status.textContent = progressText(map)
   text.append(name, status)
   b.append(text)
-  if (map.origin === 'builtin') {
+  if (isBuiltinTown(map)) {
     b.classList.add('is-builtin')
     const badge = document.createElement('span')
     badge.className = 'map-option-badge'
@@ -237,18 +238,68 @@ function mapOption(map: MapEntry) {
   return b
 }
 
+function prefabOption(prefab: Prefab) {
+  const b = mapOption({
+    id: prefabTownId(prefab),
+    name: prefab.name,
+    description: prefab.description,
+    origin: 'builtin',
+    available: true,
+  } as MapEntry)
+  b.querySelector('.map-option-status')!.textContent = '还没开始'
+  b.onclick = () => void buildPrefab(prefab)
+  return b
+}
+
+// 第一次选中预制小镇：生成岛、存成内置小镇，再像别的小镇一样选中预览；重新开始也走这里
+let building = false
+async function buildPrefab(prefab: Prefab) {
+  if (building) return
+  building = true
+  const current = ++request
+  selected = undefined
+  dropPendingPreview()
+  showPreview('')
+  document
+    .querySelectorAll<HTMLElement>('[data-map-id]')
+    .forEach((el) => el.setAttribute('aria-pressed', String(el.dataset.mapId === prefabTownId(prefab))))
+  const detail = document.querySelector<HTMLElement>('.map-detail')
+  if (detail) detail.hidden = false
+  $('selected-map-name').textContent = prefab.name
+  $('selected-map-description').textContent = prefab.description
+  $('pause-status').textContent = ''
+  enter.disabled = true
+  actions.hidden = true
+  retry.hidden = true
+  $('preview-state').hidden = false
+  $('preview-state').textContent = '正在生成岛…'
+  try {
+    const id = await generatePrefab(prefab)
+    building = false
+    if (current !== request) return
+    fitNext = id
+    await refresh(id)
+  } catch (error) {
+    building = false
+    if (current === request) $('preview-state').textContent = errorText(error)
+  }
+}
+
 async function refresh(id?: string) {
   try {
     maps = await listMaps()
+    // 还没生成的预制小镇也排在内置小镇里，选中时才生成
     const options = maps.map(mapOption)
-    const builtin = maps.findIndex((m) => m.origin === 'builtin')
-    options.splice(builtin + 1, 0, ...prefabButtons())
+    const after = maps.filter(isBuiltinTown).length
+    options.splice(after, 0, ...missingPrefabs(maps).map(prefabOption))
     $('map-list').replaceChildren(...options)
     $('map-count').textContent = `${maps.length} 个`
     $('map-empty').hidden = maps.length > 0
     const wanted = id ?? new URLSearchParams(location.search).get('map')
-    const initial = maps.find((m) => m.id === wanted) ?? maps[0]
-    if (initial) await select(initial)
+    const initial = maps.find((m) => m.id === wanted)
+    const prefab = PREFABS.find((p) => prefabTownId(p) === wanted)
+    if (!initial && prefab) await buildPrefab(prefab)
+    else if (initial ?? maps[0]) await select(initial ?? maps[0]!)
     return true
   } catch (error) {
     $('selection-status').textContent = '小镇列表加载失败'
@@ -281,10 +332,12 @@ $('pause-retry').onclick = () => {
 const actions = query<HTMLDetailsElement>(document, '#town-actions')
 const close = query<HTMLButtonElement>(document, '#close-town')
 const remove = query<HTMLButtonElement>(document, '#delete-town')
+const reset = query<HTMLButtonElement>(document, '#reset-town')
 function updateActions() {
   close.hidden = !selected?.running
   remove.hidden = !selected?.deletable
-  actions.hidden = close.hidden && remove.hidden
+  reset.hidden = !selected?.id.startsWith('prefab-')
+  actions.hidden = close.hidden && remove.hidden && reset.hidden
   if (actions.hidden) actions.open = false
 }
 document.addEventListener('click', (event) => {
@@ -335,7 +388,7 @@ async function syncRunning() {
   } catch {
     if (current === runningRequest) {
       close.hidden = true
-      actions.hidden = remove.hidden
+      actions.hidden = remove.hidden && reset.hidden
       if (actions.hidden) actions.open = false
     }
   }
@@ -388,6 +441,29 @@ remove.onclick = async () => {
     enter.disabled = !selected?.available
   }
 }
+// 预制小镇重新开始：清掉这一局（地图、居民、进度）、重新生成岛，进镇后重新出开局设置
+reset.onclick = async () => {
+  const map = selected
+  const prefab = PREFABS.find((p) => map && prefabTownId(p) === map.id)
+  if (!map || !prefab || deleting) return
+  actions.open = false
+  if (!window.confirm(`重新开始“${map.name}”？\n\n这一局的村民、记忆和进度都会清掉，从头开始。`))
+    return
+  deleting = true
+  enter.disabled = true
+  $('pause-status').textContent = '正在清掉这一局…'
+  try {
+    await api(`/${encodeURIComponent(map.id)}/reset`, {})
+    for (const key of previews.keys()) if (key.startsWith(`${map.id}:`)) dropPreview(key)
+    deleting = false
+    await buildPrefab(prefab)
+  } catch (error) {
+    $('pause-status').textContent = errorText(error)
+    enter.disabled = !selected?.available
+  } finally {
+    deleting = false
+  }
+}
 // 建镇：电脑版由管理服务生成，手机应用在页面里生成（见 localCreation.ts）
 initCreator(
   (id, problem) => {
@@ -406,18 +482,6 @@ initCreator(
     location.assign(gameUrl(runtime))
   }
 )
-// 预制小镇：开一局就建好岛进镇，进镇后出开局设置；条目排在内置小镇下面
-const prefabButtons = prefabEntries({
-  maps: () => maps,
-  status: (text) => {
-    $('pause-status').textContent = text
-  },
-  enter: async (id) => {
-    const runtime = await openMap(id)
-    await pauseWorld(runtime.endpoint)
-    location.assign(gameUrl(runtime))
-  },
-})
 // 安卓返回键：先收起「更多操作」，其余交给应用壳（再按一次退出）
 onBack(() => {
   if (launcher.classList.contains('is-scenic')) {

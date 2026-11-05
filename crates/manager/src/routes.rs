@@ -193,7 +193,17 @@ fn api(app: &App, req: &Request, rest: &str, get: bool) -> Result<Response, ApiE
                 return Err(ApiError::new(403, "内置地图不能删除"));
             }
             app.hosts.close(id)?;
-            app.storage.remove(id)?;
+            app.storage.remove(id, false)?;
+            ok(json!({ "ok": true }))
+        }
+        (false, "reset") => {
+            body(req)?;
+            let _serial = app.town_lock(id);
+            if !id.starts_with("prefab-") {
+                return Err(ApiError::new(403, "只有预制小镇能重新开始"));
+            }
+            app.hosts.close(id)?;
+            app.storage.remove(id, true)?;
             ok(json!({ "ok": true }))
         }
         (false, "positions") => {

@@ -1,72 +1,42 @@
-import { errorText } from 'town-shared/format'
 import { newId } from 'town-shared/ids'
 import type { MapEntry } from 'town-shared/mapDocument'
 import { PREFABS, type Prefab } from 'town-shared/prefabs/index'
 import { creationRequest } from './localCreation'
 
-// 选择小镇页上的预制小镇：点「开一局」按固定的建镇参数生成这座岛，存成新的一局（名字带「第几局」），
-// 再像「进入游戏」一样打开、停住世界进游戏页；第一次进镇出开局设置（town-shared/prefabs/setup.ts）。
+// 预制小镇在选择小镇页上和「我的小镇」一样是内置小镇：固定编号 prefab-<编号>，不能删，只能重新开始。
+// 第一次选中时按固定的建镇参数生成这座岛存好；进镇后第一次出开局设置（town-shared/prefabs/setup.ts）。
 // 建镇和「创建小镇」走同一条路：电脑版由管理服务生成，手机应用在页面里生成（localCreation.ts）。
 
-export function prefabEntries(deps: {
-  /** 已有的小镇：数一数这个预制小镇开过几局 */
-  maps: () => MapEntry[]
-  /** 状态行 */
-  status: (text: string) => void
-  /** 打开、停住世界并进游戏页；出错时抛出 */
-  enter: (id: string) => Promise<void>
-}) {
-  let busy = false
-  // 和小镇列表里的条目同一个样子，放在内置小镇下面；不另写说明
-  function entry(prefab: Prefab) {
-    const b = document.createElement('button')
-    b.type = 'button'
-    b.className = 'map-option prefab-entry'
-    b.title = prefab.description
-    const text = document.createElement('span'),
-      name = document.createElement('strong'),
-      status = document.createElement('span')
-    name.textContent = prefab.name
-    status.className = 'map-option-status'
-    status.textContent = '开一局'
-    text.append(name, status)
-    b.append(text)
-    b.onclick = () => void start(prefab, b)
-    return b
-  }
-  return () => PREFABS.map(entry)
+export const prefabTownId = (prefab: Prefab) => `prefab-${prefab.id}`
 
-  async function start(prefab: Prefab, b: HTMLButtonElement) {
-    if (busy) return
-    busy = true
-    b.disabled = true
-    try {
-      const request = creationRequest()
-      deps.status(`正在生成${prefab.name}…`)
-      await request('/options')
-      const draft = await request<{ id: string; version: string }>('/preview', {
-        request_id: newId(),
-        spec: prefab.spec,
-      })
-      const round = 1 + deps.maps().filter((m) => m.creation?.prefab === prefab.id).length
-      const saved = await request<{ id: string }>('/save', {
-        draft_id: draft.id,
-        expected_version: draft.version,
-        request_id: newId(),
-        name: `${prefab.name} · 第 ${round} 局`,
-        creation: {
-          description: prefab.description,
-          worldview: prefab.worldview,
-          residents: [],
-          prefab: prefab.id,
-        },
-      })
-      deps.status('岛建好了，正在进入…')
-      await deps.enter(saved.id)
-    } catch (error) {
-      deps.status(errorText(error))
-      busy = false
-      b.disabled = false
-    }
-  }
+/** 自带的小镇和预制小镇：带「内置」标签、不能删 */
+export const isBuiltinTown = (map: MapEntry) =>
+  map.origin === 'builtin' || map.id.startsWith('prefab-')
+
+/** 还没生成的预制小镇 */
+export const missingPrefabs = (maps: MapEntry[]) =>
+  PREFABS.filter((p) => !maps.some((m) => m.id === prefabTownId(p)))
+
+/** 生成预制小镇的岛并存成内置小镇，返回小镇编号 */
+export async function generatePrefab(prefab: Prefab) {
+  const request = creationRequest()
+  await request('/options')
+  const draft = await request<{ id: string; version: string }>('/preview', {
+    request_id: newId(),
+    spec: prefab.spec,
+  })
+  const saved = await request<{ id: string }>('/save', {
+    draft_id: draft.id,
+    expected_version: draft.version,
+    request_id: newId(),
+    town_id: prefabTownId(prefab),
+    name: prefab.name,
+    creation: {
+      description: prefab.description,
+      worldview: prefab.worldview,
+      residents: [],
+      prefab: prefab.id,
+    },
+  })
+  return saved.id
 }

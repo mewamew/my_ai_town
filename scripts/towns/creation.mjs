@@ -215,7 +215,9 @@ export function createCreation({
     if (draft.version !== body.expected_version) throw Error('预览版本已变化，请重新预览')
     const document = renamed(draft.document, body.name)
     const creation = townCreation(body.creation)
-    const townId = draftId.replace('draft-', 'town-')
+    // 预制小镇存成固定编号 prefab-<编号>，列表里当内置小镇
+    const townId =
+      body.town_id == null ? draftId.replace('draft-', 'town-') : prefabTownId(body.town_id)
     return serial('town-' + townId, async () => {
       await storage.create(
         townId,
@@ -239,4 +241,10 @@ export function createCreation({
     ],
   ]
   return { routes }
+}
+
+function prefabTownId(id) {
+  if (typeof id !== 'string' || !/^prefab-[a-z0-9][a-z0-9-]{0,60}$/.test(id))
+    throw Error('预制小镇编号无效')
+  return id
 }
