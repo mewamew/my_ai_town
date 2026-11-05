@@ -103,6 +103,7 @@ fn client_variants() -> Vec<String> {
         ResetWorld,
         GetPopulation,
         SetResidentAppearance,
+        SetResidentBody,
         GetUsage,
         GetResidentLibrary,
         GetResidentTemplate,

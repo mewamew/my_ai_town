@@ -366,11 +366,134 @@
   gap: 8px;
 }
 /* 「状态」标题右边的治愈、补满（开着化身神力时） */
-.card-miracles {
+.card-tools {
   display: flex;
   gap: 6px;
   margin-left: auto;
   letter-spacing: 0;
+}
+.card-miracles {
+  display: flex;
+  gap: 6px;
+  letter-spacing: 0;
+}
+.card-adjust {
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.card-adjust[aria-expanded='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.card-adjust:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* 调整身体：世界暂停时拨数值，预设一键摆好 */
+.body-adjust {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--surface);
+  font-size: 13px;
+}
+.body-adjust-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.body-adjust-presets button {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.body-adjust-presets button[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.body-adjust-row {
+  display: grid;
+  grid-template-columns: 2.4em minmax(0, 1fr) 2.2em 4.6em;
+  align-items: center;
+  gap: 8px;
+}
+.body-adjust-row > span:first-child {
+  color: var(--text-2);
+}
+.body-adjust-row input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.body-adjust-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.body-adjust-band {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.body-adjust-band[data-band='voiced'] {
+  color: var(--band-voiced);
+}
+.body-adjust-band[data-band='ring'] {
+  color: var(--band-ring);
+}
+.body-adjust-band[data-band='collapse'] {
+  color: var(--band-collapse);
+}
+.body-adjust-forecast,
+.body-adjust-hint,
+.body-adjust-status {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.body-adjust-hint {
+  color: var(--text-3);
+}
+.body-adjust-status:empty {
+  display: none;
+}
+.body-adjust-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+.body-adjust-apply {
+  min-height: 28px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-s);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.body-adjust-apply:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 .card-miracles button {
   min-height: 26px;

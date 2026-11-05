@@ -1455,6 +1455,17 @@ pub fn client_samples() -> Vec<ClientMsg> {
             resident_id: "resident_ashu".into(),
             appearance: appearance(),
         },
+        ClientMsg::SetResidentBody {
+            request_id: "body-1".into(),
+            world_id: "w1".into(),
+            resident_id: "resident_ashu".into(),
+            values: BodyValues {
+                fullness: Some(40.0),
+                energy: Some(60.0),
+                water: None,
+                health: Some(100.0),
+            },
+        },
         ClientMsg::GetUsage,
         ClientMsg::GetResidentLibrary {
             filter: LibraryFilter {

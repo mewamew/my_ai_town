@@ -6,7 +6,7 @@ import { TownDisplaced } from './townApi'
 export type Receipt = (ok: boolean, message: string) => void
 /** 联合类型逐个去掉字段 */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
-/** 回执是 agent_saved、config_saved 或 resident_appearance_saved 的命令；请求编号由连接填写 */
+/** 回执是 agent_saved、config_saved 或 resident_appearance_saved 的命令（调身体也回 agent_saved）；请求编号由连接填写 */
 export type SaveCommand = DistributiveOmit<
   Extract<
     ClientMsg,
@@ -18,6 +18,7 @@ export type SaveCommand = DistributiveOmit<
         | 'restart_builtin_model'
         | 'set_agent_limits'
         | 'set_resident_appearance'
+        | 'set_resident_body'
     }
   >,
   'request_id'

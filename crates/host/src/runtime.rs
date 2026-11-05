@@ -177,6 +177,11 @@ impl Runtime {
                 false,
                 message,
             ),
+            ClientMsg::SetResidentBody { request_id, .. } => ServerMsg::AgentSaved {
+                request_id: request_id.clone(),
+                ok: false,
+                message,
+            },
             // 没有专用回执：门槛只可能拦下其中的 SetSpeed。
             ClientMsg::Avatar { .. }
             | ClientMsg::AvatarInput { .. }
@@ -282,6 +287,12 @@ impl Runtime {
             } => {
                 self.set_resident_appearance(request_id, expected_revision, resident_id, appearance)
             }
+            SetResidentBody {
+                request_id,
+                resident_id,
+                values,
+                ..
+            } => self.set_resident_body(request_id, &resident_id, values, clients),
             GetResidentLibrary { filter } => Outcome::reply(self.library_msg(&filter)),
             GetResidentTemplate { template_id } => Outcome::reply(self.template_msg(&template_id)),
             SaveResidentTemplate {
@@ -659,7 +670,8 @@ fn world_id_of(msg: &ClientMsg) -> Option<&str> {
         | ClientMsg::RemoveProp { world_id, .. }
         | ClientMsg::PlaceProp { world_id, .. }
         | ClientMsg::JoinResident { world_id, .. }
-        | ClientMsg::SetResidentAppearance { world_id, .. } => Some(world_id),
+        | ClientMsg::SetResidentAppearance { world_id, .. }
+        | ClientMsg::SetResidentBody { world_id, .. } => Some(world_id),
         // 化身命令自己核对世界，查加入结果按世界编号查不到就返回空。
         ClientMsg::Avatar { .. }
         | ClientMsg::AvatarInput { .. }
@@ -702,7 +714,8 @@ fn requires_ready(msg: &ClientMsg) -> bool {
         | ClientMsg::RemoveProp { .. }
         | ClientMsg::PlaceProp { .. }
         | ClientMsg::JoinResident { .. }
-        | ClientMsg::SetResidentAppearance { .. } => true,
+        | ClientMsg::SetResidentAppearance { .. }
+        | ClientMsg::SetResidentBody { .. } => true,
         ClientMsg::SetSpeed { speed, .. } => *speed > 0.0,
         ClientMsg::Content { command, .. } => !matches!(command, ContentCommand::Detail { .. }),
         ClientMsg::Avatar { .. }

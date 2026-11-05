@@ -146,7 +146,7 @@ pub enum ServerMsg {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model_binding: Option<ModelChoice>,
     },
-    /// 村民设定（人设、使用模型）的保存结果
+    /// 村民设定（人设、使用模型、身体数值）的保存结果
     AgentSaved {
         request_id: String,
         ok: bool,

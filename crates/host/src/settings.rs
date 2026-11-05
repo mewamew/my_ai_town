@@ -1,14 +1,14 @@
 //! 模型配置与村民设定命令；返回待发送的消息，模拟循环负责发送。村民一律按居民登记查找。
-//! 村民设定的写操作回 AgentSaved，模型服务与额度回 ConfigSaved，都带命令的请求编号、只发给发出者；
+//! 村民设定（含身体数值）的写操作回 AgentSaved，模型服务与额度回 ConfigSaved，都带命令的请求编号、只发给发出者；
 //! 读取失败回通用 Error。
 use crate::{
     network::{send_to, Clients},
     runtime::{error_msg, Outcome, Runtime},
 };
 use host::{application::Application, builtin, config, llm::LlmTarget, models, HostError};
-use kernel::default_tuning;
+use kernel::{default_tuning, needs::NeedValues};
 use protocol::{
-    ActiveModelChoice, AgentLimits, ModelChoice, NotebookDetailQuery, NotebookQuery,
+    ActiveModelChoice, AgentLimits, BodyValues, ModelChoice, NotebookDetailQuery, NotebookQuery,
     ProviderConfigMsg, ProviderKeyMsg, ServerMsg,
 };
 use std::collections::BTreeSet;
@@ -262,6 +262,38 @@ impl Runtime {
             result.and_then(|r| r),
             "人设已保存，下一次请求生效",
         )
+    }
+
+    /// 观察者调身体数值：世界在跑时不收，免得正在做的事被突然改掉。调完的数值随名册广播；
+    /// 观察日志那一笔当场发出去，暂停时世界不推进，不会自己发。
+    pub(crate) fn set_resident_body(
+        &mut self,
+        request_id: String,
+        resident: &str,
+        values: BodyValues,
+        clients: &Clients,
+    ) -> Outcome {
+        if self.speed > 0.0 {
+            let paused = HostError::Rejected("先暂停世界再调身体".into());
+            return Outcome::reply(agent_saved(request_id, Err(paused), ""));
+        }
+        let values = NeedValues {
+            fullness: values.fullness,
+            energy: values.energy,
+            water: values.water,
+            health: values.health,
+        };
+        let result = self
+            .with_resident(Some(resident), |rt, id| rt.world.adjust_body(id, values))
+            .and_then(|adjusted| adjusted.map_err(HostError::from));
+        let events = self.world.take_events();
+        self.driver.dispatch(&self.world, events, clients);
+        match result {
+            Ok(text) => Outcome::reply(agent_saved(request_id, Ok(()), &text))
+                .and_all(self.roster())
+                .persisted(),
+            Err(error) => Outcome::reply(agent_saved(request_id, Err(error), "")),
+        }
     }
 
     pub(crate) fn set_agent_limits(&mut self, request_id: String, limits: AgentLimits) -> Outcome {

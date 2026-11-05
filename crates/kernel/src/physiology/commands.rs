@@ -69,20 +69,7 @@ impl World {
             }
             let was = self.actors[&id].needs.abilities();
             let (urgent, notices) = self.actor_mut(&id).needs.advance(&r, dt);
-            let a = &self.actors[&id];
-            if urgent
-                && a.actions.agent_controlled
-                && (a.current.interaction.is_some()
-                    || a.actions
-                        .groups
-                        .values()
-                        .any(|g| g.status == protocol::GroupStatus::Running))
-            {
-                self.interrupt_actions(&id, "身体需求紧急，重新考虑当前安排");
-            }
-            for notice in notices {
-                self.body_event(&id, BodyEventKind::Pressure, "生理变化", notice, None);
-            }
+            self.body_pressure(&id, urgent, notices);
             if self.actors[&id].needs.body.wet >= super::WET_LIMIT - 1e-8 {
                 self.actor_mut(&id).needs.body.wet = 0.0;
                 // 健康机制关闭时不会积累淋湿进度，这里一定能施加。
@@ -97,6 +84,83 @@ impl World {
                 self.reconcile_body(&id, was, &source, cause);
             }
         }
+    }
+
+    /// 需求跨线的结果：紧急时打断 Agent 正在执行的安排或互动，再把提醒记成生命事件。
+    fn body_pressure(&mut self, id: &str, urgent: bool, notices: Vec<String>) {
+        let a = &self.actors[id];
+        if urgent
+            && a.actions.agent_controlled
+            && (a.current.interaction.is_some()
+                || a.actions
+                    .groups
+                    .values()
+                    .any(|g| g.status == protocol::GroupStatus::Running))
+        {
+            self.interrupt_actions(id, "身体需求紧急，重新考虑当前安排");
+        }
+        for notice in notices {
+            self.body_event(id, BodyEventKind::Pressure, "生理变化", notice, None);
+        }
+    }
+
+    /// 观察者调身体数值（村民卡片上的「调整」，host 只在世界暂停时放行）。这不是世界里发生的事：
+    /// 本人的经历和身体记录里都不留痕，只在观察日志记一笔。跨过提醒线、崩溃线照常提醒和打断，
+    /// 能力变化照常结算，和一路饿到这里看不出区别。健康最少留 1，死者要先复活。返回给观察者的一句结果。
+    pub fn adjust_body(&mut self, id: &str, values: NeedValues<Option<f64>>) -> Result<String> {
+        check_values(values)?;
+        ensure!(
+            values.health.is_none_or(|h| h >= 1.0),
+            KernelError::physiology("健康最少留 1；人死要在世界里发生")
+        );
+        let a = self
+            .actors
+            .get(id)
+            .ok_or_else(|| KernelError::NoSuchActor(id.into()))?;
+        ensure!(!a.is_avatar(), KernelError::physiology("化身的身体不用调"));
+        ensure!(
+            !a.needs.body.dead,
+            KernelError::physiology(format!("{}已经死了，先复活再调", a.name))
+        );
+        for need in Need::ALL {
+            ensure!(
+                values[need].is_none() || a.needs.on(need),
+                KernelError::physiology(format!("这个世界关掉了{}", need.label()))
+            );
+        }
+        let old = NeedValues {
+            fullness: a.needs.fullness.value,
+            energy: a.needs.energy.value,
+            water: a.needs.water.value,
+            health: a.needs.health.value,
+        };
+        let changes: Vec<String> = Need::ALL
+            .into_iter()
+            .filter_map(|need| {
+                let v = values[need]?;
+                Some(format!("{} {:.0} → {v:.0}", need.label(), old[need]))
+            })
+            .collect();
+        ensure!(
+            !changes.is_empty(),
+            KernelError::physiology("没有要调的数值")
+        );
+        let name = a.name.clone();
+        let was = a.needs.abilities();
+        let n = &mut self.actor_mut(id).needs;
+        n.set_values(values)?;
+        let (urgent, notices) = n.note_adjusted(old);
+        self.body_pressure(id, urgent, notices);
+        let a = &self.actors[id];
+        if a.needs.abilities() != was {
+            let spot = body_spot(self, a);
+            let source = a.needs.causes(spot).join("；");
+            self.reconcile_body(id, was, &source, DeathCause::default());
+        }
+        let text = format!("观察者调整了{name}的身体：{}", changes.join("，"));
+        let info = self.actors[id].event_info();
+        self.log(info, text.clone());
+        Ok(text)
     }
 
     /// 生命事件进历史、日记和观察日志；alert 是需要提示卡时的细节。

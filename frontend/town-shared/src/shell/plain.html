@@ -87,12 +87,15 @@
     </section>
     <section class="card-section">
       <h3 class="card-caption">
-        状态<span id="info-miracles" class="card-miracles" hidden
-          ><button type="button" data-miracle="heal">✦ 治愈</button
-          ><button type="button" data-miracle="refill">✦ 补满</button></span
+        状态<span class="card-tools"
+          ><span id="info-miracles" class="card-miracles" hidden
+            ><button type="button" data-miracle="heal">✦ 治愈</button
+            ><button type="button" data-miracle="refill">✦ 补满</button></span
+          ><button type="button" id="info-adjust" class="card-adjust" hidden>调整</button></span
         >
       </h3>
       <div id="info-needs"></div>
+      <div id="info-adjust-body" hidden></div>
       <section id="info-physiology"></section>
     </section>
     <section id="info-inventory" class="card-section"></section>

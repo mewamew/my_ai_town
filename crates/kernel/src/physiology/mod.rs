@@ -288,31 +288,13 @@ impl Needs {
     /// 按速率推进 dt 分钟；返回是否穿越了紧急阈值，以及要发出的通知。
     fn advance(&mut self, r: &Rates, dt: f64) -> (bool, Vec<String>) {
         let targets = thresholds(&self.tuning);
-        let (ring, reset, collapse) = (
-            self.tuning.ring,
-            self.tuning.ring_reset,
-            self.tuning.collapse,
-        );
         let mut notices = Vec::new();
         let mut urgent = false;
         for need in Need::ALL {
             let track = self.track_mut(need);
             let old = track.value;
             track.value = snapped((old + r.values[need] * dt).clamp(EMPTY, FULL), &targets);
-            if track.value >= reset {
-                track.rang = false;
-            }
-            if old > ring && track.value <= ring && !track.rang {
-                track.rang = true;
-                urgent = true;
-                notices.push(format!("{}降低，需要关注身体状态", need.label()));
-            }
-            // 第一次提醒被放过去（比如夜里又睡回去）时，跌到崩溃线再提醒、再打断一次；
-            // 不然一路降到零就失能，家里有水有饭也只能等别人来救
-            if need != Need::Health && old > collapse && track.value <= collapse {
-                urgent = true;
-                notices.push(format!("{}极低，再不补充就撑不住了", need.label()));
-            }
+            urgent |= self.note_crossing(need, old, &mut notices);
         }
         self.body.wet = snapped(
             (self.body.wet + r.wet * dt).clamp(0.0, WET_LIMIT),
@@ -327,6 +309,43 @@ impl Needs {
             if old < GRACE[i] && self.body.exposure[i] >= GRACE[i] {
                 notices.push(format!("持续{}已达到损害时长", need.shortage()));
             }
+        }
+        (urgent, notices)
+    }
+
+    /// 一项需求从 old 变到当前值时的提醒规则，随时间推进和观察者调数值共用：回到复位线以上清掉
+    /// 已提醒的标记；跌破提醒线、之前没提醒过就提醒一次；跌破崩溃线再提醒一次。返回是否紧急。
+    fn note_crossing(&mut self, need: Need, old: f64, notices: &mut Vec<String>) -> bool {
+        let (ring, reset, collapse) = (
+            self.tuning.ring,
+            self.tuning.ring_reset,
+            self.tuning.collapse,
+        );
+        let track = self.track_mut(need);
+        let mut urgent = false;
+        if track.value >= reset {
+            track.rang = false;
+        }
+        if old > ring && track.value <= ring && !track.rang {
+            track.rang = true;
+            urgent = true;
+            notices.push(format!("{}降低，需要关注身体状态", need.label()));
+        }
+        // 第一次提醒被放过去（比如夜里又睡回去）时，跌到崩溃线再提醒、再打断一次；
+        // 不然一路降到零就失能，家里有水有饭也只能等别人来救
+        if need != Need::Health && old > collapse && track.value <= collapse {
+            urgent = true;
+            notices.push(format!("{}极低，再不补充就撑不住了", need.label()));
+        }
+        urgent
+    }
+
+    /// 观察者调过数值之后补上提醒；old 是调之前的数值。
+    pub(crate) fn note_adjusted(&mut self, old: NeedValues<f64>) -> (bool, Vec<String>) {
+        let mut notices = Vec::new();
+        let mut urgent = false;
+        for need in Need::ALL {
+            urgent |= self.note_crossing(need, old[need], &mut notices);
         }
         (urgent, notices)
     }

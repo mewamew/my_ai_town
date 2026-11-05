@@ -50,10 +50,17 @@ interface InfoPanelDeps {
   miracleReady: () => boolean
   /** 「复活」「治愈」「补满」：进入化身、走过去施展 */
   onMiracle: (id: string, kind: MiracleKind) => void
+  /** 「调整」：世界暂停时直接改村民的身体数值 */
+  onAdjustBody: (
+    id: string,
+    values: BodyValues,
+    done: (ok: boolean, message: string) => void
+  ) => void
 }
 
 import { installPanelWidth } from './info/width'
 import { createBodyView } from './info/body'
+import { createBodyAdjust, type BodyValues } from './info/bodyAdjust'
 import { createFocus } from './info/focus'
 import { createInventoryView } from './info/inventory'
 import { createNeedsView, needWord, worstNeed } from './info/needs'
@@ -76,6 +83,8 @@ export function initInfoPanel(deps: InfoPanelDeps) {
   // 「状态」标题右边的治愈、补满：看着数值直接点
   const miracleBox = $('info-miracles')
   const miracleBtns = [...miracleBox.querySelectorAll<HTMLButtonElement>('button')]
+  // 「状态」标题最右边的「调整」：暂停时直接拨身体数值
+  const adjustBtn = query<HTMLButtonElement>(panel, '#info-adjust')
   lineLabel(reviveBtn, 'spark', '复活')
   lineLabel(talkBtn, 'chat', '说话')
   lineLabel(followBtn, 'eye', '跟随')
@@ -111,6 +120,17 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     deps.events.pushLocal(text, warning)
   )
   const thought = createThoughtView($('info-thought'))
+  const adjust = createBodyAdjust($('info-adjust-body'), {
+    apply: (values, done) => {
+      const id = selectedId
+      if (!id) return done(false, '没有选中村民')
+      // 成功时世界日志会广播「观察者调整了……」，这里不再另记一条
+      deps.onAdjustBody(id, values, (ok, message) => {
+        done(ok, message)
+        syncAdjust()
+      })
+    },
+  })
   const plan = createPlanView($('info-plan'))
   const agent = createAgentView($('info-agent'))
   const stage = createStage(query<HTMLCanvasElement>(panel, '.card-sprite'))
@@ -134,6 +154,25 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     b.onclick = () => {
       if (selectedId) deps.onMiracle(selectedId, b.dataset.miracle as MiracleKind)
     }
+  adjustBtn.onclick = () => {
+    if (adjust.isOpen()) adjust.close()
+    else if (current) adjust.open(current.needs ?? [])
+    syncAdjust()
+  }
+  /** 世界的速度：「调整」只在暂停时能用 */
+  let worldSpeed = 0
+  /** 「调整」钮：活着的村民才有；世界在跑时灰着 */
+  function syncAdjust() {
+    const m = current
+    const alive = !!m && m.kind === 'resident' && m.body?.life !== 'dead' && !!m.needs?.length
+    adjustBtn.hidden = !alive
+    if (!alive && adjust.isOpen()) adjust.close()
+    adjustBtn.disabled = worldSpeed > 0 && !adjust.isOpen()
+    adjustBtn.title =
+      worldSpeed > 0 ? '先暂停世界，再调身体数值' : `直接调${m?.name ?? ''}的饱腹、精力、水分和健康`
+    adjustBtn.setAttribute('aria-expanded', String(adjust.isOpen()))
+    adjust.setPaused(worldSpeed === 0)
+  }
 
   function setCollapsed(collapsed: boolean) {
     panel.hidden = collapsed
@@ -209,6 +248,7 @@ export function initInfoPanel(deps: InfoPanelDeps) {
       thought.clear()
       agent.clear()
       stage.clear()
+      adjust.close()
       current = undefined
     }
     selectedId = id
@@ -303,6 +343,8 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     talkBtn.hidden = !canTalk(m)
     talkBtn.title = `你的化身会走过去，${m.name}会停下来等你`
     renderMiracles(m)
+    worldSpeed = speed
+    syncAdjust()
 
     needs.setResidentName(m.name)
     $('info-edit').title = `编辑${m.name}的设定`
@@ -378,6 +420,7 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     /** agent_config 到达后补上分界线的说明 */
     onTuning(t: NeedsTuning, healthMarks: number[]) {
       needs.tune(t, healthMarks)
+      adjust.tune(t, healthMarks)
     },
     /** 人口登记：住宅与入村时间来自这里，不从 roster 猜 */
     onPopulation(view: PopulationView) {

@@ -129,6 +129,11 @@ export function createPanels(input: ShellInputs) {
     onTalk: (id) => void avatar.talkTo(id),
     miracleReady: () => avatar.miracleReady(),
     onMiracle: (id, kind) => void avatar.miracle(id, kind),
+    onAdjustBody: (id, values, done) => {
+      const world_id = worldSettings.state()?.world_id
+      if (!world_id) return done(false, '还没读到世界设定')
+      input.save({ type: 'set_resident_body', world_id, resident_id: id, values }, done)
+    },
   })
   const resumeAgents = () => pages.speeds.choose(pages.speeds.current() || input.normalSpeed)
   /** 「在地图上定位」：先停止跟随，不然下一份名册就把镜头拉回跟着的人 */

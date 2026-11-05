@@ -1,6 +1,20 @@
 //! 身体事实、生命历史及可执行能力；前端与 Agent 不推导死亡。
 use serde::{Deserialize, Serialize};
 
+/// 观察者在村民卡片上调的身体数值（0–100）；不填的项不改。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BodyValues {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fullness: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub energy: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub water: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health: Option<f64>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BodyConditionKind {

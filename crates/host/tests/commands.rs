@@ -219,3 +219,77 @@ fn corrupt_providers_file_blocks_startup_and_is_never_overwritten() {
     let mut ws = town.start();
     until(&mut ws, |m| m["type"] == "roster");
 }
+
+/// 观察者调身体：世界在跑时不收；暂停时调到提醒线以下，名册马上是新数值，本人照常收到饿了的提醒，
+/// 但经历、身体记录里都没有「观察者」「调整」这类幕后的字样，下次观察看到的就和一路饿下来一样。
+/// 健康调到 0 不行。
+#[test]
+fn observer_sets_body_only_while_paused_and_the_resident_just_feels_hungry() {
+    let mut town = Town::new();
+    let mut ws = town.start();
+    let id = join_id(&mut ws, "tpl_a");
+    let world_id = reply(&mut ws, json!({"type":"get_population"}), "population")["population"]
+        ["world_id"]
+        .clone();
+    let adjust = |request_id: &str, values: serde_json::Value| {
+        json!({"type":"set_resident_body","request_id":request_id,"world_id":world_id,
+            "resident_id":id,"values":values})
+    };
+    send(
+        &mut ws,
+        json!({"type":"set_speed","request_id":"run","speed":1}),
+    );
+    let running = reply(
+        &mut ws,
+        adjust("while-running", json!({"fullness":30})),
+        "agent_saved",
+    );
+    assert_eq!(running["ok"], false, "{running}");
+    assert!(running["message"].as_str().unwrap().contains("先暂停"));
+    send(
+        &mut ws,
+        json!({"type":"set_speed","request_id":"pause","speed":0}),
+    );
+    let dead = reply(&mut ws, adjust("kill", json!({"health":0})), "agent_saved");
+    assert_eq!(dead["ok"], false, "{dead}");
+    let saved = reply(
+        &mut ws,
+        adjust("hungry", json!({"fullness":30,"energy":60})),
+        "agent_saved",
+    );
+    assert_eq!(saved["ok"], true, "{saved}");
+    assert_eq!(saved["request_id"], "hungry");
+    assert!(saved["message"].as_str().unwrap().contains("饱腹 75 → 30"));
+    let roster = until(&mut ws, |m| {
+        m["type"] == "roster"
+            && members(m).iter().any(|r| {
+                r["id"] == id.as_str()
+                    && r["needs"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|n| n["kind"] == "fullness" && n["value"] == 30.0)
+            })
+    });
+    let me = members(&roster)
+        .into_iter()
+        .find(|r| r["id"] == id.as_str())
+        .unwrap();
+    let fullness = me["needs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["kind"] == "fullness")
+        .unwrap()
+        .clone();
+    assert_eq!(fullness["band"], "urgent", "{fullness}");
+    let save = town.saved(|v| v["world"]["actors"][&id]["needs"]["fullness"]["value"] == 30.0);
+    let actor = save["world"]["actors"][&id].to_string();
+    assert!(actor.contains("饱腹降低，需要关注身体状态"), "{actor}");
+    for hidden in ["观察者", "调整", "受控实验"] {
+        assert!(
+            !actor.contains(hidden),
+            "本人记录里出现了「{hidden}」：{actor}"
+        );
+    }
+}

@@ -842,6 +842,14 @@ export type ClientMsg =
       resident_id: string
       appearance: Appearance
     }
+  | {
+      /** 世界暂停时调村民的身体数值；不填的项不改，回 agent_saved */
+      type: 'set_resident_body'
+      request_id: string
+      world_id: string
+      resident_id: string
+      values: Partial<Record<NeedKind, number>>
+    }
   | { type: 'get_resident_template'; template_id: string }
   | {
       type: 'save_resident_template'

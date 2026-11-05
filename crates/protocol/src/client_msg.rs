@@ -190,6 +190,14 @@ pub enum ClientMsg {
         resident_id: String,
         appearance: crate::Appearance,
     },
+    /// 调已入住居民的身体数值（村民卡片上的「调整」）：只在世界暂停时放行，回 AgentSaved。
+    /// 不是世界里发生的事，本人的经历里不留痕，跨过提醒线照常提醒。
+    SetResidentBody {
+        request_id: String,
+        world_id: String,
+        resident_id: String,
+        values: crate::BodyValues,
+    },
     /// 读模型请求与 token 消耗（回 Usage）
     GetUsage,
     /// 读村民库卡片（回 ResidentLibrary）
@@ -301,6 +309,7 @@ impl ClientMsg {
             | SetPersona { request_id, .. }
             | ResetWorld { request_id }
             | SetResidentAppearance { request_id, .. }
+            | SetResidentBody { request_id, .. }
             | SaveResidentTemplate { request_id, .. }
             | GenerateResidentTemplate { request_id, .. }
             | ArchiveResidentTemplate { request_id, .. }
