@@ -5,6 +5,7 @@
 // 也可以连在线服务；点「以后再说」缩成一行小字，「设定」上留个小绿点。内置模型有新版本、又关了自动更新时，
 // 「设定」上也亮小绿点。
 import { effectsPreference } from 'town-shared/audio/effects'
+import { storyMusicPreference } from 'town-shared/audio/controller'
 import { button, el, query } from 'town-shared/dom'
 import { errorText } from 'town-shared/format'
 import { gameIcon } from 'town-shared/game/icons'
@@ -173,7 +174,11 @@ export function installHomeSettings(deps: { music: { enabled(): boolean; toggle(
   const toolRows = el('div', '', 'set-rows')
   const tool = el('section', '', 'spage')
   tool.append(el('h2', '建镇用的模型'), toolRows)
-  const sound = createSoundPage(false, { music: deps.music, effects: effectsPreference })
+  const sound = createSoundPage(false, {
+    music: deps.music,
+    story: storyMusicPreference,
+    effects: effectsPreference,
+  })
   const display = createDisplayPage(undefined, false)
   const body = el('div', '', 'hs-body')
   body.append(

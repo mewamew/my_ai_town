@@ -63,14 +63,19 @@ interface SoundSwitch {
 
 export function createSoundPage(
   game: boolean,
-  audio: { music: SoundSwitch; effects: SoundSwitch }
+  audio: { music: SoundSwitch; story: SoundSwitch; effects: SoundSwitch }
 ): SettingsPage {
   const page = el('section', '', 'spage')
   page.append(el('h2', '声音与按键'))
   const rows = el('div', '', 'set-rows')
   const toggles = (
     [
-      [audio.music, '音乐', '白天、傍晚、雨夜各有曲目，随游戏内时间切换'],
+      [audio.music, '音乐', '按地图风格、时段和天气换曲，大逃杀按潮水的进度换'],
+      [
+        audio.story,
+        '剧情音乐',
+        '有人去世、遇害、健康危重、缺吃少喝时换上相应的曲子；关掉后不因这些换曲',
+      ],
       [audio.effects, '音效', '脚步声、下雨与环境氛围声'],
     ] as const
   ).map(([sound, label, description]) => {

@@ -62,7 +62,7 @@ interface CenterDeps {
   /** 离开设定中心去「消耗」页；有未保存修改时先问 */
   openUsage: () => void
   /** 声音开关 */
-  audio: Pick<GameAudio, 'music' | 'effects'>
+  audio: Pick<GameAudio, 'music' | 'story' | 'effects'>
   /** 小镇默认模型的价格（花费上限按它换算）；价格没收录时为 null */
   townPrice: () => import('./pricing').Price | null
 }

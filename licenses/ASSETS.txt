@@ -14,8 +14,13 @@ frontend/town-shared/src/brand/logo.svg 及由它生成的应用图标，
 如需超出此范围使用，请联系维护者核对具体作品的权利人和授权。
 
 2. 音乐
-frontend/town-shared/assets/music/ 的 13 首 music_town_*.m4a：
+frontend/town-shared/assets/music/ 的 12 首旧曲（music_town_daylife_gathering、_market、
+_corner_opening、_window_afternoon，music_town_evening_*，music_town_rain_window_town_01/02，
+music_town_thunderstorm_after_rain_01/02，music_town_sleep_belltower_01）：
 旧制作记录注明使用 Suno Pro/Premier 生成；维护者现已确认可随项目分发。
+同目录其余 37 首 music_*.m4a 和 4 段 sting_*.m4a：维护者 2026-11-06 用 Suno（v6）生成，
+其中 music_story_mourning_names、music_story_finale_empty_town、music_tide_winner
+是以 music_title_overture 为原曲的 Cover。文件由网页播放时的录音转码而成，不是 Suno 导出的原文件。
 本仓库不提供关于生成内容独占性或可获得著作权的保证。
 使用与分发范围同第 1 项，不把素材分发确认解释为对第三方作品的重新授权。
 amb_sleep_soft_white_noise_loop.m4a 的旧制作记录为程序生成的白噪声。

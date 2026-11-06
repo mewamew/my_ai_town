@@ -3,6 +3,7 @@
 // 静态图集先画（ws 断了图也在），Roster 流驱动活物层与各面板；人物身份只来自服务器名册。
 import './style.css'
 import { createGameAudio } from './audio/controller'
+import type { MusicWorld } from './audio/scene'
 import { createConnection } from './connection'
 import { $, query } from './dom'
 import { initEvents } from './events'
@@ -28,7 +29,8 @@ export function startGameShell(
   map: GameMap,
   topology: Topology,
   decorate: () => void,
-  options: { normalSpeed?: number } = {}
+  /** musicWorld：地图风格定下放哪个世界的曲子，没有按海岸小镇 */
+  options: { normalSpeed?: number; musicWorld?: MusicWorld } = {}
 ) {
   // 界面类型只在这里定一次，作为参数交给各面板
   const game = false
@@ -40,7 +42,8 @@ export function startGameShell(
   map.onRenderNotice = (text) => events.pushLocal(text)
   const audio = createGameAudio(
     query<HTMLButtonElement>(document, '#music-toggle'),
-    query<HTMLButtonElement>(document, '#effects-toggle')
+    query<HTMLButtonElement>(document, '#effects-toggle'),
+    options.musicWorld
   )
   const localeName = (id: string) =>
     topology.locales.find((l) => l.id === id)?.name ??

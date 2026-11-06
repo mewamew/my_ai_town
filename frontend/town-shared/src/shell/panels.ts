@@ -507,7 +507,15 @@ function register(input: ShellInputs, p: RegisteredParts) {
     },
     p.session.panel,
     {
-      roster: ({ msg }) => input.audio.update(msg.clock, msg.environment?.kind),
+      roster: ({ msg, residents }) =>
+        input.audio.roster(
+          msg,
+          residents.map(({ member }) => member)
+        ),
+      // 不拦消息：事件栏、提示卡照常收到
+      handleMsg(m) {
+        if (m.type === 'event' && m.alert?.kind === 'death') input.audio.death(!!m.alert.killed)
+      },
       dispose: input.audio.dispose,
     },
     createWeatherPanel(send, map, input.game),

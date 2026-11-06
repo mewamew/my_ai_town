@@ -13,7 +13,9 @@ import { PREFABS, type Prefab } from 'town-shared/prefabs/index'
 import { generatePrefab, isBuiltinTown, missingPrefabs, prefabTownId } from './prefabEntry'
 import { api } from './api'
 import { warmSelectedGame } from '../startupWarmup'
+import { MUSIC_TRACKS } from 'town-shared/audio/catalog'
 import { createMusicController } from 'town-shared/audio/music'
+import { titleChoice } from 'town-shared/audio/scene'
 import { installPlatform, isCompact, isTouch, onBack, systemBars } from 'town-shared/platform'
 import { installSelects } from 'town-shared/design/select'
 import { installFavicon, logoUrl } from 'town-shared/brand/brand'
@@ -60,8 +62,9 @@ document.addEventListener('keydown', (event) => {
 })
 const launcherMusic = createMusicController(
   query<HTMLButtonElement>(document, '#launcher-music-toggle'),
-  { fixedTrackId: 'daylife-gathering' }
+  { first: 'title-overture' }
 )
+launcherMusic.setChoice(titleChoice(MUSIC_TRACKS))
 window.addEventListener('pagehide', () => launcherMusic.dispose(), { once: true })
 const homeSettings = installHomeSettings({ music: launcherMusic })
 /** 刚建好的小镇：预览出来后先看整张图 */
@@ -262,7 +265,9 @@ async function buildPrefab(prefab: Prefab) {
   showPreview('')
   document
     .querySelectorAll<HTMLElement>('[data-map-id]')
-    .forEach((el) => el.setAttribute('aria-pressed', String(el.dataset.mapId === prefabTownId(prefab))))
+    .forEach((el) =>
+      el.setAttribute('aria-pressed', String(el.dataset.mapId === prefabTownId(prefab)))
+    )
   const detail = document.querySelector<HTMLElement>('.map-detail')
   if (detail) detail.hidden = false
   $('selected-map-name').textContent = prefab.name

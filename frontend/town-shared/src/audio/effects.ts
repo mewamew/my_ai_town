@@ -1,6 +1,6 @@
 import type { WeatherKind } from '../weather/types'
 import { EFFECT_ASSETS, rainAmbienceVolume, resolveFootstepSurface } from './catalog'
-import { resolveAudioScene } from './scene'
+import { ambienceAt } from './scene'
 import { readSwitch, saveSwitch } from './preference'
 
 const ENABLED_KEY = 'ai-town:effects-enabled'
@@ -63,9 +63,7 @@ export function createEffectsController(button: HTMLButtonElement) {
     ambientKind = null
   }
   const syncAmbient = () => {
-    const scene = resolveAudioScene(clock, weather)
-    const nextKind =
-      scene === 'rain' || scene === 'thunderstorm' ? 'rain' : scene === 'sleep' ? 'sleep' : null
+    const nextKind = ambienceAt(clock, weather)
     if (!enabled || !unlocked || document.hidden || !nextKind) {
       stopAmbient()
       return
