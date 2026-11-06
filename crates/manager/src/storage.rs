@@ -287,7 +287,11 @@ impl Storage {
 
     /// reset：重新开始预制小镇，允许删掉内置的 prefab-<编号>
     pub fn remove(&self, id: &str, reset: bool) -> Result<(), ApiError> {
-        let allowed = if reset { id.starts_with("prefab-") } else { self.can_delete(id) };
+        let allowed = if reset {
+            id.starts_with("prefab-")
+        } else {
+            self.can_delete(id)
+        };
         if !allowed {
             return Err(ApiError::new(403, "内置地图不能删除"));
         }

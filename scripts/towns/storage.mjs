@@ -228,9 +228,7 @@ export class Storage {
       }
     }
     return result.sort(
-      (a, b) =>
-        builtinRank(b.id) - builtinRank(a.id) ||
-        a.name.localeCompare(b.name, 'zh-CN')
+      (a, b) => builtinRank(b.id) - builtinRank(a.id) || a.name.localeCompare(b.name, 'zh-CN')
     )
   }
 }
