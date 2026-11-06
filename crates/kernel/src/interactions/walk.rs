@@ -32,6 +32,8 @@ const ARRIVE_REACH: f64 = 3.0;
 /// 离带路人超过这么远（米）、不在同一空间，或被挡住走不动，累计这么久（分钟）就算跟丢。
 const LOST_DISTANCE: f64 = 25.0;
 const LOST_MINUTES: f64 = 6.0;
+/// 世界替受 Agent 控制的带路人排的「前往」：动作组编号是同行编号加这个后缀。
+const LEAD_SUFFIX: &str = "/lead";
 
 /// 同行的运行期状态：带路人的足迹、各人的跟随进度、落后与停留的计时。不存档，读档后重新记。
 #[derive(Debug, Clone, Default)]
@@ -79,6 +81,16 @@ impl World {
     pub fn following(&self, actor: &str) -> Option<&str> {
         let leader = self.interactions.walk_of(actor)?.kind.walk_leader()?;
         (leader != actor).then_some(leader)
+    }
+
+    /// 这个动作组是世界替带路人排的「前往」（见 lead_off）：不经本人的工具调用，村民会话里
+    /// 没有对应记录，由世界推进到地方。同行提前结束（跟丢、不跟了、走满时限）时这一步照样
+    /// 走完，所以只认同行记录和带路人，不看同行是否还在进行。
+    pub fn is_lead_group(&self, actor: &str, group_id: &str) -> bool {
+        group_id
+            .strip_suffix(LEAD_SUFFIX)
+            .and_then(|walk| self.interactions.get(walk))
+            .is_some_and(|walk| walk.kind.walk_leader() == Some(actor))
     }
 
     /// 跟随者由世界带着走：受 Agent 控制、不是带路人、没被玩家操控。
@@ -180,9 +192,8 @@ impl World {
             recipient: None,
             writing: None,
         };
-        if let Err(error) =
-            self.run_actions_from(leader, &format!("{id}/lead"), revision, &[draft], false)
-        {
+        let group = format!("{id}{LEAD_SUFFIX}");
+        if let Err(error) = self.run_actions_from(leader, &group, revision, &[draft], false) {
             let a = &self.actors[leader];
             let line = format!("{} 没能出发带路：{error}", a.name);
             self.log(a.event_info(), line);

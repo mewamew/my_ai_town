@@ -215,7 +215,8 @@ fn validate_requests(
     Ok(())
 }
 
-/// 待完成工具必须对应世界里真实的动作组或互动；世界在执行的动作组都要有记录。
+/// 待完成工具必须对应世界里真实的动作组或互动；世界在执行的动作组都要有记录，
+/// 世界替带路人排的「前往」除外：它不经工具调用，会话里本来就没有。
 fn validate_pending(world: &World, resident: &Actor, session: &Session) -> Result<(), String> {
     let actor = resident.id.as_str();
     let cursor = resident.journal.cursor();
@@ -223,7 +224,7 @@ fn validate_pending(world: &World, resident: &Actor, session: &Session) -> Resul
         .actions
         .groups
         .values()
-        .filter(|g| g.status == GroupStatus::Running)
+        .filter(|g| g.status == GroupStatus::Running && !world.is_lead_group(actor, &g.id))
         .map(|g| g.id.as_str())
         .collect();
     let mut tracked = BTreeSet::new();

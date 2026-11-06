@@ -818,6 +818,80 @@ fn resident_leader_waits_for_the_avatar_until_the_walk_really_ends() {
         .contains("旅人没跟上阿树，同行结束"));
 }
 
+/// 带路的路上什么时候存档都读得回来。世界替带路人排的「前往」不经他自己的工具调用，会话里
+/// 没有记录；读档核对曾因此拒绝整个世界（大逃杀荒岛的存档停在说好一起走的那一刻，之后再也
+/// 打不开）。跟着的人半路不跟了、同行先结束，带路人照样走到地方，这一段也要读得回来。
+#[test]
+fn a_walk_saved_at_any_moment_loads_again() {
+    let mut w = two_rooms();
+    let mut r = runtime(&mut w, Limits::default());
+    w.spawn("r2", "何青", "loc_a").unwrap();
+    r.register(&mut w, "r2", "我熟悉这一带，常给人带路。")
+        .unwrap();
+    command(
+        &mut w,
+        "r2",
+        "walk",
+        Command::Offer {
+            partner_id: "r1".into(),
+            interaction: InteractionKind::Walk {
+                leader: "r2".into(),
+                locale: Some("loc_b".into()),
+            },
+            message: "跟我去乙地看看。".into(),
+        },
+    );
+    command(
+        &mut w,
+        "r1",
+        "walk-yes",
+        Command::Reply {
+            interaction_id: "walk".into(),
+            accept: true,
+            message: "行，我跟着你。".into(),
+        },
+    );
+    let leading = |w: &kernel::World| {
+        w.action_group("r2", "walk/lead")
+            .is_some_and(|g| g.status == protocol::GroupStatus::Running)
+    };
+    assert!(leading(&w), "说好了目的地，带路人直接动身");
+    let mut ticks = 0;
+    while leading(&w) {
+        if ticks == 1 {
+            command(
+                &mut w,
+                "r1",
+                "walk-off",
+                Command::Leave {
+                    interaction_id: "walk".into(),
+                    message: "我先不去了。".into(),
+                },
+            );
+            assert_ne!(
+                w.interactions().of("r1", "walk").unwrap().status,
+                InteractionStatus::Running
+            );
+            assert!(leading(&w), "同行结束了，带路人还在路上");
+        }
+        let saved_world = serde_json::to_value(w.snapshot()).unwrap();
+        let saved_runtime = serde_json::to_value(r.state()).unwrap();
+        let mut loaded = two_rooms();
+        loaded
+            .restore_snapshot(serde_json::from_value(saved_world).unwrap())
+            .unwrap();
+        if let Err(error) =
+            ResidentRuntime::restore(serde_json::from_value(saved_runtime).unwrap(), &loaded)
+        {
+            panic!("第 {ticks} 拍的存档读不回来：{error}");
+        }
+        w.step(0.1);
+        ticks += 1;
+        assert!(ticks < 200, "带路人应该在几分钟内走到");
+    }
+    assert_eq!(w.actor("r2").unwrap().locus.locale, "loc_b");
+}
+
 /// 目标里提到的人来了：正在停留的人提前结束停留醒来，不必站满提前排好的时长。
 #[test]
 fn a_planned_stay_ends_when_someone_from_the_goals_shows_up() {
