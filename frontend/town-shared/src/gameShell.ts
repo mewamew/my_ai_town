@@ -103,7 +103,8 @@ export function startGameShell(
   const normalSpeed = options.normalSpeed ?? 1
   // 一句话建的小镇：世界观建议给首次对话框和开局向导，适合住进来的人给向导
   useTownCreation(selectedMap.id, selectedMap.creation)
-  const inputs = { normalSpeed, game, selectedMap, map, events, localeName, topology }
+  const replay = !!options.connection
+  const inputs = { normalSpeed, game, selectedMap, map, events, localeName, topology, replay }
   const panels = createPanels({
     ...inputs,
     send: connection.send,

@@ -48,6 +48,8 @@ interface ShellInputs {
   events: EventsHandle
   localeName: (id: string) => string
   topology: Topology
+  /** 重演录像：画面不连世界，这个页面没打开过小镇，离开时也不能去关（它可能正开在别的页面上跑） */
+  replay: boolean
   send: (msg: ClientMsg) => void
   /** 发出保存命令，按请求编号收回执；断线时以失败结束 */
   save: (command: SaveCommand, receipt: Receipt) => void
@@ -259,17 +261,18 @@ export function createPanels(input: ShellInputs) {
   worldSettings.subscribe(emptyTown.sync)
   models.subscribe(emptyTown.refresh)
   // 离开小镇前：角色卡页签里还有没存的草稿先问一句，再交还化身控制
-  installBackToMaps(selectedMap, events, async () => {
-    const unsaved = infoPanel.unsaved()
-    if (
-      unsaved.length &&
-      !confirm(
-        `还有没保存的修改：${unsaved.join('、')}。\n「确定」放弃修改并离开；「取消」留下来保存。`
+  if (!input.replay)
+    installBackToMaps(selectedMap, events, async () => {
+      const unsaved = infoPanel.unsaved()
+      if (
+        unsaved.length &&
+        !confirm(
+          `还有没保存的修改：${unsaved.join('、')}。\n「确定」放弃修改并离开；「取消」留下来保存。`
+        )
       )
-    )
-      return false
-    return avatar.release()
-  })
+        return false
+      return avatar.release()
+    })
   // 信息栏按世界生理开关补画关掉的项
   worldSettings.subscribe(() => {
     const switches = worldSettings.state()?.physiology

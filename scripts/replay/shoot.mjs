@@ -197,16 +197,13 @@ function writeSubtitles(name, from, ms) {
     ['thought', '（心想）', '心声'],
   ]) {
     const lines = beats.filter((b) => b.kind === kind && b.t >= from - 4000 && b.t < from + ms)
-    // 台词到下一句（谁说的都算）就换；心声只被同一个人的下一个想法换掉
+    // 台词到下一句（谁说的都算）就换；心声只被同一个人的下一个想法换掉。先按说出口的那一刻算
+    // 什么时候换，再裁进这段视频：开拍前已经被换掉的不出现，不会几句挤在开头一起冒出来
     const entries = lines.map((b, i) => {
-      const begin = Math.max(0, b.t - from)
+      const said = b.t - from
       const next = lines.slice(i + 1).find((n) => kind === 'speech' || n.id === b.id)
-      const end = Math.min(
-        ms,
-        begin + 4500,
-        next ? Math.max(begin + 1500, next.t - from) : Infinity
-      )
-      return { begin, end, text: `${b.who}${label}：${b.text}` }
+      const end = Math.min(ms, said + 4500, next ? Math.max(said + 1500, next.t - from) : Infinity)
+      return { begin: Math.max(0, said), end, text: `${b.who}${label}：${b.text}` }
     })
     const srt = entries
       .filter((e) => e.end > e.begin)
