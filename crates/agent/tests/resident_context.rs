@@ -491,3 +491,28 @@ fn waking_after_a_long_chat_starts_from_what_just_happened() {
     assert!(observation["earlier_events"]["speech"].as_u64().unwrap() > 0);
     assert_eq!(q.stamp.seen_cursor, newest, "更早的不再一页页补看");
 }
+
+#[test]
+fn a_prop_someone_else_is_using_says_so_before_anyone_tries() {
+    // 一台咖啡机三个人抢：看不出有人在用，只能试了才知道，每次白花一次模型调用。
+    let mut w = world();
+    w.spawn("neighbor_0", "阿禾", "loc_a").unwrap();
+    w.enable_agent("neighbor_0").unwrap();
+    let mut r = runtime(&mut w, spacious());
+    let plan: Vec<protocol::ActionDraft> = serde_json::from_value(
+        json!([{"prop_id":"board","intent":{"verb":"查看公告栏","duration_minutes":30}}]),
+    )
+    .unwrap();
+    let revision = w.actor("neighbor_0").unwrap().actions.revision;
+    w.run_actions("neighbor_0", "look", revision, &plan)
+        .unwrap();
+    w.step(0.5);
+    let q = life_request(&mut r, &mut w);
+    let body: Value = serde_json::from_str(&q.messages.last().unwrap().content).unwrap();
+    let props = body["observation"]["visible_props"].as_array().unwrap();
+    let board = props.iter().find(|p| p["id"] == "board").unwrap();
+    let users = board["in_use"].as_str().unwrap();
+    assert!(users.starts_with("阿禾正在查看公告栏"), "{users}");
+    let stand = props.iter().find(|p| p["id"] == "fixture-board").unwrap();
+    assert!(stand.get("in_use").is_none(), "没人用的道具和原来一字不差");
+}

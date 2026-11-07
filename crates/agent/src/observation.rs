@@ -79,6 +79,21 @@ fn prop_view(world: &World, actor: &str, p: &kernel::topology::Prop) -> Value {
         "verbs": verbs
     });
     with_description(&mut view, p);
+    // 别人正在用：看得出要等，不必试了才知道（回声湾一台咖啡机三个人抢，第一个小时失败 6 次）。
+    // 没人用时不带这一栏，和原来一字不差。
+    let users: Vec<_> = world
+        .prop_occupants(&p.id)
+        .iter()
+        .filter(|id| *id != actor)
+        .filter_map(|id| world.actor(id))
+        .map(|a| match a.current.left_text() {
+            left if left.is_empty() => format!("{}正在{}", a.name, a.current.verb),
+            left => format!("{}正在{}，{left}", a.name, a.current.verb),
+        })
+        .collect();
+    if !users.is_empty() {
+        view["in_use"] = json!(users.join("；"));
+    }
     view
 }
 

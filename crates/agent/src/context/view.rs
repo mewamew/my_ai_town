@@ -45,7 +45,10 @@ fn visible_props(state: &mut InputState, view: &mut Value, bytes: usize) {
         let verbs: Vec<_> = prop["verbs"].as_array().into_iter().flatten().map(|v| {
             json!({"verb":v["verb"],"action_id":v["action_id"],"minutes":v["minutes"],"remaining":v["remaining"],"effects":v["description"]["effects"]})
         }).collect();
-        let item = json!({"id":prop["id"],"name":prop["name"],"verbs":verbs});
+        let mut item = json!({"id":prop["id"],"name":prop["name"],"verbs":verbs});
+        if let Some(users) = prop.get("in_use") {
+            item["in_use"] = users.clone();
+        }
         size += item.to_string().len() + 1;
         if size > bytes {
             break;
