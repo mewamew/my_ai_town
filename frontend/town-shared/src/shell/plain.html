@@ -1,7 +1,15 @@
 <!-- 平铺界面（2D 地图）的外壳部件，由 shell/layout.ts 按 data-slot 放进 gameShell.html 的骨架。 -->
 <template data-slot="topbar">
   <button id="back-to-maps" class="back-to-maps">← 选择小镇</button>
-  <span id="app-title">AI小镇</span>
+  <button
+    id="town-button"
+    type="button"
+    aria-haspopup="dialog"
+    aria-expanded="false"
+    title="这一局的设定：世界观、规则、重置世界"
+  >
+    <span id="app-title">AI小镇</span><span class="town-caret" aria-hidden="true">▾</span>
+  </button>
   <span id="clock">--:--</span>
   <span id="world-facts" class="dim"></span>
   <span id="conn" title="连接中…"
@@ -22,7 +30,7 @@
   >
   <span class="spacer"></span>
   <button id="open-usage" title="模型请求与 token 消耗">消耗</button>
-  <button id="open-settings" title="人设、长相、模型、额度、重置世界">设定</button>
+  <button id="open-settings" title="人设、长相、模型、额度、声音、显示">设定</button>
   <button id="open-help" title="开局向导、新手提示和按键说明">帮助</button>
 </template>
 <!-- 地图左下角的入口：场景物品、书与公告、摆道具，放在地图画面之前 -->

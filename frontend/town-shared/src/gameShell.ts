@@ -155,7 +155,7 @@ export function startGameShell(
   panels.worldSettings.setFirstRun(() => {
     if (!guideOpened) {
       guideOpened = true
-      // 在设定里重置了世界：先回到地图，向导走完正好看到新来的人
+      // 重置了世界（「我的小镇」已随重置关上）；开着整页设定时也先回到地图，向导走完正好看到新来的人
       if (panels.session.inSettings()) panels.session.exit()
       if (prefab) prefabSetup.open(prefab)
       else guide.open(guideDone() ? 2 : 0)
@@ -177,6 +177,8 @@ export function startGameShell(
     open: panels.open,
     watchBooks: panels.books.watch,
     openSettings: () => void panels.session.enter(),
+    openTown: panels.town.open,
+    townName: selectedMap.name,
     avatar: panels.avatar,
     audio,
     openGuide: () => guide.open(),

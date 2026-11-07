@@ -1,4 +1,4 @@
-/* 世界级生理开关：游戏设置「村民」页签与设定中心共用；颜色取两套主题都有的 --line / --dim / --accent。 */
+/* 「我的小镇」规则里的开关（生理五项、化身神力，世界观旁的初来乍到也借用这套）；颜色取两套主题都有的 --line / --dim / --accent。 */
 .physiology-switches {
   display: grid;
   gap: 12px;
@@ -84,21 +84,15 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+/* 「全部打开 / 全部关闭」在左，「放弃 / 保存」推到右边 */
+.physiology-gap {
+  flex: 1;
+}
 .physiology-status {
   min-height: 18px;
   margin: 0;
   font-size: 12px;
   white-space: pre-wrap;
-}
-/* 化身神力：页底单独一块，和上面的生理开关隔开 */
-.miracles-switch {
-  margin-top: 28px;
-  padding-top: 20px;
-  border-top: 1px solid var(--line);
-}
-.miracles-switch h3 {
-  margin: 0;
-  font-size: 15px;
 }
 @media (prefers-reduced-motion: reduce) {
   .physiology-row input,

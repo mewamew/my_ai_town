@@ -2,7 +2,7 @@ import type { ResidentContext } from '../application'
 import { button, el } from '../dom'
 import { residentPortrait, residentPortraitUrl } from '../portraits'
 
-// 设定中心左侧目录：小镇 / 村民 / 模型 / 游戏四组，最底下单独隔开「重置世界…」。
+// 设定中心左侧目录：村民 / 模型 / 游戏三组。
 // 村民组顶部是换人框，下面几项指向当前选中村民的子页；目录项按页的基础编号（不带村民编号）登记。
 
 interface NavItem {
@@ -11,10 +11,8 @@ interface NavItem {
 }
 
 interface NavSections {
-  town: NavItem[]
   model: NavItem[]
   game: NavItem[]
-  danger: NavItem[]
 }
 
 /** 头像优先使用像素头像，没有时用名字第一个字 */
@@ -71,8 +69,6 @@ export function createSettingsNav(
   const residentItems = el('div', '', 'settings-resident-items')
 
   root.replaceChildren(
-    group('小镇'),
-    ...sections.town.map((p) => item(p)),
     group('村民'),
     picker,
     empty,
@@ -80,8 +76,7 @@ export function createSettingsNav(
     group('模型'),
     ...sections.model.map((p) => item(p)),
     group('游戏'),
-    ...sections.game.map((p) => item(p)),
-    ...sections.danger.map((p) => item(p, 'nav-item nav-danger'))
+    ...sections.game.map((p) => item(p))
   )
 
   return {

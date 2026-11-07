@@ -24,6 +24,7 @@ import { installModelWait } from '../modelWait'
 import { autoUpdateBuiltin } from '../models/builtin'
 import { createModelSession } from '../models/session'
 import { createNotices } from '../notices'
+import { createTownPanel } from '../town/panel'
 import { installPauseHint, type PauseHint } from '../pauseHint'
 import { initProps } from '../props/page'
 import type { ClientMsg, JoinOutcome, ServerMsg, TemplateCard } from '../protocol'
@@ -164,11 +165,9 @@ export function createPanels(input: ShellInputs) {
     personName: (id) => observed.get(id)?.name,
   })
   const center = initSettingsCenter({
-    worldSettings,
     send,
     onBack: () => session.exit(),
     save: input.save,
-    townName: selectedMap.name,
     selectedResident,
     map,
     game,
@@ -180,7 +179,14 @@ export function createPanels(input: ShellInputs) {
     townPrice: () => priceOf(models.options()[0]),
   })
   session.bind(center)
-  worldSettings.setOpenSettings(() => session.enter('worldview'))
+  // 「我的小镇」：这一局的世界观、规则和重置，从顶栏的小镇名打开，地图留在背后
+  const town = createTownPanel({
+    world: worldSettings,
+    send,
+    townName: selectedMap.name,
+    onOpen: () => avatar.stopMoving(),
+  })
+  worldSettings.setOpenTown(town.open)
   const toast = createMapToast($('map'))
   /** 请人入住结束：回到地图，一句话说谁搬进来了、用哪个模型；镜头挪过去 */
   function joined(list: JoinOutcome[], failed: string[], model: ModelOption | null) {
@@ -304,7 +310,16 @@ export function createPanels(input: ShellInputs) {
     }
   )
   events.onImportant((clock, important) => notices.show(clock, important))
-  const parts = { session, chatHistory, chatBubbles, worldSettings, observed, infoPanel, strip }
+  const parts = {
+    session,
+    chatHistory,
+    chatBubbles,
+    worldSettings,
+    town,
+    observed,
+    infoPanel,
+    strip,
+  }
   const shell = {
     ...parts,
     ...{ books, props, center, notices, avatar, open, emptyTown, models, modelWait },
@@ -420,6 +435,7 @@ interface RegisteredParts {
   chatHistory: ReturnType<typeof createChatHistory>
   chatBubbles: ChatBubbles | null
   worldSettings: ReturnType<typeof createWorldSettings>
+  town: ReturnType<typeof createTownPanel>
   diary: ReturnType<typeof initDiary>
   memory: ReturnType<typeof initMemory>
   infoPanel: ReturnType<typeof initInfoPanel>
@@ -524,6 +540,7 @@ function register(input: ShellInputs, p: RegisteredParts) {
     p.chatHistory,
     mapPanel,
     p.worldSettings,
+    p.town.panel,
     hubs.roster,
     p.chatBubbles,
     events,

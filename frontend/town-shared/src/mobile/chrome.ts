@@ -26,6 +26,9 @@ interface ChromeDeps {
   /** 「书报」上的数字：没看过的新作品 */
   watchBooks: (update: (count: number) => void) => void
   openSettings: () => void
+  /** 「我的小镇」：这一局的世界观、规则、重置（顶栏放不下镇名，点时间或「更多」里这一行打开） */
+  openTown: () => void
+  townName: string
   avatar: { openEntry(): void; available(): boolean; active(): boolean }
   audio: {
     music: { enabled(): boolean; toggle(): void }
@@ -146,7 +149,15 @@ export function installMobileChrome(d: ChromeDeps) {
       tile('sound', '音效', toggle('effects'), d.audio.effects.enabled() ? '开' : '关'),
       tile('map', '选择小镇', click('back-to-maps'))
     )
-    more.replaceChildren(el('div', '', 'm-grip'), el('h2', '更多'), tiles)
+    const town = button('', () => {
+      closePopover()
+      d.openTown()
+    })
+    town.className = 'm-row m-town'
+    const townText = el('span', '', 'm-town-text')
+    townText.append(el('b', d.townName), el('small', '世界观 · 规则 · 重置世界'))
+    town.append(gameIcon('town', true), townText)
+    more.replaceChildren(el('div', '', 'm-grip'), el('h2', '更多'), town, tiles)
     for (const [label, action] of [
       ['重新看开局向导', d.openGuide],
       ['重新显示新手提示', d.resetTips],

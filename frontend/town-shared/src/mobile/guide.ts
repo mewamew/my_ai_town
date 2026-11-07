@@ -35,7 +35,7 @@ import { peopleCount, PICKS, recommendReason, roomLeft } from '../residents/reco
 import type { Receipt, SaveCommand } from '../connection'
 import type { ShellPanel } from '../shell/panel'
 import type { SpeedBar } from '../shell/topbar'
-import { DEFAULT_WORLDVIEW, type createWorldSettings } from '../worldSettings'
+import { DEFAULT_WORLDVIEW, townEntryHint, type createWorldSettings } from '../worldSettings'
 import { providerSaveCommand } from '../settings/providerCommands'
 
 const DONE_KEY = 'town:guide-done'
@@ -644,7 +644,7 @@ export function createGuide(d: GuideDeps) {
     }
     return [
       el('h2', '这是个什么样的小镇？'),
-      el('p', '写给居民看的背景，他们会照着生活。可以先用默认的，以后在设定里改。'),
+      el('p', `写给居民看的背景，他们会照着生活。可以先用默认的，以后${townEntryHint()}改。`),
       chips,
       text,
       ...(skipModel

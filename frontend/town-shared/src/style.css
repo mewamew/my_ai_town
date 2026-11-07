@@ -136,9 +136,40 @@ select {
   position: relative;
 }
 
+/* 顶栏左上的小镇名：点开「我的小镇」（这一局的世界观、规则、重置）；样子和旁边的天气钮一样 */
+#town-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 24em;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  background: var(--surface-sunken);
+  color: var(--text);
+  cursor: pointer;
+}
+#town-button:hover,
+#town-button[aria-expanded='true'] {
+  border-color: var(--accent);
+}
 #app-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 14px;
   font-weight: 600;
+}
+.town-caret {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-2);
+}
+/* 时间也能点开「我的小镇」 */
+#clock[role='button'] {
+  cursor: pointer;
 }
 .back-to-maps {
   color: var(--dim);
@@ -248,11 +279,15 @@ body:not(.game-theme) #topbar {
 body:not(.game-theme) #topbar > * {
   flex: none;
 }
-body:not(.game-theme) #topbar > :is(#app-title, #hold-flag) {
+body:not(.game-theme) #topbar > #hold-flag {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+body:not(.game-theme) #topbar > #town-button {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 body:not(.game-theme) #topbar > .spacer {
   flex: 1;
@@ -1211,13 +1246,6 @@ body.resizing-info {
 #settings-nav .nav-item.dirty .nav-label::after {
   content: ' ●';
   color: var(--accent);
-}
-/* 「重置世界…」在目录最底下，和其他项隔开 */
-#settings-nav .nav-danger {
-  margin-top: auto;
-  border-top: 1px solid var(--line);
-  padding-top: 10px;
-  color: var(--band-collapse);
 }
 /* 村民组顶部的换人框：点开列出所有村民 */
 .settings-resident-picker {
@@ -2630,8 +2658,7 @@ svg.zoom-detail .pp {
   color: var(--text-2);
   margin: 0;
 }
-.world-setup textarea,
-.world-settings-page textarea {
+.world-setup textarea {
   width: 100%;
   box-sizing: border-box;
   padding: 12px;
@@ -2645,8 +2672,7 @@ svg.zoom-detail .pp {
   border-radius: var(--r-s);
   background: var(--surface);
 }
-.world-setup label,
-.world-settings-page label {
+.world-setup label {
   display: block;
   font-weight: 600;
 }
@@ -2672,13 +2698,6 @@ svg.zoom-detail .pp {
   min-height: 24px;
   color: var(--text-2);
   white-space: pre-wrap;
-}
-.world-settings-page {
-  max-width: 850px;
-  line-height: 1.7;
-}
-.world-settings-page button {
-  white-space: normal;
 }
 @media (max-width: 700px) {
   .world-setup {

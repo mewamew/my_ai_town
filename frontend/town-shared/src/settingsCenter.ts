@@ -1,7 +1,7 @@
 import type { ResidentContext } from './application'
 import type { ClientMsg, ModelChoice, ServerMsg } from './protocol'
 import type { GameMap } from './gameMap'
-// 设定中心外壳：左侧目录分小镇 / 村民 / 模型 / 游戏四组，最底下单独的「重置世界…」；
+// 设定中心外壳：左侧目录分村民 / 模型 / 游戏三组；这一局的世界观、规则和重置世界在「我的小镇」（town/panel.ts）。
 // 底部保存栏只在有未保存修改时出现。进入时暂停与返回后恢复速度由游戏页外壳负责；
 // 这里管页面切换、村民组当前编辑的村民、脏状态与保存分发。
 
@@ -14,8 +14,6 @@ import { createProviderListPage } from './settings/providerList'
 import { createSoundPage } from './settings/sound'
 import { createDisplayPage } from './settings/display'
 import { createLimitsPage } from './settings/limits'
-import { createResetPage } from './settings/reset'
-import { createPhysiologyPage } from './settings/physiology'
 import { createSettingsNav } from './settings/nav'
 import { $ } from './dom'
 import { isCompact } from './platform'
@@ -29,7 +27,7 @@ import type { Receipt, SaveCommand } from './connection'
 
 export interface SettingsPage {
   id: string
-  group: 'town' | 'resident' | 'model' | 'game' | 'danger'
+  group: 'resident' | 'model' | 'game'
   navLabel: string
   /** 页名；保存栏列出未保存的页时也用它 */
   title: string
@@ -47,12 +45,9 @@ export interface SettingsPage {
 }
 
 interface CenterDeps {
-  worldSettings: import('./worldSettings').WorldSettingsController
   send: (obj: ClientMsg) => void
   onBack: () => void
   save: (command: SaveCommand, receipt: Receipt) => void
-  /** 当前小镇名：重置世界要输入它确认 */
-  townName: string
   /** 地图上选中的村民：进设定时村民组默认编辑他 */
   selectedResident: () => ResidentContext | null
   /** 显示页的地图俯角要调用地图；没有俯角的地图不显示那一项 */
@@ -112,23 +107,18 @@ export function initSettingsCenter(deps: CenterDeps) {
     onConfigured: (count, total) => nav?.setBadge('providers', `${count} / ${total}`),
   })
   pages.push(
-    deps.worldSettings.page(refreshDirty),
-    createPhysiologyPage(deps.worldSettings, refreshDirty),
     providers,
     createModelPage(pageDeps),
     createLimitsPage(pageDeps, deps.townPrice),
     createSoundPage(deps.game, deps.audio),
-    createDisplayPage(deps.map, deps.game),
-    createResetPage(pageDeps, deps.townName)
+    createDisplayPage(deps.map, deps.game)
   )
   const inGroup = (group: SettingsPage['group']) => pages.filter((p) => p.group === group)
   nav = createSettingsNav(
     $('settings-nav'),
     {
-      town: inGroup('town'),
       model: inGroup('model'),
       game: inGroup('game'),
-      danger: inGroup('danger'),
     },
     { show: openPage, pickResident },
     deps.game
@@ -297,7 +287,7 @@ export function initSettingsCenter(deps: CenterDeps) {
       requestBindings()
       // 上次停在某位村民的子页时，换成当前村民的同一页
       showPage(pageId ?? baseOf(currentId))
-      // 从别处直接打开某页（编辑村民、世界观）就停在那一页，从「设定」进来先看目录
+      // 从别处直接打开某页（编辑村民、花费上限）就停在那一页，从「设定」进来先看目录
       setPane(pageId ? 'page' : 'nav')
     },
     isDirty: () => dirtyPages().length > 0,

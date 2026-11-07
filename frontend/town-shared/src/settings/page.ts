@@ -15,7 +15,7 @@ export interface PageDeps {
   openUsage: () => void
 }
 
-/** 村民子页多一个当前村民；小镇与模型服务子页不需要 */
+/** 村民子页多一个当前村民；模型、游戏子页不需要 */
 export interface ResidentPageDeps extends PageDeps {
   resident: ResidentContext
 }
