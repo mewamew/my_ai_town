@@ -2,7 +2,7 @@ import type { ClientMsg, ServerMsg } from '../protocol'
 import { el } from '../dom'
 import { newId } from '../ids'
 
-// 「我的小镇」最底下的重置世界：平时收着，展开后输入当前小镇名按钮才可点。
+// 世界观面板最底下的重置世界：平时收着，展开后输入当前小镇名按钮才可点。
 // 重置成功后外壳会收到 world_reset，面板随之关上，开局向导接手。
 export function createResetSection(send: (msg: ClientMsg) => void, townName: string) {
   const root = el('details', '', 'town-section town-reset')

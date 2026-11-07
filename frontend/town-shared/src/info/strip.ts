@@ -4,7 +4,7 @@
 // 鼠标悬停弹出近况卡；触屏没有悬停，点一下直接看角色卡。人多了收成只有头像的小格（触屏照样留名字）。
 // 控制化身时整条藏起来（样式按 html.avatar-controlling）：那时点人是走过去，角色卡也不开。
 // 地图顶部正中的提示（暂停、快进、等模型、提示卡）和头像条左右叠上时，往下让出头像条的高度。
-// 末尾的「邀请」打开村民页（新建村民、从村民库挑选、名册）：电脑上请人入住只走这里，顶栏不再单放
+// 末尾的「邀请」打开村民页（新建村民、从村民库挑选、名册）：电脑上请人入住只走这里，别处不再单放
 // 一个村民按钮；空镇子时整条只剩它，用主色描出来（样式按 html[data-empty-town]）。
 import { button, el } from '../dom'
 import { chip } from '../design/ui'
@@ -66,8 +66,11 @@ function statusOf(m: RosterMember): Status {
 
 interface StripDeps {
   map: GameMap
-  /** 地图容器：头像条和近况卡都放在里面 */
+  /** 地图容器：近况卡放在里面，地图顶上的提示条也在里面 */
   container: HTMLElement
+  /** 地图左上角那一列（时钟牌、开始钮、世界观、有事才出现的提示）：头像条排在它最下面。
+   *  提示条和这一列哪一块左右重叠，就让到那一块下面 */
+  dock: HTMLElement
   localeName: (id: string) => string
   /** 点头像：选中并打开角色卡 */
   open: (id: string) => void
@@ -118,7 +121,8 @@ export function createResidentStrip(deps: StripDeps) {
   peek.id = 'strip-peek'
   peek.setAttribute('role', 'tooltip')
   peek.hidden = true
-  container.append(root, peek)
+  deps.dock.append(root)
+  container.append(peek)
   // 按下不能漏给地图：不然会被当成拖动地图的起点，双击会放大
   for (const type of ['pointerdown', 'dblclick'])
     root.addEventListener(type, (e) => e.stopPropagation(), { signal })
@@ -409,7 +413,10 @@ export function createResidentStrip(deps: StripDeps) {
   const watcher = new MutationObserver(scheduleLayout)
   function layout() {
     layoutFrame = 0
-    const strip = root.getBoundingClientRect()
+    const top = deps.dock.getBoundingClientRect().top
+    const blocks = [...deps.dock.children]
+      .map((block) => block.getBoundingClientRect())
+      .filter((r) => r.width && r.height)
     let clear = 0
     for (const hint of container.querySelectorAll<HTMLElement>(HINTS)) {
       if (!watched.has(hint)) {
@@ -421,9 +428,11 @@ export function createResidentStrip(deps: StripDeps) {
         })
       }
       const r = hint.getBoundingClientRect()
-      if (!strip.width || !r.width || !r.height) continue
+      if (!r.width || !r.height) continue
       // 只看左右：提示让下去以后上下就不叠了，按上下判断会来回跳
-      if (r.left < strip.right + 8 && r.right > strip.left - 8) clear = Math.ceil(strip.height) + 8
+      for (const block of blocks)
+        if (r.left < block.right + 8 && r.right > block.left - 8)
+          clear = Math.max(clear, Math.ceil(block.bottom - top) + 8)
     }
     const value = clear ? `${clear}px` : ''
     if (container.style.getPropertyValue('--strip-clear') !== value) {

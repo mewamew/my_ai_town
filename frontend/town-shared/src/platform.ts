@@ -57,7 +57,7 @@ export function onWindowFullscreen(listener: (on: boolean) => void) {
 const compactQuery = matchMedia(COMPACT)
 const touchQuery = matchMedia(TOUCH)
 
-/** 手机布局：底部入口、抽屉、精简顶栏 */
+/** 手机布局：底部入口、抽屉，时钟牌一列小一号 */
 export const isCompact = () => compactQuery.matches
 /** 主要靠手指操作 */
 export const isTouch = () => touchQuery.matches

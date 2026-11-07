@@ -1,4 +1,4 @@
-/* 地图左上角的头像条（info/strip.ts）：和脚下的动作钮一样是地图上的游戏按钮——粗描边、实心投影。
+/* 地图左上角的头像条（info/strip.ts）：排在时钟牌那一列的最下面（shell/hud.css）。
  * 格子之间的空隙不接点击，拖地图不受影响；控制化身时整条藏起来。 */
 .resident-strip {
   position: absolute;
@@ -416,13 +416,6 @@ html[data-empty-town] .strip-add .strip-name {
   color: var(--text-2);
 }
 
-/* 720–1023 用鼠标：缩放钮在地图左上角，头像条排在它右边 */
-@media (min-width: 720px) and (max-width: 1023px) {
-  [data-input='mouse'] .resident-strip {
-    left: 72px;
-    max-width: calc(100% - 86px);
-  }
-}
 /* 手机：贴着地图顶边一行，左右滑着看，右边让开两个圆钮 */
 [data-layout='compact'] .resident-strip {
   top: 0;

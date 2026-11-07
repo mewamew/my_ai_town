@@ -1,9 +1,11 @@
-// 顶栏：开始/暂停钮、回到地图选择、连接状态、全镇暂停标记，以及地图里的道具入口。
-import { $, button, el } from '../dom'
+// 地图左上的时钟牌和开始/暂停钮、菜单里的「选择小镇」、时钟牌下的连接状态和全镇暂停标记，以及地图左下的道具入口。
+// 以前这些在顶栏上，现在顶栏拆了，都浮在地图上（shell/plain.html、shell/hud.css）。
+import { $, button } from '../dom'
 import { countBadge } from '../design/ui'
 import type { EventsHandle } from '../events'
 import { displayClock } from '../format'
-import { gameIcon, iconLabel } from '../game/icons'
+import { iconLabel } from '../game/icons'
+import { pixelIcon, setPixelIcon } from '../game/pixel'
 import { groupHolds, namesOf } from '../holds'
 import type { MapEntry } from '../mapDocument'
 import { closeTown } from '../townApi'
@@ -15,7 +17,7 @@ import { newId } from '../ids'
 /** 点了开始或暂停以后，最多等这么久（毫秒）让名册跟上；还没跟上就以名册为准（命令被拦下、没生效） */
 const CONFIRM_MS = 3000
 
-/** 顶栏的开始/暂停钮。世界只有暂停和运行两档，运行时村民在画面上像散步（正常速度由服务端按地图比例定）；
+/** 时钟牌旁边的开始/暂停钮。世界只有暂停和运行两档，运行时村民在画面上像散步（正常速度由服务端按地图比例定）；
  *  大家都在做一件还要好一阵的事、没人走动或说话时服务端自动快进（名册的 pace 比 speed 大），
  *  快进的提示挂在地图上（pauseHint.ts）。
  *  点了先在本地记住新速度：紧接着进设定时，记下的是新速度而不是上一拍名册里的。
@@ -28,14 +30,14 @@ export function installSpeedBar(
   normalSpeed: number
 ) {
   const toggle = button('', () => (marked ? choose(0) : start()), 'speed-toggle')
+  // 暂停时绿底白色三角，运行时白底两道；只画图标，说法放在悬停提示和读屏文字里
+  const icon = pixelIcon('play')
+  toggle.append(icon)
   $('speeds').replaceChildren(toggle)
   function render(running: boolean) {
-    toggle.replaceChildren(
-      gameIcon(running ? 'pause' : 'play', true),
-      el('span', running ? '暂停' : '开始')
-    )
+    setPixelIcon(icon, running ? 'pause' : 'play')
     toggle.setAttribute('aria-label', running ? '暂停' : '开始')
-    toggle.title = running ? '暂停世界' : '开始运行；没人走动或说话时会自动快进'
+    toggle.title = running ? '暂停世界（空格）' : '开始运行（空格）；没人走动或说话时会自动快进'
     toggle.classList.toggle('go', !running)
   }
   // 名册来之前先画成暂停、不能点；世界设好并连上后由 worldSettings.ts 放开
@@ -98,7 +100,7 @@ export function installSpeedBar(
 export type SpeedBar = ReturnType<typeof installSpeedBar>
 
 /**
- * 「← 地图选择」：先交还化身控制，再保存并关闭小镇，然后离开。同时只运行一个小镇，退出就关；
+ * 菜单里的「选择小镇」：先交还化身控制，再保存并关闭小镇，然后离开。同时只运行一个小镇，退出就关；
  * 直接关掉网页也发一下关闭（刷新页面时新页面会重新打开它），从浏览器的后退缓存回来就重新载入。
  */
 export function installBackToMaps(
@@ -108,18 +110,21 @@ export function installBackToMaps(
 ) {
   const back = $('back-to-maps')
   if (!(back instanceof HTMLButtonElement)) return
+  // 按钮上的小字写进度：「保存后离开」→「保存中…」
+  const note = back.querySelector('small')
+  const idle = note?.textContent ?? ''
   let closed = false
   back.onclick = async () => {
     if (!(await release())) return
     back.disabled = true
-    back.textContent = '保存中…'
+    if (note) note.textContent = '保存中…'
     try {
       await closeTown(selectedMap.id, selectedMap.lease)
       closed = true
       location.assign(`./?map=${encodeURIComponent(selectedMap.id)}`)
     } catch (error) {
       back.disabled = false
-      back.textContent = '← 选择小镇'
+      if (note) note.textContent = idle
       events.pushLocal(`没能保存并关闭小镇：${(error as Error).message}`, true)
     }
   }
@@ -140,7 +145,7 @@ export function showConnection(online: boolean) {
 }
 
 function showHolds(msg: RosterMsg) {
-  // 全镇暂停：同一原因只写一次（「已暂停：密钥用不了」），影响谁放在悬停提示；修法在地图上的提示卡里
+  // 全镇暂停（挂在时钟牌下面）：同一原因只写一次（「已暂停：密钥用不了」），影响谁放在悬停提示；修法在地图上的提示卡里
   const groups = groupHolds(msg.holds ?? [])
   const flag = $('hold-flag')
   flag.hidden = groups.length === 0
@@ -151,7 +156,13 @@ function showHolds(msg: RosterMsg) {
   flag.classList.toggle('warn', groups.length > 0 && groups.every((g) => g.copy.tone === 'warn'))
 }
 
-/** 顶栏上跟着名册变的部分：时钟、时段、全镇暂停原因、开始/暂停钮、地图上的暂停与快进提示和化身在场标记 */
+/** 「D2 09:08」拆成时钟牌上的大字时刻和小字「第 2 天」 */
+function splitClock(clock: string) {
+  const m = /^D(\d+)\s+(\d{1,2}:\d{2})$/.exec(clock.trim())
+  return m ? { day: `第 ${m[1]} 天`, time: m[2] } : { day: '', time: displayClock(clock) }
+}
+
+/** 地图上跟着名册变的部分：时钟牌、全镇暂停原因、开始/暂停钮、地图上的暂停与快进提示和化身在场标记 */
 export function topbarPanel(
   speeds: SpeedBar,
   pauseHint: PauseHint | null,
@@ -159,7 +170,9 @@ export function topbarPanel(
 ): ShellPanel {
   return {
     roster({ msg }) {
-      $('clock').textContent = displayClock(msg.clock)
+      const { day, time } = splitClock(msg.clock)
+      $('clock').textContent = time
+      $('hud-day').textContent = day
       $('world-facts').textContent = msg.period ?? ''
       showHolds(msg)
       const speed = speeds.sync(msg.speed)
@@ -170,7 +183,7 @@ export function topbarPanel(
   }
 }
 
-/** 地图内按钮沿用缩放控件的事件隔离，避免拖拽捕获指针后丢失点击。 */
+/** 地图内按钮沿用缩放控件的事件隔离，避免拖拽捕获指针后丢失点击：左下的道具入口、左上那一列和菜单钮。 */
 export function installMapButtons(
   open: { props(): void; books(): void; placing(): void },
   /** 书与公告上的数字：没看过的新作品 */
@@ -193,7 +206,8 @@ export function installMapButtons(
     iconLabel(placingButton, 'plus', active ? '摆道具中' : '摆道具')
     placingButton.setAttribute('aria-pressed', String(active))
   })
-  for (const entry of [propsButton, booksButton, placingButton])
+  // 左上那一列（时钟牌、开始、世界观、提示、头像条）和右上的菜单钮也在地图容器里，按下同样不能漏给地图
+  for (const entry of [propsButton, booksButton, placingButton, $('hud-left'), $('open-menu')])
     for (const type of ['pointerdown', 'dblclick'])
       entry.addEventListener(type, (event) => event.stopPropagation(), { signal })
 }

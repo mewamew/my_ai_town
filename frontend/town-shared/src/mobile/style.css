@@ -1,12 +1,10 @@
-/* 手机布局（≤719px）：地图占满，顶栏只留返回、时间、天气和开始/暂停钮；其余入口收进底部五格。
-   村民卡、事件列表、「更多」是底部抽屉。宽屏不受影响：这里新加的节点在宽屏一律隐藏。
+/* 手机布局（≤719px）：地图占满，左上是和电脑一样的时钟牌、开始钮、世界观（shell/hud.css）；其余入口在底部六格。
+   村民卡、事件列表、菜单是底部抽屉。宽屏不受影响：这里新加的节点在宽屏一律隐藏。
    触屏另有一组规则（[data-input='touch']），按钮和可点范围更大。 */
 
 .mobile-dock,
 .map-fabs,
-.m-sheet-handle,
-.m-pop,
-.m-shade {
+.m-sheet-handle {
   display: none;
 }
 
@@ -100,20 +98,6 @@ html[data-empty-town] .mobile-dock [data-dock='residents'] {
   body:not(.game-theme) #avatar-flag {
     display: none;
   }
-  /* 音乐、音效开关不占顶栏：设定的「声音与按键」里有，手机在「更多」里 */
-  #topbar > #audio-controls {
-    display: none;
-  }
-  /* 「← 地图选择」只留箭头，给镇名和右边的入口让出位置（手机布局下面另有尺寸） */
-  .back-to-maps {
-    padding-inline: 6px;
-    font-size: 0;
-    color: var(--text-2);
-  }
-  .back-to-maps::before {
-    content: '←';
-    font-size: 18px;
-  }
 }
 
 @media (max-width: 719px) {
@@ -124,200 +108,6 @@ html[data-empty-town] .mobile-dock [data-dock='residents'] {
   #obs-view,
   .page-view {
     height: 100dvh;
-  }
-
-  /* ---------- 顶栏 ---------- */
-  #topbar {
-    flex-wrap: nowrap;
-    gap: 6px;
-    min-height: 52px;
-    padding: 0 10px 0 2px;
-    overflow: hidden;
-  }
-  #topbar
-    > :is(
-      #town-button,
-      #audio-controls,
-      #avatar-flag,
-      #open-usage,
-      #open-settings,
-      #open-help,
-      #model-flag,
-      #world-mode
-    ) {
-    display: none;
-  }
-  /* 「← 地图选择」只留箭头 */
-  .back-to-maps {
-    width: 40px;
-    height: 40px;
-    flex: none;
-    padding: 0;
-    font-size: 0;
-    color: var(--text-2);
-  }
-  .back-to-maps::before {
-    content: '←';
-    font-size: 20px;
-  }
-  #clock {
-    font-size: 15px;
-  }
-  /* 顶栏放不下镇名：点时间打开「我的小镇」，带个小箭头看得出能点 */
-  #clock[role='button']::after {
-    content: ' ▾';
-    font-size: 11px;
-    font-weight: 400;
-    color: var(--text-3);
-  }
-  #world-facts {
-    font-size: 12px;
-    color: var(--text-2);
-  }
-  .weather-trigger {
-    min-height: 30px;
-    padding: 0 10px;
-    border: 0;
-    border-radius: var(--r-pill);
-    background: var(--surface-sunken);
-    font-size: 13px;
-  }
-  /* 额度或故障暂停的原因：顶栏放不下，挂在顶栏下面 */
-  #hold-flag {
-    position: absolute;
-    top: 58px;
-    left: 12px;
-    right: 12px;
-    z-index: 15;
-    max-width: none;
-    padding: 6px 12px;
-    border-radius: var(--r-s);
-    background: var(--danger-soft);
-    white-space: normal;
-  }
-  #conn-text:empty {
-    display: none;
-  }
-  /* 开始/暂停钮挨着时间，只留图标 */
-  .speed-toggle {
-    width: 44px;
-    min-width: 0;
-    height: 36px;
-    padding: 0;
-  }
-  .speed-toggle span {
-    display: none;
-  }
-  .speed-toggle .game-icon {
-    width: 18px;
-    height: 18px;
-  }
-
-  /* ---------- 浮层：「更多」 ---------- */
-  .m-pop:not([hidden]) {
-    display: block;
-    position: absolute;
-    z-index: 40;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-m);
-    box-shadow: var(--elev-3);
-  }
-  .m-pop-title {
-    grid-column: 1 / -1;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-3);
-  }
-  .m-pop-note {
-    grid-column: 1 / -1;
-    margin: 2px 0 0;
-    font-size: 12px;
-    color: var(--text-3);
-  }
-  .m-shade:not([hidden]) {
-    display: block;
-    position: absolute;
-    inset: 0;
-    z-index: 39;
-    background: rgb(20 24 22 / 0.32);
-  }
-  .m-more:not([hidden]) {
-    left: 0;
-    right: 0;
-    bottom: 0;
-    padding: 0 16px 16px;
-    border-radius: var(--r-m) var(--r-m) 0 0;
-    border-bottom: 0;
-  }
-  .m-grip {
-    width: 36px;
-    height: 4px;
-    margin: 8px auto 6px;
-    border-radius: 2px;
-    background: var(--line);
-  }
-  .m-more h2 {
-    margin: 4px 0 12px;
-    font-size: 17px;
-  }
-  .m-tiles {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-  }
-  .m-tile {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    height: 84px;
-    border-radius: var(--r-m);
-    font-size: 13px;
-  }
-  .m-tile .game-icon {
-    width: 22px;
-    height: 22px;
-    color: var(--text-2);
-  }
-  .m-tile small {
-    font-size: 12px;
-    color: var(--text-3);
-    line-height: 1;
-  }
-  .m-row {
-    width: 100%;
-    min-height: 48px;
-    margin-top: 12px;
-    text-align: left;
-  }
-  /* 「我的小镇」排在格子上面：这一局的设定，比下面的按钮都常用 */
-  .m-town {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin: 0 0 12px;
-    padding: 10px 14px;
-  }
-  .m-town .game-icon {
-    flex: none;
-    width: 22px;
-    height: 22px;
-    color: var(--text-2);
-  }
-  .m-town-text {
-    display: grid;
-    min-width: 0;
-  }
-  .m-town-text b {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .m-town-text small {
-    font-size: 12px;
-    color: var(--text-3);
   }
 
   /* ---------- 底部六个入口 ---------- */

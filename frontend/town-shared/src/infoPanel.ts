@@ -290,7 +290,7 @@ export function initInfoPanel(deps: InfoPanelDeps) {
   }
 
   /** Agent 停下了或者在等模型：卡片顶上写明原因。按钮只放能马上处理、又只关乎村民的事；
-   *  世界暂停时不放「继续行动」——开始运行是顶栏和地图提示的事，不在一个人的卡片上 */
+   *  世界暂停时不放「继续行动」——开始运行是开始钮和地图提示的事，不在一个人的卡片上 */
   function renderStop(m: RosterMember, speed: number) {
     const box = $('info-stop')
     const agent = m.resident_agent

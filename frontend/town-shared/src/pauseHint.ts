@@ -6,7 +6,7 @@ import { isTouch } from './platform'
 const FAST_SHOWN = 8
 
 /** 空格给别的东西用的时候不接：输入框、对话框、聚焦的按钮和链接、地图上聚焦的道具。
- *  顶栏的开始/暂停钮例外，点完它再按空格就是开始或暂停。 */
+ *  时钟牌旁的开始/暂停钮例外，点完它再按空格就是开始或暂停。 */
 function spaceIsFree(target: EventTarget | null, map: HTMLElement) {
   if (document.querySelector('dialog[open]')) return false
   // 地图页没显示（设定中心、道具页等整页替换了它）
@@ -19,7 +19,7 @@ function spaceIsFree(target: EventTarget | null, map: HTMLElement) {
 
 export function installPauseHint(
   map: HTMLElement,
-  /** 选一个速度，和点顶栏的开始/暂停钮一样；返回 false 表示这次没有立刻生效（比如先要连模型） */
+  /** 选一个速度，和点开始/暂停钮一样；返回 false 表示这次没有立刻生效（比如先要连模型） */
   choose: (speed: number) => boolean,
   /** 运行时的世界速度 */
   normalSpeed: number
@@ -30,8 +30,8 @@ export function installPauseHint(
   const key = document.createElement('kbd')
   key.textContent = '空格'
   // 触屏没有空格键
-  if (isTouch()) hint.replaceChildren('世界已暂停，点顶栏的 ▶ 开始')
-  else hint.replaceChildren('世界已暂停，点顶栏的 ▶ 或按 ', key, ' 开始')
+  if (isTouch()) hint.replaceChildren('世界已暂停，点左上角的 ▶ 开始')
+  else hint.replaceChildren('世界已暂停，点左上角的 ▶ 或按 ', key, ' 开始')
   // 快进提示和暂停提示在同一个位置，但不挤开别的提示、不算遮挡地图：它常来常走，不能带着别的东西跳
   const fast = document.createElement('div')
   fast.className = 'fast-hint'

@@ -1,4 +1,4 @@
-// 「我的小镇」的规则里跟身体有关的两块：村民生理五个开关（改完点保存才生效）、化身神力（切换就保存）。
+// 世界观面板的规则里跟身体有关的两块：村民生理五个开关（改完点保存才生效）、化身神力（切换就保存）。
 import type { PhysiologySwitches } from '../protocol'
 import type { WorldSettingsController } from '../worldSettings'
 import { el, button } from '../dom'

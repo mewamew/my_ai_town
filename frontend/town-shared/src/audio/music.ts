@@ -49,9 +49,12 @@ export function createMusicController(
   const stings = new Set<HTMLAudioElement>()
   let lastSting = -Infinity
 
+  /** 菜单里的开关：图标和「音乐」不动，只改后面写开关的那一格；没有那一格时整个按钮写字 */
+  const state = button.querySelector<HTMLElement>('.toggle-state')
   const updateButton = () => {
     // 写明是音乐、开着还是关着：只有符号时分不清音乐和音效，也看不出是状态还是按钮
-    button.textContent = enabled ? `♫ ${titleShown || '音乐：开'}` : '♫ 音乐：关'
+    if (state) state.textContent = enabled ? titleShown || '开' : '关'
+    else button.textContent = enabled ? `♫ ${titleShown || '音乐：开'}` : '♫ 音乐：关'
     button.setAttribute('aria-label', enabled ? '音乐：开' : '音乐：关')
     button.setAttribute('aria-pressed', String(enabled))
     button.title = enabled

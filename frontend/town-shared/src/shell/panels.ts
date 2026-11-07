@@ -11,7 +11,6 @@ import { initDiary } from '../diary'
 import { $ } from '../dom'
 import { installEmptyTown } from '../emptyTown'
 import type { EventsHandle } from '../events'
-import { lineLabel } from '../game/icons'
 import type { GameMap } from '../gameMap'
 import { initInfoPanel } from '../infoPanel'
 import { createResidentStrip } from '../info/strip'
@@ -95,6 +94,7 @@ export function createPanels(input: ShellInputs) {
   const strip = createResidentStrip({
     map,
     container: $('map'),
+    dock: $('hud-left'),
     localeName,
     open: (id) => {
       props.closeCard()
@@ -184,7 +184,7 @@ export function createPanels(input: ShellInputs) {
     townPrice: () => priceOf(models.options()[0]),
   })
   session.bind(center)
-  // 「我的小镇」：这一局的世界观、规则和重置，从顶栏的小镇名打开，地图留在背后
+  // 世界观面板：这一局的世界观、规则和重置，从地图左上角的「世界观」打开（菜单里也有），地图留在背后
   const town = createTownPanel({
     world: worldSettings,
     send,
@@ -200,7 +200,7 @@ export function createPanels(input: ShellInputs) {
     if (pages.residents.isOpen()) pages.residents.close()
     const names = list.map((j) => j.name ?? '').filter(Boolean)
     const how = model ? `用 ${model.name} 思考` : '连上模型后开始行动'
-    const start = pages.speeds.current() ? '' : ' · 点顶栏的「开始」让小镇动起来'
+    const start = pages.speeds.current() ? '' : ' · 点左上角的 ▶ 让小镇动起来'
     toast.show(`${namesOf(names)}搬进来了 · ${how}${start}`)
     lookAt(list[0].resident_id)
   }
@@ -242,10 +242,9 @@ export function createPanels(input: ShellInputs) {
     fixHold: (fix, provider) => fixHold(fix, provider),
   })
   const open = createOpeners({ avatar, pages, props, books, session })
+  // 菜单里的「消耗」「设定」（shell/plain.html）
   $('open-usage').onclick = open.usage
   $('open-settings').onclick = () => session.enter()
-  lineLabel($('open-usage'), 'chart', '消耗')
-  lineLabel($('open-settings'), 'settings', '设定')
   const emptyTown = installEmptyTown($('map'), {
     ready: () => !!worldSettings.state()?.ready,
     create: open.newVillager,
@@ -371,7 +370,7 @@ function createOpeners(parts: {
   }
 }
 
-/** 整页替换地图页的几个页面，以及顶栏的开始/暂停钮 */
+/** 整页替换地图页的几个页面，以及时钟牌旁的开始/暂停钮 */
 function createPages(
   input: ShellInputs,
   panels: {

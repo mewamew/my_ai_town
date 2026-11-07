@@ -1,6 +1,6 @@
-// 「我的小镇」：这一局的设定，跟着存档走——世界观、规则（初来乍到、村民生理、化身神力）、重置世界。
-// 顶栏左上的小镇名点开；手机顶栏放不下镇名，点顶上的时间，或「更多」里的入口。地图留在背后，打开不暂停世界，
-// 保存世界观和生理开关时服务端照旧会暂停。跟着这台设备走的模型、声音、显示留在右上角的「设定」。
+// 世界观面板：这一局的设定，跟着存档走——世界观、规则（初来乍到、村民生理、化身神力）、重置世界。
+// 地图左上角的「世界观」点开（电脑、手机一样），菜单里也有一格。地图留在背后，打开不暂停世界，
+// 保存世界观和生理开关时服务端照旧会暂停。跟着这台设备走的模型、声音、显示在菜单的「设定」里。
 import { $, button, el } from '../dom'
 import { gameIcon } from '../game/icons'
 import type { ClientMsg, ServerMsg } from '../protocol'
@@ -18,7 +18,6 @@ export function createTownPanel(deps: {
   onOpen: () => void
 }) {
   const trigger = $('town-button')
-  const clock = $('clock')
   const dialog = el('dialog', '', 'town-panel')
   dialog.setAttribute('aria-labelledby', 'town-panel-title')
   const title = el('h2', deps.townName)
@@ -62,11 +61,12 @@ export function createTownPanel(deps: {
 
   const dirty = () => worldview.isDirty() || physiology.isDirty()
 
-  /** 挂在小镇名下面；手机上镇名藏着（量出来没有宽度），由样式贴底 */
+  /** 挂在「世界观」按钮下面、和时钟牌左边对齐；手机上由样式贴底 */
   function place() {
     const r = trigger.getBoundingClientRect()
     if (!r.width) return
-    dialog.style.setProperty('--town-left', `${Math.max(8, Math.round(r.left))}px`)
+    const left = document.getElementById('hud-left')?.getBoundingClientRect().left ?? r.left
+    dialog.style.setProperty('--town-left', `${Math.max(8, Math.round(left))}px`)
     dialog.style.setProperty('--town-top', `${Math.round(r.bottom + 6)}px`)
   }
   function open() {
@@ -85,7 +85,7 @@ export function createTownPanel(deps: {
   function tryClose() {
     if (
       dirty() &&
-      !confirm('「我的小镇」里有没保存的修改。\n「确定」放弃修改并关上；「取消」继续编辑。')
+      !confirm('世界观或规则里有没保存的修改。\n「确定」放弃修改并关上；「取消」继续编辑。')
     )
       return
     discardAll()
@@ -110,16 +110,6 @@ export function createTownPanel(deps: {
   })
 
   trigger.onclick = open
-  // 时间也能点开：手机上它是唯一露在顶栏的世界信息
-  clock.setAttribute('role', 'button')
-  clock.tabIndex = 0
-  clock.title = '这一局的设定：世界观、规则'
-  clock.onclick = open
-  clock.onkeydown = (event) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return
-    event.preventDefault()
-    open()
-  }
 
   const panel: ShellPanel = {
     handleMsg: (msg: ServerMsg) => reset.handleMsg(msg),

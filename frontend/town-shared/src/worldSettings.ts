@@ -9,16 +9,16 @@ import { $, button, el, query } from './dom'
 import { newId } from './ids'
 import { gameIcon, iconLabel } from './game/icons'
 import type { createModelSession } from './models/session'
-import { isCompact, isTouch } from './platform'
+import { isTouch } from './platform'
 
 export const DEFAULT_WORLDVIEW = '这是一个宁静的小镇。居民相互认识，各自安排日常生活。'
 
-/** 「我的小镇」在哪儿打开：电脑点左上角的小镇名，手机顶栏放不下镇名，点顶上的时间（「更多」里也有） */
+/** 世界观面板在哪儿打开：电脑和手机都是地图左上角的「世界观」（菜单里也有） */
 export function townEntryHint() {
-  return isCompact() ? '点顶上的时间' : '点左上角的小镇名'
+  return '点左上角的「世界观」'
 }
 
-/** 一个世界设定控制器，同时服务首次进入的世界观对话框、顶栏的世界状态标签和「我的小镇」面板，
+/** 一个世界设定控制器，同时服务首次进入的世界观对话框、时钟牌下的世界状态标签和世界观面板，
  *  后端是唯一状态来源。 */
 export function createWorldSettings(
   send: (msg: ClientMsg) => void,
@@ -40,7 +40,8 @@ export function createWorldSettings(
   flag.id = 'world-mode'
   flag.className = 'world-mode'
   flag.textContent = '读取世界设定…'
-  $('world-facts').after(flag)
+  // 挂在时钟牌下面，和断线、全镇暂停的提示排在一起
+  $('hud-flags').append(flag)
   const dialog = document.createElement('dialog')
   dialog.className = 'world-setup'
   dialog.id = 'world-setup'
@@ -76,8 +77,8 @@ export function createWorldSettings(
             ? '测试模式'
             : 'AI 自主生活'
     if (game) iconLabel(flag, 'spark', flag.textContent ?? '世界设定', true)
-    // 2D 顶栏只在不寻常的状态下显示这个标签；正常的 AI 自主生活不占顶栏位置。
-    // 断开时也不显示：顶栏的连接状态和地图上的提示已经写了正在重新连接
+    // 只在不寻常的状态下显示这个标签；正常的 AI 自主生活不占地方。
+    // 断开时也不显示：时钟牌下的连接状态和地图上的提示已经写了正在重新连接
     const normal = online && !!state?.ready && !state.mock
     flag.hidden = !game && (normal || !online)
     flag.title = state?.mock
@@ -117,7 +118,7 @@ export function createWorldSettings(
     notify()
     send(build(state, id))
   }
-  /** 陌生环境开关：「我的小镇」规则的第一项，切换就保存；显示值始终来自后端回读 */
+  /** 陌生环境开关：世界观面板规则的第一项，切换就保存；显示值始终来自后端回读 */
   function strangersSwitch() {
     const root = el('section', '', 'physiology-switches town-rule')
     const row = el('label', '', 'physiology-row')
@@ -279,7 +280,7 @@ export function createWorldSettings(
         done
       )
     },
-    /** 顶栏的世界状态标签（待设置世界观、测试模式）点开「我的小镇」 */
+    /** 时钟牌下的世界状态标签（待设置世界观、测试模式）点开世界观面板 */
     setOpenTown(open: () => void) {
       flag.onclick = open
     },
@@ -312,7 +313,7 @@ export function createWorldSettings(
         )
           onChanged()
         state = msg.state
-        if (!state.ready) firstStatus.textContent = '世界已暂停。保存后，点顶栏的开始运行。'
+        if (!state.ready) firstStatus.textContent = '世界已暂停。保存后，点左上角的 ▶ 开始运行。'
         notify()
         return true
       }
@@ -335,7 +336,7 @@ export function createWorldSettings(
       }
       return false
     },
-    /** 「我的小镇」里的世界观：平时只读，点「编辑」就地改。草稿只在本地；修订号变了但世界观没变
+    /** 世界观面板里的世界观：平时只读，点「编辑」就地改。草稿只在本地；修订号变了但世界观没变
      *  （生理、神力也共用修订号）时草稿照旧能存，世界观在别处真改过了才提醒。 */
     worldviewSection() {
       const root = el('section', '', 'town-section town-worldview')

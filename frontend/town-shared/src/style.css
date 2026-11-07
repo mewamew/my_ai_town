@@ -136,55 +136,6 @@ select {
   position: relative;
 }
 
-/* 顶栏左上的小镇名：点开「我的小镇」（这一局的世界观、规则、重置）；样子和旁边的天气钮一样 */
-#town-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 24em;
-  min-height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-l);
-  background: var(--surface-sunken);
-  color: var(--text);
-  cursor: pointer;
-}
-#town-button:hover,
-#town-button[aria-expanded='true'] {
-  border-color: var(--accent);
-}
-#app-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 14px;
-  font-weight: 600;
-}
-.town-caret {
-  flex: none;
-  font-size: 11px;
-  color: var(--text-2);
-}
-/* 时间也能点开「我的小镇」 */
-#clock[role='button'] {
-  cursor: pointer;
-}
-.back-to-maps {
-  color: var(--dim);
-  background: transparent;
-  border: none;
-  padding: 8px 4px;
-  font-size: 12px;
-}
-.back-to-maps:disabled {
-  opacity: 0.6;
-  cursor: wait;
-}
-.back-to-maps:hover {
-  color: var(--accent);
-}
 a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
@@ -206,144 +157,7 @@ a:focus-visible {
 .entry-actions a {
   color: var(--accent);
 }
-#clock {
-  font-size: 17px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-#conn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--dim);
-  cursor: default;
-}
-#conn-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--band-collapse);
-  flex: none;
-}
-#conn.ok {
-  color: var(--band-steady);
-}
-#conn.ok #conn-dot {
-  background: var(--band-steady);
-}
-#hold-flag {
-  font-size: 11px;
-  color: var(--band-collapse);
-  border: 1px solid var(--band-collapse);
-  border-radius: var(--r-pill);
-  padding: 1px 8px;
-  max-width: 42ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-#hold-flag.warn {
-  color: var(--busy);
-  border-color: var(--busy);
-}
-#avatar-flag {
-  font-size: 11px;
-  color: var(--band-steady);
-  border: 1px solid var(--band-steady);
-  border-radius: var(--r-pill);
-  padding: 1px 8px;
-  white-space: nowrap;
-}
-#audio-controls {
-  display: flex;
-  gap: 4px;
-}
-#audio-controls button {
-  padding-inline: 8px;
-  white-space: nowrap;
-}
-#audio-controls button[aria-pressed='false'] {
-  color: var(--dim);
-  background: transparent;
-}
-#topbar .spacer {
-  flex: 1;
-}
-/* 2D 顶栏（3D 的 game-theme 另有一套）：一行放下，放不下时先压缩标题和暂停原因 */
-body:not(.game-theme) #topbar {
-  flex-wrap: nowrap;
-  gap: 8px;
-  white-space: nowrap;
-}
-body:not(.game-theme) #topbar > * {
-  flex: none;
-}
-body:not(.game-theme) #topbar > #hold-flag {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-body:not(.game-theme) #topbar > #town-button {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-body:not(.game-theme) #topbar > .spacer {
-  flex: 1;
-}
-/* 开始/暂停钮：暂停时用主操作色，提示从这里开始；运行时是普通按钮 */
-#speeds {
-  display: flex;
-  flex: none;
-}
-.speed-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-width: 76px;
-  font-weight: 600;
-}
-.speed-toggle .game-icon {
-  width: 14px;
-  height: 14px;
-}
-.speed-toggle.go:not(:disabled) {
-  background: var(--accent-fill);
-  border-color: var(--accent-fill);
-  color: var(--on-accent);
-}
-.speed-toggle.go:hover:not(:disabled) {
-  background: var(--accent-strong);
-  border-color: var(--accent-strong);
-}
-body:not(.game-theme) #audio-controls button {
-  padding-inline: 7px;
-}
-/* 顶栏右边的入口：图标加字、字重和「开始」一样，底色深一档，免得在白底上看不出是按钮 */
-body:not(.game-theme) #topbar > :is(#open-usage, #open-settings) {
-  padding-inline: 11px;
-  font-weight: 600;
-  background: var(--surface-sunken);
-}
-body:not(.game-theme) #topbar > :is(#open-usage, #open-settings):hover {
-  background: var(--surface-hover);
-}
-body:not(.game-theme) #topbar > :is(#open-usage, #open-settings) .game-icon {
-  width: 16px;
-  height: 16px;
-}
-/* 空镇子（emptyTown.ts）：第一步是请村民，醒目留给头像条上的「邀请」（info/strip.css）；「开始」和暂停提示先让位 */
-html[data-empty-town] .speed-toggle.go:not(:disabled) {
-  background: var(--surface);
-  border-color: var(--line);
-  color: var(--text);
-}
-html[data-empty-town] .speed-toggle.go:hover:not(:disabled) {
-  background: var(--surface-sunken);
-  border-color: var(--text-3);
-}
+/* 空镇子（emptyTown.ts）：第一步是请村民，醒目留给头像条上的「邀请」（info/strip.css）；开始钮见 shell/hud.css，暂停提示先让位 */
 html[data-empty-town] .pause-hint {
   display: none;
 }
@@ -429,23 +243,6 @@ html[data-empty-town] .pause-hint {
 }
 html.avatar-controlling .empty-town {
   display: none;
-}
-/* 世界设定标签：只在测试模式、待设置等不寻常状态出现，写成小字灰色 */
-body:not(.game-theme) #world-mode {
-  padding: 0 6px;
-  color: var(--dim);
-  background: transparent;
-  border: 1px dashed var(--line);
-  border-radius: 4px;
-  font-size: 11px;
-}
-body:not(.game-theme) #world-mode:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-/* 顶栏压在地图上的浮层（按钮 ≤6、化身界面 12）之上 */
-#topbar {
-  z-index: 13;
 }
 
 #obs-main {
@@ -685,82 +482,9 @@ body:not(.game-theme) #world-mode:hover {
 #map:has(.model-wait:not([hidden])) .town-notices {
   top: 84px;
 }
-/* 顶栏的「等你连接模型」：橙色小圆点，点了和提示条的按钮一样 */
-.model-flag {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 0;
-  padding: 1px 10px 1px 8px;
-  border: 1px solid var(--busy);
-  border-radius: var(--r-pill);
-  background: var(--busy-soft);
-  color: var(--busy);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.model-flag::before {
-  content: '';
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: currentColor;
-}
+/* 时钟牌下的「等你连接模型」（样子见 shell/hud.css），点了和提示条的按钮一样 */
 .model-flag[hidden] {
   display: none;
-}
-/* 顶栏「帮助」的菜单与按键说明 */
-.help-menu {
-  position: fixed;
-  z-index: 80;
-  display: flex;
-  flex-direction: column;
-  min-width: 180px;
-  padding: 6px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-m);
-  background: var(--surface);
-  box-shadow: var(--elev-3);
-}
-.help-menu[hidden] {
-  display: none;
-}
-.help-menu > button {
-  border: 0;
-  background: transparent;
-  text-align: left;
-  padding: 8px 10px;
-}
-.help-menu > button:hover:not(:disabled) {
-  background: var(--surface-sunken);
-}
-.help-keys {
-  gap: 10px;
-  width: 340px;
-  padding: 14px 16px;
-}
-.help-keys b {
-  font-size: 14px;
-}
-.help-keys dl {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 6px 14px;
-  margin: 0;
-  font-size: 12.5px;
-}
-.help-keys dt {
-  color: var(--text);
-  font-weight: 600;
-}
-.help-keys dd {
-  margin: 0;
-  color: var(--text-2);
-}
-.help-keys > button {
-  align-self: flex-end;
-  border: 1px solid var(--line);
-  padding: 4px 12px;
 }
 /* 被另一个页面挤下线：屏幕正中一张卡，盖在向导和对话框之上，说清原因，回不回来由玩家决定 */
 .displaced-card {
@@ -950,10 +674,6 @@ body.resizing-info {
 }
 #event-latest-text.thought {
   color: var(--ink);
-}
-/* 手头的活：进度条 = 世界执行记录的计数 */
-#world-facts {
-  font-size: 12px;
 }
 /* ---------- 日志页 ---------- */
 #diary-title {
@@ -1893,12 +1613,13 @@ button.resident-wardrobe-card.automatic {
   #info-resizer {
     display: none;
   }
-  /* 右侧覆盖层 / 底部信息卡都会压住右下角，缩放钮挪到左上角 */
+  /* 右侧覆盖层 / 底部信息卡都会压住右下角，缩放钮挪到左边中间（左上角是时钟牌那一列） */
   .map-zoom {
     right: auto;
     bottom: auto;
     left: 12px;
-    top: 12px;
+    top: 50%;
+    transform: translateY(-50%);
   }
   #info-panel {
     position: absolute;
@@ -1941,9 +1662,6 @@ button.resident-wardrobe-card.automatic {
     border-left: none;
     border-top: 1px solid var(--line);
     box-shadow: 0 -6px 18px rgba(61, 70, 80, 0.15);
-  }
-  #clock {
-    font-size: 14px;
   }
   .persona-tabs {
     display: flex;
@@ -2544,11 +2262,6 @@ svg.zoom-detail .pp {
 }
 
 /* 各地图共用的运行世界设定。首次设定作为模态层，禁止后台地图接收操作。 */
-.world-mode {
-  color: var(--accent, var(--accent));
-  border-color: var(--line);
-  font-size: 12px;
-}
 .world-setup {
   box-sizing: border-box;
   width: min(650px, calc(100vw - 32px));
@@ -2624,13 +2337,5 @@ svg.zoom-detail .pp {
 @media (max-width: 700px) {
   .world-setup {
     padding: 20px;
-  }
-  #topbar {
-    flex-wrap: wrap;
-  }
-  .world-mode {
-    max-width: 150px;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 }

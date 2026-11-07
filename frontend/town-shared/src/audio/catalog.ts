@@ -3,7 +3,7 @@ import type { MusicCell } from './scene'
 
 export interface MusicTrack {
   id: string
-  /** 换曲时顶栏音乐按钮上亮几秒的曲名 */
+  /** 换曲时菜单里音乐开关上亮几秒的曲名 */
   title: string
   /** 在哪些场合放，见 scene.ts */
   cells: readonly MusicCell[]

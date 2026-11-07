@@ -10,21 +10,38 @@ import {
 } from './types'
 import { $, query } from '../dom'
 import './panel.css'
-import { iconLabel } from '../game/icons'
+import { pixelIcon, setPixelIcon, type PixelName } from '../game/pixel'
+
+/** 时钟牌上的天气图：晴天夜里画月亮 */
+function weatherIcon(kind: string, night: boolean): PixelName {
+  if (kind === 'clear') return night ? 'moon' : 'sun'
+  if (kind === 'overcast') return 'cloud'
+  if (kind === 'thunderstorm') return 'storm'
+  if (kind === 'snow') return 'snow'
+  return 'rain'
+}
+/** 「D2 21:30」是不是夜里（19 点到次日 5 点） */
+function isNight(clock: string) {
+  const hour = Number(/\s(\d{1,2}):\d{2}$/.exec(clock)?.[1] ?? 12)
+  return hour >= 19 || hour < 5
+}
 
 /** 控件只提交草案；显示的天气始终来自服务器回执或名册。 */
 export function createWeatherPanel(
   send: (msg: ClientMsg) => void,
   map: GameMap,
-  /** 游戏界面：触发钮只画图标 */
-  game: boolean
+  /** 游戏界面（3D 外壳，已不用）：和 2D 一样画像素天气图 */
+  _game: boolean
 ) {
+  // 时钟牌最前面的天气图，点开换天气
   const trigger = document.createElement('button')
   trigger.type = 'button'
   trigger.className = 'weather-trigger'
   trigger.hidden = true
   trigger.setAttribute('aria-haspopup', 'dialog')
-  $('world-facts').after(trigger)
+  const icon = pixelIcon('sun')
+  trigger.append(icon)
+  $('hud-clock').prepend(trigger)
   const dialog = document.createElement('dialog')
   dialog.className = 'weather-dialog'
   dialog.setAttribute('aria-labelledby', 'weather-title')
@@ -43,6 +60,7 @@ export function createWeatherPanel(
   const kind = get<HTMLSelectElement>('kind')
   for (const [value, label] of Object.entries(weatherLabels)) kind.add(new Option(label, value))
   let view: WeatherView | undefined
+  let night = false
   let worldId: string | undefined
   let online = false
   let ready = false
@@ -67,18 +85,10 @@ export function createWeatherPanel(
     trigger.hidden = !map.weatherSupported || !view
     if (trigger.hidden && dialog.open) dialog.close()
     if (view) {
-      if (game)
-        iconLabel(
-          trigger,
-          view.kind === 'clear' ? 'sun' : 'weather',
-          `${weatherLabels[view.kind]} · 设置天气`,
-          true
-        )
-      else {
-        // 带个小箭头、悬停时说明：只写「晴天」时看不出它能点开
-        trigger.textContent = `${weatherLabels[view.kind]}${view.mode === 'fixed' ? ' · 固定' : ''} ▾`
-        trigger.title = '天气：点开可以换成固定的天气，或者恢复自然变化'
-      }
+      setPixelIcon(icon, weatherIcon(view.kind, night))
+      const label = `${weatherLabels[view.kind]}${view.mode === 'fixed' ? ' · 固定' : ''}`
+      trigger.setAttribute('aria-label', `天气：${label}`)
+      trigger.title = `${label}：点开可以换成固定的天气，或者恢复自然变化`
       get<HTMLElement>('current').textContent =
         `当前：${weatherLabels[view.kind]} · ${view.mode === 'natural' ? '自然变化' : '固定天气'}`
       get<HTMLElement>('hint').textContent =
@@ -147,6 +157,9 @@ export function createWeatherPanel(
         render()
       }
       if (msg.type === 'roster') {
+        const wasNight = night
+        night = isNight(msg.clock)
+        if (night !== wasNight && view) render()
         accept(msg.environment)
         return false
       }

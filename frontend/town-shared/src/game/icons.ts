@@ -94,7 +94,7 @@ export function iconLabel(element: HTMLElement, name: string, label: string, ico
   element.setAttribute('aria-label', label)
   if (iconOnly) element.title = label
 }
-/** 线条图标加看得见的文字：顶栏入口用，和手机底部入口是同一套线条图标 */
+/** 线条图标加看得见的文字：角色卡等处的入口用，和手机底部入口是同一套线条图标 */
 export function lineLabel(element: HTMLElement, name: string, label: string) {
   const text = document.createElement('span')
   text.textContent = label

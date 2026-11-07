@@ -1,41 +1,54 @@
-<!-- 平铺界面（2D 地图）的外壳部件，由 shell/layout.ts 按 data-slot 放进 gameShell.html 的骨架。 -->
-<template data-slot="topbar">
-  <button id="back-to-maps" class="back-to-maps">← 选择小镇</button>
+<!-- 平铺界面（2D 地图）的外壳部件，由 shell/layout.ts 按 data-slot 放进 gameShell.html 的骨架。
+     没有顶栏，地图铺满：左上一列是时钟牌、开始钮、「世界观」，下面挂有事才出现的提示和头像条；
+     右上角「菜单」收其余入口（shell/menu.ts）。样式在 shell/hud.css，图标见 game/pixel.ts。 -->
+<template data-slot="map"
+  ><div class="hud-left" id="hud-left">
+    <div class="hud-row">
+      <!-- 时钟牌：天气钮由 weather/panel.ts 放到最前面 -->
+      <div class="hud-clock" id="hud-clock">
+        <span class="hud-time">
+          <b><span id="clock">--:--</span><small id="world-facts"></small></b>
+          <span class="hud-place"
+            ><span id="hud-day"></span><span id="app-title">AI小镇</span></span
+          >
+        </span>
+      </div>
+      <div id="speeds" role="group" aria-label="世界时间"></div>
+      <button
+        id="town-button"
+        class="hud-button"
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded="false"
+        title="这一局的世界观、规则和重置世界"
+      >
+        <i data-pixel="scroll"></i><span>世界观</span>
+      </button>
+    </div>
+    <!-- 有事才出现：断线、全镇暂停的原因、等模型、测试模式、化身在场 -->
+    <div class="hud-flags" id="hud-flags">
+      <span id="conn" title="连接中…"
+        ><span id="conn-dot"></span><span id="conn-text">连接中…</span></span
+      >
+      <span id="hold-flag" hidden></span>
+      <span id="avatar-flag" title="有人在控制化身；这时世界按正常速度走，不自动快进" hidden
+        >化身在场</span
+      >
+    </div>
+  </div>
   <button
-    id="town-button"
+    id="open-menu"
+    class="hud-button hud-menu-button"
     type="button"
     aria-haspopup="dialog"
     aria-expanded="false"
-    title="这一局的设定：世界观、规则、重置世界"
+    aria-controls="game-menu"
+    title="菜单：居民、设定、消耗、帮助、选择小镇（Esc）"
   >
-    <span id="app-title">AI小镇</span><span class="town-caret" aria-hidden="true">▾</span>
+    <i data-pixel="bars"></i><span>菜单</span>
   </button>
-  <span id="clock">--:--</span>
-  <span id="world-facts" class="dim"></span>
-  <span id="conn" title="连接中…"
-    ><span id="conn-dot"></span><span id="conn-text">连接中…</span></span
-  >
-  <div id="speeds" role="group" aria-label="世界时间"></div>
-  <div id="audio-controls" role="group" aria-label="游戏声音">
-    <button id="music-toggle" type="button" aria-pressed="true" aria-label="音乐：开">
-      ♫ 音乐：开
-    </button>
-    <button id="effects-toggle" type="button" aria-pressed="true" aria-label="音效：开">
-      ♪ 音效：开
-    </button>
-  </div>
-  <span id="hold-flag" hidden></span>
-  <span id="avatar-flag" title="有人在控制化身；这时世界按正常速度走，不自动快进" hidden
-    >化身在场</span
-  >
-  <span class="spacer"></span>
-  <button id="open-usage" title="模型请求与 token 消耗">消耗</button>
-  <button id="open-settings" title="模型、额度、声音、显示">设定</button>
-  <button id="open-help" title="开局向导、新手提示和按键说明">帮助</button>
-</template>
-<!-- 地图左下角的入口：场景物品、书与公告、摆道具，放在地图画面之前 -->
-<template data-slot="map"
-  ><div class="map-corner">
+  <!-- 地图左下角的入口：场景物品、书与公告、摆道具 -->
+  <div class="map-corner">
     <button
       id="open-props"
       class="map-props-button"
@@ -139,6 +152,56 @@
       </button>
       <button id="info-diary" type="button" title="按天看做了什么、想了什么">经历</button>
       <button id="info-chat" type="button" title="参与过的聊天和完整台词">聊过的</button>
+    </div>
+  </div></template
+>
+<!-- 右上角「菜单」：一级入口以外的都在这里，电脑挂在菜单钮下面，手机从底部弹出（shell/menu.ts）。
+     「居民」只在电脑上（手机底部入口里有），「摆道具」只在手机上（电脑在地图左下角）。 -->
+<template data-slot="body"
+  ><div class="game-menu-shade" id="game-menu-shade" hidden></div>
+  <div class="game-menu" id="game-menu" role="dialog" aria-labelledby="game-menu-title" hidden>
+    <div class="game-menu-head">
+      <b id="game-menu-title">菜单</b>
+      <span class="game-menu-tip">按 <kbd>Esc</kbd> 打开或关上</span>
+    </div>
+    <div class="game-menu-grid" id="game-menu-grid">
+      <button type="button" id="menu-town">
+        <span class="menu-slot"><i data-pixel="scroll"></i></span><b>世界观</b
+        ><small>规则 · 重置</small>
+      </button>
+      <button type="button" id="menu-residents">
+        <span class="menu-slot"><i data-pixel="people"></i></span><b>居民</b
+        ><small>名册 · 邀请</small>
+      </button>
+      <button type="button" id="menu-placing">
+        <span class="menu-slot"><i data-pixel="hammer"></i></span><b>摆道具</b
+        ><small>往地图上放</small>
+      </button>
+      <button type="button" id="open-settings" title="模型、额度、声音、显示">
+        <span class="menu-slot"><i data-pixel="gear"></i></span><b>设定</b
+        ><small>模型 · 显示</small>
+      </button>
+      <button type="button" id="open-usage" title="模型请求与 token 消耗">
+        <span class="menu-slot"><i data-pixel="coin"></i></span><b>消耗</b><small>请求与花费</small>
+      </button>
+      <button type="button" id="open-help" title="开局向导、新手提示和按键说明">
+        <span class="menu-slot"><i data-pixel="help"></i></span><b>帮助</b
+        ><small class="desk-note">向导 · 按键</small><small class="phone-note">向导 · 提示</small>
+      </button>
+      <button type="button" id="back-to-maps" title="保存这一局，回到选择小镇">
+        <span class="menu-slot"><i data-pixel="door"></i></span><b>选择小镇</b
+        ><small>保存后离开</small>
+      </button>
+    </div>
+    <div class="game-menu-help" id="game-menu-help" hidden></div>
+    <div class="game-menu-sound">
+      <span>声音</span>
+      <button id="music-toggle" type="button" aria-pressed="true" aria-label="音乐：开">
+        <i data-pixel="note"></i><span>音乐</span><em class="toggle-state">开</em>
+      </button>
+      <button id="effects-toggle" type="button" aria-pressed="true" aria-label="音效：开">
+        <i data-pixel="speaker"></i><span>音效</span><em class="toggle-state">开</em>
+      </button>
     </div>
   </div></template
 >

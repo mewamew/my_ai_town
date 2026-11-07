@@ -2,7 +2,7 @@ import type { ResidentContext } from './application'
 import type { ClientMsg, ModelChoice, ServerMsg } from './protocol'
 import type { GameMap } from './gameMap'
 // 设定中心外壳：只放跟着这台设备的东西，左侧目录分模型 / 游戏两组。这一局的世界观、规则和重置世界在
-// 「我的小镇」（town/panel.ts），村民的人设、长相、用哪个模型在他的角色卡页签里（info/tabs.ts）。
+// 世界观面板（town/panel.ts，地图左上角「世界观」打开），村民的人设、长相、用哪个模型在他的角色卡页签里（info/tabs.ts）。
 // 底部保存栏只在有未保存修改时出现。进入时暂停与返回后恢复速度由游戏页外壳负责；
 // 这里管页面切换、脏状态与保存分发。
 

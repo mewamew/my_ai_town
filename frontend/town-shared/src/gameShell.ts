@@ -12,7 +12,7 @@ import type { MapEntry, Topology } from './mapDocument'
 import { installLayout } from './shell/layout'
 import { createPanels, type Panels } from './shell/panels'
 import { createReconnectHint } from './shell/reconnect'
-import { installHelpMenu } from './shell/help'
+import { createGameMenu } from './shell/menu'
 import { installMapButtons, showConnection } from './shell/topbar'
 import { reopenTown } from './townApi'
 import { installMobileChrome } from './mobile/chrome'
@@ -112,7 +112,7 @@ export function startGameShell(
   panels.registry.add(tips.panel)
   wireMap(map, panels, tips.picked)
   systemBars('paper')
-  // 开局向导：第一次进新世界时代替首次对话框，手机和电脑一样；手机在「更多」、电脑在顶栏「帮助」里重新打开
+  // 开局向导：第一次进新世界时代替首次对话框，手机和电脑一样；「菜单 → 帮助」里重新打开
   const guide = createGuide({
     send: connection.send,
     save: connection.save,
@@ -155,7 +155,7 @@ export function startGameShell(
   panels.worldSettings.setFirstRun(() => {
     if (!guideOpened) {
       guideOpened = true
-      // 重置了世界（「我的小镇」已随重置关上）；开着整页设定时也先回到地图，向导走完正好看到新来的人
+      // 重置了世界（世界观面板已随重置关上）；开着整页设定时也先回到地图，向导走完正好看到新来的人
       if (panels.session.inSettings()) panels.session.exit()
       if (prefab) prefabSetup.open(prefab)
       else guide.open(guideDone() ? 2 : 0)
@@ -166,7 +166,14 @@ export function startGameShell(
     tips.reset()
     tips.start()
   }
-  installHelpMenu({ openGuide: () => guide.open(), resetTips })
+  // 右上角「菜单」（手机在底部入口里）：世界观、居民、设定、消耗、帮助、选择小镇和声音
+  const menu = createGameMenu({
+    openTown: panels.town.open,
+    openResidents: panels.open.residents,
+    openPlacing: panels.props.placing ? panels.open.placing : null,
+    help: { openGuide: () => guide.open(), resetTips },
+    onOpen: () => panels.avatar.stopMoving(),
+  })
   const back = installBack(panels)
   const chrome = installMobileChrome({
     speeds: panels.speeds,
@@ -176,13 +183,8 @@ export function startGameShell(
     chatHistory: panels.chatHistory,
     open: panels.open,
     watchBooks: panels.books.watch,
-    openSettings: () => void panels.session.enter(),
-    openTown: panels.town.open,
-    townName: selectedMap.name,
+    menu,
     avatar: panels.avatar,
-    audio,
-    openGuide: () => guide.open(),
-    resetTips,
   })
   back.front()
   // 面板盖住地图的边变了：告诉镜头；盖得更多时，正在看的村民若被盖住就挪到露出来的那块

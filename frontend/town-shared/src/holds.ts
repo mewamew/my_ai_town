@@ -1,5 +1,5 @@
 // 全镇暂停的说法与修法。同一个原因合成一张卡：标题说发生了什么，正文说接下来会怎样，
-// 按钮直接去修；服务端的原文收进「详情」。提示卡、顶栏和化身操作条共用。
+// 按钮直接去修；服务端的原文收进「详情」。提示卡、时钟牌下的提示和化身操作条共用。
 import type { HoldCause, PauseKind, WorldHold } from './protocol'
 
 /** 修复动作：换密钥、换服务、调额度、换模型、重试（清掉暂停接着跑） */
@@ -12,7 +12,7 @@ export interface HoldCopy {
   tone: 'danger' | 'warn'
   title: string
   line: string
-  /** 顶栏和化身操作条上的短说法 */
+  /** 时钟牌下的提示和化身操作条上的短说法 */
   short: string
   actions: { label: string; fix: HoldFix }[]
 }

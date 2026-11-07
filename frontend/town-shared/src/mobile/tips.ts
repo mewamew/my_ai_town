@@ -1,6 +1,6 @@
 // 一次性提示：第一次遇到时各出现一次，一次只出一条，不挡操作；点「知道了」或者做了提示里说的事
 // 就不再出现。看过的记在本机。手机和电脑说法不同：手机讲手势、指底部的「动态」，电脑讲鼠标键盘、
-// 指顶栏的「帮助」和事件栏的「展开」。
+// 指右上角的「菜单」（帮助在里面）和事件栏的「展开」。
 import { isWaiting } from '../display'
 import { button, el } from '../dom'
 import type { GameMap } from '../gameMap'
@@ -19,7 +19,7 @@ const TEXT: Record<TipId, string> = {
   events: '错过的对话和想法，都在下面的「动态」里。',
 }
 const DESK_TEXT: Partial<Record<TipId, string>> = {
-  gesture: '拖动地图看各处，滚轮缩放，空格暂停或继续。想再看一遍向导，点这里的「帮助」。',
+  gesture: '拖动地图看各处，滚轮缩放，空格暂停或继续。想再看一遍向导，点这里的「菜单」→「帮助」。',
   events: '错过的对话和想法，都在下面的事件栏里，点「展开」看全部。',
 }
 
@@ -96,7 +96,7 @@ export function createTips(map: GameMap) {
   function covered() {
     return (
       !!document.querySelector(
-        'dialog[open], .guide:not([hidden]), .m-pop:not([hidden]), .help-menu:not([hidden]), #event-full:not([hidden])'
+        'dialog[open], .guide:not([hidden]), .game-menu:not([hidden]), #event-full:not([hidden])'
       ) ||
       [...document.querySelectorAll<HTMLElement>('.page-view, #props-view')].some(
         (v) => !v.hidden && v.getClientRects().length
@@ -120,11 +120,12 @@ export function createTips(map: GameMap) {
       y: number,
       below = false,
       free = false,
-      /** 指着顶栏上的入口：放在它下面 */
+      /** 指着右上角的入口：放在它下面 */
       under = false
     const desk = !isCompact()
-    const top = (document.getElementById('topbar')?.getBoundingClientRect().bottom ?? 0) + 8
-    const help = desk ? document.getElementById('open-help') : null
+    // 提示不压住左上角那一排（时钟牌、开始、世界观）
+    const top = (document.querySelector('.hud-row')?.getBoundingClientRect().bottom ?? 0) + 8
+    const help = desk ? document.getElementById('open-menu') : null
     if (current.id === 'gesture' && help?.offsetParent) {
       const r = help.getBoundingClientRect()
       under = true
@@ -226,7 +227,7 @@ export function createTips(map: GameMap) {
     start: () => want('gesture'),
     /** 玩家在地图上点了一个人：「点一个人」那条算做过了。开局替玩家选中的第一位不算 */
     picked: () => done('tap'),
-    /** 「更多」或「帮助」里重新显示 */
+    /** 「菜单 → 帮助」里重新显示 */
     reset() {
       seen.clear()
       save()

@@ -118,9 +118,9 @@ export function createGuide(d: GuideDeps) {
       d.save(command, (ok, message) => (ok ? resolve(message) : reject(Error(message))))
     )
 
-  /** 手机和电脑说法不同的地方：「更多」里的入口，电脑在顶栏 */
+  /** 手机和电脑说法不同的地方：菜单在手机底部、电脑右上角 */
   const phone = () => isCompact()
-  const usageAt = () => (phone() ? '「更多 · 消耗」' : '顶栏的「消耗」')
+  const usageAt = () => (phone() ? '底部「菜单 · 消耗」' : '右上角「菜单 · 消耗」')
   // 向导里的选择
   let step = 0
   let preset: ProviderPreset = PRESETS[0]
