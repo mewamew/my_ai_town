@@ -5,7 +5,7 @@ use crate::{
     actor::Actor,
     intent::{BuiltinVerb, Intent, StopCond},
     path::{route, StartPoint},
-    topology::Topology,
+    topology::{StationKind, Topology},
 };
 use protocol::{At, Locus};
 
@@ -112,6 +112,7 @@ impl Actor {
         station: Option<&str>,
     ) -> Result<Option<String>> {
         let origin = self.locus.locale.clone();
+        let same_place = origin == locale;
         let start = StartPoint::at(topo, &self.locus);
         let journey = route(topo, &start, locale, station)?;
         let eta = journey.total_minutes();
@@ -138,6 +139,20 @@ impl Actor {
             BuiltinVerb::Goto.label(),
             ActKind::Travel { journey, stage },
         );
+        // 同一处所里挪到道具跟前、落脚点上不是出门，不写「出发前往」（回声湾：人在咖啡馆里，
+        // 走到咖啡机跟前也写「出发前往 潮声咖啡馆」）
+        if same_place {
+            return Ok(Some(match station.and_then(|id| topo.stations.get(id)) {
+                Some(s) if matches!(s.kind, StationKind::Arrival) => {
+                    format!("{} 走到 {dest_name}入口", self.name)
+                }
+                Some(s) => match s.name.strip_suffix("使用点") {
+                    Some(prop) => format!("{} 走到 {prop} 跟前", self.name),
+                    None => format!("{} 走到 {}", self.name, s.name),
+                },
+                None => format!("{} 在{dest_name}里走动", self.name),
+            }));
+        }
         // 「大约 1 分钟」：零点几分钟的精度对谁都没用
         Ok(Some(format!(
             "{} 出发前往 {dest_name}（大约 {} 分钟）",
