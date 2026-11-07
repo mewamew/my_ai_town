@@ -88,6 +88,8 @@ pub struct Recorder {
     /// 上一份完整名册；下一份只记跟它不同的地方
     roster: Option<Value>,
     keyframe: Duration,
+    /// 开头那几条以后录到过东西（名册变了、有世界日志）；收起时什么都没录到的一卷不留
+    eventful: bool,
     /// 后台压缩写满的段
     packing: Vec<JoinHandle<()>>,
 }
@@ -127,6 +129,7 @@ impl Recorder {
             state: BTreeMap::new(),
             roster: None,
             keyframe: Duration::ZERO,
+            eventful: false,
             packing: Vec::new(),
         };
         recorder.write_header()?;
@@ -136,6 +139,7 @@ impl Recorder {
             recorder.record(msg, &json)?;
         }
         recorder.out.flush().map_err(|e| recorder.io(e))?;
+        recorder.eventful = false;
         Ok(recorder)
     }
 
@@ -158,15 +162,20 @@ impl Recorder {
                 None => self.keyframe_line(t, now, &next)?,
                 Some(None) => {}
                 Some(Some(_)) if now - self.keyframe >= KEYFRAME => {
+                    self.eventful = true;
                     self.keyframe_line(t, now, &next)?
                 }
-                Some(Some(delta)) => self.line(t, "d", &delta.to_string())?,
+                Some(Some(delta)) => {
+                    self.eventful = true;
+                    self.line(t, "d", &delta.to_string())?
+                }
             }
             self.roster = Some(next);
         } else {
             if let Some(kind) = state_kind(msg) {
                 self.state.insert(kind, json.to_owned());
             }
+            self.eventful |= matches!(msg, ServerMsg::Event { .. });
             self.line(t, "m", json)?;
         }
         if now - self.flushed >= FLUSH {
@@ -184,7 +193,18 @@ impl Recorder {
     }
 
     /// 收尾：写完缓冲、记下结束时刻，关上最后一段再压好，等后台的压缩都做完。
+    /// 开头以后什么也没录到（世界一直暂停着就关了）的一卷不留，免得列表里一串空卷。
     pub fn finish(mut self) -> Result<(), HostError> {
+        if !self.eventful {
+            let Recorder {
+                dir, out, packing, ..
+            } = self;
+            drop(out);
+            for handle in packing {
+                let _ = handle.join();
+            }
+            return fs::remove_dir_all(&dir).map_err(|e| io_error(&dir, e));
+        }
         let flushed = self.out.flush().map_err(|e| self.io(e));
         self.header.ended_at = Some(now_ms());
         let header = self.write_header();

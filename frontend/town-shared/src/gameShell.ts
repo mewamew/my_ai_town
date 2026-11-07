@@ -4,7 +4,7 @@
 import './style.css'
 import { createGameAudio } from './audio/controller'
 import type { MusicWorld } from './audio/scene'
-import { createConnection } from './connection'
+import { createConnection, type ConnectionEvents, type GameConnection } from './connection'
 import { $, query } from './dom'
 import { initEvents } from './events'
 import type { GameMap } from './gameMap'
@@ -29,8 +29,12 @@ export function startGameShell(
   map: GameMap,
   topology: Topology,
   decorate: () => void,
-  /** musicWorld：地图风格定下放哪个世界的曲子，没有按海岸小镇 */
-  options: { normalSpeed?: number; musicWorld?: MusicWorld } = {}
+  /** musicWorld：地图风格定下放哪个世界的曲子，没有按海岸小镇；connection：重演录像时换掉 WebSocket */
+  options: {
+    normalSpeed?: number
+    musicWorld?: MusicWorld
+    connection?: (events: ConnectionEvents) => GameConnection
+  } = {}
 ) {
   // 界面类型只在这里定一次，作为参数交给各面板
   const game = false
@@ -52,46 +56,50 @@ export function startGameShell(
     id
   const reconnect = createReconnectHint($('map'))
   // 连接的回调只在 connect() 之后触发，那时面板都已建好
-  const connection = createConnection(
-    selectedMap.endpoint,
-    {
-      message: (message) => panels.registry.dispatch(message),
-      connected(recovered) {
-        showConnection(true)
-        if (recovered) {
-          reconnect.back()
-          events.pushLocal('已重新连上小镇')
-        }
-        panels.registry.connected()
-      },
-      disconnected() {
-        showConnection(false)
-        reconnect.lost()
-        events.pushLocal('小镇的连接断了，正在重新连接')
-        panels.registry.disconnected()
-      },
-      reopening: () => reconnect.reopening(),
-      // 另一个页面进了别的小镇：说清原因，玩家点「回到这个小镇」才重新打开（会挤掉那边）
-      displaced: (message) =>
-        reconnect.displaced(message, async () => {
-          const entry = await reopenTown(selectedMap.id, false)
+  const handlers: ConnectionEvents = {
+    message: (message) => panels.registry.dispatch(message),
+    connected(recovered) {
+      showConnection(true)
+      if (recovered) {
+        reconnect.back()
+        events.pushLocal('已重新连上小镇')
+      }
+      panels.registry.connected()
+    },
+    disconnected() {
+      showConnection(false)
+      reconnect.lost()
+      events.pushLocal('小镇的连接断了，正在重新连接')
+      panels.registry.disconnected()
+    },
+    reopening: () => reconnect.reopening(),
+    // 另一个页面进了别的小镇：说清原因，玩家点「回到这个小镇」才重新打开（会挤掉那边）
+    displaced: (message) =>
+      reconnect.displaced(message, async () => {
+        const entry = await reopenTown(selectedMap.id, false)
+        if (entry.mapHash !== selectedMap.mapHash) throw new Error('地图已变化')
+        selectedMap.endpoint = entry.endpoint
+        selectedMap.lease = entry.lease
+        connection.resume(entry.endpoint)
+      }),
+    local: (text, warning) => events.pushLocal(text, warning),
+  }
+  // 重演录像时不连世界，连接换成录像（town-2d 的 replay/）
+  const connection: GameConnection = options.connection
+    ? options.connection(handlers)
+    : createConnection(
+        selectedMap.endpoint,
+        handlers,
+        { townId: selectedMap.id, mapHash: selectedMap.mapHash },
+        // 世界进程不在了：请管理服务从存档重新打开，换新地址接着连；之后离开时用新的打开凭证关
+        async () => {
+          const entry = await reopenTown(selectedMap.id)
           if (entry.mapHash !== selectedMap.mapHash) throw new Error('地图已变化')
           selectedMap.endpoint = entry.endpoint
           selectedMap.lease = entry.lease
-          connection.resume(entry.endpoint)
-        }),
-      local: (text, warning) => events.pushLocal(text, warning),
-    },
-    { townId: selectedMap.id, mapHash: selectedMap.mapHash },
-    // 世界进程不在了：请管理服务从存档重新打开，换新地址接着连；之后离开时用新的打开凭证关
-    async () => {
-      const entry = await reopenTown(selectedMap.id)
-      if (entry.mapHash !== selectedMap.mapHash) throw new Error('地图已变化')
-      selectedMap.endpoint = entry.endpoint
-      selectedMap.lease = entry.lease
-      return entry.endpoint
-    }
-  )
+          return entry.endpoint
+        }
+      )
   const normalSpeed = options.normalSpeed ?? 1
   // 一句话建的小镇：世界观建议给首次对话框和开局向导，适合住进来的人给向导
   useTownCreation(selectedMap.id, selectedMap.creation)

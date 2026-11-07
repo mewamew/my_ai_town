@@ -23,7 +23,7 @@ export type SaveCommand = DistributiveOmit<
   >,
   'request_id'
 >
-interface ConnectionEvents {
+export interface ConnectionEvents {
   message(msg: ServerMsg): void
   connected(recovered: boolean): void
   /** 连着的时候断了；之后重连不上不再重复通知 */
@@ -33,6 +33,15 @@ interface ConnectionEvents {
   /** 这个小镇被另一个页面进的小镇挤掉了：不再自动重连，等玩家决定（resume 接着连） */
   displaced?(message: string): void
   local(text: string, warning?: boolean): void
+}
+
+/** 外壳要的连接：WebSocket 那个（createConnection），重演录像时换成录像（town-2d 的 replay/source.ts） */
+export interface GameConnection {
+  connect(): void
+  send(command: ClientMsg): void
+  save(command: SaveCommand, receipt: Receipt): void
+  resume(next: string): void
+  disconnect(): void
 }
 
 /** 断线时还没有回执的保存：服务器可能已经处理，也可能没有收到 */

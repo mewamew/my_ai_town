@@ -63,3 +63,45 @@ test('录下的一卷读回来，页面当时收到的名册和世界日志一�
   const last = reel.at(-1) && JSON.parse(reel.at(-1))
   assert.equal(header.to_clock, last.clock)
 })
+
+test('重演跳到录像里任意一刻，交出的名册和顺着放到那一刻的一样', async () => {
+  const { createReplaySource } = await import('../../frontend/town-2d/src/replay/source.ts')
+  const dir = path.join(sample, 'reel')
+  const segments = segmentFiles(fs.readdirSync(dir)).map((name) => {
+    const raw = fs.readFileSync(path.join(dir, name))
+    return (name.endsWith('.gz') ? zlib.gunzipSync(raw) : raw).toString('utf8')
+  })
+  const play = (texts, start) => {
+    const got = []
+    const source = createReplaySource(texts, {
+      message: (msg) => msg.type === 'roster' && got.push(msg),
+      connected: () => {},
+      local: () => {},
+    })
+    source.seek(start)
+    return { source, got }
+  }
+  const check = (texts) => {
+    const [first, last] = play(texts, 0).source.span()
+    // 顺着放：每 50 毫秒交一次，记下每一刻的名册
+    const forward = play(texts, first)
+    const at = new Map()
+    for (let t = first; t <= last; t += 50) {
+      forward.source.pump(t)
+      at.set(t, forward.got.at(-1))
+    }
+    // 跳到中间各处：拿到的名册和顺着放到那里时的一样
+    const times = [...at.keys()]
+    for (const t of times.filter((_, i) => i % 7 === 3))
+      assert.equal(canonical(play(texts, t).got.at(-1)), canonical(at.get(t)), `跳到 ${t} 毫秒`)
+    return at
+  }
+  const at = check(segments)
+  // 录像长了，中间会有别的完整名册：在中间插一份，跳转要从它之前最近的那份接起
+  const lines = segments.flatMap((text) => text.split('\n').filter(Boolean))
+  const middle = Math.floor(lines.length / 2)
+  const t = JSON.parse(lines[middle]).t
+  const before = [...at.keys()].filter((k) => k <= t).at(-1)
+  lines.splice(middle, 0, JSON.stringify({ t, k: at.get(before) }))
+  check([lines.join('\n') + '\n'])
+})

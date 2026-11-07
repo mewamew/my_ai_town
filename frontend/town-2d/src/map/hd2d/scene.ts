@@ -751,20 +751,23 @@ export class HdScene {
     this.setAngles(this.pitchDegrees, degrees)
   }
 
-  private setAngles(pitch: number, yaw: number) {
+  /** 俯角和转角一起设；exact 时俯角不取整、也不记到本机（重演拍素材时逐帧连续地转） */
+  setAngles(pitch: number, yaw: number, exact = false) {
     if (!Number.isFinite(pitch) || !Number.isFinite(yaw)) return
-    const next = Math.round(Math.min(PITCH_MAX, Math.max(PITCH_MIN, pitch)))
+    const clamped = Math.min(PITCH_MAX, Math.max(PITCH_MIN, pitch))
+    const next = exact ? clamped : Math.round(clamped)
     const nextYaw = normalizeYaw(yaw)
     if (next === this.pitchDegrees && nextYaw === this.yawDegrees) return
     this.pitchDegrees = next
     this.yawDegrees = nextYaw
     this.tilt = tiltOf(next, nextYaw)
-    try {
-      localStorage.setItem(PITCH_KEY, String(next))
-      localStorage.setItem(YAW_KEY, String(nextYaw))
-    } catch {
-      // 存不下就只在这次页面里生效
-    }
+    if (!exact)
+      try {
+        localStorage.setItem(PITCH_KEY, String(next))
+        localStorage.setItem(YAW_KEY, String(nextYaw))
+      } catch {
+        // 存不下就只在这次页面里生效
+      }
     this.applyTilt()
     this.onTilt?.()
   }

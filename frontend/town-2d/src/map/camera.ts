@@ -352,6 +352,27 @@ export class MapCamera {
   }
   /** 双击（手指双点）放大两档；控制化身时关掉，连点两下是在走路 */
   doubleClickZoom = true
+  /** 重演拍素材时镜头连续移动，不按地图像素吸附（见 applyViewBox）；平常吸附，像素边缘清楚 */
+  smooth = false
+
+  /** 拍素材用（replay/director.ts）：镜头对准的地面点（地图坐标）和画面横着看得见多宽（地图单位） */
+  shot(): { center: [number, number]; width: number } {
+    return { center: this.unproject(this.center), width: this.viewSize()[0] }
+  }
+
+  /** 按地面点和宽度摆镜头：不落档、不带动画，分辨率不同取景也一样。rise 是那一点放到画面中间以后
+   *  再往上抬多少（视图单位），对准人的身子中间用 */
+  setShot(center: [number, number], width: number, rise = 0) {
+    if (!(width > 0)) return
+    this.stopZoomAnimation()
+    this.glide = null
+    this.followVelocity = [0, 0]
+    this.scale = (this.size()[0] * PIXEL) / width
+    const [x, y] = this.project(center)
+    this.center = [x, y - rise]
+    this.fitted = false
+    this.applyViewBox()
+  }
 
   getViewBox(): number[] {
     return [...this.vb]
@@ -644,7 +665,8 @@ export class MapCamera {
   private applyViewBox() {
     const [w, h] = this.viewSize()
     const unit = PIXEL / this.scale
-    const snap = (v: number, u: number) => (this.scale >= 1 ? Math.round(v / u) * u : v)
+    const snap = (v: number, u: number) =>
+      this.scale >= 1 && !this.smooth ? Math.round(v / u) * u : v
     this.vb = [
       snap(this.center[0] - w / 2, unit),
       snap(this.center[1] - h / 2, unit / this.vScale),

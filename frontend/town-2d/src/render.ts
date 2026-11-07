@@ -6,6 +6,8 @@ import type { Appearance, PropCatalog, PropView } from 'town-shared/props/types'
 import type { Atlas, Topology } from 'town-shared/mapDocument'
 import type {
   AvatarPrompt,
+  CameraShot,
+  DirectorCamera,
   PlaceSpot,
   ResidentEntry,
   ScreenBox,
@@ -261,10 +263,13 @@ export class TownMap {
     }
     return !!this.hd
   }
-  /** 立体场景每次画之前：控制化身时镜头归化身管，不然跟着「跟随中」的村民 */
+  /** 立体场景每次画之前：重演拍素材时镜头归导演管（见 director），控制化身时归化身管，
+   *  不然跟着「跟随中」的村民 */
   private beforeFrame(t: number): boolean {
+    if (this.directorHook) return this.directorHook(t)
     return this.frameHook ? this.frameHook(t) : this.followWatched(t)
   }
+  private directorHook: ((t: number) => boolean) | null = null
 
   /** 「跟随中」的村民（见 watch） */
   private watched: {
@@ -1324,6 +1329,34 @@ export class TownMap {
   }
   /** 进游戏后第一份名册里选中的人：镜头对准他，不停在空广场 */
   private rosters = 0
+  /** 重演拍素材时景深对准的人（见 director）；不画选中的光圈 */
+  private directorFocus: string | null = null
+  /** 重演拍素材用的镜头（replay/director.ts）：机位按地面点、宽度、转角、俯角读写 */
+  readonly director: DirectorCamera = {
+    shot: (): CameraShot => ({
+      ...this.camera.shot(),
+      yaw: this.hd?.yaw ?? 0,
+      pitch: this.hd?.pitch ?? DEFAULT_PITCH,
+    }),
+    setShot: (shot, rise = 0) => {
+      if (this.hd && (shot.pitch !== this.hd.pitch || shot.yaw !== this.hd.yaw))
+        this.hd.setAngles(shot.pitch, shot.yaw, true)
+      this.camera.setShot(shot.center, shot.width, rise)
+    },
+    drawnAt: (id) => this.getDrawnPos(id),
+    bodyRise: () => this.watchRise(),
+    focus: (id) => {
+      this.directorFocus = id
+      this.syncFocus()
+    },
+    setSmooth: (on) => {
+      this.camera.smooth = on
+    },
+    onFrame: (hook) => {
+      this.directorHook = hook
+      this.hd?.requestDraw()
+    },
+  }
   setSelected(id: string | null) {
     this.selectedId = id
     this.residents.setSelected(id)
@@ -1338,7 +1371,7 @@ export class TownMap {
   }
   /** 立体场景的焦点跟着选中的人，没选人时跟着玩家操控的人；他在交谈时清晰带收窄，像特写 */
   private syncFocus() {
-    const id = this.selectedId ?? this.liveId
+    const id = this.directorFocus ?? this.selectedId ?? this.liveId
     const member = id ? this.entries.find((e) => e.member.id === id)?.member : undefined
     this.hd?.setFocusSubject(member ? member.id : null, !!member?.chat)
   }

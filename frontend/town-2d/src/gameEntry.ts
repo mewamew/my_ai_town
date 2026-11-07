@@ -11,14 +11,22 @@ installSelects()
 installFavicon()
 document.body.innerHTML = shell
 
-const id = new URLSearchParams(location.search).get('map')
+const query = new URLSearchParams(location.search)
+const id = query.get('map')
 if (!id) location.replace(new URL('./', location.href))
 else {
   try {
-    $('game-loading-message').textContent = '正在连接世界并准备画面'
-    const [entry, { startGame }] = await Promise.all([openMap(id), import('./main')])
-    $('game-loading-message').textContent = '正在读取地图与场景缓存'
-    await startGame(entry)
+    if (query.has('replay')) {
+      // 重演录像拍素材：不开世界，等拍摄脚本递进来地图和录像（scripts/replay/shoot.mjs）
+      $('game-loading-message').textContent = '正在等录像'
+      const { startReplay } = await import('./replay/boot')
+      await startReplay(id)
+    } else {
+      $('game-loading-message').textContent = '正在连接世界并准备画面'
+      const [entry, { startGame }] = await Promise.all([openMap(id), import('./main')])
+      $('game-loading-message').textContent = '正在读取地图与场景缓存'
+      await startGame(entry)
+    }
     $('game-loading').hidden = true
     $('obs-view').hidden = false
   } catch (error) {

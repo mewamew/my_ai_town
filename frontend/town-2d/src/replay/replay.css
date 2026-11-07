@@ -1,0 +1,31 @@
+/* 重演拍素材时的干净画面：地图铺满，按钮、面板、提示都藏掉；名字和头顶气泡另有开关。 */
+body.replay-clean #hud-left,
+body.replay-clean #open-menu,
+body.replay-clean #info-panel,
+body.replay-clean #info-resizer,
+body.replay-clean #event-bar,
+body.replay-clean .map-corner,
+body.replay-clean .map-zoom,
+body.replay-clean .map-fabs,
+body.replay-clean .resident-strip,
+body.replay-clean .strip-peek,
+body.replay-clean .resident-focus,
+body.replay-clean .pause-hint,
+body.replay-clean .fast-hint,
+body.replay-clean .model-wait,
+body.replay-clean .avatar-ui,
+body.replay-clean .coach,
+body.replay-clean .town-notices,
+body.replay-clean .map-toast,
+body.replay-clean .prop-card,
+body.replay-clean .place-hint {
+  display: none !important;
+}
+body.replay-no-names [data-vid] .vn,
+body.replay-no-names [data-vid] .vv,
+body.replay-no-names [data-vid] .vwait {
+  display: none;
+}
+body.replay-no-bubbles .bubbles {
+  display: none;
+}

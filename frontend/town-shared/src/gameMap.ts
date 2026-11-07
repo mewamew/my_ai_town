@@ -42,6 +42,29 @@ export interface WalkStep {
   point: WalkTarget
   portal?: string
 }
+/** 拍素材时的一个机位：对准地面上哪一点（地图坐标）、画面横着看得见多宽（地图单位）、转角和俯角（度） */
+export interface CameraShot {
+  center: [number, number]
+  width: number
+  yaw: number
+  pitch: number
+}
+/** 重演拍素材（town-2d 的 replay/director.ts）用的镜头：读写机位，看人画在哪，焦点对准谁 */
+export interface DirectorCamera {
+  shot(): CameraShot
+  /** rise：对准的那一点放到画面中间以后再往上抬多少（视图单位） */
+  setShot(shot: CameraShot, rise?: number): void
+  /** 人此刻画在哪（地图坐标，画面平滑走动时比名册晚一点） */
+  drawnAt(id: string): [number, number] | undefined
+  /** 人身子中间离脚底多高（视图单位）：对准人时往上抬这么多，人整个在画面正中 */
+  bodyRise(): number
+  /** 景深的焦点对准谁（不画选中的光圈）；null 交还给选中的人 */
+  focus(id: string | null): void
+  /** 镜头连续移动、不按地图像素吸附 */
+  setSmooth(on: boolean): void
+  /** 每画一帧之前调 hook（摆机位放在这里，和人物同一帧到位）；比化身、跟随的镜头优先，null 交还 */
+  onFrame(hook: ((t: number) => boolean) | null): void
+}
 /** 共用外壳与地图之间的约定。面板用到的坐标是共用的 XZ 投影。 */
 export interface GameMap {
   /** 地图会画天气：外壳才显示天气控件 */
@@ -125,6 +148,8 @@ export interface GameMap {
   getViewBox(): number[]
   setViewBox(view: number[]): void
   setSelected(id: string | null): void
+  /** 重演拍素材用的镜头；只有立体场景的地图有 */
+  readonly director?: DirectorCamera
   update(entries: ResidentEntry[]): void
   dispose(): void
   handleMsg?(message: ServerMsg): void
