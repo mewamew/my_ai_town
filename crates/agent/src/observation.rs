@@ -1,6 +1,7 @@
 //! 只投影本人状态、眼前对象与已知地图。观察仪的世界全貌不进入村民上下文。
 use crate::{interaction, prompts, resident, AgentError};
 use kernel::{intent::BuiltinVerb, world::ActKind, World};
+use protocol::FactKind;
 use serde_json::{json, Value};
 
 /// 建镇生成器给户外活动区域生成的落脚点编号前缀（scripts/mapgen/spatial.mjs 的 spots）。
@@ -152,17 +153,46 @@ fn people_here(world: &World, actor: &str, locale: &str) -> Vec<Value> {
         .collect()
 }
 
+/// 没逐条列出的更早事件并进 earlier_events：几条、其中几句是交谈、从几点到几点。`skipped` 是
+/// （时刻，是不是交谈），按时间先后；已有的 earlier_events 比它们更早，起点不变。
+pub(crate) fn note_earlier(view: &mut Value, skipped: impl IntoIterator<Item = (f64, bool)>) {
+    let earlier = &view["earlier_events"];
+    let mut omitted = earlier["omitted"].as_u64().unwrap_or(0);
+    let mut speech = earlier["speech"].as_u64().unwrap_or(0);
+    let mut from = earlier["from"].as_str().map(str::to_owned);
+    let mut to = None;
+    for (at, said) in skipped {
+        omitted += 1;
+        speech += u64::from(said);
+        from.get_or_insert_with(|| kernel::clock_string(at));
+        to = Some(at);
+    }
+    if let Some(to) = to {
+        view["earlier_events"] = json!({
+            "omitted": omitted,
+            "speech": speech,
+            "from": from,
+            "to": kernel::clock_string(to)
+        });
+    }
+}
+
 /// 随时间和位置变化的部分：新事件、身体、眼前道具与人、互动。
+///
+/// 新事件积压多时只列最近的：交谈轮次不推进生活这边的游标（runtime/chat.rs），聊得久，攒下的多是
+/// 聊天里听过的台词。从最早的一页页补看，醒来就活在几十分钟前（回声湾：到了灯塔还以为在老屋，一起聊
+/// 过的小满落后两个多小时）。更早的只在 earlier_events 里报条数和时间段，游标照样到最新；原话照样进
+/// 记忆（memory 有自己的进度），可以 recall。通知例外，照常列出。
 pub fn observe(world: &World, actor: &str, after: u64) -> Result<(Value, u64), AgentError> {
     let a = resident(world, actor)?;
-    let mut cursor = after;
-    let events: Vec<_> = a
-        .journal
-        .events_after(after)
+    let unread = a.journal.events_after(after);
+    let cursor = unread.last().map_or(after, |event| event.event_id);
+    let (older, recent) = unread.split_at(unread.len().saturating_sub(EVENTS_PER_OBSERVATION));
+    let events: Vec<_> = older
         .iter()
-        .take(EVENTS_PER_OBSERVATION)
+        .filter(|event| event.kind == FactKind::Notice)
+        .chain(recent)
         .map(|event| {
-            cursor = event.event_id;
             let mut event = event.clone();
             event.text = event.text.chars().take(EVENT_TEXT_CHARS).collect();
             event
@@ -209,10 +239,16 @@ pub fn observe(world: &World, actor: &str, after: u64) -> Result<(Value, u64), A
         "people_here": people_here(world, actor, &a.locus.locale),
         "events": events,
         "event_cursor": cursor,
-        "more_events": cursor < a.journal.cursor(),
         "interactions": interactions,
         "nearby_chats": world.nearby_chats(actor),
     });
+    note_earlier(
+        &mut value,
+        older
+            .iter()
+            .filter(|event| event.kind != FactKind::Notice)
+            .map(|event| (event.at, event.kind == FactKind::Speech)),
+    );
     // 建镇时生成的落脚点（水边、东头……）：停留时 target 填它的 id 就走过去
     let spots: Vec<_> = world
         .topo

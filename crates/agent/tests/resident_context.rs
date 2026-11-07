@@ -425,3 +425,69 @@ fn spots_of_the_current_place_are_listed_for_staying() {
         "没开玩法时观察里没有玩法那一栏，内置模型的题面不变"
     );
 }
+
+#[test]
+fn waking_after_a_long_chat_starts_from_what_just_happened() {
+    use protocol::{InteractionCommand as Command, InteractionKind};
+    // 交谈轮次不推进生活这边的游标；聊得久，聊完醒来要先看到刚发生的事，而不是从最早一句补看
+    // （回声湾：到了灯塔还以为在老屋）。更早的只报条数，游标直接到最新。
+    let mut w = world();
+    w.spawn("neighbor_0", "阿禾", "loc_a").unwrap();
+    w.enable_agent("neighbor_0").unwrap();
+    let mut r = runtime(&mut w, spacious());
+    let revision = |w: &kernel::World, id: &str| w.actor(id).unwrap().actions.revision;
+    let offer = Command::Offer {
+        partner_id: "neighbor_0".into(),
+        interaction: InteractionKind::Talk,
+        message: "聊聊老屋".into(),
+    };
+    w.interact("r1", "chat", revision(&w, "r1"), &offer)
+        .unwrap();
+    let accept = Command::Reply {
+        interaction_id: "chat".into(),
+        accept: true,
+        message: "好".into(),
+    };
+    w.interact("neighbor_0", "accept", revision(&w, "neighbor_0"), &accept)
+        .unwrap();
+    for i in 0..16 {
+        let turn = request(&mut r, &mut w);
+        let say = tool_call(
+            &format!("say-{i}"),
+            "interact",
+            json!({"operation":"say","message":format!("老屋第{i}件事")}),
+        );
+        assert!(reply_with(&mut r, &mut w, &turn, "", vec![say]));
+        let answer = Command::Say {
+            interaction_id: "chat".into(),
+            message: format!("听你说第{i}件"),
+            to: Some("r1".into()),
+        };
+        w.interact(
+            "neighbor_0",
+            &format!("n{i}"),
+            revision(&w, "neighbor_0"),
+            &answer,
+        )
+        .unwrap();
+        w.step(1.1);
+    }
+    let leave = Command::Leave {
+        interaction_id: "chat".into(),
+        message: "我先走了，傍晚灯塔见".into(),
+    };
+    w.interact("neighbor_0", "bye", revision(&w, "neighbor_0"), &leave)
+        .unwrap();
+    let q = life_request(&mut r, &mut w);
+    let body: Value = serde_json::from_str(&q.messages.last().unwrap().content).unwrap();
+    let observation = &body["observation"];
+    let events = observation["events"].as_array().unwrap();
+    let texts: Vec<_> = events.iter().map(|e| e["text"].as_str().unwrap()).collect();
+    let newest = w.actor("r1").unwrap().journal.cursor();
+    assert_eq!(events.last().unwrap()["event_id"], newest);
+    assert!(texts.iter().any(|t| t.contains("傍晚灯塔见")), "{texts:?}");
+    assert!(!texts.iter().any(|t| t.contains("老屋第0件事")));
+    assert!(observation["earlier_events"]["omitted"].as_u64().unwrap() > 0);
+    assert!(observation["earlier_events"]["speech"].as_u64().unwrap() > 0);
+    assert_eq!(q.stamp.seen_cursor, newest, "更早的不再一页页补看");
+}

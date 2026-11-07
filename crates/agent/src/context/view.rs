@@ -1,4 +1,4 @@
-//! 有界的当前世界视图。集合省略有来源可查；事件游标只覆盖实际展示的事件。
+//! 有界的当前世界视图。集合省略有来源可查；事件积压时只展示最近的，更早的报条数，游标到最新。
 use super::input::InputState;
 use crate::session::Session;
 use serde_json::{json, Value};
@@ -107,27 +107,42 @@ pub(crate) fn observation(s: &mut Session, raw: &Value, bytes: usize) -> (Value,
                 *event = json!({"event_id":event["event_id"],"kind":event["kind"],"at":event["at"],"text":event["text"],"context_source":source,"truncated":true});
             }
         }
-        let mut size = 2;
-        let keep = events
-            .iter()
-            .take_while(|event| {
-                size += event.to_string().len() + 1;
-                size <= bytes / 3
-            })
-            .count()
-            .max(usize::from(!events.is_empty()));
-        events.truncate(keep);
     }
-    let cursor = view["events"]
-        .as_array()
-        .and_then(|events| events.last())
-        .and_then(|event| event["event_id"].as_u64())
+    // 放不下时留最近的，丢掉的较早事件并进 earlier_events：醒来先要知道刚发生的事
+    // （见 observation::observe）。游标照样到最新，丢掉的不再补看。
+    let dropped = keep_recent_events(&mut view["events"], bytes / 3);
+    crate::observation::note_earlier(&mut view, dropped);
+    let cursor = raw["event_cursor"]
+        .as_u64()
         .unwrap_or(s.cursors.acknowledged);
     view["event_cursor"] = json!(cursor);
-    view["more_events"] = json!(
-        raw["more_events"] == true || cursor < raw["event_cursor"].as_u64().unwrap_or(cursor)
-    );
     (view, cursor)
+}
+
+/// 事件从最早的丢起，直到放得下；最新一条和通知不丢。返回丢掉的（时刻，是不是交谈），按时间先后。
+fn keep_recent_events(events: &mut Value, bytes: usize) -> Vec<(f64, bool)> {
+    let Some(list) = events.as_array_mut() else {
+        return Vec::new();
+    };
+    let (mut kept, mut dropped) = (Vec::new(), Vec::new());
+    let (mut size, mut full) = (2, false);
+    for event in list.drain(..).rev() {
+        let len = event.to_string().len() + 1;
+        full |= !kept.is_empty() && size + len > bytes;
+        if full && event["kind"] != "notice" {
+            dropped.push((
+                event["at"].as_f64().unwrap_or(0.0),
+                event["kind"] == "speech",
+            ));
+        } else {
+            size += len;
+            kept.push(event);
+        }
+    }
+    kept.reverse();
+    dropped.reverse();
+    *list = kept;
+    dropped
 }
 
 /// 发给模型前去掉只对程序有用的内容：事件的动作编号和对象列表、被同时刻动作回执或通知
