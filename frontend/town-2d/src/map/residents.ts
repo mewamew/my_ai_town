@@ -2,7 +2,7 @@ import { placeAbove, type LabelRect } from './labelLayout'
 import type { At, ResidentRegistration, RosterMember, VerbKind } from 'town-shared/protocol'
 import type { ResidentEntry } from 'town-shared/gameMap'
 import { agentStopped, isWaiting } from 'town-shared/display'
-import { residentOffsets } from './residentLayout'
+import { residentOffsets, type Room } from './residentLayout'
 import { ThoughtBubbles } from './bubbles'
 import { el } from 'town-shared/svg'
 import { portraitFor, portraitKey, registerPortraits } from 'town-shared/portraits'
@@ -59,13 +59,15 @@ export class ResidentLayer {
    *              没给（纯平面图集）就用固定像素偏移。
    * @param localeName 处所编号 → 中文名，写在多人标签上
    * @param onPick 在多人名单里点了某人
+   * @param roomOf 地点能站人的范围和里面立着的道具（米）；同一点上的人往这块地面里排开，不排进墙里
    */
   constructor(
     private position: (locale: string, at: At) => [number, number] | undefined,
     private bubbles: ThoughtBubbles,
     private metre: number | undefined,
     private localeName: (id: string) => string,
-    onPick: (id: string) => void
+    onPick: (id: string) => void,
+    private roomOf: (locale: string) => Room | undefined = () => undefined
   ) {
     registerPortraits({ url: villagerPortrait, art: villagerArt })
     this.layer.append(outlineFilters())
@@ -310,7 +312,17 @@ export class ResidentLayer {
     this.lastEntries = entries
     this.upright = uprightRatio(this.layer)
     const seen = new Set<string>()
-    const spatialOffsets = this.metre ? residentOffsets(entries) : undefined
+    const metre = this.metre
+    const spatialOffsets = metre
+      ? residentOffsets(
+          entries,
+          ({ locale, member }) => {
+            const p = member.at.kind === 'offstage' ? undefined : this.position(locale, member.at)
+            return p && [p[0] / metre, p[1] / metre]
+          },
+          this.roomOf
+        )
+      : undefined
     const atStation = new Map<string, string[]>()
     for (const { locale, member } of entries) {
       if (member.at.kind !== 'station') continue

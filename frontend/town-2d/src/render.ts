@@ -442,7 +442,8 @@ export class TownMap {
       this.bubbles,
       this.metre,
       (id) => localeNames.get(id) ?? id,
-      (id) => this.onVillagerClick?.(id)
+      (id) => this.onVillagerClick?.(id),
+      (locale) => this.roomOf(locale)
     )
     this.destination.append(
       el('circle', { class: 'avatar-destination-halo', r: 44 }),
@@ -831,6 +832,15 @@ export class TownMap {
   /** SVG 单位每米；没有三维数据时人物位置直接来自平面图集，不需要换算 */
   private get metre(): number | undefined {
     return this.spatial?.svg_units_per_metre
+  }
+
+  /** 地点能站人的范围和立着的道具（米）：同一点上的几个人往这块地面里排开、避开道具 */
+  private roomOf(locale: string) {
+    const rect = this.spatial?.floors?.find((f) => f.id === locale)?.bounds
+    const unit = this.metre
+    if (!rect || !unit) return undefined
+    const props = this.routeMarks.map(({ at }): [number, number] => [at[0] / unit, at[1] / unit])
+    return { rect, props }
   }
 
   private positionOf(locale: string, at: ResidentEntry['member']['at']) {
