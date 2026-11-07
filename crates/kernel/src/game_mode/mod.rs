@@ -1,7 +1,7 @@
 //! 玩法：有自己的目标、时间表和输赢的一套规则（大逃杀的潮水圈、狼人杀……），一个世界同时最多开一个，随快照保存。
 //! 本体只在这几处接玩法，见 `Rules`：推进时间时要停下来结算的时刻和到点结算（simulation.rs）、
 //! 身体的额外消耗（physiology）、名册里的状态（projection.rs）、给模型看的一栏（agent 的观察）、
-//! 模型交选择用的玩法动作（agent 的 mode_action 工具）。
+//! 模型交选择用的玩法动作（agent 的 mode_action 工具）、世界走几倍速（host 的正常速度）。
 //! 没开玩法时这些都不出现，存档、名册、设定和给模型的观察、工具表和没有玩法时一字不差。
 //!
 //! 加一个玩法：在这个目录写一个文件，实现 `Rules`；再在下面的 `GameMode`、`each!` 和
@@ -30,6 +30,11 @@ trait Rules {
     fn view(&self, world: &World) -> GameModeView;
     /// 给这个人的模型看的一栏；没有可说的时为 None
     fn context(&self, world: &World, actor: &str) -> Option<GameModeContext>;
+    /// 世界此刻按正常速度的几倍走（1 是不改）：玩法里没什么要等的空档可以走快一点，
+    /// 有期限的回合照常速。服务端把它乘在正常速度上；快进照旧按大家在不在忙来定。
+    fn tempo(&self, _world: &World) -> f64 {
+        1.0
+    }
     /// 玩法动作工具（mode_action）给这个人的说明：规则、能做的动作和参数怎么填。
     /// None 是这个玩法不让他交选择，工具表里就没有这一件。
     fn tool(&self, _world: &World, _actor: &str) -> Option<String> {
@@ -131,6 +136,14 @@ impl World {
         self.game_mode
             .as_ref()
             .and_then(|g| each!(g, m => m.context(self, actor)))
+    }
+
+    /// 玩法要的速度倍数；没开玩法时是 1
+    pub fn game_mode_tempo(&self) -> f64 {
+        self.game_mode
+            .as_ref()
+            .map_or(1.0, |g| each!(g, m => m.tempo(self)))
+            .clamp(0.25, 8.0)
     }
 
     /// 玩法动作工具给这个人的说明；没开玩法或玩法不让他交选择时为 None

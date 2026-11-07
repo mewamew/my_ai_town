@@ -670,13 +670,14 @@ export interface WerewolfSeat {
   out?: WerewolfOut
   out_day?: number
 }
-/** 一段话：议事发言、遗言或狼人频道；away 是说的时候人不在议事广场 */
+/** 一段话：议事发言、遗言或狼人频道；away 是说的时候人不在议事广场，reason 是交的时候写的打算（只给旁观的人看） */
 export interface WerewolfLine {
   seat: number
   text: string
   at: number
   away?: boolean
   last?: boolean
+  reason?: string
 }
 /** 一张票；没有 target 是弃票（亮票前也不给 target） */
 export interface WerewolfBallot {

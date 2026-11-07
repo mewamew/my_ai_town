@@ -88,6 +88,9 @@ pub struct WerewolfLine {
     /// 遗言
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub last: bool,
+    /// 交这段话时写的打算，只给旁观的人看
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 /// 一张票；target 为空是弃票

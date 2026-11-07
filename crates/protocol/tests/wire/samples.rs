@@ -1268,6 +1268,7 @@ fn werewolf_roster() -> ServerMsg {
         at: 2470.0,
         away,
         last,
+        reason: Some("把疑点引到传话上".into()),
     };
     let mut roster = server_samples()
         .into_iter()

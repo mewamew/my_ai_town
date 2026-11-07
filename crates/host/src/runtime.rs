@@ -594,9 +594,9 @@ impl Runtime {
         }
     }
 
-    /// 正常速度（模拟分钟 / 现实秒）：选定速度乘这张地图的基准。
+    /// 正常速度（模拟分钟 / 现实秒）：选定速度乘这张地图的基准，再乘开着的玩法此刻要的倍数（没开时是 1）。
     pub(crate) fn normal_pace(&self) -> f64 {
-        self.speed * self.base_pace()
+        self.speed * self.base_pace() * self.world.game_mode_tempo()
     }
 
     /// 选定速度为 1 时世界每秒走几分钟：让村民在画面上每秒走 WALK_UNITS_PER_SECOND 个地图单位。

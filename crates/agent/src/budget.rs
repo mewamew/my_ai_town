@@ -107,6 +107,9 @@ impl Limits {
 /// 默认额度按实测定：生活决策一次约 7–20k token，交谈发言一次约 2.5k；交谈密集时一个村民
 /// 半个游戏日就能用掉 120 次调用而 token 只用 30 万，所以调用次数放宽，token 才是主要约束。
 /// 每日 token 额度留一倍余量；总额度按 4 人小镇玩满 10 个游戏日的每日上限算，人更多时在设定中心改。
+/// 同时在途的请求最多 12 个：每个村民本来就只有一个请求在途，人少的镇不受影响；原来的 4 个会让
+/// 九人局白天大半时间在等模型（所有人都在等时世界停表，狼人杀演示局第 3 天 2 个游戏小时用了 26 分钟）。
+/// 只对新开的世界生效，存档里已经保存的额度照旧。
 impl Default for Limits {
     fn default() -> Self {
         Self {
@@ -115,7 +118,7 @@ impl Default for Limits {
             tokens_per_day: 2_000_000,
             total_calls: 16_000,
             total_tokens: 80_000_000,
-            max_concurrent: 4,
+            max_concurrent: 12,
             max_output_tokens: 2048,
             context_tokens: 32_000,
             compact_at_tokens: compact_at_default(),

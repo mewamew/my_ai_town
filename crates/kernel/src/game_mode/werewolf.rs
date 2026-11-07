@@ -1,7 +1,8 @@
 //! 狼人杀：法官是这里的一个状态机，把回合套在照旧异步的小镇上。
 //! 白天村民自己过；16:30 敲钟，17:00 在议事广场按座次一次叫醒一个人发言，然后同时投票放逐一人
 //! （第 1 天是相识日，只自我介绍）；被放逐的人留遗言后走出村子。天黑后狼人在狼人频道轮流说话、
-//! 选刀口，预言家、守卫同时行动，女巫等狼人选完再决定；天亮公布昨晚倒下的人，不说死因、不翻牌。
+//! 选刀口，预言家、守卫同时行动，女巫等狼人选完再决定；夜里的选择都交了（或到点）就结算，人在自己家里
+//! 倒下，天亮只公布昨晚倒下的人，不说死因、不翻牌。
 //! 法官往下走只看两件事：该交的人交了，或者到点了（期限按游戏分钟，挂在 boundary 上）。
 //! 只叫醒该做事的人：别人的发言写进每个人的经历，不发通知；投票和夜里行动这类同时进行的窗口，
 //! 结算前不发通知，免得正在想的人被「重要通知」退回。身份、轮到谁、票和夜里的选择都存在这里，随快照保存。
@@ -37,6 +38,10 @@ const WITCH_MINUTES: f64 = 20.0;
 const ROLE_MINUTES: f64 = 60.0;
 /// 被放逐的人说完遗言后多久离开地图。
 const LEAVE_MINUTES: f64 = 20.0;
+/// 白天、黄昏、夜里睡下以后这些没有期限的时段，世界按正常速度的几倍走；有期限的回合照常速。
+const FREE_TEMPO: f64 = 2.0;
+/// 理由（只给旁观的人看）最多多少字。
+const REASON_CHARS: usize = 120;
 /// 一段发言最多多少字（交谈原有的上限）。
 const SPEECH_CHARS: usize = 400;
 /// 夜里倒下的人身上看到的样子：被刀和被毒看起来一样，发现尸体的人分不出死因。
@@ -85,6 +90,15 @@ fn roll(state: &mut u32) -> u32 {
     x ^= x << 5;
     *state = x;
     x
+}
+
+/// 交动作时写的理由（只给旁观的人看），空的不要。
+fn reason_of(action: &GameModeAction) -> Option<String> {
+    action
+        .reason
+        .as_deref()
+        .map(|r| clip(r, REASON_CHARS).0)
+        .filter(|r| !r.is_empty())
 }
 
 /// 只留前 n 个字；截掉了返回 true。
@@ -166,6 +180,12 @@ pub struct Night {
     pub witch_done: bool,
     pub save: bool,
     pub poison: Option<usize>,
+    /// 已经结算：倒下的人在夜里就倒下了，天亮才公布
+    #[serde(default)]
+    pub resolved: bool,
+    /// 这一夜倒下的人和怎么倒下的；被狼人杀害的猎人在这里，但要到天亮开完枪才倒
+    #[serde(default)]
+    pub fallen: Vec<(usize, Out)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -496,6 +516,7 @@ impl Werewolf {
             at: world.minutes(),
             away,
             last,
+            reason: None,
         }
     }
 
@@ -998,9 +1019,13 @@ impl Werewolf {
         self.call(world, w, &text);
     }
 
-    /// 天亮结算：刀口没被守、没被救就倒下（同守同救也倒下），被毒的倒下。
-    fn dawn(&mut self, world: &mut World) {
-        let night = self.night.night;
+    /// 夜里的选择都交了（或到点）就结算：刀口没被守、没被救就倒下（同守同救也倒下），被毒的倒下。
+    /// 人在哪就倒在哪，宵禁后多半是自己家里；名字等天亮公布。被狼人杀害的猎人先不倒，天亮开完枪再倒。
+    fn settle_night(&mut self, world: &mut World) {
+        if self.night.resolved {
+            return;
+        }
+        self.night.resolved = true;
         let mut fallen: Vec<(usize, Out)> = Vec::new();
         if let Some(k) = self.night.kill {
             let guarded = self.night.guard == Some(k);
@@ -1014,6 +1039,30 @@ impl Werewolf {
             }
         }
         fallen.sort_by_key(|(i, _)| *i);
+        for &(i, how) in &fallen {
+            if how == Out::Killed && self.seats[i].role == Role::Hunter {
+                continue;
+            }
+            let by = if how == Out::Poisoned {
+                "女巫的毒药"
+            } else {
+                "狼人"
+            };
+            self.fell(world, i, by, NIGHT_WOUND);
+        }
+        self.night.fallen = fallen;
+    }
+
+    fn night_done(&self) -> bool {
+        let n = &self.night;
+        n.wolves_done && n.witch_done && n.seer_done && n.guard_done
+    }
+
+    /// 天亮：公布夜里倒下的人；被狼人杀害的猎人这时开枪。
+    fn dawn(&mut self, world: &mut World) {
+        self.settle_night(world);
+        let night = self.night.night;
+        let fallen = self.night.fallen.clone();
         self.day += 1;
         self.dawn = fallen.iter().map(|(i, _)| *i).collect();
         let names: Vec<String> = fallen.iter().map(|(i, _)| self.label(*i)).collect();
@@ -1031,14 +1080,7 @@ impl Werewolf {
             self.seats[i].out_day = Some(night);
             if how == Out::Killed && self.seats[i].role == Role::Hunter {
                 hunter = Some(i);
-                continue;
             }
-            let by = if how == Out::Poisoned {
-                "女巫的毒药"
-            } else {
-                "狼人"
-            };
-            self.fell(world, i, by, NIGHT_WOUND);
         }
         let text = format!("【狼人杀】天亮了，第 {} 天。{said}", self.day);
         if let Some(h) = hunter {
@@ -1144,6 +1186,10 @@ impl Werewolf {
             self.night.guard_done = true;
             return true;
         }
+        if !self.night.resolved && self.night_done() {
+            self.settle_night(world);
+            return true;
+        }
         if now >= self.dawn_at(self.day + 1) {
             if !self.night.wolves_done {
                 self.night.wolf_turn = None;
@@ -1203,6 +1249,7 @@ impl Werewolf {
         let lost: Vec<usize> = (0..self.seats.len())
             .filter(|&i| {
                 self.alive(i)
+                    && !self.night.fallen.iter().any(|(f, _)| *f == i)
                     && world
                         .actor(&self.seats[i].id)
                         .is_none_or(|a| !a.present() || a.needs.body.dead)
@@ -1440,7 +1487,8 @@ impl Werewolf {
             return Err(KernelError::action("text 不能为空：写上你要说的话"));
         }
         let (text, clipped) = clip(raw, SPEECH_CHARS);
-        let line = self.line(world, i, text.clone(), last);
+        let mut line = self.line(world, i, text.clone(), last);
+        line.reason = reason_of(action);
         let tag = if last { "遗言" } else { "议事" };
         let heard = format!(
             "【{tag}】{}{}：{text}",
@@ -1495,7 +1543,7 @@ impl Werewolf {
             i,
             Ballot {
                 target,
-                reason: action.reason.clone().map(|r| clip(&r, 120).0),
+                reason: reason_of(action),
             },
         );
         let done = self.living().iter().all(|v| self.ballots.contains_key(v));
@@ -1538,6 +1586,7 @@ impl Werewolf {
                     at: world.minutes(),
                     away: false,
                     last: false,
+                    reason: reason_of(action),
                 };
                 let heard = format!("【狼人频道】{}：{}", self.label(i), line.text);
                 self.night.wolf_lines.push(line);
@@ -1627,6 +1676,20 @@ impl Rules for Werewolf {
 
     fn boundary(&self, world: &World) -> f64 {
         (self.next_at() - world.minutes()).max(0.0)
+    }
+
+    /// 发言、投票、遗言、开枪和夜里还有人没交的时候照常速，期限按游戏分钟算才稳；其余时段走快一点。
+    fn tempo(&self, _world: &World) -> f64 {
+        let busy = match self.phase {
+            Phase::Speech | Phase::Vote | Phase::LastWords | Phase::Shot => true,
+            Phase::Night => !self.night_done(),
+            _ => false,
+        };
+        if busy {
+            1.0
+        } else {
+            FREE_TEMPO
+        }
     }
 
     /// 到点的事依次做完：同一刻可能连着几步（比如发言到点跳过、接着叫下一个）。

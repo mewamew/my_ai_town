@@ -179,6 +179,54 @@ body.replay-clean .ww-stage {
   color: #f3b2a6;
 }
 
+/* 「心里」：交这段话时写的打算，只给旁观的人看 */
+.ww-mind {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: start;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.ww-mind b {
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.ww-stage.channel .ww-mind {
+  border-top-color: rgb(255 255 255 / 0.14);
+  color: #aab0aa;
+}
+/* 「X 正在想…」：轮到的人还没交 */
+.ww-next {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.ww-next.alone {
+  margin-top: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.ww-dots {
+  letter-spacing: 2px;
+  color: var(--ok);
+}
+.ww-stage.channel .ww-next {
+  color: #aab0aa;
+}
+
 /* ---------- 右边的板子 ---------- */
 .ww-board {
   right: 14px;

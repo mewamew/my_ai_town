@@ -206,7 +206,7 @@ fn mode_act(w: &mut World, id: &str, action: &str, target: Option<u32>, text: Op
         action: action.into(),
         target: target.map(|t| t.to_string()),
         text: text.map(str::to_owned),
-        reason: None,
+        reason: Some(format!("{id} 心里这么想")),
     };
     let result = w.game_mode_act(id, &action);
     assert!(result.is_ok(), "{id} 交 {action:?}：{result:?}");
@@ -288,6 +288,9 @@ fn werewolf_judge_runs_a_whole_game_through_turns_deadlines_and_a_reload() {
     assert!(w.game_mode_tool("r1").unwrap().contains("vote"));
     assert!(wolf_context(&w, "r1").actions.is_empty());
 
+    // 没开玩法的世界按正常速度走；开局前是空档，走快一点
+    assert_eq!(few.game_mode_tempo(), 1.0);
+    assert_eq!(w.game_mode_tempo(), 2.0);
     // 第 1 天 10:30 天亮：每人单独收到自己的身份，狼人还知道同伴
     w.step(3.6 * HOUR);
     assert_eq!(werewolf(&w).phase, WerewolfPhase::Day);
@@ -314,10 +317,32 @@ fn werewolf_judge_runs_a_whole_game_through_turns_deadlines_and_a_reload() {
     let mut abstained = false;
     let mut reloaded = false;
     let mut told_to_stay = false;
+    let mut died_at_night = false;
+    let mut heard_reason = false;
     for _ in 0..5000 {
         let v = werewolf(&w);
         if v.phase == WerewolfPhase::Over {
             break;
+        }
+        // 发言、投票这些有期限的回合照常速；发言记下了交的时候写的打算（只给旁观的人看）
+        if v.phase == WerewolfPhase::Speech {
+            assert_eq!(w.game_mode_tempo(), 1.0);
+            if let Some(line) = v.lines.last() {
+                heard_reason |= line
+                    .reason
+                    .as_deref()
+                    .is_some_and(|r| r.ends_with("心里这么想"));
+            }
+        }
+        // 第 2 夜的刀口没人救：夜里的选择交齐就结算，人已经倒下，天亮前座位上还不公布
+        if let Some(n) = v.night.as_ref().filter(|n| n.night == 2 && !died_at_night) {
+            if v.phase == WerewolfPhase::Night && w.minutes() % (24.0 * HOUR) >= 20.0 * HOUR {
+                let k = n.kill.expect("第 2 夜狼人选了刀口");
+                assert!(w.actor(&id_of(k)).unwrap().needs.body.dead);
+                assert_eq!(v.seats[k as usize - 1].out, None);
+                assert_eq!(w.game_mode_tempo(), 2.0);
+                died_at_night = true;
+            }
         }
         // 黄昏回家：停留只认时长，法官把离天亮（10:30）还差几分钟算好
         if v.phase == WerewolfPhase::Dusk && !told_to_stay {
@@ -398,7 +423,7 @@ fn werewolf_judge_runs_a_whole_game_through_turns_deadlines_and_a_reload() {
             w.step(5.0);
         }
     }
-    assert!(skipped && abstained && reloaded && told_to_stay);
+    assert!(skipped && abstained && reloaded && told_to_stay && died_at_night && heard_reason);
     let v = werewolf(&w);
     assert_eq!(
         (v.phase, v.winner),

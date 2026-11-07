@@ -103,7 +103,7 @@ export class WerewolfLook implements GameModeLook {
     box.append(pixelIcon(icon, 2), el('b', v.notice))
     const living = v.seats.filter((s) => !s.out).length
     let sub = ''
-    if (v.phase === 'speech' && v.turn) sub = `正在说：${this.label(v.turn)}`
+    if (v.phase === 'speech' && v.turn) sub = `轮到：${this.label(v.turn)}`
     else if (v.phase === 'vote' && !v.revealed) sub = `已投 ${v.ballots?.length ?? 0}/${living}`
     else if (v.phase === 'last_words' && v.turn) sub = `${this.label(v.turn)} 留遗言`
     else if (v.phase === 'shot' && v.turn) sub = `猎人 ${this.label(v.turn)} 要开枪`
@@ -146,7 +146,9 @@ export class WerewolfLook implements GameModeLook {
     return box
   }
 
-  /** 底下的卡片：今天最后说的那段话（黄昏时多半是遗言）；夜里换成狼人频道最后一句（上帝视角） */
+  /** 底下的卡片：今天最后说的那段话（黄昏时多半是遗言）；夜里换成狼人频道最后一句（上帝视角）。
+   *  身份亮着时多一行「心里」：交这段话时写的打算。轮到的人还在想时，卡片最后一行写「X 正在想…」，
+   *  和横幅的「轮到」对上；今天还没人开口时卡片只有这一行 */
   private stage(v: WerewolfView) {
     let line: WerewolfLine | undefined
     let channel = false
@@ -156,18 +158,33 @@ export class WerewolfLook implements GameModeLook {
     } else if (['speech', 'vote', 'last_words', 'shot', 'dusk'].includes(v.phase)) {
       line = v.lines?.at(-1)
     }
-    if (!line) return null
-    const s = this.seat(line.seat)
+    const thinking =
+      ['speech', 'last_words', 'shot'].includes(v.phase) || channel ? v.turn : undefined
+    const next = thinking && thinking !== line?.seat ? thinking : undefined
+    if (!line && !next) return null
     const card = el('div', '', channel ? 'ww-stage channel' : 'ww-stage')
-    if (Array.from(line.text).length > 220) card.classList.add('long')
-    const head = el('div', '', 'ww-stage-head')
-    head.append(el('i', String(line.seat)))
-    const icon = s && this.roleIcon(s.role)
-    if (icon) head.append(icon)
-    head.append(el('b', s?.name ?? ''))
-    const tag = channel ? '狼人频道' : line.last ? '遗言' : line.away ? '没到场' : ''
-    if (tag) head.append(el('small', tag))
-    card.append(head, el('p', line.text))
+    if (line) {
+      const s = this.seat(line.seat)
+      if (Array.from(line.text).length > 220) card.classList.add('long')
+      const head = el('div', '', 'ww-stage-head')
+      head.append(el('i', String(line.seat)))
+      const icon = s && this.roleIcon(s.role)
+      if (icon) head.append(icon)
+      head.append(el('b', s?.name ?? ''))
+      const tag = channel ? '狼人频道' : line.last ? '遗言' : line.away ? '没到场' : ''
+      if (tag) head.append(el('small', tag))
+      card.append(head, el('p', line.text))
+      if (line.reason && !this.hide) {
+        const mind = el('div', '', 'ww-mind')
+        mind.append(el('b', '心里'), el('span', line.reason))
+        card.append(mind)
+      }
+    }
+    if (next) {
+      const row = el('div', '', line ? 'ww-next' : 'ww-next alone')
+      row.append(el('span', '●●●', 'ww-dots'), `${this.label(next)} 正在想…`)
+      card.append(row)
+    }
     return card
   }
 
