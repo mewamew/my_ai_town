@@ -152,8 +152,9 @@ impl WalkMap {
     }
     /// 房间的到达点画在门外的空间里，处所却是房间。站在那里的人换到这扇门的门内一侧：
     /// 玩家进屋才和他同处一地、够得着说话；附身后的自由位置也落在自己的处所里。
-    /// 站点本身不改，接续行走和放东西仍按门外的点算。
-    fn inside_door(&self, s: &Spot) -> Spot {
+    /// 站点本身不改，放东西仍按门外的点算；屋里没有站点时，接续行走走到门内这一点就算到了站点
+    /// （navigation/free.rs 的 door_goals）。
+    pub(crate) fn inside_door(&self, s: &Spot) -> Spot {
         let home = self.space_of(&s.locale);
         if s.space == home {
             return s.clone();

@@ -1,4 +1,5 @@
-//! 从玩家留下的自由位置步行接回拓扑站点。只在同一行走空间内寻路，不穿门或瞬移。
+//! 从玩家留下的自由位置步行接回拓扑站点。只在同一行走空间内寻路，不穿门或瞬移；屋里没有
+//! 站点时走到门内一侧，就算站在门外画着的到达点上（见 `WalkMap::inside_door`）。
 //! 寻路和沿路线推进是行走地图与路线自己的规则；World 只取人物位置、障碍，再装上活动。
 use crate::{
     avatar::{distance, Obstacle, Point, Spot, WalkMap, RADIUS},
@@ -79,6 +80,33 @@ impl WalkMap {
         if goals.iter().any(|(_, s)| s.locale == start.locale) {
             goals.retain(|(_, s)| s.locale == start.locale);
         }
+        goals.sort_by(|a, b| {
+            distance(start.position, a.1.position)
+                .total_cmp(&distance(start.position, b.1.position))
+        });
+        goals.truncate(NEAREST_GOALS);
+        goals
+    }
+
+    /// 屋里没有站点时接回的地方：门外画着的到达点，换到门内那一侧（`inside_door`，到达点上的人
+    /// 本来就画在那里）。跟着别人进了没摆道具的屋子停在门里的人，从这里接回路网（回声湾的灯塔：
+    /// 之前每次想走都报「当前空间没有可接续的导航站点」）。按距离从近到远排好。
+    fn door_goals(
+        &self,
+        start: &Spot,
+        obstacles: &[Obstacle],
+        known: impl Fn(&str) -> bool,
+    ) -> Vec<(String, Spot)> {
+        let mut goals: Vec<_> = self
+            .stations
+            .iter()
+            .filter(|(id, s)| s.space != start.space && known(id))
+            .map(|(id, s)| (id.clone(), self.inside_door(s)))
+            .filter(|(_, inside)| {
+                inside.space == start.space
+                    && self.clear(&inside.space, inside.position, obstacles, RADIUS)
+            })
+            .collect();
         goals.sort_by(|a, b| {
             distance(start.position, a.1.position)
                 .total_cmp(&distance(start.position, b.1.position))
@@ -239,7 +267,8 @@ impl FreeWalk {
         Ok(here)
     }
 
-    /// 读档校验：点数与进度合法，终点就是拓扑与行走地图里同一个站点，全程在同一空间的区域内。
+    /// 读档校验：点数与进度合法，终点就是拓扑与行走地图里同一个站点（或它门内的那一侧），
+    /// 全程在同一空间的区域内。
     pub(crate) fn validate(&self, topo: &Topology, map: Option<&WalkMap>) -> Result<()> {
         ensure!(
             self.points.len() >= 2
@@ -253,8 +282,10 @@ impl FreeWalk {
             KernelError::snapshot("接续站点无效")
         );
         ensure!(
-            map.and_then(|m| m.stations.get(&self.station))
-                .is_some_and(|s| s.space == last.space && s.position == last.position),
+            map.and_then(|m| m.stations.get(&self.station).map(|s| (m, s)))
+                .is_some_and(|(m, s)| [s.clone(), m.inside_door(s)]
+                    .iter()
+                    .any(|end| end.space == last.space && end.position == last.position)),
             KernelError::snapshot("接续路线终点与站点不一致")
         );
         for p in &self.points {
@@ -283,7 +314,14 @@ impl World {
             .actor_spot(actor)
             .ok_or_else(|| KernelError::navigation("自由位置无效"))?;
         let obstacles = self.avatar_obstacles();
-        let goals = map.station_goals(&start, &obstacles, |id| self.topo.stations.contains_key(id));
+        let known = |id: &str| self.topo.stations.contains_key(id);
+        let mut goals = map.station_goals(&start, &obstacles, known);
+        let doors = if goals.is_empty() {
+            map.door_goals(&start, &obstacles, known)
+        } else {
+            Vec::new()
+        };
+        goals.extend(doors.iter().map(|(id, spot)| (id, spot)));
         ensure!(
             !goals.is_empty(),
             KernelError::navigation("当前空间没有可接续的导航站点")

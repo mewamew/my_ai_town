@@ -568,6 +568,38 @@ fn resident_on_the_doorstep_counts_as_inside() {
     w.restore_snapshot(saved).unwrap();
 }
 
+/// 屋里没有站点、到达点画在门外时，停在屋里的人走到门内那一侧就算到了到达点，能接着出门
+/// （回声湾的灯塔：跟着别人进门的人停在门里，之前每次想走都报「当前空间没有可接续的导航站点」）。
+#[test]
+fn resident_left_in_a_room_without_stations_walks_out_through_the_door() {
+    let mut w = world();
+    Arc::make_mut(w.walk_map.as_mut().unwrap()).stations.insert(
+        "st_b".into(),
+        Spot {
+            locale: "loc_b".into(),
+            space: "loc_a".into(),
+            position: [5., 2.],
+        },
+    );
+    w.possess("b").unwrap();
+    w.avatar_move([1., 1.], false, 0.25).unwrap();
+    w.release_possession();
+    let at = &snapshot(&w)["actors"]["b"]["locus"]["at"];
+    assert_eq!(at["kind"], "free");
+    assert_eq!(at["space"], "loc_b");
+    let plan: Vec<protocol::ActionDraft> =
+        serde_json::from_value(json!([{"intent":{"verb":"前往","locale":"loc_a"}}])).unwrap();
+    let revision = w.actor("b").unwrap().actions.revision;
+    w.run_actions("b", "out", revision, &plan).unwrap();
+    w.step(0.05);
+    let saved = w.snapshot();
+    w.restore_snapshot(saved).unwrap();
+    for _ in 0..40 {
+        w.step(0.5);
+    }
+    assert_eq!(w.actor("b").unwrap().locus.locale, "loc_a");
+}
+
 /// 化身也能对别人用道具：对倒在跟前的死者施用复苏石，复活记着是化身用的。玩家界面选了对象
 /// 就发这样的动作（frontend/town-shared/src/avatar/bag.ts）。
 #[test]
