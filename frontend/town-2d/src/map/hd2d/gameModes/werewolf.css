@@ -130,10 +130,14 @@
   left: 50%;
   bottom: 96px;
   transform: translateX(-50%);
-  width: min(640px, calc(100% - 600px));
+  width: min(720px, calc(100% - 560px));
   min-width: 320px;
   padding: 12px 16px 14px;
   border-radius: var(--r-m);
+}
+/* 重演拍素材时底下没有事件条，卡片贴近底边 */
+body.replay-clean .ww-stage {
+  bottom: 20px;
 }
 .ww-stage-head {
   display: flex;
@@ -151,10 +155,14 @@
 }
 .ww-stage p {
   margin: 0;
-  max-height: 8em;
-  overflow: hidden;
   font-size: 15px;
   line-height: 1.6;
+  white-space: pre-line;
+}
+/* 长发言（两百多字）小一号，一段话整个放得下 */
+.ww-stage.long p {
+  font-size: 14px;
+  line-height: 1.55;
 }
 .ww-stage.channel,
 .ww-board.dark {

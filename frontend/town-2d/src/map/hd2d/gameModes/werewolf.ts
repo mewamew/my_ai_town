@@ -146,19 +146,20 @@ export class WerewolfLook implements GameModeLook {
     return box
   }
 
-  /** 底下的卡片：今天最后说的那段话；夜里换成狼人频道最后一句（上帝视角） */
+  /** 底下的卡片：今天最后说的那段话（黄昏时多半是遗言）；夜里换成狼人频道最后一句（上帝视角） */
   private stage(v: WerewolfView) {
     let line: WerewolfLine | undefined
     let channel = false
     if (v.phase === 'night') {
       line = v.night?.wolf_lines?.at(-1)
       channel = true
-    } else if (['speech', 'vote', 'last_words', 'shot'].includes(v.phase)) {
+    } else if (['speech', 'vote', 'last_words', 'shot', 'dusk'].includes(v.phase)) {
       line = v.lines?.at(-1)
     }
     if (!line) return null
     const s = this.seat(line.seat)
     const card = el('div', '', channel ? 'ww-stage channel' : 'ww-stage')
+    if (Array.from(line.text).length > 220) card.classList.add('long')
     const head = el('div', '', 'ww-stage-head')
     head.append(el('i', String(line.seat)))
     const icon = s && this.roleIcon(s.role)
