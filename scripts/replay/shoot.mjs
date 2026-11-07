@@ -23,6 +23,7 @@
 // }
 // 机位：follow 跟住谁（名字或编号）；at 对准哪（[x, y] 米、"center" 地图中间，或某人此刻站的地方）；
 // width 画面横着看得见多少米（"all" 整张图）；yaw 转角，pitch 俯角（30–82）。move 用 seconds 秒慢起慢停地过去。
+// focus 景深对准谁，他在屋里时那间屋子掀开屋顶；拍屋里的戏要给 focus，不然屋顶多半盖着。
 import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'

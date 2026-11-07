@@ -58,7 +58,7 @@ export interface DirectorCamera {
   drawnAt(id: string): [number, number] | undefined
   /** 人身子中间离脚底多高（视图单位）：对准人时往上抬这么多，人整个在画面正中 */
   bodyRise(): number
-  /** 景深的焦点对准谁（不画选中的光圈）；null 交还给选中的人 */
+  /** 景深的焦点对准谁（不画选中的光圈），他在屋里时屋顶掀开；null 交还给选中的人 */
   focus(id: string | null): void
   /** 镜头连续移动、不按地图像素吸附 */
   setSmooth(on: boolean): void

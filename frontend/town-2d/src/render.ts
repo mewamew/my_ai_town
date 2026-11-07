@@ -724,6 +724,8 @@ export class TownMap {
     const changed = this.rooms.update(
       [
         this.selectedId ? this.residents.getMemberAnchor(this.selectedId) : undefined,
+        // 重演拍素材时景深对准的人：和选中一样掀开他所在的屋子（重演不选人，画面中心又常落在屋外）
+        this.directorFocus ? this.residents.getMemberAnchor(this.directorFocus) : undefined,
         avatar && this.residents.getMemberAnchor(avatar.member.id),
         w ? this.camera.unproject([x + w / 2, y + h / 2]) : undefined,
       ],
@@ -1348,6 +1350,7 @@ export class TownMap {
     focus: (id) => {
       this.directorFocus = id
       this.syncFocus()
+      this.refreshRooms()
     },
     setSmooth: (on) => {
       this.camera.smooth = on
