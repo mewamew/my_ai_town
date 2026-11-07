@@ -851,7 +851,7 @@ impl Werewolf {
         let now = world.minutes();
         self.until = (now + CURFEW).max(self.day_start(self.day) + NIGHT_FROM);
         let text = format!(
-            "【狼人杀】议事散了。天黑前回自己家，夜里待在家里别出门，停留到明天天亮（{}）；有身份的人夜里会被叫醒行动。",
+            "【狼人杀】议事散了。天黑前回自己家，夜里待在家里别出门，一直停留到明天 {} 天亮；有身份的人夜里会被叫醒行动。",
             Self::clock(self.dawn_at(self.day + 1))
         );
         self.announce(world, &text, true);
@@ -1262,17 +1262,27 @@ impl Werewolf {
         }
     }
 
+    /// 在家待到法官的天亮：停留只认时长（until 的「天亮」是早上 6 点），所以把还差几分钟算好给模型。
+    fn stay_until(at: f64, now: f64) -> String {
+        let minutes = (at - now).ceil().clamp(1.0, 1440.0);
+        format!(
+            "回自己家，到家后用「停留」，duration_minutes 填 {minutes:.0}（离天亮 {} 还有这么久；until 的「天亮」是早上 6 点，太早），天亮会叫醒你。",
+            Self::clock(at)
+        )
+    }
+
     /// 此刻这个人能交的动作和该做什么。
-    fn duty(&self, i: usize) -> (Vec<&'static str>, String) {
+    fn duty(&self, i: usize, now: f64) -> (Vec<&'static str>, String) {
         let seat = &self.seats[i];
-        let dawn = Self::clock(self.dawn_at(self.day + 1));
+        let dawn = self.dawn_at(self.day + 1);
         let mine = self.turn == Some(i);
         match self.phase {
             Phase::Waiting => (
                 vec![],
                 format!(
-                    "狼人杀第 1 天 {} 天亮开局，身份那时发下。在那之前回自己家，停留到天亮，天亮会叫醒你。",
-                    Self::clock(self.until)
+                    "狼人杀第 1 天 {} 天亮开局，身份那时发下。在那之前{}",
+                    Self::clock(self.until),
+                    Self::stay_until(self.until, now)
                 ),
             ),
             Phase::Over => (vec![], "这一局结束了。".into()),
@@ -1317,15 +1327,15 @@ impl Werewolf {
             Phase::LastWords | Phase::Shot => (vec![], "等法官往下走。".into()),
             Phase::Dusk => (
                 vec![],
-                format!("天黑前回自己家，夜里待在家里，停留到明天天亮（{dawn}）。"),
+                format!("天黑了别在外面：{}", Self::stay_until(dawn, now)),
             ),
-            Phase::Night => self.night_duty(i, &dawn),
+            Phase::Night => self.night_duty(i, &Self::stay_until(dawn, now)),
         }
     }
 
-    fn night_duty(&self, i: usize, dawn: &str) -> (Vec<&'static str>, String) {
+    fn night_duty(&self, i: usize, stay: &str) -> (Vec<&'static str>, String) {
         let n = &self.night;
-        let sleep = format!("夜里待在自己家里，停留到天亮（{dawn}）。");
+        let sleep = format!("夜里待在自己家里：{stay}");
         match self.seats[i].role {
             Role::Wolf if n.wolf_turn == Some(i) => (
                 vec!["kill"],
@@ -1709,7 +1719,7 @@ impl Rules for Werewolf {
             Role::Wolf => "狼人阵营：白天装成好人，夜里杀人；杀光平民或杀光神职（预言家、女巫、猎人、守卫）就赢。".into(),
             _ => "好人阵营：找出狼人，在议事上把他们全部投票放逐就赢；平民全灭或神职全灭就输。".into(),
         };
-        let (actions, now) = self.duty(i);
+        let (actions, now) = self.duty(i, world.minutes());
         let known = if self.phase == Phase::Waiting {
             Vec::new()
         } else {
@@ -1778,7 +1788,7 @@ target 填座号；reason 写为什么这么选（只给旁观的人看）。\
             _ => Err(KernelError::action(format!(
                 "现在是「{}」，没有要你交的动作：{}",
                 self.phase_line(),
-                self.duty(i).1
+                self.duty(i, world.minutes()).1
             ))),
         }
     }

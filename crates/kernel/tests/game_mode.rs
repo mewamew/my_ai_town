@@ -313,10 +313,21 @@ fn werewolf_judge_runs_a_whole_game_through_turns_deadlines_and_a_reload() {
     let mut skipped = false;
     let mut abstained = false;
     let mut reloaded = false;
+    let mut told_to_stay = false;
     for _ in 0..5000 {
         let v = werewolf(&w);
         if v.phase == WerewolfPhase::Over {
             break;
+        }
+        // 黄昏回家：停留只认时长，法官把离天亮（10:30）还差几分钟算好
+        if v.phase == WerewolfPhase::Dusk && !told_to_stay {
+            told_to_stay = true;
+            let now = wolf_context(&w, "r1").now;
+            let left = (24.0 * HOUR + 10.5 * HOUR - (w.minutes() % (24.0 * HOUR))).ceil();
+            assert!(
+                now.contains(&format!("duration_minutes 填 {left:.0}")),
+                "{now}"
+            );
         }
         // 第 2 天第三个发言的人不交，到点跳过
         if v.phase == WerewolfPhase::Speech && v.day == 2 && v.lines.len() == 2 && !skipped {
@@ -387,7 +398,7 @@ fn werewolf_judge_runs_a_whole_game_through_turns_deadlines_and_a_reload() {
             w.step(5.0);
         }
     }
-    assert!(skipped && abstained && reloaded);
+    assert!(skipped && abstained && reloaded && told_to_stay);
     let v = werewolf(&w);
     assert_eq!(
         (v.phase, v.winner),
