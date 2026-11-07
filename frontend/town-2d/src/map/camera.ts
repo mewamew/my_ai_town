@@ -45,6 +45,12 @@ interface GestureEvent extends UIEvent {
   clientY: number
 }
 
+/** 面板以外再盖住地图的几边（CSS 像素） */
+export interface Cover {
+  top?: number
+  right?: number
+  bottom?: number
+}
 export interface CameraArea {
   x: number
   y: number
@@ -142,18 +148,19 @@ export class MapCamera {
     this.applyViewBox()
   }
 
-  /** 露出来的那块在视口里占的比例：左、上、右、下 */
-  private openArea(): [number, number, number, number] {
+  /** 露出来的那块在视口里占的比例：左、上、右、下。extra 是面板以外再盖住的上边、右边、下边
+   *  （摆道具的浮窗和提示条） */
+  private openArea(extra: Cover = {}): [number, number, number, number] {
     const r = this.container.getBoundingClientRect()
     const w = r.width || 1,
       h = r.height || 1
     const l = Math.min(this.insets.left / w, 0.8),
-      t = Math.min(this.insets.top / h, 0.8)
+      t = Math.min((this.insets.top + (extra.top ?? 0)) / h, 0.8)
     return [
       l,
       t,
-      Math.max(l + 0.2, 1 - this.insets.right / w),
-      Math.max(t + 0.2, 1 - this.insets.bottom / h),
+      Math.max(l + 0.2, 1 - (this.insets.right + (extra.right ?? 0)) / w),
+      Math.max(t + 0.2, 1 - (this.insets.bottom + (extra.bottom ?? 0)) / h),
     ]
   }
 
@@ -389,14 +396,14 @@ export class MapCamera {
   }
 
   /** 把一块地图装进面板之间的可见区域；先设置俯角，再按压缩后的地面高度取景。
-   *  预设只在玩家点击时生效，之后仍可正常拖动与缩放。 */
-  frameArea(area: CameraArea) {
+   *  预设只在玩家点击时生效，之后仍可正常拖动与缩放。extra 见 openArea */
+  frameArea(area: CameraArea, extra: Cover = {}) {
     if (area.width <= 0 || area.height <= 0) return
     this.stopZoomAnimation()
     this.glide = null
     this.followVelocity = [0, 0]
     const [width, height] = this.size()
-    const [left, top, right, bottom] = this.openArea()
+    const [left, top, right, bottom] = this.openArea(extra)
     const c = Math.abs(this.yawCos),
       s = Math.abs(this.yawSin)
     const target = Math.min(

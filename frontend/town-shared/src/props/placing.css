@@ -1,13 +1,14 @@
 /* 摆道具：模式提示、指针旁的地点名、道具浮窗、已有道具的小菜单，以及地图上的描边和定位点 */
 
-/* 摆道具时地图稍微压暗，指着的地点描白边；拖动照常平移 */
+/* 摆道具时地图稍微压暗，指着的地点描白边；拖动照常平移。有三维数据的地图改用遮罩（place-masked），
+   只压暗不能放东西的地方，见下面的「地图叠层」 */
 #map.placing > svg {
   cursor: crosshair;
 }
 #map.placing.drag > svg {
   cursor: grabbing;
 }
-#map.placing::after {
+#map.placing:not(.place-masked)::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -42,13 +43,118 @@ svg.placing .pp.prop-art-ready > .prop-art-target {
 }
 
 .place-outline {
-  fill: rgb(255 255 255 / 0.14);
+  fill: rgb(255 255 255 / 0.16);
   stroke: #fff;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+#map:not(.place-masked) .place-outline {
   stroke-width: 2.5px;
   stroke-dasharray: 9 7;
   stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
+}
+
+/* 地图叠层：能放东西的地点挖亮加白框，别处压暗，放满的地点只描虚线；拉近到格子看得清时（detail）
+   地点里放不下的地方再压暗一点，能放的格子画亮，指着的地点画出看不见的路和入口一圈。
+   绿框是东西会落在哪：指针在放不了的地方时，白虚线连到绿框、指针处画叉；从入口过来被挡时，
+   红虚线从入口连过来，挡路的那件描红 */
+.place-overlay {
   pointer-events: none;
+}
+.place-mask {
+  fill: rgb(10 16 13 / 0.5);
+}
+.place-frames {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+}
+.place-frames.full {
+  stroke: rgb(255 255 255 / 0.55);
+  stroke-dasharray: 6 5;
+}
+.place-dim,
+.place-cells,
+.place-walks,
+.place-door {
+  display: none;
+}
+.place-overlay.detail :is(.place-dim, .place-cells, .place-walks, .place-door) {
+  display: inline;
+}
+.place-dim {
+  fill: rgb(10 16 13 / 0.32);
+}
+.place-cells {
+  fill: rgb(255 255 255 / 0.28);
+  stroke: rgb(255 255 255 / 0.5);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
+.place-walks {
+  fill: none;
+  stroke: rgb(255 255 255 / 0.85);
+  stroke-width: 1.6px;
+  stroke-dasharray: 2 5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.place-door {
+  fill: rgb(10 16 13 / 0.25);
+  stroke: rgb(255 255 255 / 0.7);
+  stroke-width: 1.4px;
+  stroke-dasharray: 4 4;
+  vector-effect: non-scaling-stroke;
+}
+.place-ghost-halo {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 6px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.place-ghost {
+  fill: var(--accent);
+  fill-opacity: 0.42;
+  stroke: var(--accent);
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.place-ghost.bad {
+  fill: var(--danger);
+  stroke: var(--danger);
+  fill-opacity: 0.35;
+}
+.place-link {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2px;
+  stroke-dasharray: 5 5;
+  vector-effect: non-scaling-stroke;
+}
+.place-cross {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2.5px;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.place-block-line {
+  fill: none;
+  stroke: #e0705a;
+  stroke-width: 2.4px;
+  stroke-dasharray: 6 5;
+  vector-effect: non-scaling-stroke;
+}
+.place-blocker {
+  fill: rgb(224 112 90 / 0.25);
+  stroke: #e0705a;
+  stroke-width: 2.4px;
+  vector-effect: non-scaling-stroke;
 }
 .place-marker {
   pointer-events: none;
@@ -379,6 +485,18 @@ svg.placing .pp.prop-art-ready > .prop-art-target {
 .place-act.again {
   color: var(--busy);
 }
+/* 试放过这一格放不下：整行淡下去，按钮写「放不下」 */
+.place-row.cant {
+  opacity: 0.55;
+}
+.place-row.cant .place-act {
+  font-size: 0;
+}
+.place-row.cant .place-act::after {
+  content: '这里放不下';
+  color: var(--text-3);
+  font-size: 12px;
+}
 .place-row:hover .place-act.again {
   border-color: var(--busy);
   background: var(--busy-soft);
@@ -478,7 +596,8 @@ svg.placing .pp.prop-art-ready > .prop-art-target {
   top: auto;
   bottom: 0;
   width: auto;
-  max-height: 66%;
+  /* 只占半屏：镜头把要放的地方挪到上半屏，看得见格子和绿框 */
+  max-height: 50%;
   border-bottom: 0;
   border-radius: var(--r-m) var(--r-m) 0 0;
 }

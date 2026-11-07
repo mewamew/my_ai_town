@@ -1,5 +1,5 @@
 import { WeatherLayer } from './weather'
-import type { ServerMsg } from 'town-shared/protocol'
+import type { PlaceGrid, ServerMsg } from 'town-shared/protocol'
 import { heightAt, position as spatialPosition, type Spatial } from 'town-shared/spatial'
 import { savedAppearance, defaultAppearance } from 'town-shared/props/appearances'
 import type { Appearance, PropCatalog, PropView } from 'town-shared/props/types'
@@ -8,6 +8,7 @@ import type {
   AvatarPrompt,
   CameraShot,
   DirectorCamera,
+  PlaceGhost,
   PlaceSpot,
   ResidentEntry,
   ScreenBox,
@@ -24,13 +25,15 @@ import { cueOf } from './map/hd2d/villagerCues'
 import { AvatarMotion } from './map/avatarMotion'
 import { PropPositions } from './map/propPositions'
 import { RoomCovers, RoomPeek } from './map/rooms'
-import { MapCamera, type CameraArea } from './map/camera'
+import { MapCamera, type CameraArea, type Cover } from './map/camera'
 import { DEFAULT_PITCH, PITCH_MAX } from './map/hd2d/layout'
 import { standUpright, uprightRatio } from './map/upright'
 import { ThoughtBubbles } from './map/bubbles'
 import { ResidentLayer } from './map/residents'
 import { PromptLayer } from './map/prompts'
 import { propArtwork } from './map/propArt'
+import { PlaceOverlay, type OverlayProp } from './map/placeOverlay'
+import { cellNear, freeNear } from 'town-shared/props/placeGrid'
 
 /** 开发版：地址里的 ?clock=18:30&weather=rain 只替换立体场景用的时间和天气，世界本身不变。
  *  画面改动前后按同一时刻、同一天气截图对比用；正式包里没有这段 */
@@ -54,6 +57,10 @@ import type { DepthBlur, Quality } from 'town-shared/quality'
 const WATCH_JUMP = 400
 /** 隔了这么久（毫秒）才又画一帧，不按这段间隔追：人站着时场景不重画，一起步就是很久以后的一帧 */
 const WATCH_STALE_MS = 250
+/** 摆道具的格子一格至少这么多屏幕像素才画出来；再小就是一片噪点，只留遮罩 */
+const PLACE_DETAIL_PIXELS = 8
+/** 拉近到地点时，一米至少这么多屏幕像素（一格 0.4 米约 12 像素）；地点太大装不下时只取点的那一块 */
+const PLACE_FOCUS_PIXELS_PER_METRE = 30
 
 export interface TownMapOptions {
   atlas: Atlas
@@ -155,6 +162,14 @@ export class TownMap {
   private placeAt: WalkTarget | null = null
   private readonly placeOutline = el('path', { class: 'place-outline' })
   private readonly placeMarker = el('g', { class: 'place-marker' })
+  /** 摆道具的叠层（有三维数据的地图才有）：遮罩、格子、绿框；格子是后端按地点给的 */
+  private readonly placeOverlay?: PlaceOverlay
+  private placeGrids = new Map<string, PlaceGrid>()
+  private placeGhost: PlaceGhost | null = null
+  /** 上次画叠层时的方位（投影一个点的结果）：方位角变了要重画 */
+  private placeYawKey = ''
+  private placeDetailOn = false
+  onPlaceDetail: ((detail: boolean) => void) | null = null
   /** 平面图上各区域占的格子，第一次摆道具时才建 */
   private cellsOfRegions?: Map<string, { size: number; cells: Set<string> }>
   private get regionCells() {
@@ -457,7 +472,9 @@ export class TownMap {
       el('circle', { class: 'place-marker-dot', r: 12 })
     )
     this.placeMarker.style.display = 'none'
+    if (options.spatial) this.placeOverlay = new PlaceOverlay(options.spatial.svg_units_per_metre)
     this.svg.append(
+      ...(this.placeOverlay ? [this.placeOverlay.layer] : []),
       this.placeOutline,
       this.residents.layer,
       this.destination,
@@ -730,7 +747,8 @@ export class TownMap {
         avatar && this.residents.getMemberAnchor(avatar.member.id),
         w ? this.camera.unproject([x + w / 2, y + h / 2]) : undefined,
       ],
-      [this.peek.peeked, this.peek.pinned]
+      // 摆道具时屋顶全掀开：屋里能放东西的地面和外面的空地一起亮出来
+      [this.peek.peeked, this.peek.pinned, ...(this.placing ? hd.houses.map((h) => h.id) : [])]
     )
     const covered = this.rooms.covered
     this.residents.setCovered(covered)
@@ -1048,6 +1066,16 @@ export class TownMap {
   private placeDestination() {
     this.pin(this.destination, this.destinationAt)
     this.pin(this.placeMarker, this.placeAt)
+    if (this.placing && this.placeOverlay) {
+      if (this.camera.project([1, 0]).join() !== this.placeYawKey) this.drawPlaceOverlay()
+      const detail = this.placeCellPixels() >= PLACE_DETAIL_PIXELS
+      if (detail !== this.placeDetailOn) {
+        this.placeDetailOn = detail
+        this.placeOverlay.setDetail(detail)
+        this.onPlaceDetail?.(detail)
+      }
+      this.placeOverlay.setVisible(detail ? this.placesInView() : [])
+    }
     this.placeOutline.setAttribute(
       'd',
       (this.placeLocale ? this.outlineOf(this.placeLocale) : [])
@@ -1071,12 +1099,151 @@ export class TownMap {
   setPlacing(placing: boolean) {
     this.placing = placing
     this.svg.classList.toggle('placing', placing)
-    if (!placing) this.placeLocale = this.placeAt = null
+    // 有遮罩时不再整张压暗（见 placing.css）
+    this.svg.parentElement?.classList.toggle('place-masked', placing && !!this.placeOverlay)
+    if (!placing) {
+      this.placeLocale = this.placeAt = this.placeGhost = null
+      this.placeGrids = new Map()
+      this.placeDetailOn = false
+      this.placeOverlay?.setDetail(false)
+    }
+    this.placeOverlay?.show(placing)
+    this.drawPlaceOverlay()
     this.placeDestination()
+    this.refreshRooms()
   }
   setPlaceHighlight(locale: string | null) {
     this.placeLocale = locale
+    this.syncPlaceHot()
     this.placeDestination()
+  }
+  setPlaceGrids(grids: PlaceGrid[] | null) {
+    this.placeGrids = new Map((grids ?? []).map((g) => [g.locale, g]))
+    this.drawPlaceOverlay()
+    this.placeDestination()
+  }
+  setPlaceGhost(ghost: PlaceGhost | null) {
+    this.placeGhost = ghost
+    this.syncPlaceGhost()
+  }
+  placeDetail() {
+    return this.placeDetailOn
+  }
+  /** 摆道具叠层的地点和格子；换了格子、方位角时重画 */
+  private drawPlaceOverlay() {
+    const overlay = this.placeOverlay
+    if (!overlay || !this.placing || !this.spatial) return
+    const floors = (this.spatial.floors ?? []).filter((f) => this.isDwell(f.id))
+    overlay.setPlaces(floors, this.placeGrids, this.camera.project)
+    this.placeYawKey = this.camera.project([1, 0]).join()
+    this.syncPlaceHot()
+    this.syncPlaceGhost()
+  }
+  private syncPlaceHot() {
+    const locale = this.placeLocale
+    this.placeOverlay?.setHot(locale, locale ? this.hiddenWalks(locale) : [])
+  }
+  private syncPlaceGhost() {
+    const ghost = this.placeGhost
+    this.placeOverlay?.setGhost(
+      ghost,
+      ghost?.blockedBy ? this.propFootprint(ghost.blockedBy) : null
+    )
+  }
+  /** 地点里看不见的路（米）：运行时放的道具从入口过去的路、屋里的路。地上的小路本来就画着 */
+  private hiddenWalks(locale: string): [number, number][][] {
+    const s = this.spatial
+    const b = s?.floors?.find((f) => f.id === locale)?.bounds
+    if (!s || !b) return []
+    const inside = (p: number[]) =>
+      p[0] >= b.x && p[0] <= b.x + b.w && p[2] >= b.y && p[2] <= b.y + b.h
+    return [
+      ...(this.runtimeSpatial?.overrides ?? [])
+        .filter((o) => o.prop.locale === locale)
+        .map((o) => o.route.points),
+      ...s.routes.filter((r) => r.indoor && r.points.some(inside)).map((r) => r.points),
+    ].map((points) => points.map((p) => [p[0], p[2]] as [number, number]))
+  }
+  /** 一件道具的占地（米），描红挡路的那件用 */
+  private propFootprint(id: string): OverlayProp | null {
+    const p =
+      this.runtimeSpatial?.overrides.find((o) => o.prop.id === id)?.prop ??
+      this.spatial?.props.find((q) => q.id === id)
+    return p ? { position: [p.position[0], p.position[2]], footprint: p.footprint } : null
+  }
+  private isDwell(id: string) {
+    return this.topology.locales.some((l) => l.id === id && l.kind === 'dwell')
+  }
+  /** 镜头里看得见（哪怕一角）的、有格子的地点 */
+  private placesInView() {
+    const [vx, vy, vw, vh] = this.camera.getViewBox()
+    const unit = this.spatial?.svg_units_per_metre ?? 1
+    return (this.spatial?.floors ?? [])
+      .filter(({ id, bounds: b }) => {
+        if (!this.placeGrids.has(id)) return false
+        const corners = [
+          [b.x, b.y],
+          [b.x + b.w, b.y],
+          [b.x, b.y + b.h],
+          [b.x + b.w, b.y + b.h],
+        ].map(([x, y]) => this.camera.project([x * unit, y * unit]))
+        const xs = corners.map((p) => p[0]),
+          ys = corners.map((p) => p[1])
+        return (
+          Math.max(...xs) >= vx &&
+          Math.min(...xs) <= vx + vw &&
+          Math.max(...ys) >= vy &&
+          Math.min(...ys) <= vy + vh
+        )
+      })
+      .map((f) => f.id)
+  }
+  /** 格子的一格此刻在屏幕上多宽（CSS 像素） */
+  private placeCellPixels() {
+    const step = this.placeGrids.values().next().value?.step ?? 0.4
+    const unit = this.spatial?.svg_units_per_metre ?? 1
+    return step * unit * Math.abs(this.svg.getScreenCTM()?.a || 0)
+  }
+  focusPlace(locale: string, at?: WalkTarget, avoid: Cover = {}, gentle = false) {
+    const s = this.spatial
+    const b = s?.floors?.find((f) => f.id === locale)?.bounds
+    if (!s || !b) return
+    if (gentle && this.placeDetailOn && at && this.inOpenArea(this.walkPoint(at), avoid)) return
+    const unit = s.svg_units_per_metre
+    const box = this.svg.getBoundingClientRect()
+    const insets = this.viewInsets ?? { top: 0, right: 0, bottom: 0, left: 0 }
+    const open = Math.min(
+      box.width - insets.left - insets.right - (avoid.right ?? 0),
+      box.height - insets.top - insets.bottom - (avoid.top ?? 0) - (avoid.bottom ?? 0)
+    )
+    // 地点连同四周留一圈装进露出来的那块；地点太大、格子会看不清时只取点的那一块
+    const pad = 2
+    const most = Math.max(8, open / PLACE_FOCUS_PIXELS_PER_METRE)
+    let [x, y, w, h] = [b.x - pad, b.y - pad, b.w + 2 * pad, b.h + 2 * pad]
+    if (at && (w > most || h > most)) {
+      w = Math.min(w, most)
+      h = Math.min(h, most)
+      x = Math.min(Math.max(at.position[0] - w / 2, b.x - pad), b.x + b.w + pad - w)
+      y = Math.min(Math.max(at.position[1] - h / 2, b.y - pad), b.y + b.h + pad - h)
+    }
+    this.camera.frameArea({ x: x * unit, y: y * unit, width: w * unit, height: h * unit }, avoid)
+  }
+  /** 地图上一点（地图坐标）在不在露出来的那块里（留边） */
+  private inOpenArea(point: [number, number], avoid: Cover) {
+    const m = this.svg.getScreenCTM()
+    if (!m) return false
+    const [vx, vy] = this.camera.project(point)
+    const x = m.a * vx + m.c * vy + m.e,
+      y = m.b * vx + m.d * vy + m.f
+    const box = this.svg.getBoundingClientRect()
+    const insets = this.viewInsets ?? { top: 0, right: 0, bottom: 0, left: 0 }
+    const edge = 60
+    return (
+      x >= box.left + insets.left + edge &&
+      x <= box.right - insets.right - (avoid.right ?? 0) - edge &&
+      y >= box.top + insets.top + (avoid.top ?? 0) + edge &&
+      y <= box.bottom - insets.bottom - (avoid.bottom ?? 0) - edge
+    )
   }
   setPlaceMarker(target: WalkTarget | null) {
     this.placeAt = target
@@ -1085,7 +1252,21 @@ export class TownMap {
   placeSpotAt(client: [number, number]): PlaceSpot | undefined {
     const point = this.camera.groundAt(...client)
     const locale = this.localeAt(point)
-    return locale ? { locale, near: this.walkTarget(point) } : undefined
+    if (!locale) return undefined
+    const here = this.walkTarget(point)
+    const grid = this.placeGrids.get(locale)
+    if (!grid) return { locale, near: here }
+    // 吸到离指针最近的能放的格子：放置器按 near 挑空位，近的那格能放就落在那一格
+    const cell = cellNear(grid, here.position)
+    const free = freeNear(grid, here.position)
+    return {
+      locale,
+      near: free ? { space: here.space, position: free.at } : here,
+      point: here,
+      code: cell?.code ?? '.',
+      by: cell?.by,
+      full: !free,
+    }
   }
   /** 能放东西的地点：有三维数据时按各地点的可放置范围（和后端放置器用的同一块），
    *  否则按房间和图上的区域格子；只认居民能待的地点，路段和通道不算 */

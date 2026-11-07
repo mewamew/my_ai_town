@@ -175,6 +175,7 @@ class PropsPage implements PropsView {
           localeName: this.localeName,
           refresh: () => deps.send({ type: 'get_props' }),
           command: (kind, build, done) => this.sendWorldCommand(kind, build, done),
+          ask: (build) => this.ask(build),
         })
       : null
     this.bindEvents()
@@ -355,6 +356,44 @@ class PropsPage implements PropsView {
     return true
   }
 
+  /** 只读的问题（摆道具的格子、试放）：不进待回执表、不在道具页报结果，回包直接交给摆道具。
+   *  记着问的是什么：还没换新的小镇进程不认识这两条命令，回的是错误，按「没有格子」「放不下」交回去 */
+  private readonly asked = new Map<string, ClientMsg['type']>()
+  private ask(build: (world_id: string, request_id: string) => ClientMsg) {
+    const { catalog, connected } = this.state
+    if (!catalog || !connected) return null
+    const request_id = newId()
+    const msg = build(catalog.world_id, request_id)
+    this.asked.set(request_id, msg.type)
+    this.deps.send(msg)
+    return request_id
+  }
+
+  /** 摆道具问的问题回来了；出错时换成它自己的回包，不进事件栏 */
+  private answered(msg: ServerMsg) {
+    if (msg.type === 'placement_grid' || msg.type === 'placement_preview') {
+      this.asked.delete(msg.request_id)
+      this.placing?.answer(msg)
+      return true
+    }
+    if (msg.type !== 'error' || msg.request_id === undefined) return false
+    const kind = this.asked.get(msg.request_id)
+    if (!kind) return false
+    this.asked.delete(msg.request_id)
+    const { request_id } = msg
+    if (kind === 'get_placement_grid')
+      this.placing?.answer({ type: 'placement_grid', request_id, grids: [] })
+    else
+      this.placing?.answer({
+        type: 'placement_preview',
+        request_id,
+        ok: false,
+        message: msg.message,
+        spot: null,
+      })
+    return true
+  }
+
   render() {
     const { page, state } = this
     const scroll = page.scroll.scrollTop
@@ -377,6 +416,7 @@ class PropsPage implements PropsView {
   }
 
   handleMsg(msg: ServerMsg) {
+    if (this.answered(msg)) return true
     if (msg.type === 'props') this.onCatalog(msg.catalog)
     else if (msg.type === 'prop_result') this.onResult(msg)
     // 命令没能执行（格式错误、命令过多）：按失败结束这次操作
@@ -493,6 +533,7 @@ class PropsPage implements PropsView {
     state.connected = false
     const unconfirmed = state.pending.size > 0
     state.pending.clear()
+    this.asked.clear()
     this.placing?.disconnected()
     this.announce(
       unconfirmed
@@ -512,6 +553,7 @@ class PropsPage implements PropsView {
     state.mapSignature = ''
     state.renderSignature = ''
     state.pending.clear()
+    this.asked.clear()
     this.page.editor.hidden = true
     this.placing?.reset()
     this.deps.send({ type: 'get_props' })

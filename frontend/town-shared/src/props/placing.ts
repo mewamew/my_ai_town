@@ -1,9 +1,11 @@
-// 摆道具：地图左下角「摆道具」进入。点地图上的一个地点，点的位置旁边浮出道具列表（手机上从底部升起），
-// 点一行就放到点的位置附近；浮窗不关，可以接着放、撤销刚放的那件。浮窗顶上列出这个地点已有的东西，
-// 可以顺手移除。摆道具时点地图上已有的道具，弹出小菜单：在它旁边再放东西，或者移除它。
-// 道具目录和命令回执都经道具页（page.ts），这里只管界面。
-import type { ClientMsg } from '../protocol'
-import type { GameMap, PlaceSpot } from '../gameMap'
+// 摆道具：地图左下角「摆道具」进入。一进来地图就压暗，只有能放东西的地点亮着；拉近后地点里画出
+// 能放的格子，指到哪里，绿框就吸到最近的能放的格子，东西会落在绿框里。格子和原因都由后端算
+// （get_placement_grid），这里只管怎么用。点一个地点，镜头拉近、右边浮出道具列表（手机上从底部升起，
+// 只占半屏），指着一行时试放（preview_placement），绿框换成这件的大小；点一行就放下。浮窗不关，可以
+// 接着放、撤销刚放的那件。浮窗顶上列出这个地点已有的东西，可以顺手移除。摆道具时点地图上已有的道具，
+// 弹出小菜单：在它旁边再放东西，或者移除它。道具目录和命令回执都经道具页（page.ts），这里只管界面。
+import type { ClientMsg, PlaceGrid, ServerMsg } from '../protocol'
+import type { GameMap, PlaceGhost, PlaceSpot, WalkTarget } from '../gameMap'
 import { gameIcon } from '../game/icons'
 import { visibleMapRect } from '../mapView'
 import { slot } from '../design/ui'
@@ -11,13 +13,27 @@ import { newId } from '../ids'
 import { button, el } from './dom'
 import { propPicture } from './picture'
 import { PURPOSES, usesOf } from './worldView'
+import { blockedText, freeNear, roomText } from './placeGrid'
 import type { Definition, PropCatalog, PropView } from './types'
 import './placing.css'
 
 export type PlacingMap = Pick<
   GameMap,
-  'setPlacing' | 'placeSpotAt' | 'setPlaceHighlight' | 'setPlaceMarker' | 'walkTargetOf'
+  | 'setPlacing'
+  | 'placeSpotAt'
+  | 'setPlaceHighlight'
+  | 'setPlaceMarker'
+  | 'walkTargetOf'
+  | 'setPlaceGrids'
+  | 'setPlaceGhost'
+  | 'focusPlace'
+  | 'placeDetail'
+  | 'onPlaceDetail'
 >
+
+type Answer = Extract<ServerMsg, { type: 'placement_grid' | 'placement_preview' }>
+/** 试放的结果：落点和占地（米），或者放不下的原因 */
+type Preview = { at: [number, number]; size: [number, number] } | { cant: string }
 
 export interface PlacingDeps {
   map: PlacingMap
@@ -31,6 +47,8 @@ export interface PlacingDeps {
     build: (world_id: string, request_id: string) => ClientMsg,
     done: (ok: boolean, message: string) => void
   ): boolean
+  /** 问后端哪里能放（格子、试放）：回包经 answer 交回来；没连上时返回 null */
+  ask(build: (world_id: string, request_id: string) => ClientMsg): string | null
 }
 
 type Status =
@@ -81,13 +99,40 @@ export function createPlacing(deps: PlacingDeps) {
   let recent: string[] = []
   let lastPointer: [number, number] = [0, 0]
   const watchers: ((active: boolean) => void)[] = []
+  /** 后端给的格子，按地点；还没到或地图没有三维数据时为空，退回只描地点 */
+  let grids = new Map<string, PlaceGrid>()
+  let gridAsked: string | null = null
+  /** 地图上摆着的东西变了才重新要格子 */
+  let placedKey = ''
+  /** 试放：问出去的请求对应哪一行、哪一格；结果按「道具版本|格子」记着，同一格不再问 */
+  const previewAsked = new Map<string, string>()
+  const previews = new Map<string, Preview>()
+  let previewing: string | null = null
+  /** 指针正停在浮窗里哪一行（鼠标）；格子换了以后按新位置重新试放它 */
+  let hoveredRow: Definition | null = null
+  const touch = () => document.documentElement.dataset.input === 'touch'
 
+  const hintText = el('span', '摆道具：点地图上的地点，选要放的东西')
   const hint = el('div', '', 'place-hint')
   hint.setAttribute('role', 'status')
   hint.append(
-    el('span', '摆道具：点地图上的地点，选要放的东西'),
+    hintText,
     button('完成', () => setActive(false))
   )
+  /** 顶上那句提示：整图时说亮着的地点能放，拉近后说格子 */
+  function renderHint() {
+    const detail = !!deps.map.placeDetail?.()
+    hintText.textContent = !grids.size
+      ? '摆道具：点地图上的地点，选要放的东西'
+      : detail
+        ? touch()
+          ? '摆道具：点一个亮格子，再选要放的东西'
+          : '摆道具：亮格子能放，指到哪里，绿框就落在哪里'
+        : touch()
+          ? '摆道具：亮着的地方能放，点一块拉近'
+          : '摆道具：亮着的地方能放，点一块拉近看格子'
+  }
+  if (deps.map.onPlaceDetail !== undefined) deps.map.onPlaceDetail = () => renderHint()
   const follow = el('div', '', 'place-follow')
   const picker = el('section', '', 'place-picker')
   picker.setAttribute('role', 'dialog')
@@ -152,26 +197,69 @@ export function createPlacing(deps: PlacingDeps) {
     hint.hidden = !on
     if (on) {
       recent = []
+      placedKey = placedSignature()
       deps.refresh()
+      askGrid()
     } else {
       closePicker()
       closeMenu()
       follow.hidden = true
+      grids = new Map()
+      gridAsked = null
+      placedKey = ''
+      previews.clear()
+      previewAsked.clear()
     }
+    renderHint()
     for (const watch of watchers) watch(on)
+  }
+
+  /** 要一份各地点能放的格子：进摆道具时、地图上摆着的东西变了以后 */
+  function askGrid() {
+    gridAsked = deps.ask((world_id, request_id) => ({
+      type: 'get_placement_grid',
+      request_id,
+      world_id,
+    }))
+  }
+
+  /** 后端的回包：格子换上，试放的结果记下来 */
+  function answer(msg: Answer) {
+    if (msg.type === 'placement_grid') {
+      if (msg.request_id !== gridAsked || !active) return
+      gridAsked = null
+      grids = new Map(msg.grids.map((g) => [g.locale, g]))
+      previews.clear()
+      deps.map.setPlaceGrids?.(msg.grids)
+      renderHint()
+      // 刚放下的那件占了格子：绿框挪到离点的位置最近的、还能放的格子
+      if (spot) resnap()
+      return
+    }
+    const key = previewAsked.get(msg.request_id)
+    if (!key) return
+    previewAsked.delete(msg.request_id)
+    const result: Preview =
+      msg.ok && msg.spot
+        ? { at: [msg.spot.position[0], msg.spot.position[2]], size: msg.spot.footprint }
+        : { cant: msg.ok ? '' : msg.message }
+    previews.set(key, result)
+    if (previewing === key) showPreview(key)
   }
 
   function openPicker(at: PlaceSpot, client: [number, number]) {
     closeMenu()
     follow.hidden = true
     spot = { ...at, client }
-    status = { kind: 'idle' }
+    status = at.full ? { kind: 'note', text: '这里已经放满了，移走点东西再放' } : { kind: 'idle' }
     deps.map.setPlaceHighlight?.(at.locale)
-    deps.map.setPlaceMarker?.(at.near)
     title.textContent = deps.localeName(at.locale)
     picker.hidden = false
     mapEl.classList.add('place-picking')
     render()
+    showSpotGhost()
+    // 镜头拉近到这块地，并让开浮窗：格子看得清，要放的位置不被浮窗盖住
+    if (grids.has(at.locale)) deps.map.focusPlace?.(at.locale, at.near, pickerCover(), true)
     deps.refresh()
     if (document.documentElement.dataset.layout !== 'compact') search.focus({ preventScroll: true })
   }
@@ -179,13 +267,94 @@ export function createPlacing(deps: PlacingDeps) {
   function closePicker() {
     if (!spot) return
     spot = null
+    previewing = null
+    hoveredRow = null
     picker.hidden = true
     mapEl.classList.remove('place-picking')
     deps.map.setPlaceHighlight?.(null)
     deps.map.setPlaceMarker?.(null)
+    deps.map.setPlaceGhost?.(null)
   }
 
-  /** 宽屏贴着点的位置，放不下就翻到左边；不压右侧面板、缩放钮和左下角的按钮。手机上是底部抽屉，交给样式 */
+  /** 浮窗盖住地图的右边（宽屏）；手机上是底部的抽屉，加上顶上的提示条（它下面才露出地图） */
+  function pickerCover() {
+    const m = mapEl.getBoundingClientRect(),
+      p = picker.getBoundingClientRect()
+    if (document.documentElement.dataset.layout !== 'compact')
+      return { right: Math.max(0, m.right - p.left) }
+    const h = hint.hidden ? null : hint.getBoundingClientRect()
+    return {
+      top: h ? Math.max(0, h.bottom - m.top + 8) : 0,
+      bottom: Math.max(0, m.bottom - p.top),
+    }
+  }
+
+  /** 点好的位置：有格子时画绿框（没有专门大小的东西那么大），没有格子时画定位点 */
+  function showSpotGhost() {
+    previewing = null
+    if (!spot) return
+    const g = grids.get(spot.locale)
+    if (!g || spot.full) {
+      deps.map.setPlaceGhost?.(null)
+      deps.map.setPlaceMarker?.(spot.near)
+      return
+    }
+    deps.map.setPlaceMarker?.(null)
+    deps.map.setPlaceGhost?.({ at: spot.near, size: g.size })
+  }
+
+  /** 格子换了（刚放下一件）：点好的位置挪到离原来点的地方最近的、还能放的格子 */
+  function resnap() {
+    if (!spot) return
+    const g = grids.get(spot.locale)
+    const free = g && freeNear(g, (spot.point ?? spot.near).position)
+    spot = free
+      ? { ...spot, near: { space: spot.near.space, position: free.at }, full: false }
+      : { ...spot, full: !!g }
+    showSpotGhost()
+    if (hoveredRow) previewRow(hoveredRow)
+  }
+
+  /** 指着浮窗里的一行：试放这件，绿框换成它的大小和落点 */
+  function previewRow(d: Definition) {
+    if (!spot || !grids.has(spot.locale) || spot.full) return
+    const reference = `${d.id}@${d.version}`
+    const key = `${reference}|${spot.near.position.join()}`
+    previewing = key
+    if (previews.has(key)) return showPreview(key)
+    if ([...previewAsked.values()].includes(key)) return
+    const { locale, near } = spot
+    const id = deps.ask((world_id, request_id) => ({
+      type: 'preview_placement',
+      request_id,
+      world_id,
+      instance: { id: `user:${newId()}`, definition: reference, locale },
+      near,
+    }))
+    if (id) previewAsked.set(id, key)
+  }
+
+  function showPreview(key: string) {
+    const result = previews.get(key)
+    if (!spot || !result) return
+    const reference = key.split('|')[0]
+    for (const row of list.querySelectorAll<HTMLElement>('.place-row'))
+      row.classList.toggle('cant', row.dataset.ref === reference && 'cant' in result)
+    if ('cant' in result) {
+      const g = grids.get(spot.locale)
+      deps.map.setPlaceGhost?.({ at: spot.near, size: g?.size ?? [0.65, 0.65], bad: true })
+      const row = [...list.querySelectorAll<HTMLElement>('.place-row')].find(
+        (r) => r.dataset.ref === reference
+      )
+      if (row) row.title = `这里放不下：${result.cant}`
+      return
+    }
+    const at: WalkTarget = { space: spot.near.space, position: result.at }
+    deps.map.setPlaceGhost?.({ at, size: result.size })
+  }
+
+  /** 宽屏靠右边放（右上角菜单下面、缩放钮左边），不跟着点的位置跳，镜头会把要放的地方挪到左边露出来。
+   *  手机上是底部抽屉，只占半屏，交给样式 */
   function position() {
     if (!spot) return
     if (document.documentElement.dataset.layout === 'compact') {
@@ -194,14 +363,9 @@ export function createPlacing(deps: PlacingDeps) {
     }
     const m = mapEl.getBoundingClientRect()
     const area = visibleMapRect(mapEl)
-    picker.style.maxHeight = `${Math.max(240, area.bottom - area.top - 24 - 56)}px`
-    const w = picker.offsetWidth,
-      h = picker.offsetHeight
-    const [x, y] = spot.client
-    let left = x + 28
-    if (left + w > area.right - 72) left = x - 28 - w
-    left = Math.max(area.left + 12, Math.min(left, area.right - w - 72))
-    const top = Math.max(area.top + 12, Math.min(y - 60, area.bottom - h - 56))
+    const top = area.top + 86
+    picker.style.maxHeight = `${Math.max(240, area.bottom - top - 14)}px`
+    const left = Math.max(area.left + 12, area.right - 72 - picker.offsetWidth)
     picker.style.left = `${left - m.left}px`
     picker.style.top = `${top - m.top}px`
   }
@@ -278,6 +442,13 @@ export function createPlacing(deps: PlacingDeps) {
   function row(d: Definition, count: number) {
     const reference = `${d.id}@${d.version}`
     const item = button('', () => place(d), 'place-row')
+    item.dataset.ref = reference
+    // 指着一行：地图上的绿框换成这件的大小和落点
+    item.addEventListener('pointerenter', (event) => {
+      if (event.pointerType !== 'mouse') return
+      hoveredRow = d
+      previewRow(d)
+    })
     const name = el('span', '', 'place-name')
     name.append(el('span', d.name))
     if (count) name.append(el('span', `已有 ${count}`, 'place-have'))
@@ -285,6 +456,12 @@ export function createPlacing(deps: PlacingDeps) {
     const uses = d.actions.map((a) => a.label).join('、')
     text.append(name, el('span', uses || d.description || '摆设', 'place-desc'))
     item.title = d.description || d.name
+    // 这一格试放过、放不下：标出来
+    const tried = spot && previews.get(`${reference}|${spot.near.position.join()}`)
+    if (tried && 'cant' in tried) {
+      item.classList.add('cant')
+      item.title = `这里放不下：${tried.cant}`
+    }
     item.append(
       slot(propPicture(reference, d.readable ? 'book' : 'bag'), 'sm'),
       text,
@@ -336,6 +513,7 @@ export function createPlacing(deps: PlacingDeps) {
         recent = [d.id, ...recent.filter((r) => r !== d.id)].slice(0, 3)
         setStatus({ kind: 'placed', id, name: d.name, locale })
         renderList(true)
+        askGrid()
       }
     )
     setStatus(
@@ -362,10 +540,12 @@ export function createPlacing(deps: PlacingDeps) {
     const sent = deps.command(
       'remove_prop',
       (world_id, request_id) => ({ type: 'remove_prop', request_id, world_id, id }),
-      (ok, message) =>
+      (ok, message) => {
         setStatus(
           ok ? { kind: 'note', text: done } : { kind: 'error', text: `没移除成：${message}` }
         )
+        if (ok) askGrid()
+      }
     )
     setStatus(
       sent
@@ -455,14 +635,17 @@ export function createPlacing(deps: PlacingDeps) {
         const prop = deps.catalog()?.instances.find((p) => p.id === propAt(e.target))
         if (!onMap(e.target) && !prop) {
           follow.hidden = true
+          deps.map.setPlaceGhost?.(null)
           return
         }
-        const m = mapEl.getBoundingClientRect()
-        follow.textContent = prop
-          ? `${prop.name}：点它可以移除，或在旁边再放`
+        const { text, ghost } = prop
+          ? { text: `${prop.name}：点它可以移除，或在旁边再放`, ghost: null }
           : at
-            ? `放到 ${deps.localeName(at.locale)}`
-            : '这里放不了东西'
+            ? hover(at)
+            : { text: '这里放不了东西', ghost: null }
+        deps.map.setPlaceGhost?.(ghost)
+        const m = mapEl.getBoundingClientRect()
+        follow.textContent = text
         follow.style.left = `${e.clientX - m.left}px`
         follow.style.top = `${e.clientY - m.top}px`
         follow.hidden = false
@@ -474,10 +657,52 @@ export function createPlacing(deps: PlacingDeps) {
     'pointerleave',
     () => {
       follow.hidden = true
-      if (active && !spot) deps.map.setPlaceHighlight?.(null)
+      if (active && !spot) {
+        deps.map.setPlaceHighlight?.(null)
+        deps.map.setPlaceGhost?.(null)
+      }
     },
     { signal }
   )
+  // 指针离开道具列表：绿框回到点好的位置、按没有专门大小的东西画
+  list.addEventListener(
+    'pointerleave',
+    () => {
+      hoveredRow = null
+      if (previewing) showSpotGhost()
+    },
+    { signal }
+  )
+
+  /** 指着地图上一点：说一句会怎样，拉得够近时画绿框（指着放不了的地方，绿框吸到最近的能放的格子） */
+  function hover(at: PlaceSpot): { text: string; ghost: PlaceGhost | null } {
+    const name = deps.localeName(at.locale)
+    const g = grids.get(at.locale)
+    if (!g) return { text: `放到 ${name}`, ghost: null }
+    if (at.full) return { text: `${name}已经放满了`, ghost: null }
+    if (!deps.map.placeDetail?.()) return { text: `放到 ${name} · ${roomText(g)}`, ghost: null }
+    if (at.code === '.' || !at.code)
+      return { text: `放到 ${name}`, ghost: { at: at.near, size: g.size } }
+    const thing = at.by && deps.catalog()?.instances.find((p) => p.id === at.by)?.name
+    return {
+      text: `${blockedText(at.code, thing || undefined)}，会放到绿框`,
+      ghost: {
+        at: at.near,
+        size: g.size,
+        from: at.point,
+        blockedBy: at.code === 'b' ? (at.by ?? '') : null,
+      },
+    }
+  }
+
+  /** 地图上摆着的东西：变了才重新要格子 */
+  function placedSignature() {
+    return (deps.catalog()?.instances ?? [])
+      .filter((p) => !p.withdrawn && p.on_map !== false)
+      .map((p) => `${p.id}@${p.locale}`)
+      .sort()
+      .join()
+  }
   mapEl.addEventListener('pointerdown', (event) => (lastPointer = [event.clientX, event.clientY]), {
     signal,
     capture: true,
@@ -530,12 +755,21 @@ export function createPlacing(deps: PlacingDeps) {
       if (p) openMenu(p)
       return true
     },
-    /** 道具目录更新：已有物品和列表跟着变 */
+    /** 道具目录更新：已有物品和列表跟着变；地图上摆着的东西变了就重新要格子 */
     refreshed() {
+      if (active) {
+        const key = placedSignature()
+        if (key !== placedKey) {
+          placedKey = key
+          askGrid()
+        }
+      }
       if (!spot) return
       renderHere()
       renderList(true)
     },
+    /** 后端回的格子和试放结果（道具页转过来） */
+    answer,
     disconnected() {
       if (status.kind === 'busy') setStatus({ kind: 'error', text: '小镇的连接断了，没收到结果' })
     },
@@ -544,6 +778,7 @@ export function createPlacing(deps: PlacingDeps) {
     },
     dispose() {
       setActive(false)
+      if (deps.map.onPlaceDetail !== undefined) deps.map.onPlaceDetail = null
       listeners.abort()
       for (const node of [hint, follow, picker, menu]) node.remove()
     },

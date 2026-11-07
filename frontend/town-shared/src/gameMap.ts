@@ -1,5 +1,5 @@
 import type { AvatarLook, AvatarState } from './avatar/types'
-import type { RosterMember, ServerMsg } from './protocol'
+import type { PlaceGrid, RosterMember, ServerMsg } from './protocol'
 import type { PropCatalog, PropView } from './props/types'
 import type { Insets } from './mapView'
 import type { DepthBlur, Quality } from './quality'
@@ -35,7 +35,26 @@ export interface WalkTarget {
 /** 摆道具时点到的地方：落在哪个地点，以及那一点的行走坐标（放置命令的 near） */
 export interface PlaceSpot {
   locale: string
+  /** 有格子时已经吸到离指针最近的能放的格子；这块地放满了时就是指针那一点 */
   near: WalkTarget
+  /** 有格子时：指针那一点，以及它所在那一格放不下的原因（'.' 是能放，见 PlaceGrid.cells） */
+  point?: WalkTarget
+  code?: string
+  /** 碰到或挡路的那件道具的编号 */
+  by?: string
+  /** 这块地一格都放不下了 */
+  full?: boolean
+}
+/** 摆道具的绿框：东西会落在哪、占多大（米） */
+export interface PlaceGhost {
+  at: WalkTarget
+  size: [number, number]
+  /** 指针那一点：和落点不在一格时连一条虚线、画个叉 */
+  from?: WalkTarget | null
+  /** 从入口过来被挡：从入口连红虚线到指针，描红挡路的那件（道具编号；被自己挡住时为空串） */
+  blockedBy?: string | null
+  /** 放不下：画成红框 */
+  bad?: boolean
 }
 /** 路线上的一个点；带 portal 时表示走到这里再开这扇门 */
 export interface WalkStep {
@@ -97,6 +116,22 @@ export interface GameMap {
   setPlaceHighlight?(locale: string | null): void
   /** 在点过的位置画定位点；null 清掉 */
   setPlaceMarker?(target: WalkTarget | null): void
+  /** 摆道具的格子（后端算的，每个能放东西的地点一份）：能放的地点挖亮、拉近后画出格子；null 清掉 */
+  setPlaceGrids?(grids: PlaceGrid[] | null): void
+  /** 画绿框；null 清掉 */
+  setPlaceGhost?(ghost: PlaceGhost | null): void
+  /** 镜头拉近到这个地点，格子看得清；at 是点的位置，地点太大装不下时对准它。avoid 是浮窗、提示条
+   *  盖住的上边、右边、下边（CSS 像素），地点放进剩下那块。gentle 时这一点已经露在外面、格子也看得清就不动 */
+  focusPlace?(
+    locale: string,
+    at?: WalkTarget,
+    avoid?: { top?: number; right?: number; bottom?: number },
+    gentle?: boolean
+  ): void
+  /** 格子此刻看不看得清（拉得够近） */
+  placeDetail?(): boolean
+  /** 拉近拉远让格子显示或藏起时通知 */
+  onPlaceDetail?: ((detail: boolean) => void) | null
   /** 地图俯角（度）；只有 2D 立体场景有，其他地图不实现或返回 undefined */
   mapPitch?(): number | undefined
   /** 设俯角，立即重画并记到本机 */
