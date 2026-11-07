@@ -169,7 +169,7 @@ fn people_here(world: &World, actor: &str, locale: &str) -> Vec<Value> {
 }
 
 /// 没逐条列出的更早事件并进 earlier_events：几条、其中几句是交谈、从几点到几点。`skipped` 是
-/// （时刻，是不是交谈），按时间先后；已有的 earlier_events 比它们更早，起点不变。
+/// （时刻，是不是交谈），按时间先后；已有的 earlier_events 比它们更早，起点不变，别的栏目留着。
 pub(crate) fn note_earlier(view: &mut Value, skipped: impl IntoIterator<Item = (f64, bool)>) {
     let earlier = &view["earlier_events"];
     let mut omitted = earlier["omitted"].as_u64().unwrap_or(0);
@@ -183,13 +183,40 @@ pub(crate) fn note_earlier(view: &mut Value, skipped: impl IntoIterator<Item = (
         to = Some(at);
     }
     if let Some(to) = to {
-        view["earlier_events"] = json!({
-            "omitted": omitted,
-            "speech": speech,
-            "from": from,
-            "to": kernel::clock_string(to)
-        });
+        let earlier = &mut view["earlier_events"];
+        earlier["omitted"] = json!(omitted);
+        earlier["speech"] = json!(speech);
+        earlier["from"] = json!(from);
+        earlier["to"] = json!(kernel::clock_string(to));
     }
+}
+
+/// 略过的交谈是和谁、在哪：醒来知道「刚才在哪、和谁聊了多久」，原话要时再 recall。
+fn chat_partners(
+    world: &World,
+    actor: &str,
+    skipped: &[protocol::WorldFact],
+) -> (Vec<String>, Vec<String>) {
+    let (mut with, mut places) = (Vec::new(), Vec::new());
+    for event in skipped.iter().filter(|e| e.kind == FactKind::Speech) {
+        let speaker = event.objects.first().filter(|id| *id != actor);
+        if let Some(other) = speaker.and_then(|id| world.actor(id)) {
+            if !with.contains(&other.name) {
+                with.push(other.name.clone());
+            }
+        }
+        for object in event
+            .objects
+            .iter()
+            .filter(|o| world.topo.locales.contains_key(*o))
+        {
+            let name = world.topo.locale_name(object);
+            if !places.contains(&name) {
+                places.push(name);
+            }
+        }
+    }
+    (with, places)
 }
 
 /// 随时间和位置变化的部分：新事件、身体、眼前道具与人、互动。
@@ -264,6 +291,13 @@ pub fn observe(world: &World, actor: &str, after: u64) -> Result<(Value, u64), A
             .filter(|event| event.kind != FactKind::Notice)
             .map(|event| (event.at, event.kind == FactKind::Speech)),
     );
+    let (with, places) = chat_partners(world, actor, older);
+    if !with.is_empty() {
+        value["earlier_events"]["with"] = json!(with);
+    }
+    if !places.is_empty() {
+        value["earlier_events"]["places"] = json!(places);
+    }
     // 建镇时生成的落脚点（水边、东头……）：停留时 target 填它的 id 就走过去
     let spots: Vec<_> = world
         .topo

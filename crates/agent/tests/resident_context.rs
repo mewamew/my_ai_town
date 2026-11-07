@@ -489,6 +489,11 @@ fn waking_after_a_long_chat_starts_from_what_just_happened() {
     assert!(!texts.iter().any(|t| t.contains("老屋第0件事")));
     assert!(observation["earlier_events"]["omitted"].as_u64().unwrap() > 0);
     assert!(observation["earlier_events"]["speech"].as_u64().unwrap() > 0);
+    assert_eq!(observation["earlier_events"]["with"], json!(["阿禾"]));
+    assert!(!observation["earlier_events"]["places"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     assert_eq!(q.stamp.seen_cursor, newest, "更早的不再一页页补看");
 }
 
