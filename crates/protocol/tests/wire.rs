@@ -49,6 +49,8 @@ fn server_variants() -> Vec<String> {
         WorldSettingsSaved,
         Props,
         PropResult,
+        PlacementGrid,
+        PlacementPreview,
         Roster,
         Event,
         ModelConfig,
@@ -98,6 +100,8 @@ fn client_variants() -> Vec<String> {
         SaveProp,
         RemoveProp,
         PlaceProp,
+        GetPlacementGrid,
+        PreviewPlacement,
         SetSpeed,
         GetModelConfig,
         SetModelConfig,
@@ -164,8 +168,16 @@ fn no_geometry_on_the_wire() {
             .as_str()
             .unwrap()
             .to_string();
-        // 化身状态是玩家专用的权威坐标回包；Agent 的意图协议仍禁止坐标输入。
-        if tag != "avatar_state" && tag != "avatar_result" {
+        // 化身状态是玩家专用的权威坐标回包；摆道具的格子和试放落点只回给摆道具的页面。
+        // Agent 的意图协议仍禁止坐标输入。
+        if ![
+            "avatar_state",
+            "avatar_result",
+            "placement_grid",
+            "placement_preview",
+        ]
+        .contains(&tag.as_str())
+        {
             check(&format!("ServerMsg::{tag}"), &json);
         }
         server_tags.insert(tag);
@@ -179,9 +191,9 @@ fn no_geometry_on_the_wire() {
             .as_str()
             .unwrap()
             .to_string();
-        // avatar_input.pose 是玩家三维碰撞解算后的专用位置上报；place_prop.near 是玩家摆道具时
-        // 在地图上点的位置，只作选点偏好。两者都只有玩家界面发，Agent 意图仍禁止几何。
-        if tag != "avatar_input" && tag != "place_prop" {
+        // avatar_input.pose 是玩家三维碰撞解算后的专用位置上报；place_prop、preview_placement 的
+        // near 是玩家摆道具时在地图上点的位置，只作选点偏好。都只有玩家界面发，Agent 意图仍禁止几何。
+        if !["avatar_input", "place_prop", "preview_placement"].contains(&tag.as_str()) {
             check(&format!("ClientMsg::{tag}"), &json);
         }
         client_tags.insert(tag);

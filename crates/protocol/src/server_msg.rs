@@ -85,6 +85,19 @@ pub enum ServerMsg {
         #[serde(serialize_with = "crate::sorted")]
         preview: Option<crate::PropPreview>,
     },
+    /// 摆道具的格子（GetPlacementGrid 的回包）：每个能放东西的地点一份；没有空间地图的世界为空。
+    PlacementGrid {
+        request_id: String,
+        grids: Vec<crate::PlaceGrid>,
+    },
+    /// 试放的回包（PreviewPlacement）：ok 时 spot 是这件会落在哪、朝向和占地，没有空间地图的世界为
+    /// null；不 ok 时 message 说为什么放不下。
+    PlacementPreview {
+        request_id: String,
+        ok: bool,
+        message: String,
+        spot: Option<crate::PropPosition>,
+    },
     WeatherSaved {
         request_id: String,
         world_id: String,

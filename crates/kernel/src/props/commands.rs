@@ -22,10 +22,7 @@ impl World {
             );
             return Ok(());
         }
-        crate::props::check_room(self.topo.props().len(), 1)?;
-        let prop = self.props.validate_placement(&self.topo, &placement)?;
-        self.topo
-            .check_board(prop.board.as_deref(), &prop.locale, prop.readable.as_ref())?;
+        let prop = self.check_placement(&placement)?;
         if let Some(v) = navigation::plan_override(self, &prop, near)? {
             self.topo
                 .install_override(v, navigation::walk_speed(self.walk_map.as_deref())?)?;
@@ -47,6 +44,31 @@ impl World {
         self.conceal_if_hidden(&id, hidden);
         self.affordances.rebuild(&self.topo);
         Ok(())
+    }
+
+    /// 试放：和 `place_prop_near` 同样的校验和选点，只算出会落在哪，不改世界。
+    /// 没有空间地图的世界没有落点可给，返回 None。
+    pub fn preview_placement(
+        &self,
+        placement: &Placement,
+        near: Option<&PlaceNear>,
+    ) -> Result<Option<protocol::PropPosition>> {
+        let prop = self.check_placement(placement)?;
+        Ok(navigation::plan_override(self, &prop, near)?.map(|v| v.prop))
+    }
+
+    /// 各地点能放东西的格子，给摆道具界面画「哪里能放」；见 `navigation::placement_grids`。
+    pub fn placement_grids(&self) -> Vec<protocol::PlaceGrid> {
+        navigation::placement_grids(self)
+    }
+
+    /// 放置前的校验：道具总数、地点与定义、公告栏。
+    fn check_placement(&self, placement: &Placement) -> Result<crate::topology::Prop> {
+        crate::props::check_room(self.topo.props().len(), 1)?;
+        let prop = self.props.validate_placement(&self.topo, placement)?;
+        self.topo
+            .check_board(prop.board.as_deref(), &prop.locale, prop.readable.as_ref())?;
+        Ok(prop)
     }
 
     /// 移除道具只留下墓碑：正在用它的人被中断，历史位置和路线仍然有效。

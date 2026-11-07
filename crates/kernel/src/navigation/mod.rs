@@ -76,16 +76,7 @@ pub(crate) fn plan_override(
         .ok_or_else(|| KernelError::navigation("缺少空间放置器，不能放置道具"))?;
     let request = PlacementRequest {
         prop,
-        obstacles: s
-            .props
-            .iter()
-            .chain(s.overrides.values().map(|v| &v.prop))
-            .filter(|p| {
-                p.locale == prop.locale
-                    && w.inventory.on_map(&w.props, &p.id)
-                    && w.inventory.location(&p.id).is_none()
-            })
-            .collect(),
+        obstacles: obstacles(w, s, &prop.locale),
         occupied: w
             .actors
             .values()
@@ -94,4 +85,30 @@ pub(crate) fn plan_override(
         near: near.map(|n| n.position),
     };
     placer.plan(s, &request).map(Some)
+}
+
+/// 放东西时要让开的家具：同一地点里还摆在地图上的道具（收进背包或容器的不算）。
+fn obstacles<'a>(w: &World, s: &'a space::Space, locale: &str) -> Vec<&'a protocol::PropPosition> {
+    s.props
+        .iter()
+        .chain(s.overrides.values().map(|v| &v.prop))
+        .filter(|p| {
+            p.locale == locale
+                && w.inventory.on_map(&w.props, &p.id)
+                && w.inventory.location(&p.id).is_none()
+        })
+        .collect()
+}
+
+/// 各个能放东西的地点的格子，给摆道具界面画「哪里能放」；规则和真放时找空位是同一套。
+/// 没有空间地图或放置器时为空。
+pub(crate) fn placement_grids(w: &World) -> Vec<protocol::PlaceGrid> {
+    let (Some(s), Some(placer)) = (&w.topo.navigation, &w.placer) else {
+        return Vec::new();
+    };
+    s.floors
+        .iter()
+        .filter(|f| w.topo.is_dwell(&f.id))
+        .filter_map(|f| placer.grid(s, &f.id, &obstacles(w, s, &f.id)))
+        .collect()
 }

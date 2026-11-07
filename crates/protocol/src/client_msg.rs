@@ -162,6 +162,19 @@ pub enum ClientMsg {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         near: Option<PlaceNear>,
     },
+    /// 摆道具时要各地点能放的格子（回 PlacementGrid）。
+    GetPlacementGrid {
+        request_id: String,
+        world_id: String,
+    },
+    /// 试放：instance、near 同 PlaceProp，只算这件会落在哪，不改世界（回 PlacementPreview）。
+    PreviewPlacement {
+        request_id: String,
+        world_id: String,
+        instance: serde_json::Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        near: Option<PlaceNear>,
+    },
     SetSpeed {
         request_id: String,
         speed: f64,
@@ -335,6 +348,8 @@ impl ClientMsg {
             | SaveProp { request_id, .. }
             | RemoveProp { request_id, .. }
             | PlaceProp { request_id, .. }
+            | GetPlacementGrid { request_id, .. }
+            | PreviewPlacement { request_id, .. }
             | SetSpeed { request_id, .. }
             | SetModelConfig { request_id, .. }
             | SetResidentModel { request_id, .. }

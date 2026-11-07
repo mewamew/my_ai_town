@@ -171,6 +171,16 @@ impl Runtime {
                 message,
                 preview: None,
             },
+            ClientMsg::GetPlacementGrid { request_id, .. } => ServerMsg::PlacementGrid {
+                request_id: request_id.clone(),
+                grids: Vec::new(),
+            },
+            ClientMsg::PreviewPlacement { request_id, .. } => ServerMsg::PlacementPreview {
+                request_id: request_id.clone(),
+                ok: false,
+                message,
+                spot: None,
+            },
             ClientMsg::JoinResident { op_id, .. } => ServerMsg::JoinResult {
                 op_id: op_id.clone(),
                 outcome: Some(self.failed_join(op_id, message)),
@@ -305,6 +315,13 @@ impl Runtime {
                 near,
                 ..
             } => self.place_prop(request_id, instance, near),
+            GetPlacementGrid { request_id, .. } => self.placement_grid(request_id),
+            PreviewPlacement {
+                request_id,
+                instance,
+                near,
+                ..
+            } => self.preview_placement(request_id, instance, near),
             GetPopulation => Outcome::reply(self.population_msg()),
             SetResidentAppearance {
                 request_id,
@@ -711,6 +728,8 @@ fn world_id_of(msg: &ClientMsg) -> Option<&str> {
         | ClientMsg::SetGameMode { world_id, .. }
         | ClientMsg::RemoveProp { world_id, .. }
         | ClientMsg::PlaceProp { world_id, .. }
+        | ClientMsg::GetPlacementGrid { world_id, .. }
+        | ClientMsg::PreviewPlacement { world_id, .. }
         | ClientMsg::JoinResident { world_id, .. }
         | ClientMsg::SetResidentAppearance { world_id, .. }
         | ClientMsg::SetResidentBody { world_id, .. } => Some(world_id),
@@ -774,6 +793,8 @@ fn requires_ready(msg: &ClientMsg) -> bool {
         | ClientMsg::SetStrangers { .. }
         | ClientMsg::SetGameMode { .. }
         | ClientMsg::GetProps
+        | ClientMsg::GetPlacementGrid { .. }
+        | ClientMsg::PreviewPlacement { .. }
         | ClientMsg::ValidateProp { .. }
         | ClientMsg::SaveProp { .. }
         | ClientMsg::GetModelConfig

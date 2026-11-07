@@ -542,6 +542,38 @@ pub fn server_samples() -> Vec<ServerMsg> {
             message: "无效".into(),
             preview: None,
         },
+        ServerMsg::PlacementGrid {
+            request_id: "r8".into(),
+            grids: vec![PlaceGrid {
+                by: "-0--".into(),
+                cells: ".pr.".into(),
+                columns: 2,
+                entrance: [43.3, 104.2],
+                entrance_clearance: 1.8,
+                locale: "loc_a".into(),
+                origin: [25.9, 103.7],
+                props: vec!["user:bench".into()],
+                room: 1,
+                room_capped: false,
+                rows: 2,
+                size: [0.65, 0.65],
+                step: 0.4,
+            }],
+        },
+        ServerMsg::PlacementPreview {
+            request_id: "r9".into(),
+            ok: true,
+            message: String::new(),
+            spot: Some(PropPosition {
+                id: "user:bench".into(),
+                locale: "loc_a".into(),
+                model: "generic".into(),
+                position: [35.0, 2.3, 110.0],
+                anchor: [35.0, 2.3, 110.8],
+                yaw: 0.,
+                footprint: [0.65, 0.65],
+            }),
+        },
         ServerMsg::Roster {
             environment: None,
             game_mode: Some(GameModeView::Tide(TideView {
@@ -1544,6 +1576,19 @@ pub fn client_samples() -> Vec<ClientMsg> {
             request_id: "r7".into(),
             world_id: "w1".into(),
             instance: json!({"id": "user:bench", "definition": "core:bench@1", "locale": "loc_a", "name": "工作台", "board": "board1"}),
+            near: Some(PlaceNear {
+                space: "town_outdoor".into(),
+                position: [12.5, 8.],
+            }),
+        },
+        ClientMsg::GetPlacementGrid {
+            request_id: "r8".into(),
+            world_id: "w1".into(),
+        },
+        ClientMsg::PreviewPlacement {
+            request_id: "r9".into(),
+            world_id: "w1".into(),
+            instance: json!({"id": "user:bench", "definition": "core:bench@1", "locale": "loc_a"}),
             near: Some(PlaceNear {
                 space: "town_outdoor".into(),
                 position: [12.5, 8.],

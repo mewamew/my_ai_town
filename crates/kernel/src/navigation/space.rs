@@ -215,6 +215,18 @@ pub struct PlacementRequest<'a> {
 /// 空间放置的计算方。几何搜索与场景包读取都在 host；内核拿到结果后只做 `check_override`。
 pub trait Placer: Send + Sync {
     fn plan(&self, space: &Space, request: &PlacementRequest) -> Result<Override>;
+
+    /// 摆道具界面用的格子：按没有专门模型的道具的占地，把 `plan` 会试的格点逐个试一遍，记下
+    /// 哪些能放、不能放的为什么。obstacles 同 `PlacementRequest`；不算在场的人，人会走开。
+    /// 地点没有可放置范围或入口时没有格子。
+    fn grid(
+        &self,
+        _space: &Space,
+        _locale: &str,
+        _obstacles: &[&PropPosition],
+    ) -> Option<protocol::PlaceGrid> {
+        None
+    }
 }
 
 impl Topology {

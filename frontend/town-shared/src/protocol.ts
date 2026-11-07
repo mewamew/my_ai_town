@@ -10,6 +10,7 @@ import type {
   PropResultPreview,
 } from './props/types'
 import type { WeatherCode } from './weather/types'
+import type { SpatialProp } from './spatial'
 // crates/protocol 的前端镜像：命令与回包在此集中维护。
 import type {
   NotebookQuery,
@@ -709,6 +710,25 @@ export interface WerewolfView {
   winner?: WerewolfSide
 }
 
+/** 摆道具界面画「哪里能放」用的一个地点的格子：后端放置器找空位时逐个试的那些格点（米）。
+ *  cells 逐行每格一个字符：'.' 能放，'a' 离入口太近，'p' 碰到已有的东西，'r' 压着路，
+ *  'b' 从入口走过来会被挡住，'s' 从入口过来的坡太陡；by 同位置记着碰到或挡路的是 props 里第几件 */
+export interface PlaceGrid {
+  by: string
+  cells: string
+  columns: number
+  entrance: [number, number]
+  entrance_clearance: number
+  locale: string
+  origin: [number, number]
+  props: string[]
+  room: number
+  room_capped: boolean
+  rows: number
+  size: [number, number]
+  step: number
+}
+
 export type ServerMsg =
   | { type: 'avatar_state'; state: AvatarState }
   | {
@@ -749,6 +769,16 @@ export type ServerMsg =
       ok: boolean
       message: string
       preview: PropResultPreview
+    }
+  /** 摆道具的格子：每个能放东西的地点一份 */
+  | { type: 'placement_grid'; request_id: string; grids: PlaceGrid[] }
+  /** 试放：ok 时 spot 是会落在哪（没有空间地图时为 null），不 ok 时 message 说为什么放不下 */
+  | {
+      type: 'placement_preview'
+      request_id: string
+      ok: boolean
+      message: string
+      spot: SpatialProp | null
     }
   | {
       type: 'roster'
@@ -957,6 +987,15 @@ export type ClientMsg =
       world_id: string
       instance: Instance
       /** 在地图上点的位置（行走坐标，米）：道具落在它附近的空位 */
+      near?: { space: string; position: [number, number] }
+    }
+  | { type: 'get_placement_grid'; request_id: string; world_id: string }
+  /** 试放：同 place_prop，只算会落在哪，不改世界 */
+  | {
+      type: 'preview_placement'
+      request_id: string
+      world_id: string
+      instance: Instance
       near?: { space: string; position: [number, number] }
     }
   | { type: 'set_speed'; request_id: string; speed: number }

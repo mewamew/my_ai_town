@@ -115,6 +115,38 @@ impl Runtime {
         self.prop_reply_saying(request_id, result, done)
     }
 
+    /// 摆道具界面要的格子：各地点哪些格子能放、不能放的为什么。只回给发问的页面。
+    pub(crate) fn placement_grid(&self, request_id: String) -> Outcome {
+        Outcome::reply(ServerMsg::PlacementGrid {
+            request_id,
+            grids: self.world.placement_grids(),
+        })
+    }
+
+    /// 试放：照真放的校验和选点算出这件会落在哪，不改世界、不存档。
+    pub(crate) fn preview_placement(
+        &self,
+        request_id: String,
+        instance: Value,
+        near: Option<PlaceNear>,
+    ) -> Outcome {
+        let result = self.library_placement(instance).and_then(|placement| {
+            self.world
+                .preview_placement(&placement, near.as_ref())
+                .map_err(|e| e.to_string())
+        });
+        let (ok, message, spot) = match result {
+            Ok(spot) => (true, String::new(), spot),
+            Err(e) => (false, e, None),
+        };
+        Outcome::reply(ServerMsg::PlacementPreview {
+            request_id,
+            ok,
+            message,
+            spot,
+        })
+    }
+
     /// 布置检查：这次放下或拿走以后新出现的材料缺口写进回执，比如放了营地空地却没有木头的来处。
     fn done_noting(&self, before: &BTreeSet<MissingMaterial>) -> String {
         let mut gaps: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
@@ -190,6 +222,14 @@ impl Runtime {
         instance: Value,
         near: Option<PlaceNear>,
     ) -> Result<PropPreview, String> {
+        let placement = self.library_placement(instance)?;
+        self.transact(|rt| rt.world.place_prop_near(placement, near.as_ref()))
+            .map_err(|aborted| aborted.to_string())?;
+        Ok(PropPreview::Done {})
+    }
+
+    /// 页面发来的实例配上道具库里的定义；新实例编号须带玩家前缀。
+    fn library_placement(&self, instance: Value) -> Result<Placement, String> {
         let instance: Instance =
             serde_json::from_value(instance).map_err(|e| format!("实例格式错误：{e}"))?;
         if !instance.id.starts_with(USER_PREFIX) {
@@ -202,17 +242,10 @@ impl Runtime {
             .get(&instance.definition)
             .ok_or("道具版本不存在")?
             .clone();
-        self.transact(|rt| {
-            rt.world.place_prop_near(
-                Placement {
-                    instance,
-                    definition,
-                },
-                near.as_ref(),
-            )
+        Ok(Placement {
+            instance,
+            definition,
         })
-        .map_err(|aborted| aborted.to_string())?;
-        Ok(PropPreview::Done {})
     }
 }
 

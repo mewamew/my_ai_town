@@ -48,3 +48,31 @@ pub struct SpatialOverridesView {
     pub removed: BTreeSet<String>,
     pub revision: u64,
 }
+
+/// 摆道具界面画「哪里能放」用的一个地点的格子：放置器找空位时逐个试的就是这些格点，
+/// 这里按没有专门模型的道具的占地试过一遍。只回给发问的页面，不进存档。字段按字母序。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PlaceGrid {
+    /// 和 cells 逐格对应：`p`、`b` 格碰到或挡了路的是 props 里第几件（`0-9a-zA-Z`），其余是 `-`。
+    pub by: String,
+    /// 逐行、每格一个字符：`.` 能放；`a` 离入口太近；`p` 碰到已有的东西；`r` 压着路；
+    /// `b` 从入口走过来会被挡住；`s` 从入口过来的坡太陡。
+    pub cells: String,
+    pub columns: u32,
+    /// 地点入口（米：x 与地面上的 z）和入口周围不能放的半径。
+    pub entrance: [f64; 2],
+    pub entrance_clearance: f64,
+    pub locale: String,
+    /// 第一格（第一行第一个）的中心，米。
+    pub origin: [f64; 2],
+    /// by 里的序号对应的道具编号。
+    pub props: Vec<String>,
+    /// 照放置器不指定位置时的挑法一件件往里放，还能放几件；room_capped 时是算到这里就停了，实际更多。
+    pub room: u32,
+    pub room_capped: bool,
+    pub rows: u32,
+    /// 试格子用的占地（米）。
+    pub size: [f64; 2],
+    /// 相邻格点的间距（米）。
+    pub step: f64,
+}
