@@ -140,6 +140,150 @@
   display: none;
 }
 
+/* ---------- 页签：近况｜人设｜长相｜模型（info/tabs.ts）；卡片滚动时贴在顶上 ---------- */
+#info-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-sunken);
+}
+.card-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--surface);
+}
+.card-tabs button {
+  position: relative;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.card-tabs button:hover:not([aria-selected='true']) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.card-tabs button[aria-selected='true'] {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+/* 这一页有没保存的修改 */
+.card-tabs button.dirty::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--busy);
+}
+/* 翻到人设、长相、模型时，近况的正文和吸底的按钮让出位置 */
+#info-panel:not([data-tab='status']) > :is(#info-body, #info-actions) {
+  display: none;
+}
+
+/* ---------- 人设、长相、模型：卡片里的编辑页 ---------- */
+#info-tab-page {
+  display: flex;
+  flex-direction: column;
+}
+#info-tab-page[hidden] {
+  display: none;
+}
+/* 标题行要压过后面 .card-caption 的外边距 */
+#info-tab-page > .card-tab-caption {
+  margin: 14px 16px 0;
+}
+.card-tab-caption .card-adjust {
+  margin-left: auto;
+  letter-spacing: 0;
+}
+.card-tab-body {
+  flex: 1;
+  padding: 8px 16px 16px;
+  min-width: 0;
+}
+/* 名字已经写在卡片上，页里的标题不再重复；保存结果挪到页顶，只看预览时也看得见 */
+.card-tab-body .spage {
+  display: flex;
+  flex-direction: column;
+}
+.card-tab-body .spage > h2 {
+  display: none;
+}
+.card-tab-body .spage > .page-status {
+  order: -1;
+  margin: 0 0 8px;
+  min-height: 0;
+}
+.card-tab-body .spage > .page-status:empty {
+  display: none;
+}
+.card-tab-body .spage > .hint {
+  margin-top: 0;
+}
+.card-tab-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-page);
+}
+.card-tab-bar[hidden] {
+  display: none;
+}
+.card-tab-note {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--busy);
+}
+/* 人设平时只看预览；点「编辑」后左原文右预览（窄的时候原文、预览两个小页签） */
+#info-tab-page[data-mode='view'] :is(.persona-tabs, #persona-text, .spage > .hint) {
+  display: none;
+}
+#info-tab-page[data-mode='view'] .persona-preview {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.card-tab-body .persona-preview {
+  font-size: 13px;
+  line-height: 1.75;
+}
+.card-tab-body .persona-preview h1 {
+  font-size: 18px;
+}
+.card-tab-body .persona-preview h2 {
+  font-size: 15px;
+}
+.card-tab-body .persona-preview h3,
+.card-tab-body .persona-preview h4 {
+  font-size: 14px;
+}
+.card-tab-body #persona-text {
+  min-height: 360px;
+  font-size: 13px;
+}
+
 /* ---------- 正文 ---------- */
 #info-body {
   display: flex;
@@ -547,7 +691,7 @@
 }
 .card-links {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
 }
 .card-links button {
@@ -567,6 +711,13 @@
 .card-links button:hover {
   background: var(--surface-hover);
   color: var(--text);
+}
+
+/* 平板上卡片是盖在地图上的一栏：改人设原文、捏长相时放宽（电脑上宽度由 info/width.ts 直接设） */
+@media (min-width: 720px) and (max-width: 1023px) {
+  #info-panel[data-wide] {
+    width: min(680px, 94vw);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,4 +1,5 @@
-// 设定 → 村民 → 长相：捏这位居民在小镇里的像素小人。只改这一位，村民库里的模板不变。
+// 角色卡 → 长相：捏这位居民在小镇里的像素小人。只改这一位，村民库里的模板不变；
+// 切到这一页时卡片拉到最宽，保存后地图上马上换上。
 import { el, statusLine } from '../dom'
 import {
   currentPopulation,
@@ -9,10 +10,9 @@ import {
 } from '../portraits'
 import type { VillagerLook } from '../protocol'
 import { createLookEditor, lookFor } from '../residents/look'
-import type { SettingsPage } from '../settingsCenter'
-import type { ResidentPageDeps } from './page'
+import type { CardPageDeps, TabPage } from './tabs'
 
-export function createLookPage(deps: ResidentPageDeps): SettingsPage {
+export function createLookPage(deps: CardPageDeps): TabPage {
   const { resident } = deps
   const page = el('section', '', 'spage')
   const status = el('div', '', 'page-status')
@@ -40,10 +40,7 @@ export function createLookPage(deps: ResidentPageDeps): SettingsPage {
   })
 
   return {
-    id: 'look',
-    group: 'resident',
-    navLabel: '长相',
-    title: `${resident.name} · 长相`,
+    title: `${resident.name}的长相`,
     el: page,
     isDirty,
     save() {

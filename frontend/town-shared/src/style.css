@@ -1247,84 +1247,6 @@ body.resizing-info {
   content: ' ●';
   color: var(--accent);
 }
-/* 村民组顶部的换人框：点开列出所有村民 */
-.settings-resident-picker {
-  position: relative;
-  flex: none;
-  margin: 2px 12px 4px;
-}
-.settings-resident-picker > summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-s);
-  background: var(--surface);
-  cursor: pointer;
-  list-style: none;
-}
-.settings-resident-picker > summary::-webkit-details-marker {
-  display: none;
-}
-.settings-resident-switch {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--dim);
-}
-.settings-resident-menu {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 5;
-  display: grid;
-  gap: 2px;
-  max-height: 280px;
-  overflow-y: auto;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-s);
-  background: var(--surface);
-  box-shadow: var(--elev-2);
-}
-.settings-resident-menu button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: none;
-  background: none;
-  text-align: left;
-}
-.settings-resident-menu button:hover,
-.settings-resident-menu button.on {
-  background: var(--surface-sunken);
-}
-.settings-face {
-  flex: none;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  overflow: hidden;
-  display: grid;
-  place-items: center;
-  background: var(--note-bg);
-  font-size: 13px;
-}
-.settings-face img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.settings-face .resident-portrait {
-  width: 100%;
-  height: 100%;
-}
-.settings-no-resident {
-  margin: 2px 22px 6px;
-  font-size: 12px;
-  color: var(--dim);
-}
 #settings-page {
   flex: 1;
   min-width: 0;
@@ -1437,7 +1359,7 @@ body.resizing-info {
   padding-left: 22px;
 }
 
-/* 使用模型页 / 模型服务页 */
+/* 角色卡的模型页 / 模型服务页 */
 .form-row {
   margin: 8px 0;
   display: flex;

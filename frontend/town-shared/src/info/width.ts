@@ -43,6 +43,9 @@ export function installPanelWidth(panel: HTMLElement, resizer: HTMLElement, obsM
   }
 
   let renderedWidth = renderWidth(preferredWidth)
+  /** 改人设原文、捏长相时临时拉到最宽：不记成本机偏好，关掉回到原来的宽度 */
+  let wide = false
+  const wanted = () => (wide ? widthLimit() : preferredWidth)
   let dragging = false
   let dragStartX = 0
   let dragStartWidth = renderedWidth
@@ -105,9 +108,18 @@ export function installPanelWidth(panel: HTMLElement, resizer: HTMLElement, obsM
   window.addEventListener(
     'resize',
     () => {
-      if (isDesktop()) renderedWidth = renderWidth(preferredWidth)
+      if (isDesktop()) renderedWidth = renderWidth(wanted())
     },
     { signal }
   )
-  return { dispose: () => listeners.abort() }
+  return {
+    dispose: () => listeners.abort(),
+    setWide(on: boolean) {
+      if (wide === on) return
+      wide = on
+      // 平板上卡片是盖在地图上的一栏，宽度由样式按这个标记放宽
+      panel.toggleAttribute('data-wide', on)
+      if (isDesktop()) renderedWidth = renderWidth(wanted())
+    },
+  }
 }

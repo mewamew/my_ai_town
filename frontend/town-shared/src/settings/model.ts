@@ -9,7 +9,7 @@ export function createModelPage(deps: PageDeps): SettingsPage {
   el.className = 'spage'
   el.innerHTML = `
     <h2>默认模型</h2>
-    <p class="hint">新请进来的村民默认用它，写人设、生成人物也用它。每位村民可以在自己的「使用模型」里换。</p>
+    <p class="hint">新请进来的村民默认用它，写人设、生成人物也用它。每位村民可以在自己角色卡的「模型」里换。</p>
     <div class="form-row">
       <label for="use-prov">模型服务</label>
       <select id="use-prov"></select>

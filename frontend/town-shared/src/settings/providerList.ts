@@ -49,7 +49,7 @@ export function createProviderListPage(deps: ProviderListDeps) {
     el('h2', '模型服务'),
     el(
       'p',
-      '填好服务地址和密钥的服务，才能在「使用模型」和「默认模型」里选。保存后所有村民都能用。',
+      '填好服务地址和密钥的服务，才能在「默认模型」和角色卡的「模型」里选。保存后所有村民都能用。',
       'hint'
     )
   )

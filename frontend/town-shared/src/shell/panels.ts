@@ -109,7 +109,13 @@ export function createPanels(input: ShellInputs) {
     events,
     localeName,
     onPossess: (id) => void avatar.possess(id),
-    onEditResident: withSelected((r) => session.enter(center.ensureResident(r))),
+    // 页签里改人设、长相、模型：保存走连接的回执；「去配置这个服务」打开右上角的设定
+    editor: {
+      send,
+      save: input.save,
+      openSettings: (pageId) => void session.enter(pageId),
+      residentName: (id) => observed.get(id)?.name,
+    },
     onOpenDiary: () => {
       // 没选中居民时用名册第一位：日记页左栏自带村民切换，不应弹名册
       const r = selectedResident() ?? [...observed.values()][0]
@@ -168,7 +174,6 @@ export function createPanels(input: ShellInputs) {
     send,
     onBack: () => session.exit(),
     save: input.save,
-    selectedResident,
     map,
     game,
     openUsage: () => {
@@ -209,7 +214,6 @@ export function createPanels(input: ShellInputs) {
   const pages = createPages(input, {
     session,
     infoPanel,
-    center,
     observed,
     overlay: (on) => avatar.overlay(on),
     modelOptions: () => models.options(),
@@ -255,7 +259,18 @@ export function createPanels(input: ShellInputs) {
   })
   worldSettings.subscribe(emptyTown.sync)
   models.subscribe(emptyTown.refresh)
-  installBackToMaps(selectedMap, events, () => avatar.release())
+  // 离开小镇前：角色卡页签里还有没存的草稿先问一句，再交还化身控制
+  installBackToMaps(selectedMap, events, async () => {
+    const unsaved = infoPanel.unsaved()
+    if (
+      unsaved.length &&
+      !confirm(
+        `还有没保存的修改：${unsaved.join('、')}。\n「确定」放弃修改并离开；「取消」留下来保存。`
+      )
+    )
+      return false
+    return avatar.release()
+  })
   // 信息栏按世界生理开关补画关掉的项
   worldSettings.subscribe(() => {
     const switches = worldSettings.state()?.physiology
@@ -362,7 +377,6 @@ function createPages(
   panels: {
     session: ReturnType<typeof createSettingsSession>
     infoPanel: ReturnType<typeof initInfoPanel>
-    center: ReturnType<typeof initSettingsCenter>
     observed: Map<string, ResidentContext>
     /** 菜单等覆盖层打开时停止化身移动 */
     overlay: (open: boolean) => void
@@ -374,7 +388,7 @@ function createPages(
   }
 ) {
   const { map, events, localeName, send, game } = input
-  const { session, infoPanel, center, observed } = panels
+  const { session, infoPanel, observed } = panels
   const diary = initDiary({
     send,
     game,
@@ -398,7 +412,11 @@ function createPages(
       locateResident(id)
       infoPanel.follow(true)
     },
-    onOpenSettings: (r) => session.enter(center.ensureResident(r)),
+    // 名册上的「档案」：回到地图，打开他的角色卡，翻到人设
+    onOpenProfile: (r) => {
+      locateResident(r.id)
+      infoPanel.open(r.id, 'persona')
+    },
     // 住宅不算去处；默认图把道路和入口也登记成了处所，同样不列
     placeNames: () =>
       input.topology.places

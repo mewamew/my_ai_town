@@ -20,7 +20,8 @@ export interface ResidentsDeps {
   localeName: (id: string) => string
   onLocate: (id: string) => void
   onFollow: (id: string) => void
-  onOpenSettings: (resident: { id: string; name: string }) => void
+  /** 「档案」：回到地图，打开他的角色卡翻到人设 */
+  onOpenProfile: (resident: { id: string; name: string }) => void
   /** 能用的模型，第一个是新村民默认用的；一个都没有时先住下，连上模型再行动 */
   modelOptions: () => ModelOption[]
   /** 打开连接模型的弹层 */

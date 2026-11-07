@@ -90,7 +90,7 @@ function joinForm(ctx: ResidentsContext, id: string, p: JoinPreview) {
     el(
       'p',
       model
-        ? `用 ${model.name} · ${model.model} 思考，以后可以在设定里单独换。`
+        ? `用 ${model.name} · ${model.model} 思考，以后可以在角色卡的「模型」里单独换。`
         : '还没连模型：先住下，连上后才开始行动。',
       'dim'
     )

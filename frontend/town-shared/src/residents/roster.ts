@@ -1,4 +1,4 @@
-// 村中居民名册：每行一位，带「在地图上看」和「设定」。页首最显眼的是「新建村民」，鼓励玩家自己创造，
+// 村中居民名册：每行一位，带「在地图上看」和「档案」（角色卡里改人设、长相、模型）。页首最显眼的是「新建村民」，鼓励玩家自己创造，
 // 从村民库挑预制人物排在它后面。
 import { button, el } from '../dom'
 import { displayClock, playerText } from '../format'
@@ -77,9 +77,9 @@ function plainRow(ctx: ResidentsContext, r: Registration) {
   const actions = el('div', '', 'row')
   actions.append(
     ctx.locateButton(r.id),
-    button('设定', () => {
+    button('档案', () => {
       ctx.close()
-      deps.onOpenSettings({ id: r.id, name: r.name })
+      deps.onOpenProfile({ id: r.id, name: r.name })
     })
   )
   row.append(marker(portraitKey(r), r.appearance.marker), who, where, actions)

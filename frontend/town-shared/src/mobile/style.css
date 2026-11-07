@@ -587,22 +587,6 @@ html[data-empty-town] .mobile-dock [data-dock='residents'] {
     background: var(--surface);
     font-weight: 400;
   }
-  #settings-nav .nav-danger {
-    margin-top: 18px;
-    padding-top: 0;
-    border-top: 0;
-  }
-  .settings-resident-picker {
-    margin: 0 0 8px;
-  }
-  .settings-resident-picker > summary {
-    min-height: 48px;
-  }
-  .settings-resident-menu {
-    position: absolute;
-    display: grid;
-    box-shadow: var(--elev-3);
-  }
   #settings-page {
     padding: 14px 16px 24px;
   }

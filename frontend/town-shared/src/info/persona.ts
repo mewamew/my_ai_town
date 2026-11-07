@@ -1,10 +1,11 @@
+// 角色卡 → 人设：平时在卡片里只看预览，点「编辑」卡片拉宽，左原文右预览（info/tabs.ts）。
 import type { ServerMsg } from '../protocol'
 import { statusLine } from '../dom'
-import type { SettingsPage } from '../settingsCenter'
-import { $, htmlText, type ResidentPageDeps } from './page'
-import { renderMarkdown } from './markdown'
+import { $, htmlText } from '../settings/page'
+import { renderMarkdown } from '../settings/markdown'
+import type { CardPageDeps, TabPage } from './tabs'
 
-export function createPersonaPage(deps: ResidentPageDeps): SettingsPage {
+export function createPersonaPage(deps: CardPageDeps): TabPage {
   const el = document.createElement('section')
   el.className = 'spage'
   const name = htmlText(deps.resident.name)
@@ -52,10 +53,7 @@ export function createPersonaPage(deps: ResidentPageDeps): SettingsPage {
   }
 
   return {
-    id: 'persona',
-    group: 'resident',
-    navLabel: '人设',
-    title: `${deps.resident.name} · 人设`,
+    title: `${deps.resident.name}的人设`,
     el,
     isDirty: () => dirty,
     save() {

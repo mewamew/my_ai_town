@@ -1,5 +1,6 @@
 // 选中村民：地图上点人，脚下冒出一排动作钮（info/focus.ts）；点「资料」打开右栏的角色卡。
-// 角色卡只读：像素小人和想法、住处、正在做的事、身体状态、口袋，原因和记录收在「更多细节」里。
+// 角色卡分页签（info/tabs.ts）：「近况」是像素小人和想法、住处、正在做的事、身体状态、口袋，原因和记录收在
+// 「更多细节」里；「人设」「长相」「模型」就地改这位村民。
 // 跨级反馈：记录每项需求的上一个 band，变化时状态条一次性强调 + 追加本地事件。
 
 import {
@@ -8,6 +9,7 @@ import {
   type PopulationView,
   type ResidentRegistration,
   type RosterMember,
+  type ServerMsg,
 } from './protocol'
 import { agentStopped } from './display'
 import type { WaitLine } from './modelWait'
@@ -27,7 +29,8 @@ interface InfoPanelDeps {
   events: EventsHandle
   localeName: (id: string) => string
   onPossess: (id: string) => void
-  onEditResident: () => void
+  /** 页签里改人设、长相、模型要用的：发消息、保存、跳到设定（info/tabs.ts） */
+  editor: CardEditorDeps
   onOpenDiary: () => void
   onOpenMemory: () => void
   onSelectResident: (id: string) => void
@@ -68,6 +71,7 @@ import { createThoughtView } from './info/thought'
 import { createPlanView } from './info/plan'
 import { createAgentView } from './info/agent'
 import { createStage } from './info/stage'
+import { createCardTabs, type CardEditorDeps, type CardTab } from './info/tabs'
 import './info/card.css'
 
 export function initInfoPanel(deps: InfoPanelDeps) {
@@ -92,7 +96,6 @@ export function initInfoPanel(deps: InfoPanelDeps) {
   lineLabel($('info-memory'), 'memory', '回忆')
   lineLabel($('info-diary'), 'clock', '经历')
   lineLabel($('info-chat'), 'chat', '聊过的')
-  lineLabel($('info-edit'), 'pen', '设定')
   lineLabel($('info-collapse'), 'close', '收起')
   possessBtn.onclick = () => {
     if (selectedId) deps.onPossess(selectedId)
@@ -114,6 +117,13 @@ export function initInfoPanel(deps: InfoPanelDeps) {
   /** 选中的人最近一份名册：地图上的动作钮按它决定能不能说话、附身 */
   let current: RosterMember | undefined
   const panelWidth = installPanelWidth(panel, resizer, obsMain)
+  const tabs = createCardTabs(panel, deps.editor, {
+    setWide: panelWidth.setWide,
+    reveal() {
+      const pos = selectedId ? deps.map.getMemberPos(selectedId) : undefined
+      if (pos) deps.map.panTo(pos[0], pos[1])
+    },
+  })
   const inventory = createInventoryView($('info-inventory'), deps.onOpenItem)
   const body = createBodyView($('info-physiology'), query<HTMLElement>(panel, '.info-body-folds'))
   const needs = createNeedsView($('info-needs'), '', (text, warning) =>
@@ -178,6 +188,7 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     panel.hidden = collapsed
     resizer.hidden = collapsed
     panel.classList.toggle('collapsed', collapsed)
+    if (collapsed) tabs.collapsed()
     syncFocus()
   }
   /** 收起角色卡，保留选中：地图上的动作钮还在 */
@@ -252,6 +263,7 @@ export function initInfoPanel(deps: InfoPanelDeps) {
       current = undefined
     }
     selectedId = id
+    tabs.setResident(id)
     if (id) deps.onSelectResident(id)
     deps.map.setSelected(id)
     focus.show(id)
@@ -320,7 +332,6 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     deps.map.watch?.(following ? selectedId : null, () => setFollowing(false))
   }
   followBtn.onclick = () => setFollowing(!following)
-  $('info-edit').onclick = () => deps.onEditResident()
   $('info-diary').onclick = () => deps.onOpenDiary()
   $('info-memory').onclick = () => deps.onOpenMemory()
   $('info-collapse').onclick = collapse
@@ -353,7 +364,6 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     syncAdjust()
 
     needs.setResidentName(m.name)
-    $('info-edit').title = `编辑${m.name}的设定`
     $('info-name').textContent = m.name
     const at = m.at
     $('info-place').textContent = deps.localeName(me.locale)
@@ -386,11 +396,14 @@ export function initInfoPanel(deps: InfoPanelDeps) {
 
   return {
     select,
-    /** 选中并打开角色卡 */
-    open(id: string) {
+    /** 选中并打开角色卡；给了页签就翻到那一页（村民页的「档案」开到人设） */
+    open(id: string, tab?: CardTab) {
       select(id)
       setCollapsed(false)
+      if (tab) tabs.show(tab)
     },
+    /** 页签里还没保存的修改，离开小镇前问一句 */
+    unsaved: () => tabs.unsaved(),
     dispose() {
       panelWidth.dispose()
       focus.show(null)
@@ -428,10 +441,15 @@ export function initInfoPanel(deps: InfoPanelDeps) {
       needs.tune(t, healthMarks)
       adjust.tune(t, healthMarks)
     },
-    /** 人口登记：住宅与入村时间来自这里，不从 roster 猜 */
+    /** 人口登记：住宅与入村时间来自这里，不从 roster 猜；离开小镇的人，页签里他的几页一起删掉 */
     onPopulation(view: PopulationView) {
       registrations = new Map(view.residents.map((r) => [r.id, r]))
+      tabs.keep(new Set(registrations.keys()))
       renderHome()
+    },
+    /** 人设原文、模型配置等交给页签里的各页；不认领，后面的面板照常收到 */
+    handleMsg(msg: ServerMsg) {
+      tabs.handleMsg(msg)
     },
     /** 名册：先定选中谁，再刷新信息、跨级检测与跟随 */
     roster({ residents, msg }: RosterFrame) {
@@ -444,6 +462,8 @@ export function initInfoPanel(deps: InfoPanelDeps) {
         select(null)
       if (residents.length) picked = true
       render(residents, msg.sim_minutes, msg.speed)
+      // 模型页认其他村民（「套用到其他还没选的村民」）要看名册
+      tabs.handleMsg(msg)
     },
   }
 }

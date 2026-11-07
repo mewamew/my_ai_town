@@ -1,7 +1,7 @@
 import type { ClientMsg, ModelChoice, ServerMsg } from '../protocol'
 import type { Receipt, SaveCommand } from '../connection'
 
-// 「使用模型」页的「套用到其他还没选的村民」：从名册认出其他在世村民，
+// 角色卡「模型」页的「套用到其他还没选的村民」：从名册认出其他在世村民，
 // 逐个读取他们的 agent_config 看是否已绑定模型，套用时逐个发 set_resident_model。
 
 interface Other {

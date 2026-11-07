@@ -2,16 +2,17 @@ import type { ModelChoice, ProviderView, ServerMsg } from '../protocol'
 import { statusLine } from '../dom'
 import { BUILTIN, PRESETS, needsKey } from '../providers'
 import { displayClock } from '../format'
-import type { SettingsPage } from '../settingsCenter'
-import { $, htmlText, type ResidentPageDeps } from './page'
+import { $, htmlText } from '../settings/page'
 import { residentModelProblem } from './residentModelValidation'
 import { saveInTurn, trackOtherResidents } from './residentModelOthers'
+import type { CardPageDeps, TabPage } from './tabs'
 
 const sameChoice = (a: ModelChoice, b: ModelChoice | null) =>
   a?.provider === b?.provider && a?.model === b?.model
 
-// 每位村民单独绑定模型，没有默认值；没绑定时下拉框停在「请选择」，不预选任何服务。
-export function createResidentModelPage(deps: ResidentPageDeps): SettingsPage {
+// 角色卡 → 模型：每位村民单独绑定模型，没有默认值；没绑定时下拉框停在「请选择」，不预选任何服务。
+// 服务和密钥本身在右上角的「设定 → 模型服务」里配。
+export function createResidentModelPage(deps: CardPageDeps): TabPage {
   const el = document.createElement('section')
   el.className = 'spage'
   const name = htmlText(deps.resident.name)
@@ -79,7 +80,7 @@ export function createResidentModelPage(deps: ResidentPageDeps): SettingsPage {
     providerState.textContent = !chosen
       ? configured.length
         ? ''
-        : '还没有配置任何模型服务，先到「模型服务」页配置。'
+        : '还没有配置任何模型服务，先到右上角「设定 → 模型服务」配置。'
       : provider.value === BUILTIN
         ? '随游戏自带，在这台设备上运行，不用密钥也不花钱'
         : conf?.key_mask
@@ -186,9 +187,6 @@ export function createResidentModelPage(deps: ResidentPageDeps): SettingsPage {
   }
 
   return {
-    id: 'resident-model',
-    group: 'resident',
-    navLabel: '使用模型',
     title: `${deps.resident.name}用的模型`,
     el,
     isDirty: () => dirty,

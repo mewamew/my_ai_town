@@ -30,7 +30,7 @@
   >
   <span class="spacer"></span>
   <button id="open-usage" title="模型请求与 token 消耗">消耗</button>
-  <button id="open-settings" title="人设、长相、模型、额度、声音、显示">设定</button>
+  <button id="open-settings" title="模型、额度、声音、显示">设定</button>
   <button id="open-help" title="开局向导、新手提示和按键说明">帮助</button>
 </template>
 <!-- 地图左下角的入口：场景物品、书与公告、摆道具，放在地图画面之前 -->
@@ -66,7 +66,8 @@
   </div></template
 >
 <!-- 右栏是角色卡：在地图上选中村民后点「资料」打开。顶上是像素小人和想法，名字和住处跟在下面；
-     正文依次是正在做的事、身体状态、口袋，原因和记录收进「更多细节」；按钮吸底。 -->
+     名字下面是页签（info/tabs.ts）：「近况」依次是正在做的事、身体状态、口袋，原因和记录收进「更多细节」，
+     按钮吸底；「人设」「长相」「模型」的编辑页挂在 #info-tab-page，各自吸底一条保存栏。 -->
 <template data-slot="info-panel"
   ><div id="info-head">
     <div class="card-stage">
@@ -85,6 +86,15 @@
       <div id="info-home"></div>
     </div>
   </div>
+  <div id="info-tabs">
+    <div class="card-tabs" role="tablist" aria-label="角色卡">
+      <button type="button" role="tab" data-tab="status">近况</button>
+      <button type="button" role="tab" data-tab="persona">人设</button>
+      <button type="button" role="tab" data-tab="look">长相</button>
+      <button type="button" role="tab" data-tab="model">模型</button>
+    </div>
+  </div>
+  <section id="info-tab-page" hidden></section>
   <div id="info-body">
     <p id="info-stop" class="info-stop" role="status" hidden>
       <span></span><button type="button" class="link"></button>
@@ -129,7 +139,6 @@
       </button>
       <button id="info-diary" type="button" title="按天看做了什么、想了什么">经历</button>
       <button id="info-chat" type="button" title="参与过的聊天和完整台词">聊过的</button>
-      <button id="info-edit" type="button">设定</button>
     </div>
   </div></template
 >

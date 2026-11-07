@@ -1,4 +1,3 @@
-import type { ResidentContext } from '../application'
 import type { ClientMsg } from '../protocol'
 import type { Receipt, SaveCommand } from '../connection'
 import { query } from '../dom'
@@ -13,11 +12,6 @@ export interface PageDeps {
   game: boolean
   /** 离开设定中心去「消耗」页 */
   openUsage: () => void
-}
-
-/** 村民子页多一个当前村民；模型、游戏子页不需要 */
-export interface ResidentPageDeps extends PageDeps {
-  resident: ResidentContext
 }
 
 /** 子页模板里的固定元素：找不到直接报错，不用非空断言遮住 */

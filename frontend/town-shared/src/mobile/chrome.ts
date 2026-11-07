@@ -235,25 +235,28 @@ export function installMobileChrome(d: ChromeDeps) {
     onSwipe: (step) => d.infoPanel.cycle(step),
   })
   let wasHidden = panel.hidden
-  // 聊天记录是村民卡里的一整页，头部和把手都让给它：打开时拉到全屏，退回村民信息时回到原来的档
-  let beforeChat: Snap | null = null
+  // 聊天记录是村民卡里的一整页，人设、长相、模型页签要地方编辑：打开时拉到全屏，
+  // 退回近况时回到原来的档
+  const wantsFull = () =>
+    panel.classList.contains('chat-open') || (panel.dataset.tab ?? 'status') !== 'status'
+  let beforeFull: Snap | null = null
   new MutationObserver(() => {
-    const chat = panel.classList.contains('chat-open')
+    const full = wantsFull()
     if (wasHidden && !panel.hidden) {
       d.events.collapse()
       syncDock()
-      beforeChat = chat ? 'peek' : null
+      beforeFull = full ? 'peek' : null
       // 先按默认高度排出头部，下一帧再量露头档
-      requestAnimationFrame(() => sheet.open(chat ? 'full' : 'peek'))
-    } else if (chat && !beforeChat) {
-      beforeChat = sheet.snap()
+      requestAnimationFrame(() => sheet.open(wantsFull() ? 'full' : 'peek'))
+    } else if (full && !beforeFull) {
+      beforeFull = sheet.snap()
       sheet.set('full')
-    } else if (!chat && beforeChat) {
-      if (!panel.hidden) sheet.set(beforeChat)
-      beforeChat = null
+    } else if (!full && beforeFull) {
+      if (!panel.hidden) sheet.set(beforeFull)
+      beforeFull = null
     }
     wasHidden = panel.hidden
-  }).observe(panel, { attributes: true, attributeFilter: ['hidden', 'class'] })
+  }).observe(panel, { attributes: true, attributeFilter: ['hidden', 'class', 'data-tab'] })
   // 住处、想法晚一步填上或换了长短：露头档跟着重新量，免得把一行字切成两半
   let remeasure = 0
   new MutationObserver(() => {
