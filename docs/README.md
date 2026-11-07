@@ -83,6 +83,19 @@ node scripts/windows/build.mjs   # target/windows/ai-town-<版本>-windows-x64.z
 
 Windows 产物暂未签名，系统可能显示 SmartScreen 提示。发布前应在干净的 Windows 环境验证，并公布产物校验值。
 
+## 录像与拍素材
+
+「世界观」面板「规则」下面的录像开关（缺省开）开着时，世界进程把发给页面的名册和事件录进小镇目录的 `recordings/`，每打开一次世界一卷，什么也没发生的卷不留。重演时不开世界、不调模型，同一段拍几遍都一样：
+
+```sh
+node scripts/replay/script.mjs <小镇> --reels                   # 录下的几卷
+node scripts/replay/script.mjs <小镇> --who 林晚 --grep 帮忙     # 读成剧本，找片段
+node scripts/replay/shoot.mjs 镜头单.json --draft               # 小样：1280×720、30 帧
+node scripts/replay/shoot.mjs 镜头单.json                       # 成片：缺省 3840×2160、60 帧
+```
+
+`shoot.mjs` 要一个正在跑的前端（缺省 5174，`--base` 换）、ffmpeg 和 Chrome（无头、走真 GPU）；镜头单怎么写见它的开头。每段出一个 mp4（时间码按录像时刻，几个机位在剪辑软件里按时间码对齐）、台词和心声两份 SRT、一张样片图。录像的行写法改了，`crates/host/src/recording.rs` 和 `scripts/replay/reel.mjs` 的格式号一起加一。
+
 ## 检查
 
 按依赖顺序运行；CI 配置见 `.github/workflows/`。
