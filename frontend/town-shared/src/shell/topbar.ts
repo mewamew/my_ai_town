@@ -1,6 +1,8 @@
-// 地图左上的时钟牌和开始/暂停钮、菜单里的「选择小镇」、时钟牌下的连接状态和全镇暂停标记，以及地图左下的道具入口。
+// 地图左上的时钟牌和开始/暂停钮、菜单里的「选择小镇」、时钟牌下的连接状态和全镇暂停标记，以及地图底部正中
+// 那排格子（道具、进入化身、书报）和左下角让开它的动态。
 // 以前这些在顶栏上，现在顶栏拆了，都浮在地图上（shell/plain.html、shell/hud.css）。
 import { $, button } from '../dom'
+import { isCompact } from '../platform'
 import { countBadge } from '../design/ui'
 import type { EventsHandle } from '../events'
 import { displayClock } from '../format'
@@ -204,8 +206,48 @@ export function installMapButtons(
   const booksBadge = booksButton.querySelector('.ui-count')
   if (booksBadge) booksButton.querySelector('.tool-slot')?.append(booksBadge)
   watchBooks(booksCount)
-  // 左上那一列（时钟牌、开始、世界观、提示、头像条）和右上的菜单钮也在地图容器里，按下同样不能漏给地图
-  for (const entry of [propsButton, booksButton, $('hud-left'), $('open-menu')])
+  // 底部那一排（连同化身界面放进来的「进入化身」）、左上那一列（时钟牌、开始、世界观、提示、头像条）
+  // 和右上的菜单钮都在地图容器里，按下不能漏给地图
+  for (const entry of [$('map-hotbar'), $('hud-left'), $('open-menu')])
     for (const type of ['pointerdown', 'dblclick'])
       entry.addEventListener(type, (event) => event.stopPropagation(), { signal })
+  fitEventBar(signal)
+}
+
+/** 动态排在底部那排格子左边：宽度到格子左边为止；地图窄得排不下时抬到格子上面。
+ *  手机上那一排不显示，动态照手机的样式浮在底部入口上面 */
+function fitEventBar(signal: AbortSignal) {
+  const bar = $('event-bar'),
+    hotbar = $('map-hotbar'),
+    view = $('obs-view')
+  const fit = () => {
+    const h = hotbar.getBoundingClientRect()
+    if (isCompact() || !h.width) {
+      bar.classList.remove('feed-raised')
+      bar.style.removeProperty('--feed-room')
+      return
+    }
+    // 动态的左边不随抬起来变；离那排格子留 16 像素，排得下 280 像素宽才排在旁边
+    const room = Math.floor(h.left - bar.getBoundingClientRect().left - 16)
+    const raise = room < 280
+    bar.classList.toggle('feed-raised', raise)
+    if (raise) bar.style.removeProperty('--feed-room')
+    else bar.style.setProperty('--feed-room', `${room}px`)
+    const lift = Math.ceil(view.getBoundingClientRect().bottom - h.top + 10)
+    bar.style.setProperty('--feed-lift', `${lift}px`)
+  }
+  let frame = 0
+  const later = () => {
+    cancelAnimationFrame(frame)
+    frame = requestAnimationFrame(fit)
+  }
+  // 窗口、地图（宽屏开关角色卡时变窄）、那一排（名牌换字）、角色卡（720–1023 盖在地图上时那一排挪开）变了都重排
+  const observer = new ResizeObserver(later)
+  for (const node of [view, $('map'), hotbar, document.getElementById('info-panel')])
+    if (node) observer.observe(node)
+  signal.addEventListener('abort', () => {
+    observer.disconnect()
+    cancelAnimationFrame(frame)
+  })
+  fit()
 }

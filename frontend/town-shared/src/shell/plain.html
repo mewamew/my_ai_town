@@ -47,8 +47,9 @@
   >
     <i data-pixel="bars"></i><span>菜单</span>
   </button>
-  <!-- 地图左下角的道具格：道具（镇上有什么、往哪里放）、书与公告（和头像格一样，方块下面一个名牌） -->
-  <div class="map-corner">
+  <!-- 地图底部正中的一排格子：道具（镇上有什么、往哪里放）、进入化身（化身界面放进来，见 avatar/ui.ts）、
+       书与公告。和头像格一样，方块下面一个名牌；化身时整排让给化身的操作条。动态单独在左下角 -->
+  <div class="map-hotbar" id="map-hotbar">
     <button
       id="open-props"
       class="map-props-button"

@@ -505,18 +505,24 @@ html:not([data-layout='compact']) .phone-note,
   }
 }
 
-/* ---------- 动态：收起时最近两条浮在地图左下（道具格上面），「全部动态」展开成一块白色浮板 ---------- */
+/* ---------- 动态：收起时最近两条贴在地图左下，「全部动态」展开成一块白色浮板 ----------
+   右边让开底部正中那排格子：宽度到格子左边为止（--feed-room，shell/topbar.ts 量出来）；
+   地图太窄排不下时抬到那排格子上面（feed-raised，--feed-lift 是那排格子顶上离底边多高） */
 #obs-view > #event-bar {
   position: absolute;
   left: 14px;
-  bottom: 106px;
+  bottom: 14px;
   z-index: 6;
-  width: min(480px, calc(100% - 28px));
+  width: min(480px, var(--feed-room, calc(100% - 28px)));
   border: 0;
   background: none;
   box-shadow: none;
   font-size: 13px;
   pointer-events: none;
+}
+#obs-view > #event-bar.feed-raised {
+  bottom: var(--feed-lift, 106px);
+  width: min(480px, calc(100% - 28px));
 }
 #obs-view > #event-bar > * {
   pointer-events: auto;
@@ -531,6 +537,10 @@ html:not([data-layout='compact']) .phone-note,
 }
 #event-latest > * {
   pointer-events: auto;
+}
+/* 还没有动态：只留「全部动态」 */
+#event-latest > p[hidden] {
+  display: none;
 }
 #event-latest > p {
   display: flex;
@@ -611,6 +621,9 @@ html:not([data-layout='compact']) .phone-note,
 @media (min-width: 720px) and (max-width: 1023px) {
   #obs-view > #event-bar {
     left: 72px;
+    width: min(480px, var(--feed-room, calc(100% - 86px)));
+  }
+  #obs-view > #event-bar.feed-raised {
     width: min(480px, calc(100% - 86px));
   }
 }

@@ -74,35 +74,6 @@
   color: var(--avatar-danger);
 }
 
-/* ---- 观察模式的入口 ---- */
-.avatar-enter {
-  pointer-events: auto;
-  position: absolute;
-  left: 50%;
-  bottom: 14px;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 9px 16px 9px 12px;
-  border: 1px solid var(--avatar-green);
-  border-radius: var(--r-pill);
-  background: var(--avatar-paper);
-  color: var(--avatar-green);
-  box-shadow: var(--avatar-shadow);
-  white-space: nowrap;
-}
-.avatar-enter strong {
-  font-weight: 600;
-}
-.avatar-enter small {
-  color: var(--avatar-dim);
-  font-size: 11px;
-}
-.avatar-enter small:empty {
-  display: none;
-}
-
 /* ---- 操作条 ---- */
 .avatar-hud {
   pointer-events: auto;
@@ -1066,11 +1037,11 @@
     max-width: calc(100% - min(320px, 100% - 24px) - 36px);
   }
 }
-/* 720–1023：村民卡盖在地图右边时，「进入化身」、暂停与快进提示和通知挪到露出来的那块地图中间，
+/* 720–1023：村民卡盖在地图右边时，底部那排格子、暂停与快进提示和通知挪到露出来的那块地图中间，
    不压住卡片底部的按钮，也不被卡片切掉一半 */
 @media (min-width: 720px) and (max-width: 1023px) {
   #obs-main:has(#info-panel:not([hidden]))
-    :is(.avatar-enter, .pause-hint, .fast-hint, .town-notices) {
+    :is(.map-hotbar, .pause-hint, .fast-hint, .town-notices) {
     left: calc((100% - min(340px, 85vw)) / 2);
     max-width: calc(100% - min(340px, 85vw) - 24px);
   }

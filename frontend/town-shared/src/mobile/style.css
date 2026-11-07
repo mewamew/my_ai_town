@@ -297,7 +297,8 @@ html[data-empty-town] .mobile-dock [data-dock='residents'] {
   }
 
   /* ---------- 地图上的浮层 ---------- */
-  .map-props-button {
+  /* 道具、进入化身、书报在底部入口里，地图上那一排不显示 */
+  .map-hotbar {
     display: none;
   }
   /* 左右都定位、宽度按内容：不受 left:50% 只剩半屏宽的限制，又不压到右上角的圆钮 */
@@ -507,13 +508,6 @@ html[data-empty-town] .mobile-dock [data-dock='residents'] {
   }
 }
 
-/* 手机布局里「进入化身」在底部入口，地图上的入口钮不再显示 */
-@media (max-width: 719px) {
-  .avatar-enter {
-    display: none;
-  }
-}
-
 /* ---------- 化身：触屏摇杆与动作钮（只在触屏显示） ---------- */
 .avatar-touch {
   display: none;
@@ -694,10 +688,6 @@ body:has(.guide:not([hidden])) :is(.pause-hint, .fast-hint) {
 }
 /* 键盘提示（Esc、回车）在触屏上没有意义 */
 [data-input='touch'] .avatar-ui kbd {
-  display: none;
-}
-/* 场景物品钮在左下，化身时正好被摇杆压住；化身有自己的背包 */
-[data-input='touch'].avatar-controlling .map-props-button {
   display: none;
 }
 

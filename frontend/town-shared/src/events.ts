@@ -57,6 +57,7 @@ const withoutClock = (text: string) => text.replace(/^\[D\d+\s+\d{1,2}:\d{2}(?::
 export function initEvents(game: boolean): EventsHandle {
   const latestBar = $('event-latest')
   const latestText = $('event-latest-text')
+  const latestLine = latestText.closest<HTMLElement>('.event-line') ?? latestText
   const prevText = $('event-prev')
   const dismiss = $('event-latest-dismiss')
   const full = $('event-full')
@@ -121,6 +122,8 @@ export function initEvents(game: boolean): EventsHandle {
   /** 收起时的两条：有停住的重要事件就只显示它，否则显示最新两条 */
   function showLatest() {
     const e = pinned ?? store.at(-1)
+    // 还没有动态时这一行藏起来，只留「全部动态」
+    latestLine.hidden = !e
     latestText.textContent = !e ? '暂无事件' : lineOf(e)
     const prev = pinned ? undefined : store.at(-2)
     prevText.hidden = !prev

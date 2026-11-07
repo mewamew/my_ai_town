@@ -1,4 +1,4 @@
-// 化身入口：观察模式底部居中的入口按钮，和进入小镇的对话框。
+// 化身入口：观察模式底部正中那排格子里的「进入化身」（大一号，格子里是化身的头像），和进入小镇的对话框。
 import type { AvatarCommand, AvatarState } from './types'
 import type { LookChoice } from './looks'
 import { field, keycap, markerSvg } from './view'
@@ -7,20 +7,27 @@ import { button, el } from '../dom'
 
 type Actor = NonNullable<AvatarState['actor']>
 
+/** 「进入化身」格子：和道具、书报同一种格子（方块下面一个名牌），由外壳放进底部那一排 */
 function entryPill(openDialog: () => void) {
   const pill = el('button')
   pill.type = 'button'
-  pill.className = 'avatar-enter'
-  // 「化身」这个词新手不认识：悬停时说清是什么
-  pill.title = '用一个自己的角色进镇走走；走到村民身边就能和他们说话'
-  const dot = el('i'),
-    text = el('strong'),
-    sub = el('small')
+  pill.className = 'map-props-button avatar-enter'
+  pill.title = ENTRY_TITLE
+  const slot = el('span'),
+    dot = el('i'),
+    text = el('span')
+  slot.className = 'tool-slot'
   dot.className = 'avatar-dot'
-  pill.append(dot, text, sub)
+  text.className = 'tool-name'
+  slot.append(dot)
+  pill.append(slot, text)
+  // 世界开放化身控制以后才出现（render 里定）
+  pill.hidden = true
   pill.onclick = () => openDialog()
-  return { pill, dot, text, sub }
+  return { pill, dot, text }
 }
+// 「化身」这个词新手不认识：悬停时说清是什么
+const ENTRY_TITLE = '用一个自己的角色进镇走走；走到村民身边就能和他们说话'
 
 /** 进入对话框：实时预览、预设色（或外观）、说明出现地点与键位 */
 function entryDialog(
@@ -157,7 +164,8 @@ export function createAvatarEntry(
       actor?: Actor | null
     }) {
       if (view.controlling && !backdrop.hidden) backdrop.hidden = true
-      pill.pill.hidden = view.controlling || !backdrop.hidden
+      // 格子不在化身界面里（在底部那一排），这个世界不开放化身时自己藏起来
+      pill.pill.hidden = !view.supported || view.controlling || !backdrop.hidden
       pill.pill.disabled = !view.online || view.occupied
       pill.text.textContent = !view.online
         ? '等小镇连上…'
@@ -166,7 +174,10 @@ export function createAvatarEntry(
           : view.actor
             ? '继续化身'
             : '进入化身'
-      pill.sub.textContent = view.actor && view.online && !view.occupied ? view.actor.name : ''
+      pill.pill.title =
+        view.actor && view.online && !view.occupied
+          ? `回到小镇，继续扮演${view.actor.name}`
+          : ENTRY_TITLE
       const next = view.supported && !pill.pill.disabled
       if (next !== available) {
         available = next

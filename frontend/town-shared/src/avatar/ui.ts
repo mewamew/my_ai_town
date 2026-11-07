@@ -241,17 +241,12 @@ export function createAvatarUI(
   const back = button('', () => actions.follow())
   back.append(...(isTouch() ? [] : [keycap('C')]), el('span', '回到化身'))
   back.className = 'avatar-return'
-  root.append(
-    ...badge,
-    entry.pill,
-    hud.needsStrip,
-    hud.hud,
-    side.panel,
-    toast,
-    back,
-    entry.backdrop
-  )
+  root.append(...badge, hud.needsStrip, hud.hud, side.panel, toast, back, entry.backdrop)
   mapEl.append(root)
+  // 「进入化身」放进底部正中那一排格子，在道具和书报中间；外壳没有那一排时留在化身界面里
+  const books = mapEl.querySelector('.map-hotbar #open-books')
+  if (books) books.before(entry.pill)
+  else root.append(entry.pill)
   return {
     root,
     entry,

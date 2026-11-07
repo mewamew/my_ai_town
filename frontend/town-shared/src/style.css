@@ -274,15 +274,20 @@ html.avatar-controlling .empty-town {
   width: 100%;
   height: 100%;
 }
-/* 地图左下角的两个入口：场景物品、书与公告 */
-/* 地图左下角的道具格：白底方块里一个像素图标，下面一个深色名牌，和头像格一样 */
-.map-corner {
+/* 地图底部正中的一排格子：道具、进入化身、书报。白底方块里一个像素图标，下面一个深色名牌，和头像格一样。
+   底部正中是「手」的位置：化身时这里是化身的操作条，所以化身时整排让给它 */
+.map-hotbar {
   position: absolute;
-  left: 14px;
+  left: 50%;
   bottom: 14px;
   z-index: 5;
   display: flex;
-  gap: 10px;
+  align-items: flex-end;
+  gap: 12px;
+  transform: translateX(-50%);
+}
+.avatar-controlling .map-hotbar {
+  display: none;
 }
 .map-props-button {
   display: flex;
@@ -344,6 +349,40 @@ html.avatar-controlling .empty-town {
 }
 .map-props-button[hidden] {
   display: none;
+}
+/* 进入化身：大一号，主色细边，格子里是化身的头像（23 像素的头像按 2 倍画）；没有外观时是一颗色点 */
+.avatar-enter .tool-slot {
+  width: 68px;
+  height: 68px;
+  border: 2px solid var(--accent);
+}
+.avatar-enter .tool-name {
+  font-weight: 600;
+}
+.avatar-enter .avatar-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--avatar-color, var(--accent));
+  box-shadow: inset 0 0 0 3px var(--surface);
+  outline: 2px solid var(--avatar-color, var(--accent));
+}
+.avatar-enter .avatar-dot.avatar-look-dot {
+  width: 46px;
+  height: 46px;
+  border-radius: 0;
+  background: var(--avatar-portrait) center / cover no-repeat;
+  box-shadow: none;
+  outline: 0;
+  image-rendering: pixelated;
+}
+/* 小镇没连上、别的页面在控制人物：格子淡下去，点不了 */
+.avatar-enter:disabled .tool-slot {
+  border-color: var(--hud-line);
+  opacity: 0.6;
+}
+.avatar-enter:disabled:hover .tool-slot {
+  transform: none;
 }
 /* 地图右下角缩放钮：+ / 当前百分比（点击回 100%）/ − */
 .map-zoom {
