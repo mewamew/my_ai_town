@@ -412,6 +412,8 @@ export class HdScene {
   private readonly theme: MapTheme
   /** 玩法的画面（gameModes/）：地面、海面、立着的东西和村民的着色先装好，名册来了交给它们 */
   private readonly looks: GameModeLook[]
+  /** 玩法自己的界面盖在地图上的那一层 */
+  private readonly modeLayer = document.createElement('div')
 
   /** ground 是这张地图算好的地面（pixel/terrain.ts 的 groundOf），场景只读它 */
   constructor(
@@ -424,6 +426,10 @@ export class HdScene {
     this.theme = theme
     this.looks = gameModeLooks(theme)
     this.renderer = createRenderer(container, svg)
+    this.modeLayer.className = 'mode-layer'
+    this.modeLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden'
+    container.append(this.modeLayer)
+    for (const look of this.looks) look.mount?.(this.modeLayer)
     this.scene.add(this.flat)
     this.center = [atlas.canvas.width / 2, atlas.canvas.height / 2]
 
@@ -2327,6 +2333,7 @@ export class HdScene {
     this.weather.dispose()
     this.props.dispose()
     this.pitchControl?.remove()
+    this.modeLayer.remove()
     this.villagers.dispose()
     for (const o of this.observers) o.disconnect()
     this.scene.traverse((o) => {

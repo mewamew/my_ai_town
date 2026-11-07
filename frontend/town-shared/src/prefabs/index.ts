@@ -1,5 +1,6 @@
 import type { GameModeChoice, PhysiologySwitches } from '../protocol'
 import { battleRoyale } from './battleRoyale'
+import { werewolf } from './werewolf'
 
 // 预制小镇：选它就是玩某个玩法，开局前只改几项设置，不用自己建岛、写世界观、一个个请人。
 // 建镇参数是固定的，同一版建镇生成器出来的岛都一样；每开一局都走建镇流程存成一个新小镇，
@@ -24,9 +25,40 @@ export interface Prefab {
   players: { default: number; min: number; max: number }
   /** 「吃喝睡」打开时的生理开关；关掉时全关 */
   needs: PhysiologySwitches
+  /** 「吃喝睡」默认开不开，和那一行在开、关时的说明 */
+  needsDefault: boolean
+  needsHint: { on: string; off: string }
+  /** 开局设置里这个玩法自己的几行（圈的位置、身份、白天长短……） */
+  options: PrefabOption[]
 }
 
-export const PREFABS: Prefab[] = [battleRoyale]
+/** 开局设置里的一行分段选择；可以有一个取值要另填种子 */
+export interface PrefabOption {
+  label: string
+  /** hint 是选中它时这一行的说明 */
+  choices: { value: string; label: string; hint?: string }[]
+  initial: string
+  /** 选中这个取值时下面多一个种子输入框 */
+  seed?: string
+  /** 把这一行选好的值并进玩法设置；没要种子时 seed 为 null */
+  apply(choice: GameModeChoice, value: string, seed: number | null): GameModeChoice
+}
+
+/** 每局随机，或填一个种子让每局都一样 */
+export function seedOption(label: string, randomHint: string): PrefabOption {
+  return {
+    label,
+    choices: [
+      { value: 'random', label: '每局随机', hint: randomHint },
+      { value: 'fixed', label: '固定种子' },
+    ],
+    initial: 'random',
+    seed: 'fixed',
+    apply: (choice, _value, seed) => (seed ? { ...choice, seed } : choice),
+  }
+}
+
+export const PREFABS: Prefab[] = [battleRoyale, werewolf]
 
 export function prefabOf(id: string | null | undefined): Prefab | null {
   return PREFABS.find((p) => p.id === id) ?? null

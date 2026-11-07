@@ -2,9 +2,11 @@ import type * as THREE from 'three'
 import type { GameModeView } from 'town-shared/protocol'
 import type { MapTheme } from '../../themes/types'
 import { TideLook } from './tide'
+import { WerewolfLook } from './werewolf'
 
 // 玩法的画面：场景在固定的几处把材质交给玩法（地面、海面、立在地上的东西、村民），
-// 名册来了把玩法此刻的状态交给它。每个玩法的着色都先装好，没开它时它什么也不画。
+// 名册来了把玩法此刻的状态交给它；要在地图上画自己界面的玩法，场景建好时给它一层。
+// 每个玩法的着色和界面都先装好，没开它时它什么也不画。
 // 加一个玩法：在这个目录写一个文件实现 GameModeLook，再登记到下面的 gameModeLooks。
 
 /** 玩法接进画面的几处 */
@@ -17,9 +19,11 @@ export interface GameModeLook {
   apply(view: GameModeView | null, metre: number): void
   /** 开着时到处都可能是水：倒影要一直画 */
   readonly waterAnywhere: boolean
+  /** 玩法自己的界面（横幅、侧栏……）：盖在地图上的一层，不接点击，要接的元素自己打开 */
+  mount?(layer: HTMLElement): void
 }
 
 /** 所有玩法的画面，场景建好时装上 */
 export function gameModeLooks(theme: MapTheme): GameModeLook[] {
-  return [new TideLook(theme)]
+  return [new TideLook(theme), new WerewolfLook()]
 }

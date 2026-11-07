@@ -1,4 +1,4 @@
-import type { Prefab } from '.'
+import { seedOption, type Prefab } from '.'
 
 // 大逃杀荒岛：环岛小径的荒岛（种子 51），开局打开潮水圈。
 // 地点名照着荒岛起；「废墟」「破码头」是生成器的神庙和港口换了名字。
@@ -58,4 +58,7 @@ export const battleRoyale: Prefab = {
   ],
   players: { default: 8, min: 4, max: 12 },
   needs: { fullness: true, energy: true, water: true, health: true, weather: true },
+  needsDefault: true,
+  needsHint: { on: '会饿会渴会困，站在水里会掉体力', off: '只比谁会躲水' },
+  options: [seedOption('圈的位置', '每一局圈缩向哪里都不一样')],
 }

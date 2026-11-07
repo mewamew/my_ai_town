@@ -13,15 +13,19 @@ import type {
 import { segmented, settingRow, switchControl } from '../settings/controls'
 import type { ShellPanel } from '../shell/panel'
 import type { createWorldSettings } from '../worldSettings'
-import type { Prefab } from '.'
+import type { Prefab, PrefabOption } from '.'
 
-// 开局设置：第一次进预制小镇（还没设世界观）时代替开局向导。玩家只改四项：人数、每位选手用的模型、
-// 圈的位置（每局随机或固定种子）、吃喝睡开不开；世界观、玩法和其余设定由预制小镇写好。
+// 开局设置：第一次进预制小镇（还没设世界观）时代替开局向导。玩家只改几项：人数、每位选手用的模型、
+// 玩法自己的几行（预制小镇的 options：圈的位置、身份、白天长短……）、吃喝睡开不开；
+// 世界观、玩法和其余设定由预制小镇写好。
 // 点「开始这一局」依次保存世界观、生理开关，按号码请人入住（入住时带上各自的模型），最后打开玩法；
 // 哪一步出错就停在那一步说明原因，再点一次从那一步接着做。做完世界还停着，玩家点左上角的 ▶ 开始。
 // 跳过就交回原来的首次对话框，像普通小镇一样自己设。
 
 type Waiter = { match: (m: ServerMsg) => unknown; resolve: (v: unknown) => void }
+
+/** 固定种子时输入框里先填的数 */
+const DEFAULT_SEED = 51
 
 const ALL_OFF: PhysiologySwitches = {
   fullness: false,
@@ -58,8 +62,9 @@ export function createPrefabSetup(d: {
   let players = 0
   /** 每个号码的模型；null 是没连模型、先住下 */
   let models: (ModelChoice | null)[] = []
-  let fixedSeed = false
-  let seed = 51
+  /** 玩法自己那几行选了什么、填的种子（按行名） */
+  const picks = new Map<string, string>()
+  const seeds = new Map<string, number>()
   let needs = true
   /** 村民库里的名字和头像编号（模板编号 → …），读到之前显示号码 */
   const names = new Map<string, string>()
@@ -137,7 +142,7 @@ export function createPrefabSetup(d: {
       Array.from({ length: players }, (_, i) => slotModel(i)).map((m) => m && choiceValue(m))
     )
     const rows = el('div', '', 'set-rows prefab-settings')
-    rows.append(modelRow(p, options, used), circleRow(), needsRow())
+    rows.append(modelRow(p, options, used), ...p.options.map(optionRow), needsRow(p))
     body.replaceChildren(head, lineup(p, options, used.size > 1), rows)
 
     const go = button(running ? '正在开局…' : '开始这一局', () => void start(), 'primary')
@@ -239,36 +244,35 @@ export function createPrefabSetup(d: {
     return settingRow('模型', '点头像可以给某一位单独换', select)
   }
 
-  /** 圈的位置：每局随机，或填一个种子让每局都一样 */
-  function circleRow() {
+  /** 玩法自己的一行：分段选择；选到要种子的取值时下面多一个种子输入框 */
+  function optionRow(o: PrefabOption) {
+    const picked = picks.get(o.label) ?? o.initial
     const seg = segmented(
-      '圈的位置',
-      [
-        { value: 'random', label: '每局随机' },
-        { value: 'fixed', label: '固定种子' },
-      ],
+      o.label,
+      o.choices.map(({ value, label }) => ({ value, label })),
       (value) => {
-        if (fixedSeed === (value === 'fixed')) return
-        fixedSeed = value === 'fixed'
+        if (picked === value) return
+        picks.set(o.label, value)
         render()
-        if (fixedSeed) body.querySelector<HTMLInputElement>('.prefab-seed')?.select()
+        if (value === o.seed) body.querySelector<HTMLInputElement>('.prefab-seed')?.select()
       }
     )
-    seg.set(fixedSeed ? 'fixed' : 'random')
+    seg.set(picked)
     seg.el.querySelectorAll('button').forEach((b) => (b.disabled = running))
-    const row = settingRow('圈的位置', fixedSeed ? '' : '每一局圈缩向哪里都不一样', seg.el)
-    if (fixedSeed) {
+    const hint = o.choices.find((c) => c.value === picked)?.hint ?? ''
+    const row = settingRow(o.label, hint, seg.el)
+    if (o.seed && picked === o.seed) {
       const line = el('label', '', 'set-row-desc prefab-seed-line')
       const input = el('input', '', 'prefab-seed')
       input.type = 'number'
       input.min = '1'
       input.max = '4294967295'
-      input.value = String(seed)
+      input.value = String(seeds.get(o.label) ?? DEFAULT_SEED)
       input.disabled = running
       input.onchange = () => {
         const n = Math.floor(Number(input.value))
-        if (Number.isFinite(n) && n >= 1 && n <= 4294967295) seed = n
-        input.value = String(seed)
+        if (Number.isFinite(n) && n >= 1 && n <= 4294967295) seeds.set(o.label, n)
+        input.value = String(seeds.get(o.label) ?? DEFAULT_SEED)
       }
       line.append('种子', input)
       row.querySelector('.set-row-text')?.append(line)
@@ -276,18 +280,14 @@ export function createPrefabSetup(d: {
     return row
   }
 
-  function needsRow() {
+  function needsRow(p: Prefab) {
     const toggle = switchControl('吃喝睡', (on) => {
       needs = on
       render()
     })
     toggle.set(needs)
     toggle.el.disabled = running || needsSaved
-    return settingRow(
-      '吃喝睡',
-      needs ? '会饿会渴会困，站在水里会掉体力' : '只比谁会躲水',
-      toggle.el
-    )
+    return settingRow('吃喝睡', needs ? p.needsHint.on : p.needsHint.off, toggle.el)
   }
 
   function setPlayers(n: number) {
@@ -359,7 +359,11 @@ export function createPrefabSetup(d: {
       if (!modeSaved) {
         status = '正在打开玩法…'
         render()
-        const choice = { ...p.gameMode, ...(fixedSeed ? { seed } : {}) }
+        const choice = p.options.reduce((c, o) => {
+          const value = picks.get(o.label) ?? o.initial
+          const seed = o.seed && value === o.seed ? (seeds.get(o.label) ?? DEFAULT_SEED) : null
+          return o.apply(c, value, seed)
+        }, p.gameMode)
         await saved((done) => ws.saveGameMode(choice, done))
         modeSaved = true
       }
@@ -407,6 +411,7 @@ export function createPrefabSetup(d: {
       prefab = p
       players = p.players.default
       models = []
+      needs = p.needsDefault
       root.hidden = false
       d.send({ type: 'get_resident_library', filter: { kind: 'builtin' } })
       render()

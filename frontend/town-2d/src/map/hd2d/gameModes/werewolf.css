@@ -1,0 +1,287 @@
+/* 狼人杀的界面层（gameModes/werewolf.ts）：浮在地图上，白底、浅色细边、柔和投影；
+   夜里的狼人频道和上帝视角板子换成深蓝底。只有「藏起身份」那个按钮接点击。 */
+.ww-hud {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  font-family: var(--font-ui);
+  color: var(--text);
+}
+.ww-hud[hidden] {
+  display: none;
+}
+.ww-px {
+  display: block;
+  flex: none;
+  image-rendering: pixelated;
+}
+.ww-banner,
+.ww-seats,
+.ww-stage,
+.ww-board {
+  position: absolute;
+  background: var(--surface);
+  border: 1px solid rgb(31 36 33 / 0.1);
+  box-shadow: 0 2px 8px rgb(20 24 22 / 0.16);
+}
+
+/* ---------- 横幅 ---------- */
+.ww-banner {
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 18px 4px 6px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+.ww-banner b {
+  font-size: 16px;
+  letter-spacing: 0.02em;
+}
+.ww-banner span {
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+/* ---------- 座位 ---------- */
+.ww-seats {
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 168px;
+  padding: 6px 8px 8px;
+  border-radius: var(--r-m);
+}
+.ww-seat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 6px 0 4px;
+  border-radius: var(--r-s);
+  font-size: 13px;
+}
+.ww-seat i,
+.ww-stage-head i,
+.ww-fallen i,
+.ww-reveal i {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--surface-sunken);
+  color: var(--text-2);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+.ww-seat.wolf i,
+.ww-reveal.wolf i {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.ww-seat.turn {
+  background: var(--ok-soft);
+  box-shadow: inset 0 0 0 2px var(--ok);
+}
+.ww-seat.out {
+  opacity: 0.45;
+}
+.ww-seat.out b {
+  text-decoration: line-through;
+}
+.ww-seat small {
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.ww-seat small.ok {
+  color: var(--ok);
+}
+.ww-toggle {
+  pointer-events: auto;
+  margin-top: 4px;
+  padding: 2px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.ww-toggle:hover {
+  color: var(--text);
+}
+
+/* ---------- 刚说的话 ---------- */
+.ww-stage {
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  width: min(640px, calc(100% - 600px));
+  min-width: 320px;
+  padding: 12px 16px 14px;
+  border-radius: var(--r-m);
+}
+.ww-stage-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+.ww-stage-head small {
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+  font-size: 11px;
+  color: var(--text-2);
+}
+.ww-stage p {
+  margin: 0;
+  max-height: 8em;
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.ww-stage.channel,
+.ww-board.dark {
+  background: #1d2230;
+  border-color: rgb(255 255 255 / 0.08);
+  color: #eceee9;
+}
+.ww-stage.channel .ww-stage-head small {
+  background: rgb(229 83 61 / 0.22);
+  color: #f3b2a6;
+}
+.ww-stage.channel .ww-stage-head i {
+  background: rgb(229 83 61 / 0.22);
+  color: #f3b2a6;
+}
+
+/* ---------- 右边的板子 ---------- */
+.ww-board {
+  right: 14px;
+  top: 70px;
+  width: 252px;
+  padding: 10px 14px 12px;
+  border-radius: var(--r-m);
+  font-size: 13px;
+}
+.ww-board h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+.ww-tally {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1px 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.ww-tally small {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.ww-tally.top b,
+.ww-tally.top span {
+  color: var(--danger);
+}
+.ww-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.ww-board.dark .ww-note {
+  color: #aab0aa;
+}
+.ww-big {
+  margin: 4px 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.ww-act {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+.ww-act b {
+  flex: none;
+  width: 44px;
+}
+.ww-fallen,
+.ww-reveal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 1px 0;
+}
+.ww-fallen b {
+  font-size: 16px;
+}
+.ww-reveal span {
+  color: var(--text-2);
+}
+.ww-reveal small {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.ww-reveal.out b {
+  text-decoration: line-through;
+  color: var(--text-3);
+}
+.ww-board.finale h4 {
+  font-size: 18px;
+}
+
+/* ---------- 窄屏：座位缩成一行号码，板子只在结算时出现 ---------- */
+@media (max-width: 760px) {
+  .ww-seats {
+    top: 62px;
+    left: 50%;
+    transform: translateX(-50%);
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    min-width: 0;
+    max-width: calc(100% - 24px);
+    padding: 6px;
+  }
+  .ww-seat {
+    padding: 0 4px;
+  }
+  .ww-seat b,
+  .ww-seat small,
+  .ww-seat .ww-px,
+  .ww-toggle {
+    display: none;
+  }
+  .ww-stage {
+    width: calc(100% - 24px);
+    min-width: 0;
+  }
+  .ww-board:not(.finale) {
+    display: none;
+  }
+  .ww-board.finale {
+    top: 110px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
+}
