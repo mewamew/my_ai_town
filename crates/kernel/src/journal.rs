@@ -222,7 +222,7 @@ impl Journal {
         voiced: bool,
     ) -> Option<&Thought> {
         let text = normalize(text);
-        let text = unquote(&text);
+        let text = unlabel(unquote(&text));
         if text.is_empty() {
             return None;
         }
@@ -298,6 +298,22 @@ fn unquote(text: &str) -> &str {
             if !inner.contains([open, close]) {
                 return inner.trim();
             }
+        }
+    }
+    text
+}
+
+/// 去掉开头照抄提示词的标签：提示词讲气泡只显示开头那句，模型偶尔把心声写成「第一句：屋里比
+/// 记忆里还空。」（回声湾的沈遥前两小时几乎每条都是），这几个字会进气泡和心声字幕。
+fn unlabel(text: &str) -> &str {
+    let rest = text.trim_start_matches(['【', '[', '（', '(']);
+    for label in ["第一句话", "第一句"] {
+        let Some(after) = rest.strip_prefix(label) else {
+            continue;
+        };
+        let after = after.trim_start_matches(['】', ']', '）', ')']);
+        if let Some(body) = after.strip_prefix('：').or_else(|| after.strip_prefix(':')) {
+            return body.trim_start();
         }
     }
     text
