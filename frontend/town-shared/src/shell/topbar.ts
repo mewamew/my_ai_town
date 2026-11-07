@@ -4,7 +4,6 @@ import { $, button } from '../dom'
 import { countBadge } from '../design/ui'
 import type { EventsHandle } from '../events'
 import { displayClock } from '../format'
-import { iconLabel } from '../game/icons'
 import { pixelIcon, setPixelIcon } from '../game/pixel'
 import { groupHolds, namesOf } from '../holds'
 import type { MapEntry } from '../mapDocument'
@@ -192,18 +191,22 @@ export function installMapButtons(
   watchPlacing: ((update: (active: boolean) => void) => void) | null,
   signal: AbortSignal
 ) {
+  // 道具格的图标和名牌写在模板里（shell/plain.html）；书报的新作品数字挂在格子右上角
   const propsButton = $('open-props')
-  iconLabel(propsButton, 'bag', '场景物品')
   propsButton.onclick = open.props
   const booksButton = $('open-books')
-  iconLabel(booksButton, 'book', '书与公告')
   booksButton.onclick = open.books
-  watchBooks(countBadge(booksButton, '书与公告'))
+  const booksCount = countBadge(booksButton, '书与公告')
+  const booksBadge = booksButton.querySelector('.ui-count')
+  if (booksBadge) booksButton.querySelector('.tool-slot')?.append(booksBadge)
+  watchBooks(booksCount)
   const placingButton = $('open-placing')
   placingButton.onclick = open.placing
   placingButton.hidden = !watchPlacing
+  const placingName = placingButton.querySelector('.tool-name')
   watchPlacing?.((active) => {
-    iconLabel(placingButton, 'plus', active ? '摆道具中' : '摆道具')
+    if (placingName) placingName.textContent = active ? '摆道具中' : '摆道具'
+    placingButton.setAttribute('aria-label', active ? '摆道具中，点一下退出' : '摆道具')
     placingButton.setAttribute('aria-pressed', String(active))
   })
   // 左上那一列（时钟牌、开始、世界观、提示、头像条）和右上的菜单钮也在地图容器里，按下同样不能漏给地图

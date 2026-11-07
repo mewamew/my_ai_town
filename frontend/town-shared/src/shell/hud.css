@@ -182,6 +182,18 @@ html:not([data-layout='compact']) .prop-card.ui-float {
   top: 86px;
   max-height: calc(100% - 100px);
 }
+/* 鼠标操作的化身：「回到化身」和右侧面板（交谈、背包、状态）从菜单钮下面开始 */
+html:not([data-input='touch']) :is(.avatar-return, .avatar-panel) {
+  top: 86px;
+}
+/* 触屏的化身操作条贴在地图顶上：左上那一列和菜单钮先收起，交还控制后再出来 */
+[data-input='touch'].avatar-controlling :is(.hud-left, .hud-menu-button) {
+  display: none;
+}
+/* 平板（宽屏 + 触屏）：右上角的两个圆钮让到菜单钮下面 */
+html:not([data-layout='compact'])[data-input='touch']:not(.avatar-controlling) .map-fabs {
+  top: 86px;
+}
 /* 窄屏的角色卡盖在地图右边：菜单钮挪到卡片左边，不压住卡片的「收起」 */
 @media (max-width: 1023px) {
   #obs-main:has(> #info-panel:not([hidden]):not(.collapsed)) .hud-menu-button {
@@ -490,5 +502,128 @@ html:not([data-layout='compact']) :is(#menu-placing, .phone-note),
   }
   .game-menu-tip {
     display: none;
+  }
+}
+
+/* ---------- 动态：收起时最近两条浮在地图左下（道具格上面），「全部动态」展开成一块白色浮板 ---------- */
+#obs-view > #event-bar {
+  position: absolute;
+  left: 14px;
+  bottom: 106px;
+  z-index: 6;
+  width: min(480px, calc(100% - 28px));
+  border: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 13px;
+  pointer-events: none;
+}
+#obs-view > #event-bar > * {
+  pointer-events: auto;
+}
+#event-bar #event-latest {
+  display: grid;
+  justify-items: start;
+  gap: 5px;
+  min-height: 0;
+  padding: 0;
+  pointer-events: none;
+}
+#event-latest > * {
+  pointer-events: auto;
+}
+#event-latest > p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: var(--toast-bg);
+  color: var(--toast-ink);
+  line-height: 1.5;
+}
+#event-prev {
+  overflow: hidden;
+  opacity: 0.6;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+#event-bar #event-latest-text,
+#event-bar #event-latest-text.thought {
+  color: inherit;
+}
+#event-bar #event-latest-text.alert,
+#event-prev.alert {
+  color: #ffb4a4;
+}
+#event-latest-dismiss {
+  flex: none;
+  height: 22px;
+  min-height: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: rgb(255 255 255 / 0.16);
+  color: var(--toast-ink);
+  font-size: 12px;
+}
+#event-expand {
+  height: 24px;
+  min-height: 0;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: rgb(31 36 33 / 0.62);
+  color: var(--toast-ink);
+  font-size: 12px;
+}
+#event-expand::after {
+  content: ' ›';
+}
+#event-expand:hover:not(:disabled),
+#event-latest-dismiss:hover:not(:disabled) {
+  background: rgb(31 36 33 / 0.86);
+}
+@media (min-width: 720px) {
+  #obs-view > #event-bar:has(#event-full:not([hidden])) {
+    width: min(560px, calc(100% - 28px));
+  }
+  #event-bar #event-full:not([hidden]) {
+    position: absolute;
+    top: auto;
+    right: auto;
+    bottom: 0;
+    left: 0;
+    z-index: 14;
+    width: 100%;
+    height: min(50vh, 380px);
+    max-height: none;
+    overflow: hidden;
+    border: 1px solid var(--hud-line);
+    border-radius: 14px;
+    background: var(--surface);
+    box-shadow: var(--hud-shadow-big);
+  }
+}
+/* 720–1023：缩放钮在左边中间，动态往右让开它 */
+@media (min-width: 720px) and (max-width: 1023px) {
+  #obs-view > #event-bar {
+    left: 72px;
+    width: min(480px, calc(100% - 86px));
+  }
+}
+/* 手机：两条浮在底部入口上面，展开照旧是底部抽屉（mobile/style.css） */
+@media (max-width: 719px) {
+  #obs-view > #event-bar {
+    left: 12px;
+    right: 12px;
+    bottom: 76px;
+    width: auto;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
   }
 }

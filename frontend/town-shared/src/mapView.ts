@@ -14,7 +14,7 @@ export const PANELS =
   '#info-panel, #event-bar, #event-full, .avatar-panel, .avatar-hud, .avatar-touch'
 /** 地图上的小按钮和提示：不切掉范围，只让气泡尽量躲开 */
 const CONTROLS =
-  '.map-zoom, .map-fabs > *, .map-props-button, .pause-hint, .town-notices > *, .avatar-toast, .avatar-return, .focus-verbs, .focus-emote, .resident-strip'
+  '.map-zoom, .map-fabs > *, .map-props-button, .hud-row > *, .hud-flags > *, .hud-menu-button, .pause-hint, .town-notices > *, .avatar-toast, .avatar-return, .focus-verbs, .focus-emote, .resident-strip'
 /** 镜头去看一个人时拉近到的宽度（地图单位）：看得清他和身边几步内的人；本来就够近时不动 */
 export const CLOSE_UP_WIDTH = 1400
 /** 离地图边多近算贴边（宽屏的右侧面板留着 12px 边距） */
@@ -43,11 +43,12 @@ export function visibleMapRect(map: HTMLElement): ViewRect {
   return r
 }
 
-/** 地图里看得见的小按钮和提示的范围；新手提示挂在 body 上，一并算进来 */
+/** 地图里看得见的小按钮和提示的范围；新手提示挂在 body 上、动态在地图外面，一并算进来 */
 export function mapControlRects(map: HTMLElement): DOMRect[] {
   return [
     ...map.querySelectorAll<HTMLElement>(CONTROLS),
-    ...document.querySelectorAll<HTMLElement>('body > .coach'),
+    // 浮在地图左下的两条动态在地图容器外面（#event-bar），一样要躲开
+    ...document.querySelectorAll<HTMLElement>('body > .coach, #event-latest > *'),
   ]
     .filter(shown)
     .map((node) => node.getBoundingClientRect())

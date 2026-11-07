@@ -275,42 +275,72 @@ html.avatar-controlling .empty-town {
   height: 100%;
 }
 /* 地图左下角的两个入口：场景物品、书与公告 */
+/* 地图左下角的道具格：白底方块里一个像素图标，下面一个深色名牌，和头像格一样 */
 .map-corner {
   position: absolute;
   left: 14px;
   bottom: 14px;
   z-index: 5;
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
 .map-props-button {
-  display: inline-flex;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 0 14px;
-  border-radius: var(--r-s);
-  background: var(--surface);
-  font-weight: 500;
-  box-shadow: var(--elev-3);
+  gap: 5px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
   touch-action: manipulation;
 }
-.map-props-button .game-icon {
-  width: 16px;
-  height: 16px;
+.tool-slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--hud-line);
+  border-radius: var(--r-m);
+  background: var(--surface);
+  box-shadow: var(--hud-shadow);
+  transition: transform var(--t-fast) var(--ease);
 }
-.map-props-button:active {
-  box-shadow: var(--elev-1);
+.map-props-button:hover:not(:disabled) {
+  background: none;
 }
-/* 摆道具开着时按钮按下去，再点一次退出 */
-.map-props-button[aria-pressed='true'] {
+.map-props-button:hover .tool-slot {
+  transform: translateY(-1px);
+}
+.map-props-button:active .tool-slot {
+  transform: translateY(1px);
+}
+.tool-name {
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  background: var(--toast-bg);
+  color: var(--toast-ink);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+/* 书报的新作品数字挂在格子右上角 */
+.tool-slot .ui-count {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+}
+/* 摆道具开着时格子描成主色，名牌也换主色，再点一次退出 */
+.map-props-button[aria-pressed='true'] .tool-slot {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.map-props-button[aria-pressed='true'] .tool-name {
   background: var(--accent-fill);
-  border-color: var(--accent-fill);
   color: var(--on-accent);
-}
-.map-props-button[aria-pressed='true']:hover:not(:disabled) {
-  background: var(--accent-strong);
-  border-color: var(--accent-strong);
 }
 .map-props-button[hidden] {
   display: none;

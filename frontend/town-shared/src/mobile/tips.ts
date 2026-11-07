@@ -1,6 +1,6 @@
 // 一次性提示：第一次遇到时各出现一次，一次只出一条，不挡操作；点「知道了」或者做了提示里说的事
 // 就不再出现。看过的记在本机。手机和电脑说法不同：手机讲手势、指底部的「动态」，电脑讲鼠标键盘、
-// 指右上角的「菜单」（帮助在里面）和事件栏的「展开」。
+// 指右上角的「菜单」（帮助在里面）和左下动态的「全部动态」。
 import { isWaiting } from '../display'
 import { button, el } from '../dom'
 import type { GameMap } from '../gameMap'
@@ -20,7 +20,7 @@ const TEXT: Record<TipId, string> = {
 }
 const DESK_TEXT: Partial<Record<TipId, string>> = {
   gesture: '拖动地图看各处，滚轮缩放，空格暂停或继续。想再看一遍向导，点这里的「菜单」→「帮助」。',
-  events: '错过的对话和想法，都在下面的事件栏里，点「展开」看全部。',
+  events: '错过的对话和想法都在左下的动态里，点「全部动态」看全部。',
 }
 
 function load(): Set<TipId> {

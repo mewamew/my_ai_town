@@ -47,34 +47,38 @@
   >
     <i data-pixel="bars"></i><span>菜单</span>
   </button>
-  <!-- 地图左下角的入口：场景物品、书与公告、摆道具 -->
+  <!-- 地图左下角的道具格：场景物品、书与公告、摆道具（和头像格一样，方块下面一个名牌） -->
   <div class="map-corner">
     <button
       id="open-props"
       class="map-props-button"
       type="button"
       aria-controls="props-view"
+      aria-label="场景物品"
       title="查看小镇里的物品、用途和影响"
     >
-      场景物品
+      <span class="tool-slot"><i data-pixel="chest"></i></span><span class="tool-name">物品</span>
     </button>
     <button
       id="open-books"
       class="map-props-button"
       type="button"
       aria-controls="books-view"
+      aria-label="书与公告"
       title="村民写的书、公告栏上的告示；你也可以写书、贴公告"
     >
-      书与公告
+      <span class="tool-slot"><i data-pixel="book"></i></span><span class="tool-name">书报</span>
     </button>
     <button
       id="open-placing"
       class="map-props-button"
       type="button"
       aria-pressed="false"
+      aria-label="摆道具"
       title="在地图上点一个地点，往那里放道具"
     >
-      摆道具
+      <span class="tool-slot"><i data-pixel="hammer"></i></span
+      ><span class="tool-name">摆道具</span>
     </button>
   </div></template
 >

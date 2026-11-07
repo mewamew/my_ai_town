@@ -1,7 +1,8 @@
-// 底部事件区：只放小镇里发生的事——世界日志、村民想法、台词与本地状态变化。
+// 动态：只放小镇里发生的事——世界日志、村民想法、台词与本地状态变化。
 // 模型请求记录（种类 model）在消耗页看，这里直接不收。
 // 分类：想法、台词从名册里新出现的那一条记下；重要事件看事件自带的 alert（见 importantEvents.ts）。
-// 收起时那一行停在最近的重要事件上，普通事件挤不掉它，直到来了新的重要事件或玩家展开、关掉。
+// 收起时最近两条浮在地图左下（旧的一条淡一些）；有重要事件时只停它一条，普通事件挤不掉它，
+// 直到来了新的重要事件或玩家展开、关掉。「全部动态」展开成一块浮板，可以按对话、想法、重要筛选。
 
 import { triggerLabel } from './display'
 import { type ServerMsg } from './protocol'
@@ -56,6 +57,7 @@ const withoutClock = (text: string) => text.replace(/^\[D\d+\s+\d{1,2}:\d{2}(?::
 export function initEvents(game: boolean): EventsHandle {
   const latestBar = $('event-latest')
   const latestText = $('event-latest-text')
+  const prevText = $('event-prev')
   const dismiss = $('event-latest-dismiss')
   const full = $('event-full')
   const list = $('event-list')
@@ -114,14 +116,16 @@ export function initEvents(game: boolean): EventsHandle {
     return !!e.important
   }
 
-  /** 收起时那一行：有停住的重要事件就显示它，否则显示最新一条 */
+  const lineOf = (e: TownEvent) =>
+    e.thought ? `${e.thought.who}：「${playerText(e.text)}」` : playerText(e.text)
+  /** 收起时的两条：有停住的重要事件就只显示它，否则显示最新两条 */
   function showLatest() {
     const e = pinned ?? store.at(-1)
-    latestText.textContent = !e
-      ? '暂无事件'
-      : e.thought
-        ? `${e.thought.who}：「${playerText(e.text)}」`
-        : playerText(e.text)
+    latestText.textContent = !e ? '暂无事件' : lineOf(e)
+    const prev = pinned ? undefined : store.at(-2)
+    prevText.hidden = !prev
+    prevText.textContent = prev ? lineOf(prev) : ''
+    prevText.className = prev?.alert ? 'alert' : ''
     latestText.className = pinned
       ? 'alert important'
       : e?.alert

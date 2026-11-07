@@ -5,6 +5,7 @@ import { $, button, el } from '../dom'
 import { countBadge } from '../design/ui'
 import type { EventsHandle } from '../events'
 import { gameIcon } from '../game/icons'
+import { pixelIcon, type PixelName } from '../game/pixel'
 import { isCompact, onBack, onLifecycle } from '../platform'
 import type { SpeedBar } from '../shell/topbar'
 import { bottomSheet, type Snap } from './sheet'
@@ -52,10 +53,11 @@ export function installMobileChrome(d: ChromeDeps) {
   const dock = el('nav', '', 'mobile-dock')
   dock.id = 'mobile-dock'
   dock.setAttribute('aria-label', '主要入口')
-  const entry = (name: string, icon: string, label: string, action: () => void) => {
+  // 底部入口的图标和电脑上的一样，是平涂像素画（地图右上角的两个圆钮仍用线条图标）
+  const entry = (name: string, icon: PixelName, label: string, action: () => void) => {
     const b = button('', action)
     b.dataset.dock = name
-    b.append(gameIcon(icon, true), el('span', label))
+    b.append(pixelIcon(icon), el('span', label))
     dock.append(b)
     return b
   }
@@ -72,7 +74,7 @@ export function installMobileChrome(d: ChromeDeps) {
     }
     syncDock()
   })
-  const avatarBtn = entry('avatar', 'person', '化身', () => {
+  const avatarBtn = entry('avatar', 'avatar', '化身', () => {
     closePopover()
     // 进入对话框在地图中间，先收起压在它上面的村民卡和事件列表
     d.infoPanel.collapse()
@@ -81,7 +83,7 @@ export function installMobileChrome(d: ChromeDeps) {
     d.avatar.openEntry()
   })
   avatarBtn.classList.add('dock-avatar')
-  entry('props', 'hand', '物品', () => {
+  entry('props', 'chest', '物品', () => {
     closePopover()
     d.open.props()
   })
@@ -90,7 +92,7 @@ export function installMobileChrome(d: ChromeDeps) {
     d.open.books()
   })
   d.watchBooks(countBadge(booksBtn, '书报'))
-  const menuBtn = entry('menu', 'more', '菜单', () => {
+  const menuBtn = entry('menu', 'bars', '菜单', () => {
     closePopover()
     d.menu.toggle()
   })

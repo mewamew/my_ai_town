@@ -44,10 +44,10 @@ html.avatar-controlling :is(.resident-strip, .strip-peek) {
   place-items: center;
   width: 56px;
   height: 56px;
-  border: 2px solid var(--text);
+  border: 1px solid var(--hud-line);
   border-radius: var(--r-m);
   background: var(--accent-soft);
-  box-shadow: 0 3px 0 var(--text);
+  box-shadow: var(--hud-shadow);
   transition: transform var(--t-fast) var(--ease);
 }
 .strip-pic {
@@ -70,8 +70,8 @@ html.avatar-controlling :is(.resident-strip, .strip-peek) {
   transform: translateY(-2px);
 }
 .strip-tile:active .strip-face {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 var(--text);
+  transform: translateY(1px);
+  box-shadow: 0 1px 3px rgb(20 24 22 / 0.16);
 }
 .strip-tile:focus-visible {
   outline: none;
@@ -109,7 +109,7 @@ html.avatar-controlling :is(.resident-strip, .strip-peek) {
   bottom: -5px;
   width: 14px;
   height: 14px;
-  border: 2px solid var(--text);
+  border: 2px solid var(--surface);
   border-radius: 50%;
   background: var(--ok);
 }
@@ -130,11 +130,11 @@ html.avatar-controlling :is(.resident-strip, .strip-peek) {
   place-items: center;
   width: 24px;
   height: 24px;
-  border: 2px solid var(--text);
+  border: 1px solid var(--hud-line);
   border-radius: 8px;
   background: var(--surface);
   color: var(--text);
-  box-shadow: 0 2px 0 var(--text);
+  box-shadow: var(--hud-shadow);
 }
 .strip-badge .game-icon {
   width: 13px;
@@ -161,9 +161,8 @@ html.avatar-controlling :is(.resident-strip, .strip-peek) {
 
 /* 末尾的「邀请」：虚线框里一个加号，看得出是空位；空镇子时整条只剩它，用主色描出来指向第一步 */
 .strip-add .strip-face {
-  border-style: dashed;
+  border: 1.5px dashed rgb(31 36 33 / 0.32);
   background: var(--surface);
-  box-shadow: none;
   color: var(--text-2);
 }
 .strip-add .strip-face .game-icon {
@@ -173,15 +172,14 @@ html.avatar-controlling :is(.resident-strip, .strip-peek) {
 }
 .strip-add:hover .strip-face {
   border-style: solid;
+  border-color: var(--accent);
   color: var(--accent);
-  box-shadow: 0 3px 0 var(--text);
 }
 html[data-empty-town] .strip-add .strip-face {
   border-style: solid;
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
-  box-shadow: 0 3px 0 var(--accent);
 }
 html[data-empty-town] .strip-add .strip-name {
   background: var(--accent-fill);
@@ -210,11 +208,11 @@ html[data-empty-town] .strip-add .strip-name {
   place-items: center;
   min-height: 0;
   padding: 0;
-  border: 2px solid var(--text);
+  border: 1px solid var(--hud-line);
   border-radius: 10px;
   background: var(--surface);
   color: var(--text);
-  box-shadow: 0 3px 0 var(--text);
+  box-shadow: var(--hud-shadow);
   cursor: pointer;
 }
 .strip-fold {
@@ -262,8 +260,8 @@ html[data-empty-town] .strip-add .strip-name {
   display: grid;
 }
 :is(.strip-fold, .strip-unfold):active {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 var(--text);
+  transform: translateY(1px);
+  box-shadow: 0 1px 3px rgb(20 24 22 / 0.16);
 }
 :is(.strip-fold, .strip-unfold):focus-visible {
   outline: 2px solid var(--focus);
@@ -276,13 +274,11 @@ html[data-empty-town] .strip-add .strip-name {
   z-index: 8;
   width: 280px;
   padding: 12px 14px 10px;
-  border: 2px solid var(--text);
+  border: 1px solid var(--hud-line);
   border-radius: var(--r-m);
   background: var(--surface);
   color: var(--text);
-  box-shadow:
-    0 3px 0 var(--text),
-    var(--elev-3);
+  box-shadow: var(--hud-shadow-big);
   font-size: 13px;
   line-height: 1.5;
   pointer-events: none;
@@ -294,8 +290,8 @@ html[data-empty-town] .strip-add .strip-name {
   left: calc(var(--caret, 30px) - 7px);
   width: 12px;
   height: 12px;
-  border-top: 2px solid var(--text);
-  border-left: 2px solid var(--text);
+  border-top: 1px solid var(--hud-line);
+  border-left: 1px solid var(--hud-line);
   background: var(--surface);
   transform: rotate(45deg);
 }

@@ -15,11 +15,15 @@
     ></div>
     <aside id="info-panel" class="collapsed" hidden></aside>
   </div>
+  <!-- 动态：收起时最近两条浮在地图左下（旧的一条淡一些），「全部动态」展开成一块浮板（events.ts） -->
   <footer id="event-bar">
     <div id="event-latest">
-      <span id="event-latest-text">暂无事件</span>
-      <button id="event-latest-dismiss" title="不再停在这条重要事件上" hidden>关闭</button>
-      <button id="event-expand">展开</button>
+      <p id="event-prev" hidden></p>
+      <p class="event-line">
+        <span id="event-latest-text">暂无事件</span>
+        <button id="event-latest-dismiss" title="不再停在这条重要事件上" hidden>关闭</button>
+      </p>
+      <button id="event-expand">全部动态</button>
     </div>
     <div id="event-full" hidden>
       <div id="event-toolbar">

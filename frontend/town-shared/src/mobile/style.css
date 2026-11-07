@@ -135,9 +135,13 @@ html[data-empty-town] .mobile-dock [data-dock='residents'] {
     color: var(--text-2);
     font-size: 12px;
   }
-  .mobile-dock button .game-icon {
-    width: 22px;
-    height: 22px;
+  .mobile-dock button .pixel-icon {
+    width: 32px;
+    height: 32px;
+  }
+  /* 停用的入口（比如还不能进化身）：像素图标也跟着淡下去 */
+  .mobile-dock button:disabled .pixel-icon {
+    opacity: 0.4;
   }
   /* 新作品的数字贴在图标右上角 */
   .mobile-dock .ui-count {
@@ -153,7 +157,7 @@ html[data-empty-town] .mobile-dock [data-dock='residents'] {
     display: none;
   }
 
-  /* ---------- 事件：一行最新事件浮在入口上方，展开成底部抽屉 ---------- */
+  /* ---------- 事件：最近两条浮在入口上方（样子见 shell/hud.css），展开成底部抽屉 ---------- */
   #event-bar {
     position: absolute;
     left: 12px;

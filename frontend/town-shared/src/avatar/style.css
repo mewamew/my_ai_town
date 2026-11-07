@@ -321,11 +321,13 @@
 
 /* ---- 右侧面板 ---- */
 @media (min-width: 761px) {
+  /* 缩放钮让到左边中间：左下是动态和道具格 */
   #map:has(.avatar-panel:not([hidden])) .map-zoom {
     left: 12px;
     right: auto;
-    top: auto;
-    bottom: 80px;
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
   }
 }
 .avatar-panel {
