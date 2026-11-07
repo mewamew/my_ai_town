@@ -389,7 +389,8 @@ impl ResidentRuntime {
             PlannedRound::Reflection(batch) => {
                 tools::reflection_definitions(has_read(world, &s.actor_id, batch.through))
             }
-            _ => tools::definitions(kind),
+            PlannedRound::Life { .. } => tools::life_definitions(world, &s.actor_id),
+            PlannedRound::Chat => tools::definitions(kind),
         };
         let tools_json = serde_json::to_string(&tools).expect("工具定义可序列化");
         let draft = match &round {

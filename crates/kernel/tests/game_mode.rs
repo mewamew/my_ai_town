@@ -6,8 +6,9 @@ use kernel::{
     Event, World,
 };
 use protocol::{
-    GameModeChoice, GameModeContext, GameModeView, PhysiologySwitches, TideCircle, TidePhase,
-    TideView,
+    FactKind, GameModeAction, GameModeChoice, GameModeContext, GameModeView, PhysiologySwitches,
+    TideCircle, TidePhase, TideView, WerewolfOut, WerewolfPhase, WerewolfRole, WerewolfSide,
+    WerewolfView,
 };
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -89,7 +90,10 @@ fn dist(a: [f64; 2], b: [f64; 2]) -> f64 {
 }
 
 fn tide(w: &World) -> Option<TideView> {
-    w.game_mode_view().map(|GameModeView::Tide(v)| v)
+    match w.game_mode_view() {
+        Some(GameModeView::Tide(v)) => Some(v),
+        _ => None,
+    }
 }
 
 /// 没开玩法时存档和名册里都没有玩法的字段，和没有玩法这回事时一样。
@@ -180,5 +184,241 @@ fn tide_rings_shrink_onto_the_high_ground_and_drain_whoever_stands_in_water() {
     // 关掉以后不留痕迹
     w.set_game_mode(None).unwrap();
     assert!(w.game_mode().is_none());
+    no_trace(&w);
+}
+
+fn werewolf(w: &World) -> WerewolfView {
+    match w.game_mode_view() {
+        Some(GameModeView::Werewolf(v)) => v,
+        other => panic!("开着的该是狼人杀：{other:?}"),
+    }
+}
+
+fn wolf_context(w: &World, id: &str) -> protocol::WerewolfContext {
+    match w.game_mode_context(id) {
+        Some(GameModeContext::Werewolf(c)) => c,
+        other => panic!("{id} 的模型该看到狼人杀这一栏：{other:?}"),
+    }
+}
+
+fn mode_act(w: &mut World, id: &str, action: &str, target: Option<u32>, text: Option<&str>) {
+    let action = GameModeAction {
+        action: action.into(),
+        target: target.map(|t| t.to_string()),
+        text: text.map(str::to_owned),
+        reason: None,
+    };
+    let result = w.game_mode_act(id, &action);
+    assert!(result.is_ok(), "{id} 交 {action:?}：{result:?}");
+}
+
+/// 一局 9 人：用给模型看的那一栏（werewolf.actions）当成模型，按固定打法交动作，走完整局。
+/// 好人每天都投座号最小的狼，狼人每夜刀座号最小的平民；女巫第 1 夜救人，猎人不开枪。
+/// 途中故意让一个人发言超时、一个人不投票（到点往下走），议事中途存档读档。
+#[test]
+fn werewolf_judge_runs_a_whole_game_through_turns_deadlines_and_a_reload() {
+    let names = [
+        "阿树", "小禾", "芬恩", "露娜", "石头", "米拉", "诺亚", "阿滩", "阿岚",
+    ];
+    let ids: Vec<String> = (1..=9).map(|n| format!("r{n}")).collect();
+    let people: Vec<(&str, &str, &str)> = ids
+        .iter()
+        .zip(names)
+        .map(|(id, name)| (id.as_str(), name, "loc_a"))
+        .collect();
+    // 吃喝睡关着（预制小镇的默认），四天里没人饿死渴死
+    let fresh = || {
+        let mut w = common::world_with(common::tiny_topology(), 7.0 * HOUR, &people);
+        w.set_physiology(PhysiologySwitches {
+            fullness: false,
+            energy: false,
+            water: false,
+            health: false,
+            weather: false,
+        });
+        w
+    };
+    let mut w = fresh();
+    // 人不够开不了，原来的世界不受影响
+    let mut few = common::world_with(common::tiny_topology(), 7.0 * HOUR, &people[..5]);
+    assert!(few
+        .set_game_mode(Some(&GameModeChoice::Werewolf {
+            seed: Some(3),
+            day_hours: None
+        }))
+        .is_err());
+    assert!(few.game_mode().is_none());
+
+    w.set_game_mode(Some(&GameModeChoice::Werewolf {
+        seed: Some(11),
+        day_hours: Some(6),
+    }))
+    .unwrap();
+    assert_eq!(w.game_mode(), Some("werewolf"));
+    let v = werewolf(&w);
+    assert_eq!(
+        (v.phase, v.day, v.seats.len()),
+        (WerewolfPhase::Waiting, 0, 9)
+    );
+    let count = |role| v.seats.iter().filter(|s| s.role == role).count();
+    assert_eq!(
+        (count(WerewolfRole::Wolf), count(WerewolfRole::Villager)),
+        (3, 3)
+    );
+    let role_of = |seat: u32| v.seats[seat as usize - 1].role;
+    let seat_of = |role| v.seats.iter().find(|s| s.role == role).unwrap().seat;
+    let (seer, witch, hunter) = (
+        seat_of(WerewolfRole::Seer),
+        seat_of(WerewolfRole::Witch),
+        seat_of(WerewolfRole::Hunter),
+    );
+    let villagers: Vec<u32> = v
+        .seats
+        .iter()
+        .filter(|s| s.role == WerewolfRole::Villager)
+        .map(|s| s.seat)
+        .collect();
+    let wolves: Vec<u32> = v
+        .seats
+        .iter()
+        .filter(|s| s.role == WerewolfRole::Wolf)
+        .map(|s| s.seat)
+        .collect();
+    // 开局前就有玩法动作工具（整局工具表不变，请求前缀能留在缓存里），但没有要交的
+    assert!(w.game_mode_tool("r1").unwrap().contains("vote"));
+    assert!(wolf_context(&w, "r1").actions.is_empty());
+
+    // 第 1 天 10:30 天亮：每人单独收到自己的身份，狼人还知道同伴
+    w.step(3.6 * HOUR);
+    assert_eq!(werewolf(&w).phase, WerewolfPhase::Day);
+    for (k, id) in ids.iter().enumerate() {
+        let a = w.actor(id).unwrap();
+        let notice = a
+            .journal
+            .events_after(0)
+            .iter()
+            .find(|e| e.kind == FactKind::Notice && e.text.contains("身份是"))
+            .unwrap_or_else(|| panic!("{id} 没收到身份"))
+            .text
+            .clone();
+        let seat = k as u32 + 1;
+        assert_eq!(
+            notice.contains("狼人同伴"),
+            role_of(seat) == WerewolfRole::Wolf
+        );
+    }
+
+    let id_of = |seat: u32| ids[seat as usize - 1].clone();
+    let alive = |w: &World, seat: u32| werewolf(w).seats[seat as usize - 1].out.is_none();
+    let mut skipped = false;
+    let mut abstained = false;
+    let mut reloaded = false;
+    for _ in 0..5000 {
+        let v = werewolf(&w);
+        if v.phase == WerewolfPhase::Over {
+            break;
+        }
+        // 第 2 天第三个发言的人不交，到点跳过
+        if v.phase == WerewolfPhase::Speech && v.day == 2 && v.lines.len() == 2 && !skipped {
+            skipped = true;
+            let silent = v.turn.unwrap();
+            w.step(16.0);
+            let after = werewolf(&w);
+            assert_ne!(after.turn, Some(silent));
+            assert_eq!(after.lines.len(), 2);
+            continue;
+        }
+        // 第 3 天议事说到一半存档，读进一个新世界接着走
+        if v.phase == WerewolfPhase::Speech && v.day == 3 && v.lines.len() == 2 && !reloaded {
+            reloaded = true;
+            w = common::restore(&w, fresh());
+            assert_eq!(werewolf(&w), v);
+        }
+        let mut acted = false;
+        for seat in 1..=9u32 {
+            let id = id_of(seat);
+            let Some(GameModeContext::Werewolf(c)) = w.game_mode_context(&id) else {
+                continue;
+            };
+            let Some(first) = c.actions.first().cloned() else {
+                continue;
+            };
+            let v = werewolf(&w);
+            let lowest = |pred: &dyn Fn(u32) -> bool| (1..=9u32).find(|&s| alive(&w, s) && pred(s));
+            match first.as_str() {
+                "speak" => mode_act(&mut w, &id, "speak", None, Some("我是好人，大家听我说。")),
+                "vote" | "abstain" => {
+                    // 第 2 天最后一个人不投，到点算弃票
+                    let voted = v.ballots.len();
+                    let living = v.seats.iter().filter(|s| s.out.is_none()).count();
+                    if v.day == 2 && voted + 1 == living && !abstained {
+                        abstained = true;
+                        w.step(16.0);
+                        assert!(werewolf(&w).revealed);
+                        acted = true;
+                        break;
+                    }
+                    let target = if role_of(seat) == WerewolfRole::Wolf {
+                        lowest(&|s| !wolves.contains(&s))
+                    } else {
+                        lowest(&|s| wolves.contains(&s))
+                    };
+                    mode_act(&mut w, &id, "vote", target, None);
+                }
+                "kill" => {
+                    let target = lowest(&|s| villagers.contains(&s));
+                    mode_act(&mut w, &id, "kill", target, Some("刀他。"));
+                }
+                "check" => {
+                    let target = lowest(&|s| s != seat);
+                    mode_act(&mut w, &id, "check", target, None);
+                }
+                "poison" | "save" | "pass" if seat == witch => {
+                    let night = v.night.as_ref().map_or(0, |n| n.night);
+                    let save = night == 1 && c.actions.iter().any(|a| a == "save");
+                    mode_act(&mut w, &id, if save { "save" } else { "pass" }, None, None);
+                }
+                _ => mode_act(&mut w, &id, "pass", None, None),
+            }
+            acted = true;
+            break;
+        }
+        if !acted {
+            w.step(5.0);
+        }
+    }
+    assert!(skipped && abstained && reloaded);
+    let v = werewolf(&w);
+    assert_eq!(
+        (v.phase, v.winner),
+        (WerewolfPhase::Over, Some(WerewolfSide::Good))
+    );
+    for &wolf in &wolves {
+        assert_eq!(v.seats[wolf as usize - 1].out, Some(WerewolfOut::Exiled));
+    }
+    // 第 1 夜刀的平民被女巫救下，第 2 夜又被刀倒下，第 3 夜倒下第二个；最后一个平民和神职都活着
+    assert_eq!(v.seats[villagers[2] as usize - 1].out, None);
+    for &k in &villagers[..2] {
+        assert_eq!(v.seats[k as usize - 1].out, Some(WerewolfOut::Killed));
+        assert!(w.actor(&id_of(k)).unwrap().needs.body.dead);
+    }
+    for seat in [seer, witch, hunter] {
+        assert_eq!(v.seats[seat as usize - 1].out, None);
+    }
+    let history = wolf_context(&w, &id_of(seer)).history;
+    assert!(
+        history.iter().any(|h| h == "第 1 夜：平安夜"),
+        "{history:?}"
+    );
+    assert!(history.iter().any(|h| h.contains("弃票")), "{history:?}");
+    // 被放逐的人说完遗言走出村子；出局的人和结束后都没有玩法动作工具
+    w.step(30.0);
+    for &wolf in &wolves {
+        assert!(!w.actor(&id_of(wolf)).unwrap().present());
+        assert!(w.game_mode_tool(&id_of(wolf)).is_none());
+    }
+    assert!(w.game_mode_tool(&id_of(seer)).is_none());
+
+    w.set_game_mode(None).unwrap();
     no_trace(&w);
 }

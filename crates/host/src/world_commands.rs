@@ -85,16 +85,19 @@ impl Runtime {
             })
     }
 
-    /// 打开或关掉玩法（不带 choice 是关掉）。潮水圈没给种子时随机取一个，从下一个天亮起公布第一圈。
-    /// 不暂停世界：玩法的公告到点会自己写进每个人的经历。
+    /// 打开或关掉玩法（不带 choice 是关掉）。没给种子时随机取一个：潮水圈从下一个天亮起公布第一圈，
+    /// 狼人杀按此刻镇上的村民发身份。不暂停世界：玩法的公告到点会自己写进每个人的经历。
     pub(crate) fn save_game_mode(
         &mut self,
         request_id: String,
         choice: Option<GameModeChoice>,
     ) -> Outcome {
+        let roll = |seed: Option<u32>| Some(seed.unwrap_or_else(|| rand::random::<u32>().max(1)));
         let choice = choice.map(|c| match c {
-            GameModeChoice::Tide { seed } => GameModeChoice::Tide {
-                seed: Some(seed.unwrap_or_else(|| rand::random::<u32>().max(1))),
+            GameModeChoice::Tide { seed } => GameModeChoice::Tide { seed: roll(seed) },
+            GameModeChoice::Werewolf { seed, day_hours } => GameModeChoice::Werewolf {
+                seed: roll(seed),
+                day_hours,
             },
         });
         let result = self
@@ -111,6 +114,9 @@ impl Runtime {
                 message: result.err().unwrap_or_else(|| match choice {
                     Some(GameModeChoice::Tide { .. }) => {
                         "潮水圈已打开：每天 06:00 公布下一圈，12:00 开始涨，18:00 涨到".into()
+                    }
+                    Some(GameModeChoice::Werewolf { .. }) => {
+                        "狼人杀已打开：身份已发下，天亮开局；每天 16:30 敲钟、17:00 议事".into()
                     }
                     None => "玩法已关掉，世界恢复原样".into(),
                 }),

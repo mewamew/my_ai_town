@@ -38,6 +38,8 @@ pub enum ToolName {
     OfferInvitation,
     ReplyInvitation,
     WaitFor,
+    /// 玩法里交选择（投票、发言、夜里的身份行动……）：只在开着的玩法给这个人开了时才发给模型
+    ModeAction,
 }
 
 /// 整理轮次只开放的工具。
@@ -64,6 +66,7 @@ impl ToolName {
             Self::OfferInvitation => "offer_invitation",
             Self::ReplyInvitation => "reply_invitation",
             Self::WaitFor => "wait_for",
+            Self::ModeAction => "mode_action",
         }
     }
     /// 各类轮次开放的工具：生活决策除 reflect 外全部，整理轮次只有整理工具，交谈轮次只有 interact。
@@ -78,7 +81,11 @@ impl ToolName {
     pub fn changes_world(self) -> bool {
         matches!(
             self,
-            Self::RunActions | Self::Interact | Self::OfferInvitation | Self::ReplyInvitation
+            Self::RunActions
+                | Self::Interact
+                | Self::OfferInvitation
+                | Self::ReplyInvitation
+                | Self::ModeAction
         )
     }
     /// 查看或记目标：不动身体、不对人说话，也不是等待。
@@ -208,7 +215,7 @@ impl ToolSpec {
     }
 }
 
-pub const TOOLS: [ToolSpec; 14] = [
+pub const TOOLS: [ToolSpec; 15] = [
     ToolSpec {
         name: ToolName::ContextRead,
         description: || {
@@ -323,6 +330,13 @@ pub const TOOLS: [ToolSpec; 14] = [
         parameters: schema::wait_for,
         exec: wait_for,
     },
+    ToolSpec {
+        name: ToolName::ModeAction,
+        // 发给模型时换成开着的玩法写的说明（life_definitions）
+        description: || "在开着的玩法里交一项选择。".into(),
+        parameters: schema::mode_action,
+        exec: mode_action,
+    },
 ];
 
 pub fn spec(name: ToolName) -> &'static ToolSpec {
@@ -342,11 +356,23 @@ pub fn reflection_definitions(has_read: bool) -> Vec<Value> {
     list
 }
 
-/// 发给模型的工具定义，按轮次种类取子集。
+/// 生活决策的工具。开着的玩法让这个人交选择时多一件 mode_action，说明由玩法写；
+/// 没开玩法时和 definitions(Life) 一字不差。
+pub fn life_definitions(world: &World, actor: &str) -> Vec<Value> {
+    let mut list = definitions(RequestKind::Life);
+    if let Some(description) = world.game_mode_tool(actor) {
+        let mut definition = spec(ToolName::ModeAction).definition();
+        definition["function"]["description"] = json!(description);
+        list.push(definition);
+    }
+    list
+}
+
+/// 发给模型的工具定义，按轮次种类取子集；玩法动作另由 life_definitions 按玩法加上。
 pub fn definitions(kind: RequestKind) -> Vec<Value> {
     TOOLS
         .iter()
-        .filter(|t| t.name.allowed_in(kind))
+        .filter(|t| t.name.allowed_in(kind) && t.name != ToolName::ModeAction)
         .map(|t| {
             let mut definition = t.definition();
             // 交谈轮次只有 interact，且只列 say、listen、leave，和交谈规则一致。
@@ -730,6 +756,17 @@ fn run_actions(ctx: &mut ToolContext, call: &ToolCall) -> Result<ToolOutcome, To
         group_id,
         reported_running: false,
     }))
+}
+/// 玩法动作交给开着的玩法去判；target 写成数字（座号）也认。
+fn mode_action(ctx: &mut ToolContext, call: &ToolCall) -> Result<ToolOutcome, ToolError> {
+    let mut args = call.arguments.clone();
+    if let Some(n) = args.get("target").filter(|t| t.is_number()).cloned() {
+        args["target"] = json!(n.to_string());
+    }
+    let action = decode::<protocol::GameModeAction>(&args)?;
+    let actor = ctx.session.actor_id.clone();
+    let result = ctx.world.game_mode_act(&actor, &action)?;
+    complete(json!({ "result": result }))
 }
 fn wait_for(ctx: &mut ToolContext, call: &ToolCall) -> Result<ToolOutcome, ToolError> {
     let args = decode::<Wait>(&call.arguments)?;

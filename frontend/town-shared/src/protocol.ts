@@ -624,9 +624,12 @@ export interface ReelView {
 /** 玩法：有自己的目标、时间表和输赢的一套规则，一个世界同时最多开一个 */
 export type GameModeId = GameModeView['kind']
 /** 名册里开着的玩法此刻的状态，按 kind 认出是哪个玩法 */
-export type GameModeView = { kind: 'tide' } & TideView
+export type GameModeView = ({ kind: 'tide' } & TideView) | ({ kind: 'werewolf' } & WerewolfView)
 /** 打开哪个玩法、带什么设置；set_game_mode 不带它就是关掉 */
-export type GameModeChoice = { kind: 'tide'; seed?: number }
+export type GameModeChoice =
+  | { kind: 'tide'; seed?: number }
+  /** 狼人杀：seed 定下谁拿什么身份；day_hours 是白天自由活动几小时（天亮到 16:30 敲钟） */
+  | { kind: 'werewolf'; seed?: number; day_hours?: number }
 
 /** 潮水圈里的一个圈：圆心和半径都是行走地图上的米（x 和地面上的 z） */
 export interface TideCircle {
@@ -641,6 +644,69 @@ export interface TideView {
   phase: TidePhase
   ring: number
   rings: number
+}
+
+export type WerewolfRole = 'wolf' | 'seer' | 'witch' | 'hunter' | 'guard' | 'villager'
+export type WerewolfPhase =
+  | 'waiting'
+  | 'day'
+  | 'gather'
+  | 'speech'
+  | 'vote'
+  | 'last_words'
+  | 'shot'
+  | 'dusk'
+  | 'night'
+  | 'over'
+export type WerewolfSide = 'good' | 'wolf'
+/** 怎么出局的：夜里被杀、被毒、白天被放逐、被猎人带走、法官没经手（被人害死、饿死、离开） */
+export type WerewolfOut = 'killed' | 'poisoned' | 'exiled' | 'shot' | 'died'
+export interface WerewolfSeat {
+  seat: number
+  id: string
+  name: string
+  role: WerewolfRole
+  out?: WerewolfOut
+  out_day?: number
+}
+/** 一段话：议事发言、遗言或狼人频道；away 是说的时候人不在议事广场 */
+export interface WerewolfLine {
+  seat: number
+  text: string
+  at: number
+  away?: boolean
+  last?: boolean
+}
+/** 一张票；没有 target 是弃票（亮票前也不给 target） */
+export interface WerewolfBallot {
+  voter: number
+  target?: number
+  reason?: string
+}
+/** 一夜里各身份的选择（上帝视角） */
+export interface WerewolfNight {
+  night: number
+  wolf_lines?: WerewolfLine[]
+  kill?: number
+  guard?: number
+  check?: { seat: number; wolf: boolean }
+  save?: boolean
+  poison?: number
+}
+/** 狼人杀（上帝视角）：座位和身份、此刻轮到谁、今天的发言、票、一夜的选择、天亮倒下的人 */
+export interface WerewolfView {
+  phase: WerewolfPhase
+  day: number
+  seats: WerewolfSeat[]
+  notice: string
+  turn?: number
+  until?: number
+  lines?: WerewolfLine[]
+  ballots?: WerewolfBallot[]
+  revealed?: boolean
+  night?: WerewolfNight
+  dawn?: number[]
+  winner?: WerewolfSide
 }
 
 export type ServerMsg =

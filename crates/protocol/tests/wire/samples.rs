@@ -1228,9 +1228,77 @@ fn prop_view(location: ItemLocation, actions: Vec<PropActionEntry>) -> PropView 
 }
 
 /// 补充两份完整运行状态；不枚举所有可选字段和参数变体。
+/// 名册里开着狼人杀：上帝视角的座位、发言、亮过的票和一夜的选择都给全。
+fn werewolf_roster() -> ServerMsg {
+    let line = |seat, text: &str, away, last| WerewolfLine {
+        seat,
+        text: text.into(),
+        at: 2470.0,
+        away,
+        last,
+    };
+    let mut roster = server_samples()
+        .into_iter()
+        .find(|m| matches!(m, ServerMsg::Roster { .. }))
+        .expect("有名册样本");
+    if let ServerMsg::Roster { game_mode, .. } = &mut roster {
+        *game_mode = Some(GameModeView::Werewolf(WerewolfView {
+            phase: WerewolfPhase::LastWords,
+            day: 2,
+            seats: vec![
+                WerewolfSeat {
+                    seat: 1,
+                    id: "resident_ashu".into(),
+                    name: "阿树".into(),
+                    role: WerewolfRole::Seer,
+                    out: None,
+                    out_day: None,
+                },
+                WerewolfSeat {
+                    seat: 2,
+                    id: "resident_finn".into(),
+                    name: "芬恩".into(),
+                    role: WerewolfRole::Wolf,
+                    out: Some(WerewolfOut::Exiled),
+                    out_day: Some(2),
+                },
+            ],
+            notice: "第 2 天 · 遗言".into(),
+            turn: Some(2),
+            until: Some(2480.0),
+            lines: vec![
+                line(1, "我验了 2 号，是狼。", false, false),
+                line(2, "我是好人。", true, true),
+            ],
+            ballots: vec![WerewolfBallot {
+                voter: 1,
+                target: Some(2),
+                reason: Some("他是我验出来的狼".into()),
+            }],
+            revealed: true,
+            night: Some(WerewolfNight {
+                night: 1,
+                wolf_lines: vec![line(2, "刀 1 号（选 1 号 阿树）", false, false)],
+                kill: Some(1),
+                guard: Some(1),
+                check: Some(WerewolfCheck {
+                    seat: 2,
+                    wolf: true,
+                }),
+                save: true,
+                poison: None,
+            }),
+            dawn: vec![],
+            winner: Some(WerewolfSide::Good),
+        }));
+    }
+    roster
+}
+
 pub fn shape_samples() -> (Vec<ServerMsg>, Vec<ClientMsg>) {
     (
         vec![
+            werewolf_roster(),
             ServerMsg::AvatarState {
                 state: avatar_session(AvatarSight::Own(AvatarView::Present(Box::new(
                     avatar_state(),
@@ -1256,6 +1324,14 @@ pub fn shape_samples() -> (Vec<ServerMsg>, Vec<ClientMsg>) {
             },
         ],
         vec![
+            ClientMsg::SetGameMode {
+                request_id: "mode-2".into(),
+                world_id: "w1".into(),
+                game_mode: Some(GameModeChoice::Werewolf {
+                    seed: Some(7),
+                    day_hours: Some(6),
+                }),
+            },
             avatar(AvatarCommand::Action {
                 revision: 3,
                 action: ActionDraft {

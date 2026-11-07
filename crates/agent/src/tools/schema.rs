@@ -361,6 +361,21 @@ pub(super) fn recall() -> Value {
 pub(super) fn inspect() -> Value {
     object(json!({"id":{"type":"string"}}), &["id"])
 }
+/// 玩法动作：能交哪些 action、target 怎么填由开着的玩法在工具说明里写。
+pub(super) fn mode_action() -> Value {
+    object(
+        json!({
+            "action": {"type":"string","minLength":1,"maxLength":32},
+            "target": {"type":"string","maxLength":32},
+            "text": string(MODE_TEXT_CHARS),
+            "reason": string(MODE_REASON_CHARS)
+        }),
+        &["action"],
+    )
+}
+/// 玩法动作里一段话、一句理由的上限。
+const MODE_TEXT_CHARS: usize = 600;
+const MODE_REASON_CHARS: usize = 200;
 pub(super) fn set_goal() -> Value {
     object(
         json!({
