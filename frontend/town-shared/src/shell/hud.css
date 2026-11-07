@@ -351,8 +351,8 @@ html:not([data-layout='compact'])[data-input='touch']:not(.avatar-controlling) .
   line-height: 15px;
   color: var(--text-3);
 }
-/* 居民在手机的底部入口里，摆道具在电脑的地图左下角；手机没有键盘，帮助里不列按键 */
-html:not([data-layout='compact']) :is(#menu-placing, .phone-note),
+/* 居民在手机的底部入口里；手机没有键盘，帮助里不列按键 */
+html:not([data-layout='compact']) .phone-note,
 [data-layout='compact'] :is(#menu-residents, .desk-note) {
   display: none;
 }

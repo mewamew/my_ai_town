@@ -1,7 +1,7 @@
 // 右上角「菜单」：一级入口以外的都在这里——世界观（左上角也有）、居民、设定、消耗、帮助、选择小镇，加音乐、音效开关。
 // 格子写在 shell/plain.html 里；设定、消耗、选择小镇、声音的点击由各自的模块接（id 没变），这里只管开合和其余几格。
 // 电脑挂在菜单钮下面，手机从底部弹出（手机的菜单钮在底部入口里，见 mobile/chrome.ts）。打开不暂停世界。
-// Esc：面板、对话框、摆道具、化身先用掉它；什么都没开时打开菜单，开着时关上。
+// Esc：面板、对话框、道具浮窗、化身先用掉它；什么都没开时打开菜单，开着时关上。
 import { $ } from '../dom'
 import { isCompact } from '../platform'
 import { createMenuHelp } from './help'
@@ -9,8 +9,6 @@ import { createMenuHelp } from './help'
 export interface GameMenuDeps {
   openTown: () => void
   openResidents: () => void
-  /** 摆道具；地图不支持时为 null，菜单里不出这一格 */
-  openPlacing: (() => void) | null
   help: { openGuide: () => void; resetTips: () => void }
   /** 打开前停下化身：按着的方向键松开 */
   onOpen: () => void
@@ -26,7 +24,7 @@ function somethingOpen() {
     $('obs-view').hidden ||
     document.documentElement.classList.contains('avatar-controlling') ||
     !!active?.matches('input, textarea, select, [contenteditable="true"]') ||
-    $('open-placing').getAttribute('aria-pressed') === 'true'
+    $('open-props').getAttribute('aria-pressed') === 'true'
   )
 }
 
@@ -84,9 +82,6 @@ export function createGameMenu(deps: GameMenuDeps) {
   })
   $('menu-town').onclick = deps.openTown
   $('menu-residents').onclick = deps.openResidents
-  const placing = $('menu-placing')
-  if (deps.openPlacing) placing.onclick = deps.openPlacing
-  else placing.hidden = true
   $('open-help').onclick = () => {
     grid.hidden = true
     helpBox.hidden = false

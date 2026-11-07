@@ -259,6 +259,10 @@ svg.placing .pp.prop-art-ready > .prop-art-target {
   cursor: auto;
   user-select: text;
 }
+/* 第一层没有「这里已有」那一行，列表接在用途下面 */
+.place-picker.town {
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+}
 .place-head {
   display: flex;
   align-items: center;
@@ -276,6 +280,26 @@ svg.placing .pp.prop-art-ready > .prop-art-target {
 .place-where b {
   font-size: 16px;
   font-weight: 600;
+}
+/* 第二层头上「‹ 全镇」：回到第一层「镇上有什么」 */
+.place-back {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px 0 7px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.place-back:hover:not(:disabled) {
+  background: var(--surface-sunken);
+}
+.place-back[hidden],
+.place-here[hidden] {
+  display: none;
 }
 .place-close {
   margin-left: auto;
@@ -412,6 +436,47 @@ svg.placing .pp.prop-art-ready > .prop-art-target {
   color: var(--text-3);
   font-size: 12px;
 }
+/* 第一层的地点组头：地名、件数，能放东西的地点右边是「往这里放」 */
+.place-town-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+}
+.place-town-group b {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.place-add {
+  margin-left: auto;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+.place-add:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+/* 同名的几件合成一行：名字后面「×3」 */
+.place-times {
+  flex: none;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 500;
+}
+.place-act.locate {
+  color: var(--text-2);
+}
+.place-row:hover .place-act.locate {
+  border-color: var(--line);
+  background: var(--surface);
+}
 .place-empty {
   margin: 0;
   padding: 16px 10px;
@@ -523,6 +588,11 @@ svg.placing .pp.prop-art-ready > .prop-art-target {
   margin-left: auto;
   padding: 3px 10px;
   font-size: 13px;
+}
+/* 第一层底栏右边的「道具库」：改道具、导出道具包在整页里 */
+.place-foot .place-library {
+  color: var(--accent-strong);
+  font-weight: 600;
 }
 .place-ok {
   flex: none;

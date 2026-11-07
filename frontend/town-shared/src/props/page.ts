@@ -35,7 +35,7 @@ function propsSkeleton(
   root.hidden = true
   // 面板可使用整页页头或独立窗口页头
   const toolbar = el('header', '', game ? 'props-toolbar' : 'page-topbar')
-  const heading = el('h1', '场景物品')
+  const heading = el('h1', '道具')
   heading.id = 'props-title'
   const status = el('p', '正在读取道具库…', 'prop-status')
   status.setAttribute('aria-live', 'polite')
@@ -176,6 +176,7 @@ class PropsPage implements PropsView {
           refresh: () => deps.send({ type: 'get_props' }),
           command: (kind, build, done) => this.sendWorldCommand(kind, build, done),
           ask: (build) => this.ask(build),
+          openLibrary: () => this.openLibrary(),
         })
       : null
     this.bindEvents()
@@ -245,9 +246,11 @@ class PropsPage implements PropsView {
     const signature = JSON.stringify([p, definition?.description, connected])
     if (signature === this.cardSignature) return
     this.cardSignature = signature
-    const all = button('全部场景物品', () => {
+    // 镇上其他东西在道具浮窗里看：镜头飞到这件，浮窗列出镇上有什么；地图不支持时开整页
+    const all = button('镇上的道具', () => {
       this.closeCard()
-      this.open(p.id)
+      if (this.placing) this.placing.browse(p.id)
+      else this.open(p.id)
     })
     const buttons = [all]
     if (p.readable) {
@@ -276,6 +279,12 @@ class PropsPage implements PropsView {
   }
 
   /** 打开道具页；给了实例编号就清掉筛选，在当前地图里选中它 */
+  /** 整页的道具库：改道具、导出道具包、导入（道具浮窗底部进） */
+  openLibrary() {
+    this.page.mode.value = 'library'
+    this.open()
+  }
+
   open(id?: string) {
     const { page } = this
     this.closeCard()

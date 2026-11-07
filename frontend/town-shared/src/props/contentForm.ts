@@ -117,7 +117,7 @@ export class ContentForm {
     this.saveButton.textContent = book ? '保存这本书' : source ? '保存修订' : '张贴公告'
     this.say(
       !book && !board.options.length
-        ? '这个世界还没有公告栏。先在「物品」里放一块公告栏，再来张贴。'
+        ? '这个世界还没有公告栏。先在「道具」里放一块公告栏，再来张贴。'
         : '',
       true
     )

@@ -362,9 +362,9 @@ function createOpeners(parts: {
     residents: guarded(() => pages.residents.open()),
     newVillager: guarded(() => pages.residents.create()),
     library: guarded(() => pages.residents.open('library')),
-    props: guarded(() => props.open()),
+    // 「道具」开关道具浮窗；地图不支持摆道具时打开整页
+    props: guarded(() => (props.placing ? props.placing.toggle() : props.open())),
     books: guarded(() => books.open()),
-    placing: guarded(() => props.placing?.toggle()),
     usage: () => {
       // 只读消耗页保留控制租约和聊天；隐藏地图前清掉移动输入
       avatar.stopMoving()

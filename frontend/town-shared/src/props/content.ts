@@ -419,7 +419,7 @@ class ContentPanel {
       return
     }
     if (this.mode === 'bulletin' && !form.board.value) {
-      this.announce('先选一块公告栏；这个世界还没有公告栏的话，先在「物品」里放一块。', true)
+      this.announce('先选一块公告栏；这个世界还没有公告栏的话，先在「道具」里放一块。', true)
       return
     }
     this.request(

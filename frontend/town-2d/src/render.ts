@@ -1207,7 +1207,11 @@ export class TownMap {
   focusPlace(locale: string, at?: WalkTarget, avoid: Cover = {}, gentle = false) {
     const s = this.spatial
     const b = s?.floors?.find((f) => f.id === locale)?.bounds
-    if (!s || !b) return
+    if (!s || !b) {
+      // 地点没有可放置范围（路上、平面图）：只把这一点挪到露出来的那块中间
+      if (at) this.camera.lookAt(...this.walkPoint(at))
+      return
+    }
     if (gentle && this.placeDetailOn && at && this.inOpenArea(this.walkPoint(at), avoid)) return
     const unit = s.svg_units_per_metre
     const box = this.svg.getBoundingClientRect()

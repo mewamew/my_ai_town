@@ -47,17 +47,17 @@
   >
     <i data-pixel="bars"></i><span>菜单</span>
   </button>
-  <!-- 地图左下角的道具格：场景物品、书与公告、摆道具（和头像格一样，方块下面一个名牌） -->
+  <!-- 地图左下角的道具格：道具（镇上有什么、往哪里放）、书与公告（和头像格一样，方块下面一个名牌） -->
   <div class="map-corner">
     <button
       id="open-props"
       class="map-props-button"
       type="button"
-      aria-controls="props-view"
-      aria-label="场景物品"
-      title="查看小镇里的物品、用途和影响"
+      aria-pressed="false"
+      aria-label="道具"
+      title="镇上有什么、往地图上放东西"
     >
-      <span class="tool-slot"><i data-pixel="chest"></i></span><span class="tool-name">物品</span>
+      <span class="tool-slot"><i data-pixel="chest"></i></span><span class="tool-name">道具</span>
     </button>
     <button
       id="open-books"
@@ -68,17 +68,6 @@
       title="村民写的书、公告栏上的告示；你也可以写书、贴公告"
     >
       <span class="tool-slot"><i data-pixel="book"></i></span><span class="tool-name">书报</span>
-    </button>
-    <button
-      id="open-placing"
-      class="map-props-button"
-      type="button"
-      aria-pressed="false"
-      aria-label="摆道具"
-      title="在地图上点一个地点，往那里放道具"
-    >
-      <span class="tool-slot"><i data-pixel="hammer"></i></span
-      ><span class="tool-name">摆道具</span>
     </button>
   </div></template
 >
@@ -160,7 +149,7 @@
   </div></template
 >
 <!-- 右上角「菜单」：一级入口以外的都在这里，电脑挂在菜单钮下面，手机从底部弹出（shell/menu.ts）。
-     「居民」只在电脑上（手机底部入口里有），「摆道具」只在手机上（电脑在地图左下角）。 -->
+     「居民」只在电脑上（手机底部入口里有）。 -->
 <template data-slot="body"
   ><div class="game-menu-shade" id="game-menu-shade" hidden></div>
   <div class="game-menu" id="game-menu" role="dialog" aria-labelledby="game-menu-title" hidden>
@@ -176,10 +165,6 @@
       <button type="button" id="menu-residents">
         <span class="menu-slot"><i data-pixel="people"></i></span><b>居民</b
         ><small>名册 · 邀请</small>
-      </button>
-      <button type="button" id="menu-placing">
-        <span class="menu-slot"><i data-pixel="hammer"></i></span><b>摆道具</b
-        ><small>往地图上放</small>
       </button>
       <button type="button" id="open-settings" title="模型、额度、声音、显示">
         <span class="menu-slot"><i data-pixel="gear"></i></span><b>设定</b

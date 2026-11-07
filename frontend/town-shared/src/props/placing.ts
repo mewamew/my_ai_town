@@ -1,9 +1,12 @@
-// 摆道具：地图左下角「摆道具」进入。一进来地图就压暗，只有能放东西的地点亮着；拉近后地点里画出
-// 能放的格子，指到哪里，绿框就吸到最近的能放的格子，东西会落在绿框里。格子和原因都由后端算
-// （get_placement_grid），这里只管怎么用。点一个地点，镜头拉近、右边浮出道具列表（手机上从底部升起，
-// 只占半屏），指着一行时试放（preview_placement），绿框换成这件的大小；点一行就放下。浮窗不关，可以
-// 接着放、撤销刚放的那件。浮窗顶上列出这个地点已有的东西，可以顺手移除。摆道具时点地图上已有的道具，
-// 弹出小菜单：在它旁边再放东西，或者移除它。道具目录和命令回执都经道具页（page.ts），这里只管界面。
+// 道具：地图上的「道具」格进入，右边浮出道具浮窗（手机上从底部升起，只占半屏），分两层。
+// 第一层「镇上有什么」：按地点列出镇上的东西，点一件镜头飞过去看它在哪，每个地点能「往这里放」。
+// 第二层「放到某处」：点了地图上的地点（或「往这里放」）以后，列出能放的道具，头上「‹ 全镇」回第一层。
+// 开着浮窗时地图压暗，只有能放东西的地点亮着；拉近后地点里画出能放的格子，指到哪里，绿框就吸到最近的
+// 能放的格子，东西会落在绿框里。格子和原因都由后端算（get_placement_grid），这里只管怎么用。第二层里
+// 指着一行时试放（preview_placement），绿框换成这件的大小；点一行就放下。浮窗不关，可以接着放、撤销
+// 刚放的那件，顶上列出这个地点已有的东西，可以顺手移除。点地图上已有的道具弹出小菜单：在它旁边再放
+// 东西，或者移除它。改道具、导出道具包在整页的「道具库」（浮窗底部进）。道具目录和命令回执都经道具页
+// （page.ts），这里只管界面。
 import type { ClientMsg, PlaceGrid, ServerMsg } from '../protocol'
 import type { GameMap, PlaceGhost, PlaceSpot, WalkTarget } from '../gameMap'
 import { gameIcon } from '../game/icons'
@@ -49,6 +52,8 @@ export interface PlacingDeps {
   ): boolean
   /** 问后端哪里能放（格子、试放）：回包经 answer 交回来；没连上时返回 null */
   ask(build: (world_id: string, request_id: string) => ClientMsg): string | null
+  /** 整页的道具库：改道具、导出道具包 */
+  openLibrary(): void
 }
 
 type Status =
@@ -112,7 +117,7 @@ export function createPlacing(deps: PlacingDeps) {
   let hoveredRow: Definition | null = null
   const touch = () => document.documentElement.dataset.input === 'touch'
 
-  const hintText = el('span', '摆道具：点地图上的地点，选要放的东西')
+  const hintText = el('span', '道具：点地图上的地点往那里放，点一件看它在哪')
   const hint = el('div', '', 'place-hint')
   hint.setAttribute('role', 'status')
   hint.append(
@@ -123,20 +128,20 @@ export function createPlacing(deps: PlacingDeps) {
   function renderHint() {
     const detail = !!deps.map.placeDetail?.()
     hintText.textContent = !grids.size
-      ? '摆道具：点地图上的地点，选要放的东西'
+      ? '道具：点地图上的地点往那里放，点一件看它在哪'
       : detail
         ? touch()
-          ? '摆道具：点一个亮格子，再选要放的东西'
-          : '摆道具：亮格子能放，指到哪里，绿框就落在哪里'
+          ? '道具：点一个亮格子，再选要放的东西'
+          : '道具：亮格子能放，指到哪里，绿框就落在哪里'
         : touch()
-          ? '摆道具：亮着的地方能放，点一块拉近'
-          : '摆道具：亮着的地方能放，点一块拉近看格子'
+          ? '道具：亮着的地方能放，点一块拉近'
+          : '道具：亮着的地方能放，点一块拉近看格子'
   }
   if (deps.map.onPlaceDetail !== undefined) deps.map.onPlaceDetail = () => renderHint()
   const follow = el('div', '', 'place-follow')
   const picker = el('section', '', 'place-picker')
   picker.setAttribute('role', 'dialog')
-  picker.setAttribute('aria-label', '选要放的道具')
+  picker.setAttribute('aria-label', '道具')
   const menu = el('div', '', 'place-menu')
   menu.setAttribute('role', 'menu')
   for (const node of [hint, follow, picker, menu]) {
@@ -149,6 +154,9 @@ export function createPlacing(deps: PlacingDeps) {
 
   // 浮窗里的固定部件：搜索框重画时不能丢焦点，只换列表、已有物品和底栏
   const title = el('b')
+  const titleSmall = el('small', '放到')
+  const back = button('‹ 全镇', () => leaveSpot(), 'place-back')
+  back.setAttribute('aria-label', '回到镇上有什么')
   const here = el('div', '', 'place-here')
   const search = el('input')
   search.type = 'search'
@@ -179,11 +187,11 @@ export function createPlacing(deps: PlacingDeps) {
   {
     const head = el('header', '', 'place-head')
     const where = el('span', '', 'place-where')
-    where.append(el('small', '放到'), title)
-    const close = button('', () => closePicker(), 'place-close')
-    close.setAttribute('aria-label', '关闭')
+    where.append(titleSmall, title)
+    const close = button('', () => setActive(false), 'place-close')
+    close.setAttribute('aria-label', '关上道具')
     close.append(gameIcon('close', true))
-    head.append(where, close)
+    head.append(back, where, close)
     const box = el('label', '', 'place-search')
     box.append(gameIcon('search', true), search)
     picker.append(head, here, box, segments, list, foot)
@@ -200,8 +208,11 @@ export function createPlacing(deps: PlacingDeps) {
       placedKey = placedSignature()
       deps.refresh()
       askGrid()
+      showTown()
     } else {
-      closePicker()
+      leaveSpot()
+      picker.hidden = true
+      clearTimeout(locateTimer)
       closeMenu()
       follow.hidden = true
       grids = new Map()
@@ -232,8 +243,9 @@ export function createPlacing(deps: PlacingDeps) {
       previews.clear()
       deps.map.setPlaceGrids?.(msg.grids)
       renderHint()
-      // 刚放下的那件占了格子：绿框挪到离点的位置最近的、还能放的格子
+      // 刚放下的那件占了格子：绿框挪到离点的位置最近的、还能放的格子；第一层的「往这里放」跟着格子变
       if (spot) resnap()
+      else if (active) renderTownList(true)
       return
     }
     const key = previewAsked.get(msg.request_id)
@@ -253,7 +265,10 @@ export function createPlacing(deps: PlacingDeps) {
     spot = { ...at, client }
     status = at.full ? { kind: 'note', text: '这里已经放满了，移走点东西再放' } : { kind: 'idle' }
     deps.map.setPlaceHighlight?.(at.locale)
+    titleSmall.textContent = '放到'
     title.textContent = deps.localeName(at.locale)
+    back.hidden = false
+    search.placeholder = '搜索道具或能做的事，比如「喝水」'
     picker.hidden = false
     mapEl.classList.add('place-picking')
     render()
@@ -264,16 +279,70 @@ export function createPlacing(deps: PlacingDeps) {
     if (document.documentElement.dataset.layout !== 'compact') search.focus({ preventScroll: true })
   }
 
-  function closePicker() {
+  /** 离开第二层：清掉点好的位置，开着道具时回到第一层「镇上有什么」 */
+  function leaveSpot() {
     if (!spot) return
     spot = null
     previewing = null
     hoveredRow = null
-    picker.hidden = true
     mapEl.classList.remove('place-picking')
     deps.map.setPlaceHighlight?.(null)
     deps.map.setPlaceMarker?.(null)
     deps.map.setPlaceGhost?.(null)
+    if (active) showTown()
+  }
+
+  /** 第一层「镇上有什么」 */
+  function showTown() {
+    titleSmall.textContent = '道具'
+    back.hidden = true
+    search.placeholder = '搜镇上的东西或能做的事，比如「喝水」'
+    picker.hidden = false
+    render()
+  }
+
+  let locateTimer = 0
+  /** 第一层里点一件：镜头飞到它所在的地点，脉冲圈标出它；带在身上、收在容器里的没有位置 */
+  function locate(p: PropView) {
+    const at = p.on_map !== false && !p.location ? deps.map.walkTargetOf?.('prop', p.id) : undefined
+    if (!at) {
+      flashInPanel(
+        `${p.name}${p.location?.kind === 'carried' ? '在村民身上' : '收在容器里'}，地图上看不到`
+      )
+      return
+    }
+    deps.map.focusPlace?.(p.locale, at, pickerCover())
+    deps.map.setPlaceHighlight?.(p.locale)
+    deps.map.setPlaceMarker?.(at)
+    clearTimeout(locateTimer)
+    locateTimer = window.setTimeout(() => {
+      if (spot) return
+      deps.map.setPlaceMarker?.(null)
+      deps.map.setPlaceHighlight?.(null)
+    }, 2600)
+  }
+
+  /** 第一层里「往这里放」：选这个地点里离中间最近的能放的格子，进第二层 */
+  function placeInto(locale: string) {
+    const g = grids.get(locale)
+    if (!g) return
+    const middle: [number, number] = [
+      g.origin[0] + ((g.columns - 1) * g.step) / 2,
+      g.origin[1] + ((g.rows - 1) * g.step) / 2,
+    ]
+    const free = freeNear(g, middle)
+    const near: WalkTarget = { space: '', position: free?.at ?? middle }
+    openPicker({ locale, near, full: !free }, lastPointer)
+  }
+
+  /** 第一层底栏的一句话，几秒后换回说明 */
+  let footTimer = 0
+  function flashInPanel(text: string) {
+    foot.querySelector('span')?.replaceChildren(text)
+    clearTimeout(footTimer)
+    footTimer = window.setTimeout(() => {
+      if (!spot) renderTownFoot()
+    }, 2600)
   }
 
   /** 浮窗盖住地图的右边（宽屏）；手机上是底部的抽屉，加上顶上的提示条（它下面才露出地图） */
@@ -356,7 +425,7 @@ export function createPlacing(deps: PlacingDeps) {
   /** 宽屏靠右边放（右上角菜单下面、缩放钮左边），不跟着点的位置跳，镜头会把要放的地方挪到左边露出来。
    *  手机上是底部抽屉，只占半屏，交给样式 */
   function position() {
-    if (!spot) return
+    if (picker.hidden) return
     if (document.documentElement.dataset.layout === 'compact') {
       picker.style.left = picker.style.top = picker.style.maxHeight = ''
       return
@@ -371,13 +440,112 @@ export function createPlacing(deps: PlacingDeps) {
   }
 
   function render() {
+    picker.classList.toggle('town', !spot)
     renderHere()
     renderFoot()
     renderList()
   }
 
+  /** 镜头里这件东西归哪一组：摆在地图上的按地点，带在身上、收在容器里的另成一组 */
+  function groupOf(p: PropView) {
+    if (p.location?.kind === 'carried') return '~carried'
+    if (p.location?.kind === 'stored') return '~stored'
+    return p.locale
+  }
+
+  function townMatches(c: PropCatalog, p: PropView) {
+    if (purpose) {
+      const read = purpose === 'read' && (!!p.readable || p.bulletin_board)
+      const d = c.definitions.find((x) => `${x.id}@${x.version}` === p.definition)
+      if (!read && !(d?.actions ?? []).some((a) => usesOf(a).includes(purpose))) return false
+    }
+    return `${p.name} ${deps.localeName(p.locale)} ${p.actions.map((a) => a.label).join(' ')}`
+      .toLowerCase()
+      .includes(query)
+  }
+
+  /** 第一层：按地点列出镇上的东西，同名的合成一行；能放东西的地点头上有「往这里放」 */
+  function renderTownList(keepScroll = false) {
+    const c = deps.catalog()
+    const scroll = keepScroll ? list.scrollTop : 0
+    list.replaceChildren()
+    if (!c) {
+      title.textContent = '镇上'
+      list.append(el('p', '正在读取镇上的东西…', 'place-empty'))
+      return
+    }
+    const all = c.instances.filter((p) => !p.withdrawn)
+    title.textContent = `镇上 ${all.length} 件`
+    const groups = new Map<string, PropView[]>()
+    for (const p of all.filter((p) => townMatches(c, p))) {
+      const key = groupOf(p)
+      groups.set(key, [...(groups.get(key) ?? []), p])
+    }
+    const label = (key: string) =>
+      key === '~carried' ? '在村民身上' : key === '~stored' ? '收在容器里' : deps.localeName(key)
+    const order = [...groups.keys()].sort(
+      (a, b) =>
+        Number(a.startsWith('~')) - Number(b.startsWith('~')) ||
+        label(a).localeCompare(label(b), 'zh-CN')
+    )
+    for (const key of order) {
+      const items = groups.get(key)!
+      const cap = el('p', '', 'place-group place-town-group')
+      cap.append(el('b', label(key)), el('small', String(items.length)))
+      const g = grids.get(key)
+      if (g?.cells.includes('.'))
+        cap.append(button('＋ 往这里放', () => placeInto(key), 'place-add'))
+      list.append(cap)
+      const same = new Map<string, PropView[]>()
+      for (const p of items) same.set(p.name, [...(same.get(p.name) ?? []), p])
+      for (const twins of same.values()) list.append(townRow(twins))
+    }
+    if (!groups.size)
+      list.append(
+        el(
+          'p',
+          all.length
+            ? '没有符合的东西，换个词或分类试试。'
+            : '镇上还没有东西，点地图上亮着的地方放一件。',
+          'place-empty'
+        )
+      )
+    list.scrollTop = scroll
+    position()
+  }
+
+  /** 第一层的一行：同名的几件合成一行，点了看第一件在哪 */
+  function townRow(twins: PropView[]) {
+    const p = twins[0]
+    const item = button('', () => locate(p), 'place-row')
+    const name = el('span', '', 'place-name')
+    name.append(el('span', p.name))
+    if (twins.length > 1) name.append(el('span', `×${twins.length}`, 'place-times'))
+    const text = el('span', '', 'place-text')
+    const uses = p.actions.map((a) => a.label).join('、')
+    text.append(name, el('span', uses || '摆设', 'place-desc'))
+    item.title = p.name
+    const onMap = p.on_map !== false && !p.location
+    item.append(
+      slot(propPicture(p.definition ?? p.id, p.readable ? 'book' : 'bag'), 'sm'),
+      text,
+      el('span', onMap ? '在哪' : '', 'place-act locate')
+    )
+    return item
+  }
+
+  /** 第一层的底栏：一句说明，右边是整页的道具库 */
+  function renderTownFoot() {
+    foot.classList.remove('error')
+    foot.replaceChildren(
+      el('span', '点一件，镜头飞过去看它；点地图上亮着的地方，往那里放新的。'),
+      button('道具库', () => deps.openLibrary(), 'place-library')
+    )
+  }
+
   function renderHere() {
     const c = deps.catalog()
+    here.hidden = !spot
     if (!spot || !c) {
       here.replaceChildren()
       return
@@ -403,10 +571,10 @@ export function createPlacing(deps: PlacingDeps) {
 
   /** 换了搜索词或分类从头看起；目录更新（放下、移除之后）留在原来滚到的地方 */
   function renderList(keepScroll = false) {
+    if (!spot) return renderTownList(keepScroll)
     const c = deps.catalog()
     const scroll = keepScroll ? list.scrollTop : 0
     list.replaceChildren()
-    if (!spot) return
     if (!c) {
       list.append(el('p', '正在读取道具库…', 'place-empty'))
       return
@@ -471,6 +639,7 @@ export function createPlacing(deps: PlacingDeps) {
   }
 
   function renderFoot() {
+    if (!spot) return renderTownFoot()
     foot.replaceChildren()
     foot.classList.toggle('error', status.kind === 'error')
     if (status.kind === 'placed') {
@@ -575,7 +744,7 @@ export function createPlacing(deps: PlacingDeps) {
         '移除这个道具',
         () => {
           closeMenu()
-          if (spot?.locale !== p.locale) closePicker()
+          if (spot?.locale !== p.locale) leaveSpot()
           removeProp(p)
         },
         'danger'
@@ -719,7 +888,7 @@ export function createPlacing(deps: PlacingDeps) {
     (event) => {
       if (!active || event.key !== 'Escape') return
       if (!menu.hidden) closeMenu()
-      else if (spot) closePicker()
+      else if (spot) leaveSpot()
       else setActive(false)
       event.preventDefault()
       event.stopPropagation()
@@ -732,7 +901,14 @@ export function createPlacing(deps: PlacingDeps) {
     active: () => active,
     toggle: () => setActive(!active),
     exit: () => setActive(false),
-    /** 按钮跟着进出摆道具模式 */
+    /** 打开道具浮窗的第一层，有 id 时镜头飞到这件东西（道具卡片上「在镇上看」） */
+    browse(id?: string) {
+      setActive(true)
+      leaveSpot()
+      const p = id ? deps.catalog()?.instances.find((i) => i.id === id) : undefined
+      if (p) locate(p)
+    },
+    /** 按钮跟着开关道具浮窗 */
     watch(update: (active: boolean) => void) {
       watchers.push(update)
       update(active)
@@ -743,7 +919,6 @@ export function createPlacing(deps: PlacingDeps) {
       const at = deps.map.placeSpotAt?.(client)
       if (at) openPicker(at, client)
       else {
-        closePicker()
         closeMenu()
         flash('这里不在能放东西的地点里', client)
       }
@@ -764,7 +939,7 @@ export function createPlacing(deps: PlacingDeps) {
           askGrid()
         }
       }
-      if (!spot) return
+      if (!active) return
       renderHere()
       renderList(true)
     },

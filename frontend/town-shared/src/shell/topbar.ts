@@ -184,33 +184,28 @@ export function topbarPanel(
 
 /** 地图内按钮沿用缩放控件的事件隔离，避免拖拽捕获指针后丢失点击：左下的道具入口、左上那一列和菜单钮。 */
 export function installMapButtons(
-  open: { props(): void; books(): void; placing(): void },
+  open: { props(): void; books(): void },
   /** 书与公告上的数字：没看过的新作品 */
   watchBooks: (update: (count: number) => void) => void,
-  /** 摆道具的按下状态；地图不支持摆道具时为 null，按钮藏起来 */
-  watchPlacing: ((update: (active: boolean) => void) => void) | null,
+  /** 道具浮窗开没开；地图不支持摆道具时为 null，「道具」打开的是整页 */
+  watchProps: ((update: (active: boolean) => void) => void) | null,
   signal: AbortSignal
 ) {
   // 道具格的图标和名牌写在模板里（shell/plain.html）；书报的新作品数字挂在格子右上角
   const propsButton = $('open-props')
   propsButton.onclick = open.props
+  watchProps?.((active) => {
+    propsButton.setAttribute('aria-pressed', String(active))
+    propsButton.setAttribute('aria-label', active ? '道具，点一下关上' : '道具')
+  })
   const booksButton = $('open-books')
   booksButton.onclick = open.books
   const booksCount = countBadge(booksButton, '书与公告')
   const booksBadge = booksButton.querySelector('.ui-count')
   if (booksBadge) booksButton.querySelector('.tool-slot')?.append(booksBadge)
   watchBooks(booksCount)
-  const placingButton = $('open-placing')
-  placingButton.onclick = open.placing
-  placingButton.hidden = !watchPlacing
-  const placingName = placingButton.querySelector('.tool-name')
-  watchPlacing?.((active) => {
-    if (placingName) placingName.textContent = active ? '摆道具中' : '摆道具'
-    placingButton.setAttribute('aria-label', active ? '摆道具中，点一下退出' : '摆道具')
-    placingButton.setAttribute('aria-pressed', String(active))
-  })
   // 左上那一列（时钟牌、开始、世界观、提示、头像条）和右上的菜单钮也在地图容器里，按下同样不能漏给地图
-  for (const entry of [propsButton, booksButton, placingButton, $('hud-left'), $('open-menu')])
+  for (const entry of [propsButton, booksButton, $('hud-left'), $('open-menu')])
     for (const type of ['pointerdown', 'dblclick'])
       entry.addEventListener(type, (event) => event.stopPropagation(), { signal })
 }

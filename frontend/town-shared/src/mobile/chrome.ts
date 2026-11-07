@@ -23,7 +23,7 @@ interface ChromeDeps {
   }
   /** 村民卡里的聊天记录：开着时返回键先关它 */
   chatHistory: { back(): boolean }
-  open: { residents(): void; props(): void; books(): void; usage(): void; placing(): void }
+  open: { residents(): void; props(): void; books(): void; usage(): void }
   /** 「书报」上的数字：没看过的新作品 */
   watchBooks: (update: (count: number) => void) => void
   /** 底部「菜单」打开的就是电脑右上角那块菜单（shell/menu.ts），从底部弹出 */
@@ -83,7 +83,7 @@ export function installMobileChrome(d: ChromeDeps) {
     d.avatar.openEntry()
   })
   avatarBtn.classList.add('dock-avatar')
-  entry('props', 'chest', '物品', () => {
+  entry('props', 'chest', '道具', () => {
     closePopover()
     d.open.props()
   })

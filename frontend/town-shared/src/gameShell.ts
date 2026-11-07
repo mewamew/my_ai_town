@@ -179,7 +179,6 @@ export function startGameShell(
   const menu = createGameMenu({
     openTown: panels.town.open,
     openResidents: panels.open.residents,
-    openPlacing: panels.props.placing ? panels.open.placing : null,
     help: { openGuide: () => guide.open(), resetTips },
     onOpen: () => panels.avatar.stopMoving(),
   })
