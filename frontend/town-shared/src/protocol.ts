@@ -599,10 +599,26 @@ export interface WorldSettingsState {
   physiology: PhysiologySwitches
   /** 化身神力：化身能对够得着的人复活、治愈、补满。随存档保存，缺省为关 */
   miracles: boolean
+  /** 录像开关：开着时把发生的事录进小镇目录，事后能重演、换角度拍素材。随存档保存，缺省为开；
+   *  真的在录哪一卷看 recordings 消息的 live */
+  recording: boolean
   /** 陌生环境：村民初来乍到，只知道到过的地方。随存档保存，缺省为关 */
   strangers: boolean
   /** 开着的玩法（如 'tide'）；没开时没有这一项。随存档保存 */
   game_mode?: GameModeId
+}
+
+/** 录下来的一卷：从开始录到停的一段。现实时刻是 Unix 毫秒，小镇时间写成时钟 */
+export interface ReelView {
+  /** 卷的编号，也是目录名：开始录的 UTC 时刻，如 20261107T023105Z */
+  id: string
+  started_at: number
+  /** 还在录时没有 */
+  ended_at?: number
+  /** 录到的小镇时间（如 "D2 05:42"）；还没录到名册时为空串 */
+  from_clock: string
+  to_clock: string
+  bytes: number
 }
 
 /** 玩法：有自己的目标、时间表和输赢的一套规则，一个世界同时最多开一个 */
@@ -726,6 +742,8 @@ export type ServerMsg =
    */
   | { type: 'error'; request_id?: string; message: string }
   | { type: 'world_reset'; clock: string }
+  /** 这个小镇录下的几卷（新的在前）和正在录的那一卷；查询时回给自己，开始、停下、删掉一卷时广播 */
+  | { type: 'recordings'; reels: ReelView[]; live?: string }
   | { type: 'diary'; resident: string; days: DiaryDay[] }
   | {
       type: 'notebook'
@@ -847,6 +865,11 @@ export type ClientMsg =
     }
   /** 打开或关掉化身神力：只是开关，不暂停世界，不核对设定修订号 */
   | { type: 'set_miracles'; request_id: string; world_id: string; enabled: boolean }
+  /** 打开或关掉录像：打开就开新的一卷，关掉就收起正在录的；回执同世界设定 */
+  | { type: 'set_recording'; request_id: string; world_id: string; enabled: boolean }
+  | { type: 'get_recordings' }
+  /** 删掉录完的一卷；正在录的删不了 */
+  | { type: 'delete_recording'; request_id: string; world_id: string; reel: string }
   | { type: 'set_strangers'; request_id: string; world_id: string; enabled: boolean }
   /** 打开或关掉玩法：带 game_mode 是打开，不带（或 null）是关掉；已开着同一个玩法时不重来 */
   | {

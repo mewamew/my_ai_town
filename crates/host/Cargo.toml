@@ -16,6 +16,8 @@ kernel = { path = "../kernel" }
 protocol = { path = "../protocol" }
 serde.workspace = true
 serde_json.workspace = true
+# 录像分段压成 gzip；ureq 已经带着它，锁文件里同一版
+flate2 = "1.1"
 sha2 = "0.10"
 rand = "0.8"
 tungstenite = "0.21"

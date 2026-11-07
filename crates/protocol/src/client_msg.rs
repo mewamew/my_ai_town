@@ -100,6 +100,21 @@ pub enum ClientMsg {
         world_id: String,
         enabled: bool,
     },
+    /// 打开或关掉录像；回执与世界观相同（WorldSettingsSaved），随后广播世界设定和录像列表。
+    /// 打开就开新的一卷，关掉就收起正在录的那一卷；不暂停世界，不核对设定修订号。
+    SetRecording {
+        request_id: String,
+        world_id: String,
+        enabled: bool,
+    },
+    /// 读录下的几卷（回 Recordings）
+    GetRecordings,
+    /// 删掉录完的一卷（正在录的删不了）；回执是 WorldSettingsSaved，随后广播录像列表。
+    DeleteRecording {
+        request_id: String,
+        world_id: String,
+        reel: String,
+    },
     /// 打开或关掉陌生环境（村民初来乍到，只知道到过的地方）；回执与世界观相同（WorldSettingsSaved），
     /// 随后广播世界设定。改了就暂停世界，居民重新观察；打开时每人只记得眼下所在的地方和家。
     SetStrangers {
@@ -311,6 +326,8 @@ impl ClientMsg {
             | SetWorldview { request_id, .. }
             | SetPhysiology { request_id, .. }
             | SetMiracles { request_id, .. }
+            | SetRecording { request_id, .. }
+            | DeleteRecording { request_id, .. }
             | SetStrangers { request_id, .. }
             | SetGameMode { request_id, .. }
             | Content { request_id, .. }
@@ -336,6 +353,7 @@ impl ClientMsg {
             JoinResident { op_id, .. } | GetResidentJoinResult { op_id, .. } => Some(op_id),
             AvatarInput { .. }
             | GetWorldSettings
+            | GetRecordings
             | GetProps
             | GetModelConfig
             | GetAgentConfig { .. }

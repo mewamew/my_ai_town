@@ -507,6 +507,7 @@ pub fn server_samples() -> Vec<ServerMsg> {
                 physiology: PhysiologySwitches::default(),
                 provider: "p".into(),
                 ready: true,
+                recording: true,
                 revision: 1,
                 strangers: true,
                 world_id: "w1".into(),
@@ -652,6 +653,27 @@ pub fn server_samples() -> Vec<ServerMsg> {
         ServerMsg::Error {
             request_id: Some("op1".into()),
             message: "世界里没有这个人".into(),
+        },
+        ServerMsg::Recordings {
+            reels: vec![
+                ReelView {
+                    id: "20261107T023105Z".into(),
+                    started_at: 1_794_018_665_000,
+                    ended_at: None,
+                    from_clock: "D2 05:42".into(),
+                    to_clock: "D2 06:10".into(),
+                    bytes: 812_000,
+                },
+                ReelView {
+                    id: "20261105T074012Z".into(),
+                    started_at: 1_793_864_412_000,
+                    ended_at: Some(1_793_867_532_000),
+                    from_clock: "D1 09:10".into(),
+                    to_clock: "D1 21:58".into(),
+                    bytes: 6_300_000,
+                },
+            ],
+            live: Some("20261107T023105Z".into()),
         },
         ServerMsg::WorldReset {
             clock: "D1 07:00".into(),
@@ -1385,6 +1407,17 @@ pub fn client_samples() -> Vec<ClientMsg> {
             request_id: "r1".into(),
             world_id: "w1".into(),
             enabled: true,
+        },
+        ClientMsg::SetRecording {
+            request_id: "rec-1".into(),
+            world_id: "w1".into(),
+            enabled: false,
+        },
+        ClientMsg::GetRecordings,
+        ClientMsg::DeleteRecording {
+            request_id: "rec-2".into(),
+            world_id: "w1".into(),
+            reel: "20261105T074012Z".into(),
         },
         ClientMsg::SetStrangers {
             request_id: "strangers-1".into(),

@@ -15,6 +15,7 @@ mod join;
 mod library_commands;
 mod network;
 mod prop_commands;
+mod recording_commands;
 mod resident_driver;
 mod runtime;
 mod settings;
@@ -70,7 +71,8 @@ fn run() -> Result<(), HostError> {
     )?;
     let hash = document["content_hash"].as_str().unwrap_or("").to_owned();
     let setup = load_map(&app, source, &document, &prop_library.catalog)?;
-    let runtime = build_runtime(&app, &args, setup, prop_library)?;
+    let map = (Path::new(path), hash.as_str());
+    let runtime = build_runtime(&app, &args, setup, prop_library, map)?;
     serve(runtime, &args, hash)
 }
 
@@ -153,11 +155,13 @@ fn restore(store: &mut Option<SaveStore>, world: &mut World) -> Result<Saved, Ho
 }
 
 /// 新世界 → 读档 → 人口与天气归属 → Agent 驱动 → 村民库，组装成运行中的应用。
+/// `map` 是地图文件和它的摘要，录像按摘要另存一份地图。
 fn build_runtime(
     app: &Application,
     args: &Args,
     setup: WorldSetup,
     prop_library: PropLibrary,
+    map: (&Path, &str),
 ) -> Result<Runtime, HostError> {
     let fresh_population = Population::fresh();
     let mut world = setup.fresh_world(&prop_library.catalog, &fresh_population.world_id)?;
@@ -195,6 +199,12 @@ fn build_runtime(
     // 管理服务给了共用村民库就用它，顺便把旧版存在各小镇目录里的模板收进来；
     // 单独运行（没有管理服务）时放在存档旁边
     let town_dir = store.as_ref().and_then(|s| s.path().parent());
+    let reels = town_dir.map(|dir| recording_commands::ReelSource {
+        town_dir: dir.to_path_buf(),
+        town_id: args.town_id.clone(),
+        map_hash: map.1.to_owned(),
+        map_document: Some(map.0.to_path_buf()),
+    });
     let (library_dir, legacy) = match (town_dir, &app.custom_library_path) {
         (Some(dir), Some(shared)) => (
             Some(PathBuf::from(shared)),
@@ -234,6 +244,8 @@ fn build_runtime(
         prop_library,
         tasks: host::tasks::TaskPool::new(2, 4),
         save_failed: false,
+        tape: Default::default(),
+        reels,
     })
 }
 
@@ -272,8 +284,13 @@ fn serve(mut runtime: Runtime, args: &Args, map_hash: String) -> Result<(), Host
         serde_json::to_value(&identity).map_err(|e| HostError::Runtime(e.to_string()))?;
     // 只有管理进程启动的小镇（带 town_id）在握手后先发世界身份。
     let greeting = args.town_id.is_some().then(|| identity.to_string());
-    let (clients, commands, port) =
-        network::listen(args.port, greeting, args.connection_token.clone())?;
+    let (clients, commands, port) = network::listen(
+        args.port,
+        greeting,
+        args.connection_token.clone(),
+        runtime.tape.clone(),
+    )?;
+    runtime.resume_recording();
     if let Some(path) = &args.ready_file {
         let ready = serde_json::json!({"pid":std::process::id(),"port":port,"identity":identity});
         host::persistence::atomic_write(path, ready.to_string().as_bytes())?;
@@ -294,6 +311,9 @@ fn serve(mut runtime: Runtime, args: &Args, map_hash: String) -> Result<(), Host
         if let Some(rest) = tick.checked_sub(start.elapsed()) {
             std::thread::sleep(rest);
         }
+    }
+    if let Err(error) = runtime.tape.stop() {
+        eprintln!("[host] 收起录像失败：{error}");
     }
     runtime.checkpoint(true)?;
     println!("[host] 已保存并退出：{}", runtime.world.clock());

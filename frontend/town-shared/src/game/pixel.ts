@@ -515,6 +515,13 @@ const SHAPES: Record<string, () => Cells> = {
         '................',
       ])
     ),
+  // 录像中：时钟牌右上角的红灯，左上一点亮
+  rec: () =>
+    outline(
+      radial((dx, dy) =>
+        Math.hypot(dx, dy) > 3.3 ? null : Math.hypot(dx + 1.2, dy + 1.2) < 1.3 ? 'p' : 'r'
+      )
+    ),
   // 开始、暂停：画在绿色按钮上，白色、不描边
   play: () =>
     parse([

@@ -28,6 +28,7 @@ mod observation;
 mod physiology;
 mod population;
 mod props;
+mod recording;
 mod resident;
 mod roster;
 mod server_msg;
@@ -82,6 +83,7 @@ pub use props::{
     PlaceRef, PropActionEntry, PropActionView, PropCapabilities, PropPreview, PropView,
     PropsCatalog, RateRange, StoredItem, SupplyView,
 };
+pub use recording::ReelView;
 pub use resident::{
     ActionResultView, AgentLimitRanges, AgentLimits, AgentState, AgentUsage, AgentWaitView,
     EvidenceSource, GoalStatus, HoldCause, LimitRange, MemoryKind, MemoryStatus, PauseKind,

@@ -2,6 +2,7 @@ import type {
   ClientMsg,
   GameModeChoice,
   PhysiologySwitches,
+  ReelView,
   ServerMsg,
   WorldSettingsState,
 } from './protocol'
@@ -31,6 +32,8 @@ export function createWorldSettings(
 ) {
   const fallback = suggested || DEFAULT_WORLDVIEW
   let state: WorldSettingsState | undefined
+  /** 录下的几卷和正在录的那一卷；连上后读一次，之后跟着广播更新 */
+  let recordings: { reels: ReelView[]; live?: string } | undefined
   let online = false
   let pending: { id: string; done: (ok: boolean, message: string) => void } | undefined
   const listeners = new Set<() => void>()
@@ -268,6 +271,32 @@ export function createWorldSettings(
         done
       )
     },
+    /** 录下的几卷和正在录的那一卷；还没读到时为空 */
+    recordings: () => recordings,
+    /** 打开或关掉录像：切换就保存，不带修订号，世界不暂停 */
+    saveRecording(enabled: boolean, done: Done) {
+      submit(
+        (current, id) => ({
+          type: 'set_recording',
+          request_id: id,
+          world_id: current.world_id,
+          enabled,
+        }),
+        done
+      )
+    },
+    /** 删掉录完的一卷 */
+    deleteRecording(reel: string, done: Done) {
+      submit(
+        (current, id) => ({
+          type: 'delete_recording',
+          request_id: id,
+          world_id: current.world_id,
+          reel,
+        }),
+        done
+      )
+    },
     /** 打开或关掉化身神力：切换就保存，不带修订号，世界不暂停 */
     saveMiracles(enabled: boolean, done: Done) {
       submit(
@@ -288,6 +317,7 @@ export function createWorldSettings(
     connected() {
       online = true
       send({ type: 'get_world_settings' })
+      send({ type: 'get_recordings' })
       notify()
     },
     disconnected() {
@@ -304,7 +334,13 @@ export function createWorldSettings(
         state = undefined
         first.value = fallback
         send({ type: 'get_world_settings' })
+        send({ type: 'get_recordings' })
         notify()
+      }
+      if (msg.type === 'recordings') {
+        recordings = { reels: msg.reels, live: msg.live }
+        notify()
+        return true
       }
       if (msg.type === 'world_settings') {
         if (

@@ -7,6 +7,7 @@ import type { ClientMsg, ServerMsg } from '../protocol'
 import type { ShellPanel } from '../shell/panel'
 import type { WorldSettingsController } from '../worldSettings'
 import { createMiraclesSwitch, createPhysiologySwitches, physiologySummary } from './physiology'
+import { createRecordingSection } from './recording'
 import { createResetSection } from './reset'
 import './panel.css'
 
@@ -45,9 +46,10 @@ export function createTownPanel(deps: {
     physiologyBox,
     createMiraclesSwitch(deps.world)
   )
+  const recording = createRecordingSection(deps.world)
   const reset = createResetSection(deps.send, deps.townName)
   const body = el('div', '', 'town-panel-body')
-  body.append(worldview.el, rules, reset.el)
+  body.append(worldview.el, rules, recording.el, reset.el)
   // 对话框本身没有内边距，内容占满它：点到对话框本身就是点在遮罩上
   const inner = el('div', '', 'town-panel-inner')
   inner.append(head, body)

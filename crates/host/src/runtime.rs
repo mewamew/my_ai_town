@@ -37,6 +37,10 @@ pub(crate) struct Runtime {
     pub tasks: TaskPool,
     /// 上一次存盘是否失败；只在状态变化时写日志，避免每秒刷屏。
     pub save_failed: bool,
+    /// 录像：广播都过它一遍（见 host::recording）；和网络层共用一份
+    pub tape: host::recording::Tape,
+    /// 开新一卷录像要的小镇目录与地图；世界不存档时为空
+    pub reels: Option<crate::recording_commands::ReelSource>,
 }
 
 /// 一条消息发给谁。
@@ -151,6 +155,8 @@ impl Runtime {
             ClientMsg::SetWorldview { request_id, .. }
             | ClientMsg::SetPhysiology { request_id, .. }
             | ClientMsg::SetMiracles { request_id, .. }
+            | ClientMsg::SetRecording { request_id, .. }
+            | ClientMsg::DeleteRecording { request_id, .. }
             | ClientMsg::SetStrangers { request_id, .. }
             | ClientMsg::SetGameMode { request_id, .. } => ServerMsg::WorldSettingsSaved {
                 request_id: request_id.clone(),
@@ -189,6 +195,7 @@ impl Runtime {
             | ClientMsg::AvatarInput { .. }
             | ClientMsg::GetChatHistory { .. }
             | ClientMsg::GetWorldSettings
+            | ClientMsg::GetRecordings
             | ClientMsg::GetProps
             | ClientMsg::ValidateProp { .. }
             | ClientMsg::SaveProp { .. }
@@ -261,6 +268,15 @@ impl Runtime {
                 enabled,
                 ..
             } => self.save_strangers(request_id, enabled),
+            SetRecording {
+                request_id,
+                enabled,
+                ..
+            } => self.save_recording(request_id, enabled),
+            GetRecordings => Outcome::reply(self.recordings_msg()),
+            DeleteRecording {
+                request_id, reel, ..
+            } => self.delete_recording(request_id, &reel),
             SetGameMode {
                 request_id,
                 game_mode,
@@ -448,7 +464,10 @@ impl Runtime {
             rt.world = fresh;
             rt.avatar_control = Default::default();
             rt.population = population;
+            // 录像开关是这个小镇的习惯，重置世界不改它
+            let recording = rt.world_settings.recording;
             rt.world_settings = Default::default();
+            rt.world_settings.recording = recording;
             rt.speed = 0.0;
             Ok::<_, AgentError>(())
         });
@@ -463,6 +482,12 @@ impl Runtime {
             return Outcome::reply(error_msg(message));
         }
         println!("[host] 世界已重置：{}，已暂停", self.world.clock());
+        // 重置后是新的世界：上一卷录像收起，开新的一卷
+        if self.world_settings.recording {
+            if let Err(error) = self.start_reel() {
+                eprintln!("[host] 重置后开新的一卷录像失败：{error}");
+            }
+        }
         Outcome::none()
             .and_all(ServerMsg::WorldReset {
                 clock: self.world.clock(),
@@ -525,6 +550,7 @@ impl Runtime {
         }
         broadcast(clients, &self.roster());
         self.avatar_publish(clients);
+        self.report_tape(clients);
     }
 
     /// 这一拍的推进速度。平时按正常速度走，走路、交谈都看得清；只有大家都在做一件还要好一阵的事
@@ -679,6 +705,8 @@ fn world_id_of(msg: &ClientMsg) -> Option<&str> {
         | ClientMsg::SetWorldview { world_id, .. }
         | ClientMsg::SetPhysiology { world_id, .. }
         | ClientMsg::SetMiracles { world_id, .. }
+        | ClientMsg::SetRecording { world_id, .. }
+        | ClientMsg::DeleteRecording { world_id, .. }
         | ClientMsg::SetStrangers { world_id, .. }
         | ClientMsg::SetGameMode { world_id, .. }
         | ClientMsg::RemoveProp { world_id, .. }
@@ -692,6 +720,7 @@ fn world_id_of(msg: &ClientMsg) -> Option<&str> {
         | ClientMsg::GetResidentJoinResult { .. } => None,
         ClientMsg::GetChatHistory { .. }
         | ClientMsg::GetWorldSettings
+        | ClientMsg::GetRecordings
         | ClientMsg::GetProps
         | ClientMsg::ValidateProp { .. }
         | ClientMsg::SaveProp { .. }
@@ -739,6 +768,9 @@ fn requires_ready(msg: &ClientMsg) -> bool {
         | ClientMsg::SetWorldview { .. }
         | ClientMsg::SetPhysiology { .. }
         | ClientMsg::SetMiracles { .. }
+        | ClientMsg::SetRecording { .. }
+        | ClientMsg::GetRecordings
+        | ClientMsg::DeleteRecording { .. }
         | ClientMsg::SetStrangers { .. }
         | ClientMsg::SetGameMode { .. }
         | ClientMsg::GetProps

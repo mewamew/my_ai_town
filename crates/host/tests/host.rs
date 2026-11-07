@@ -8,6 +8,7 @@ mod content;
 mod persistence;
 mod population;
 mod possession;
+mod recording;
 mod resident_files;
 mod resident_host;
 mod world_settings;

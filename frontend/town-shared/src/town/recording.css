@@ -1,0 +1,97 @@
+/* 录像：世界观面板「规则」下面一节，和时钟牌右上角的红灯。颜色取两套主题都有的 --line / --text-2 / --danger。 */
+.town-recording {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.town-recording > h3 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.rec-total {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.town-recording .physiology-switches {
+  max-width: none;
+  gap: 6px;
+}
+.rec-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+.rec-list:empty {
+  display: none;
+}
+.rec-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.rec-list b {
+  display: block;
+  font-weight: 600;
+}
+.rec-list small {
+  color: var(--text-2);
+  font-size: 12px;
+}
+.rec-size {
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.rec-size.live {
+  color: var(--danger);
+}
+.rec-del {
+  min-height: 0;
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.rec-del.armed {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.rec-del:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.rec-older > summary {
+  padding: 6px 2px;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.rec-older > .rec-list {
+  margin-top: 0;
+}
+
+/* 时钟牌右上角的红灯：16×16 的像素图按 1 倍显示，压在牌子的角上 */
+.hud-clock {
+  position: relative;
+}
+.hud-rec {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  image-rendering: pixelated;
+}
+.hud-rec[hidden] {
+  display: none;
+}

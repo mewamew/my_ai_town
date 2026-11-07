@@ -23,6 +23,9 @@ pub struct WorldSettingsView {
     pub physiology: crate::PhysiologySwitches,
     pub provider: String,
     pub ready: bool,
+    /// 录像开关：开着时把广播给页面的消息录进小镇目录，事后能重演、换角度拍素材。
+    /// 随存档保存，缺省为开；真的在录哪一卷看 `Recordings.live`。
+    pub recording: bool,
     pub revision: u64,
     /// 陌生环境：村民初来乍到，只知道到过的地方。随存档保存，缺省为关。
     pub strangers: bool,
@@ -169,6 +172,13 @@ pub enum ServerMsg {
     },
     /// 世界已重置：人口与历史清空，回到第一天并暂停；村民库保留
     WorldReset { clock: String },
+    /// 这个小镇录下的几卷（新的在前）与正在录的那一卷的编号（没在录时省略）。
+    /// 查询时只回给发出者；开始录、停下、删掉一卷时广播。
+    Recordings {
+        reels: Vec<crate::ReelView>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        live: Option<String>,
+    },
     /// 日志：按天归档的执行记录、想法与他自己写的「昨天」（观察仪日志页用）
     Diary {
         resident: String,

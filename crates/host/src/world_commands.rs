@@ -229,6 +229,7 @@ impl Runtime {
             physiology: self.world.physiology(),
             provider: self.driver.target.provider.clone(),
             ready: self.world_settings.ready(),
+            recording: self.world_settings.recording,
             revision: self.world_settings.revision,
             world_id: self.population.world_id.clone(),
             worldview: self.world_settings.worldview.clone(),

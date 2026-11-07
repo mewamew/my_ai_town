@@ -23,14 +23,32 @@ pub fn valid_speed(speed: f64) -> bool {
     speed.is_finite() && SPEED_RANGE.contains(&speed)
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorldSettings {
     pub worldview: String,
     pub revision: u64,
+    /// 录像开关（见 recording.rs）：新世界和没有这一项的旧存档都按开着算，好剧情不会没录上
+    #[serde(default = "recording_on")]
+    pub recording: bool,
     /// 旧存档里开发用「手动验证」模式的开关。这个模式已经删掉，只为读得进旧存档，不再使用也不再写出
     #[serde(default, rename = "autonomous", skip_serializing)]
     _autonomous: bool,
+}
+
+fn recording_on() -> bool {
+    true
+}
+
+impl Default for WorldSettings {
+    fn default() -> Self {
+        Self {
+            worldview: String::new(),
+            revision: 0,
+            recording: recording_on(),
+            _autonomous: false,
+        }
+    }
 }
 
 impl WorldSettings {

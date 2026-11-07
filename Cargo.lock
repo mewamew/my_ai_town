@@ -217,6 +217,7 @@ name = "host"
 version = "0.1.0"
 dependencies = [
  "agent",
+ "flate2",
  "kernel",
  "libc",
  "protocol",

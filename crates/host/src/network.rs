@@ -1,5 +1,5 @@
 //! WebSocket 会话与广播。只传输消息，不读取或修改运行配置。
-use host::HostError;
+use host::{recording::Tape, HostError};
 use kernel::World;
 use protocol::{ClientMsg, EventInfo, ServerMsg};
 use std::collections::BTreeMap;
@@ -53,7 +53,14 @@ impl Peer {
     }
 }
 
-pub(crate) type Clients = Arc<Mutex<BTreeMap<u64, Peer>>>;
+type Peers = Arc<Mutex<BTreeMap<u64, Peer>>>;
+
+/// 所有连接，外加录像（见 host::recording）：每条广播发给各连接以后，录像开着就顺手记一份。
+#[derive(Clone)]
+pub(crate) struct Clients {
+    peers: Peers,
+    tape: Tape,
+}
 pub(crate) enum NetworkEvent {
     /// 客户端命令；消息体比断线事件大得多，装箱后队列里每项占用一样小。
     Command {
@@ -63,7 +70,7 @@ pub(crate) enum NetworkEvent {
     Disconnected(u64),
 }
 pub(crate) fn send_to(clients: &Clients, connection: u64, message: &ServerMsg) {
-    let mut peers = clients.lock().unwrap();
+    let mut peers = clients.peers.lock().unwrap();
     if peers
         .get(&connection)
         .is_some_and(|peer| !peer.deliver(connection, encode(message)))
@@ -74,6 +81,7 @@ pub(crate) fn send_to(clients: &Clients, connection: u64, message: &ServerMsg) {
 /// 取走各连接攒下的方向输入：连接编号、到达时刻、输入，同一连接的按先后排。
 pub(crate) fn take_inputs(clients: &Clients) -> Vec<(u64, Instant, ClientMsg)> {
     clients
+        .peers
         .lock()
         .unwrap()
         .iter_mut()
@@ -88,13 +96,14 @@ pub(crate) fn take_inputs(clients: &Clients) -> Vec<(u64, Instant, ClientMsg)> {
 /// 所有连接共用的命令队列上限；满了就退回发送方，模拟循环每拍最多处理一批。
 const COMMAND_QUEUE: usize = 256;
 
-/// `greeting` 是握手成功后先发给每个连接的世界身份；没有时不发。
+/// `greeting` 是握手成功后先发给每个连接的世界身份；没有时不发。`tape` 是录像，广播都过它一遍。
 pub(crate) fn listen(
     port: u16,
     greeting: Option<String>,
     token: Option<String>,
+    tape: Tape,
 ) -> Result<(Clients, Receiver<NetworkEvent>, u16), HostError> {
-    let clients: Clients = Arc::new(Mutex::new(BTreeMap::new()));
+    let peers: Peers = Arc::new(Mutex::new(BTreeMap::new()));
     let (to_sim, from_net) = sync_channel(COMMAND_QUEUE);
     let listener = TcpListener::bind(("127.0.0.1", port))
         .map_err(|e| HostError::Runtime(format!("端口 {port} 被占用：{e}")))?;
@@ -103,7 +112,7 @@ pub(crate) fn listen(
         .map_err(|e| HostError::Runtime(format!("读取监听端口失败：{e}")))?
         .port();
     println!("[host] ws://127.0.0.1:{actual_port}/");
-    let accepted = clients.clone();
+    let accepted = peers.clone();
     let ids = AtomicU64::new(1);
     thread::spawn(move || {
         for stream in listener.incoming().flatten() {
@@ -132,7 +141,7 @@ pub(crate) fn listen(
             });
         }
     });
-    Ok((clients, from_net, actual_port))
+    Ok((Clients { peers, tape }, from_net, actual_port))
 }
 
 /// 握手：校验会话标识，成功后先发世界身份。任何一步失败都丢弃这条连接。
@@ -177,7 +186,7 @@ fn serve_connection(
     rx: Receiver<String>,
     to_sim: SyncSender<NetworkEvent>,
     connection: u64,
-    peers: &Clients,
+    peers: &Peers,
 ) {
     loop {
         loop {
@@ -293,7 +302,9 @@ pub(crate) fn broadcast_event(clients: &Clients, world: &World, text: String, in
 pub(crate) fn broadcast(clients: &Clients, msg: &ServerMsg) {
     let json = encode(msg);
     clients
+        .peers
         .lock()
         .unwrap()
         .retain(|id, peer| peer.deliver(*id, json.clone()));
+    clients.tape.record(msg, &json);
 }
