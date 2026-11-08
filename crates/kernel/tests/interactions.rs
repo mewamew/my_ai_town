@@ -380,6 +380,8 @@ fn saying_you_give_something_leaves_it_with_the_speaker_and_both_are_told() {
     };
     say(&mut w, "r1", "饼干不给你，自己找去。");
     say(&mut w, "r2", "那算了。");
+    say(&mut w, "r1", "饼干分你一块？想都别想。");
+    say(&mut w, "r2", "行。");
     // 「水线归你」说的是看水的差事，不是身上的竹筒水（第五局误认过）
     say(&mut w, "r1", "水线归你，我不抢。");
     say(&mut w, "r2", "好。");

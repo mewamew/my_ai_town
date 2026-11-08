@@ -5,7 +5,7 @@
 //!
 //! 认法只看说的人此刻身上带着的东西：同一句或上一句提到它（全名、去掉开头「一份」的名字、三个字以上的
 //! 头两个字或末两个字，或贴着「给你」的末一个字），这一句有「给你」「分你」「拿去」这类说法，
-//! 没有「不给」「报给你」这类否定和传话。认错了只是多一条提醒。
+//! 这一句没有「不给」「报给你」这类否定和传话，下一句也不是「想都别想」这类回绝。认错了只是多一条提醒。
 use crate::World;
 use protocol::{Interaction, InteractionCommand, InteractionKind};
 
@@ -74,6 +74,11 @@ pub(crate) fn pledged<'a>(text: &str, carried: &'a [String]) -> Vec<&'a str> {
         let Some((at, said)) = cue(clause) else {
             continue;
         };
+        // 反问紧跟着回绝：「鱼叉分你一把？想都别想」（第五局骆川）
+        let after = clauses.get(k + 1).copied().unwrap_or("");
+        if REFUSE.split(' ').any(|t| after.contains(t)) {
+            continue;
+        }
         let before = if k > 0 { clauses[k - 1] } else { "" };
         for name in carried {
             if hits.contains(&name.as_str()) {
