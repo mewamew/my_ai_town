@@ -83,6 +83,13 @@ export interface EventActor {
   id: string
   name: string
 }
+/** 这一行是发言人（actor）说的一段话：场合由玩法写、原样显示；没有座次的玩法不写座号 */
+export interface EventSpeech {
+  occasion: string
+  seat?: number
+  /** 说的话本身，不带场合和发言人 */
+  text: string
+}
 /** 遇害：谁下的手、留下什么伤 */
 export interface Killing {
   by: EventActor
@@ -817,7 +824,7 @@ export type ServerMsg =
       holds?: WorldHold[]
       locales: { locale: string; members: RosterMember[] }[]
     }
-  /** 世界日志一行：text 给人读，kind、actor、alert 给前端判断 */
+  /** 世界日志一行：text 给人读，kind、actor、alert、speech 给前端判断 */
   | {
       type: 'event'
       sim_minutes: number
@@ -826,6 +833,7 @@ export type ServerMsg =
       kind: EventKind
       actor?: EventActor
       alert?: Alert
+      speech?: EventSpeech
     }
   | {
       type: 'model_config'

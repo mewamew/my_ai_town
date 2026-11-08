@@ -65,8 +65,8 @@ pub use notebook::{
     NotebookEntry, NotebookLink, NotebookQuery, NotebookSection, NotebookView,
 };
 pub use observation::{
-    Alert, DeathCause, DiaryDay, EventActor, EventInfo, EventKind, ReceiptView, ThoughtView,
-    TriggerInfo, TriggerKind,
+    Alert, DeathCause, DiaryDay, EventActor, EventInfo, EventKind, EventSpeech, ReceiptView,
+    ThoughtView, TriggerInfo, TriggerKind,
 };
 pub use physiology::{
     BodyCondition, BodyConditionKind, BodyEvent, BodyEventKind, BodyValues, BodyView, Killing,

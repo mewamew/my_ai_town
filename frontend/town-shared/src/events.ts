@@ -1,8 +1,10 @@
 // 动态：只放小镇里发生的事——世界日志、村民想法、台词与本地状态变化。
 // 模型请求记录（种类 model）在消耗页看，这里直接不收。
-// 分类：想法、台词从名册里新出现的那一条记下；重要事件看事件自带的 alert（见 importantEvents.ts）。
+// 分类：想法、台词从名册里新出现的那一条记下；玩法里的发言（议事、狼人频道这类）是带「一段话」
+// 标记（speech）的世界日志，和台词一起算「对话」；重要事件看事件自带的 alert（见 importantEvents.ts）。
 // 收起时最近两条浮在地图左下（旧的一条淡一些）；有重要事件时只停它一条，普通事件挤不掉它，
 // 直到来了新的重要事件或玩家展开、关掉。「全部动态」展开成一块浮板，可以按对话、想法、重要筛选。
+// 列表按天分段，一天只写一次「第 N 天」；对话和想法名字单独一行、正文另起，世界里的事一行小字。
 
 import { triggerLabel } from './display'
 import { type ServerMsg } from './protocol'
@@ -10,18 +12,26 @@ import type { RosterFrame } from './shell/panel'
 import { $, query } from './dom'
 import { iconLabel } from './game/icons'
 import { displayClock, playerText, shortClock } from './format'
-import { isCompact } from './platform'
 import { detailsOf, importantEvent, importantLine, type ImportantEvent } from './importantEvents'
+
+/** 一段话：谁说的、说了什么；玩法里的发言还有座号和场合 */
+interface Said {
+  who: string
+  text: string
+  seat?: number
+  occasion?: string
+}
 
 interface TownEvent {
   id: number
   clock: string
   alert: boolean
+  /** 一行的写法：收起时的两条用它 */
   text: string
   /** 想法行：text 是想法原文，who 是谁的想法，trigger 是触发标签 */
   thought?: { who: string; trigger: string }
-  /** 台词行：text 是「名字：台词」 */
-  speech?: boolean
+  /** 对话行（台词、玩法里的发言）：text 是「名字：台词」或日志原文，列表按 say 分行排 */
+  say?: Said
   /** 重要事件：text 已换成平实写法，原文在 important.detail */
   important?: ImportantEvent
 }
@@ -75,45 +85,75 @@ export function initEvents(game: boolean): EventsHandle {
   const thoughts = new Map<string, string>() // 村民 id → 最近记下的想法
   const store: TownEvent[] = []
 
-  /** 上一行的天数：手机上同一天里只在第一行写「第 N 天」，其余只写时刻，省出一截宽度 */
+  /** 列表里上一行的天数：换了天先插一条「第 N 天」，行里只写时刻 */
   let lastDay = ''
-  function clockText(at: string) {
-    const [day, time] = at.split(' ')
-    const repeat = day === lastDay && !!time
-    lastDay = day
-    return repeat && isCompact() ? time : displayClock(at)
+  function append(e: TownEvent) {
+    const [day, time] = e.clock.split(' ')
+    if (time && day !== lastDay) {
+      lastDay = day
+      const head = document.createElement('div')
+      head.className = 'ev-day'
+      head.textContent = displayClock(day)
+      list.appendChild(head)
+    }
+    list.appendChild(rowOf(e, time || displayClock(e.clock)))
   }
 
-  function rowOf(e: TownEvent): HTMLElement {
-    const div = document.createElement('div')
-    if (e.alert) div.className = 'alert'
-    const t = document.createElement('span')
-    t.className = 'ev-clock'
-    t.textContent = clockText(e.clock)
-    if (e.thought) {
-      div.className = 'thought'
-      const q = document.createElement('span')
-      q.className = 'ev-thought'
-      q.textContent = `${e.thought.who}：「${playerText(e.text)}」`
-      const tag = document.createElement('span')
-      tag.className = 'ev-trigger'
-      tag.textContent = e.thought.trigger
-      div.append(t, q, tag)
-      return div
-    }
-    if (e.speech) div.className = 'speech'
-    div.append(t, document.createTextNode(playerText(e.text)))
-    if (e.important) {
-      div.className = 'alert important'
-      if (e.important.detail) div.append(detailsOf(e.important.detail))
-    }
+  const el = (tag: string, text: string, className = '') => {
+    const node = document.createElement(tag)
+    node.textContent = text
+    if (className) node.className = className
+    return node
+  }
+
+  /** 对话、想法：名字一行（座号、场合或想法的来由、时刻），正文另起一段 */
+  function paragraph(className: string, head: Node[], body: string) {
+    const div = el('div', '', className)
+    const heading = el('div', '', 'ev-head')
+    heading.append(...head)
+    div.append(heading, el('p', body))
     return div
+  }
+
+  function rowOf(e: TownEvent, time: string): HTMLElement {
+    const clock = el('span', time, 'ev-clock')
+    if (e.thought)
+      return paragraph(
+        'ev-think',
+        [el('b', e.thought.who), el('em', e.thought.trigger), clock],
+        `「${playerText(e.text)}」`
+      )
+    if (e.say) {
+      const { who, seat, occasion, text } = e.say
+      const head = [el('b', who)]
+      if (seat) head.unshift(el('i', String(seat)))
+      if (occasion) head.push(el('em', occasion))
+      return paragraph('ev-say', [...head, clock], playerText(text))
+    }
+    const div = el('div', '', 'ev-line')
+    if (e.alert) div.classList.add('alert')
+    if (e.important) div.classList.add('important')
+    div.append(clock, playerText(e.text))
+    if (e.important?.detail) div.append(detailsOf(e.important.detail))
+    return div
+  }
+
+  /** 列表最多留 MAX_EVENTS 行：先删最早一天里最早的一行，这一天删空了再删它的天头 */
+  function trim() {
+    while (list.childElementCount > MAX_EVENTS) {
+      const first = list.firstElementChild!
+      const next = first.nextElementSibling
+      const keepDay =
+        first.classList.contains('ev-day') && next && !next.classList.contains('ev-day')
+      const oldest = keepDay ? next : first
+      oldest.remove()
+    }
   }
 
   function matches(e: TownEvent) {
     if (filter === 'all') return true
     if (filter === 'thought') return !!e.thought
-    if (filter === 'speech') return !!e.speech
+    if (filter === 'speech') return !!e.say
     return !!e.important
   }
 
@@ -147,7 +187,7 @@ export function initEvents(game: boolean): EventsHandle {
   function rerender() {
     list.replaceChildren()
     lastDay = ''
-    for (const e of store) if (matches(e)) list.appendChild(rowOf(e))
+    for (const e of store) if (matches(e)) append(e)
     showLatest()
     maybeScroll(true)
   }
@@ -170,14 +210,14 @@ export function initEvents(game: boolean): EventsHandle {
     }
     showLatest()
     if (!full.hidden && matches(event)) {
-      list.appendChild(rowOf(event))
-      while (list.childElementCount > MAX_EVENTS) list.firstElementChild?.remove()
+      append(event)
+      trim()
     }
     maybeScroll()
   }
 
-  function push(text: string, alert: boolean, at?: string) {
-    add({ clock: at, alert, text: withoutClock(text) })
+  function push(text: string, alert: boolean, at?: string, say?: Said) {
+    add({ clock: at, alert, text: withoutClock(text), say })
   }
 
   function expand() {
@@ -242,7 +282,12 @@ export function initEvents(game: boolean): EventsHandle {
         if (spoken.get(m.id) === key) continue
         spoken.set(m.id, key)
         if (minutes - s.at <= 2 || m.chat)
-          add({ clock: shortClock(s.at), alert: false, text: `${m.name}：${s.text}`, speech: true })
+          add({
+            clock: shortClock(s.at),
+            alert: false,
+            text: `${m.name}：${s.text}`,
+            say: { who: m.name, text: s.text },
+          })
       }
       // 想法同气泡：只记有心声的那种（只在查看或记目标的轮次不冒泡，也不记），同样不补记旧的
       for (const { member: m } of residents) {
@@ -275,7 +320,11 @@ export function initEvents(game: boolean): EventsHandle {
             : null
         if (important)
           add({ clock: msg.clock, alert: true, text: importantLine(important), important })
-        else push(msg.text, false, msg.clock)
+        else {
+          // 玩法里的一段话：发言人、座号、场合都在标记里，正文照旧写在一行里给收起时看
+          const said = msg.speech && msg.actor ? { ...msg.speech, who: msg.actor.name } : undefined
+          push(msg.text, false, msg.clock, said)
+        }
         return true
       }
       return false

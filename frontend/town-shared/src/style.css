@@ -739,8 +739,6 @@ body.resizing-info {
 .ev-trigger {
   margin-left: 8px;
 }
-.ev-thought {
-}
 #event-latest-text.thought {
   color: var(--ink);
 }
@@ -950,10 +948,9 @@ body.resizing-info {
 #event-list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 12px 8px;
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 11px;
-  line-height: 1.65;
+  padding: 2px 14px 10px;
+  font-size: 13px;
+  line-height: 1.6;
   color: var(--text);
 }
 /* 没有事件（或筛选后一条也没有）时写一句，不留一整块空白 */
@@ -961,13 +958,101 @@ body.resizing-info {
   content: '暂无事件';
   color: var(--dim);
 }
+/* 一天一个天头，行里只写时刻 */
+#event-list .ev-day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 4px;
+  font-size: 12px;
+  color: var(--caption);
+}
+#event-list .ev-day::before,
+#event-list .ev-day::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
 #event-list .ev-clock {
-  color: var(--dim);
   margin-right: 8px;
+  font-size: 12px;
+  color: var(--caption);
   font-variant-numeric: tabular-nums;
+}
+/* 世界里发生的事：一行小字，淡一些 */
+#event-list .ev-line {
+  margin: 3px 0;
+  color: var(--dim);
 }
 #event-list .alert {
   color: var(--band-collapse);
+}
+/* 对话、想法：名字一行（座号、场合或想法的来由，时刻靠右），正文另起一段 */
+#event-list .ev-say,
+#event-list .ev-think {
+  margin: 10px 0;
+}
+#event-list .ev-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+#event-list .ev-head b {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#event-list .ev-head i {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+#event-list .ev-head em {
+  flex: none;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 11.5px;
+  font-style: normal;
+  line-height: 19px;
+}
+#event-list .ev-head .ev-clock {
+  flex: none;
+  margin: 0 0 0 auto;
+}
+#event-list .ev-head + p {
+  margin: 3px 0 0;
+  white-space: pre-line;
+}
+#event-list .ev-say p {
+  font-size: 14px;
+  line-height: 1.7;
+}
+#event-list .ev-think .ev-head b {
+  font-size: 13px;
+  color: var(--dim);
+}
+#event-list .ev-think em {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+#event-list .ev-think p {
+  font-size: 13.5px;
+  color: var(--dim);
 }
 
 /* ---------- 设定中心（整页替换） ---------- */

@@ -440,7 +440,10 @@ fn werewolf_judge_runs_a_whole_game_through_turns_deadlines_and_a_reload() {
     let mut told_to_stay = false;
     let mut died_at_night = false;
     let mut heard_reason = false;
+    // 世界日志：中途读档换了世界，边走边收
+    let mut logged = vec![];
     for _ in 0..5000 {
+        logged.extend(w.take_events());
         let v = werewolf(&w);
         if v.phase == WerewolfPhase::Over {
             break;
@@ -546,6 +549,28 @@ fn werewolf_judge_runs_a_whole_game_through_turns_deadlines_and_a_reload() {
     }
     assert!(skipped && abstained && reloaded && told_to_stay && died_at_night && heard_reason);
     let v = werewolf(&w);
+    // 议事、遗言、狼人频道写进日志时都带着「一段话」：发言人、座号、场合和原话，正文还是原来那一行
+    logged.extend(w.take_events());
+    let mut occasions = std::collections::BTreeSet::new();
+    for Event::Log { text, info, .. } in &logged {
+        let Some(said) = &info.speech else {
+            continue;
+        };
+        let seat = said.seat.expect("狼人杀的发言带座号");
+        let actor = info.actor.as_ref().expect("发言带发言人");
+        assert_eq!(actor.id, id_of(seat));
+        let name = &v.seats[seat as usize - 1].name;
+        assert_eq!(&actor.name, name);
+        assert!(text.contains(&format!("{seat} 号 {name}")), "{text}");
+        assert!(text.ends_with(&format!("：{}", said.text)), "{text}");
+        occasions.insert(said.occasion.clone());
+    }
+    for occasion in ["议事", "遗言", "狼人频道"] {
+        assert!(
+            occasions.contains(occasion),
+            "日志里没有{occasion}：{occasions:?}"
+        );
+    }
     assert_eq!(
         (v.phase, v.winner),
         (WerewolfPhase::Over, Some(WerewolfSide::Good))

@@ -10,9 +10,9 @@ use super::Rules;
 use crate::error::{KernelError, Result};
 use crate::{World, DAY};
 use protocol::{
-    DeathCause, EventActor, EventInfo, FactKind, GameModeAction, GameModeContext, GameModeView,
-    Killing, WerewolfBallot, WerewolfCheck, WerewolfContext, WerewolfLine, WerewolfNight,
-    WerewolfOut as Out, WerewolfPhase as Phase, WerewolfRole as Role, WerewolfSeat,
+    DeathCause, EventActor, EventInfo, EventSpeech, FactKind, GameModeAction, GameModeContext,
+    GameModeView, Killing, WerewolfBallot, WerewolfCheck, WerewolfContext, WerewolfLine,
+    WerewolfNight, WerewolfOut as Out, WerewolfPhase as Phase, WerewolfRole as Role, WerewolfSeat,
     WerewolfSide as Side, WerewolfView,
 };
 use serde::{Deserialize, Serialize};
@@ -474,6 +474,25 @@ impl Werewolf {
             self.tell(world, &living, text);
         }
         world.log(EventInfo::default(), text.to_string());
+    }
+
+    /// 一段话记进世界日志：正文照旧是完整的一行，另带发言人、座号、场合和原话，动态据此归进「对话」。
+    fn log_speech(
+        &self,
+        world: &mut World,
+        i: usize,
+        occasion: String,
+        text: String,
+        heard: String,
+    ) {
+        let a = &world.actors[&self.seats[i].id];
+        let speech = EventSpeech {
+            occasion,
+            seat: Some(i as u32 + 1),
+            text,
+        };
+        let info = EventInfo::speech(&a.id, &a.name, speech);
+        world.log(info, heard);
     }
 
     /// 这个人倒下：健康归零，按遇害结算（中断手上的事、留下尸体、发现尸体照常）。
@@ -1495,6 +1514,11 @@ impl Werewolf {
             self.label(i),
             if line.away { "（没到场）" } else { "" }
         );
+        let occasion = if line.away {
+            format!("{tag} · 没到场")
+        } else {
+            tag.to_string()
+        };
         self.lines.push(line);
         let living = self.living();
         let mut hearers = living.clone();
@@ -1502,8 +1526,7 @@ impl Werewolf {
             hearers.push(i);
         }
         self.tell(world, &hearers, &heard);
-        let info = world.actors[&self.seats[i].id].event_info();
-        world.log(info, heard);
+        self.log_speech(world, i, occasion, text, heard);
         if last {
             self.after_last_words(world);
         } else {
@@ -1589,6 +1612,7 @@ impl Werewolf {
                     reason: reason_of(action),
                 };
                 let heard = format!("【狼人频道】{}：{}", self.label(i), line.text);
+                let said = line.text.clone();
                 self.night.wolf_lines.push(line);
                 self.night.picks.push((i, t));
                 let mates: Vec<usize> = self
@@ -1597,7 +1621,7 @@ impl Werewolf {
                     .filter(|&w| w != i)
                     .collect();
                 self.tell(world, &mates, &heard);
-                world.log(EventInfo::default(), heard);
+                self.log_speech(world, i, "狼人频道".into(), said, heard);
                 self.night.wolf_turn = None;
                 self.next_wolf(world);
                 Ok(format!("选了 {}，同伴都看到了", self.label(t)))

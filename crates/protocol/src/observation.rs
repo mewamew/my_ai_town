@@ -53,7 +53,22 @@ pub enum Alert {
     },
 }
 
-/// 世界日志一行的结构化部分：种类、说的是谁、需要提示卡时的细节。
+/// 这一行是谁说的一段话（玩法里当众或在频道里说的，如狼人杀的议事、遗言、狼人频道），发言人是
+/// `EventInfo::actor`。动态凭它把这一行归进「对话」，发言人、座号和场合单独一行，下面是原话；
+/// 场合由玩法写，本体原样显示，不认正文里的字。日志正文照旧是完整的一行。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EventSpeech {
+    /// 在什么场合说的：「议事」「遗言」「狼人频道」……
+    pub occasion: String,
+    /// 发言人的座号；没有座次的玩法不写
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seat: Option<u32>,
+    /// 说的话本身，不带场合和发言人
+    pub text: String,
+}
+
+/// 世界日志一行的结构化部分：种类、说的是谁、需要提示卡时的细节、是不是一段话。
+/// 可选的几样缺省不写出：「一段话」只有玩法会写，没开玩法时线上和录像里的事件和以前一字不差。
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EventInfo {
     pub kind: EventKind,
@@ -61,6 +76,8 @@ pub struct EventInfo {
     pub actor: Option<EventActor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alert: Option<Alert>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speech: Option<EventSpeech>,
 }
 
 impl EventInfo {
@@ -92,6 +109,13 @@ impl EventInfo {
     pub fn with_alert(mut self, alert: Option<Alert>) -> Self {
         self.alert = alert;
         self
+    }
+    /// 某人说的一段话：发言人之外带上场合、座号和原话。
+    pub fn speech(id: &str, name: &str, speech: EventSpeech) -> Self {
+        Self {
+            speech: Some(speech),
+            ..Self::about(id, name)
+        }
     }
 }
 

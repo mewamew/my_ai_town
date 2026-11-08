@@ -1351,6 +1351,22 @@ pub fn shape_samples() -> (Vec<ServerMsg>, Vec<ClientMsg>) {
     (
         vec![
             werewolf_roster(),
+            // 玩法里说的一段话：日志正文照旧，另带发言人、座号、场合和原话
+            ServerMsg::Event {
+                sim_minutes: 2588.0,
+                clock: "D2 19:08".into(),
+                text: "[D2 19:08] 【狼人频道】2 号 芬恩：刀 1 号阿树，天亮前别露口风。（选 1 号 阿树）"
+                    .into(),
+                info: EventInfo::speech(
+                    "resident_finn",
+                    "芬恩",
+                    EventSpeech {
+                        occasion: "狼人频道".into(),
+                        seat: Some(2),
+                        text: "刀 1 号阿树，天亮前别露口风。（选 1 号 阿树）".into(),
+                    },
+                ),
+            },
             ServerMsg::AvatarState {
                 state: avatar_session(AvatarSight::Own(AvatarView::Present(Box::new(
                     avatar_state(),
