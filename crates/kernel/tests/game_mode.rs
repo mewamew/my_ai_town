@@ -189,7 +189,9 @@ fn tide_rings_shrink_onto_the_high_ground_and_drain_whoever_stands_in_water() {
         .iter()
         .any(|t| t.starts_with("【潮水】最后一圈已公布") && t.contains("只坐得下一个人")));
     assert!(lines.iter().any(|t| t == "【潮水】水漫过了全岛。"));
-    assert!(lines.iter().any(|t| t.contains("甲离船最近，被船带走了")));
+    assert!(lines
+        .iter()
+        .any(|t| t == "【潮水】甲离船最近，被船带走了，是这一局唯一活着离开的人。"));
     let v = tide(&w).unwrap();
     assert_eq!((v.phase, v.edge.radius), (TidePhase::Over, 0.0));
     assert_eq!(v.edge.center, GOAL);
@@ -278,9 +280,9 @@ fn tide_hands_the_boat_to_the_last_one_standing_and_keeps_the_fights_in_its_news
     // 甲又刺死丙：只剩甲，船提前开来接走他，这一局结束，读档后结果还在
     stab(&mut w, "stab-c", "c");
     let events = w.step(5.0);
-    assert!(logs(&events)
-        .iter()
-        .any(|t| t.contains("岛上只剩甲一个人了，船提前开来接走了他")));
+    assert!(logs(&events).iter().any(
+        |t| t == "【潮水】岛上只剩甲一个人了，船提前开来接走了他。甲是这一局唯一活着离开的人。"
+    ));
     let v = tide(&w).unwrap();
     assert_eq!((v.phase, v.winner.as_deref()), (TidePhase::Over, Some("a")));
     assert!(fell(&v, "c").is_some());

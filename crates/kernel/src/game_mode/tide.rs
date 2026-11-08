@@ -590,9 +590,8 @@ impl Tide {
         Some(format!("【潮水】潮水冲上来一只木箱，搁在「{place}」一带。"))
     }
 
-    /// 有人上了船：他赢了，船撤走，这一局结束。
-    fn sail(&mut self, world: &mut World, object: &str, id: &str, how: &str) {
-        let name = self.player(id).map_or_else(String::new, |p| p.name.clone());
+    /// 有人上了船：他赢了，船撤走，这一局结束。`what` 是一整句经过（不带【潮水】）。
+    fn sail(&mut self, world: &mut World, object: &str, id: &str, what: &str) {
         let now = world.minutes();
         self.winner = Some(id.to_string());
         self.over = true;
@@ -600,9 +599,12 @@ impl Tide {
             let _ = world.remove_prop(BOAT_ID);
             self.boat = false;
         }
-        let text = format!("【潮水】{name}{how}，是这一局唯一活着离开的人。");
-        self.say(now, TideNewsKind::Boat, text.replace("【潮水】", ""));
-        Self::announce(world, object, &text);
+        self.say(now, TideNewsKind::Boat, what.to_string());
+        Self::announce(world, object, &format!("【潮水】{what}"));
+    }
+
+    fn name_of(&self, id: &str) -> String {
+        self.player(id).map_or_else(String::new, |p| p.name.clone())
     }
 
     /// 看一眼选手：谁倒下了、谁上了船，只剩一个人时船提前来。
@@ -640,21 +642,27 @@ impl Tide {
             self.say(now, TideNewsKind::Fell, text);
         }
         if let Some(id) = boarded {
-            self.sail(world, object, &id, "登上了船");
+            let name = self.name_of(&id);
+            self.sail(
+                world,
+                object,
+                &id,
+                &format!("{name}登上了船，是这一局唯一活着离开的人。"),
+            );
             return;
         }
         let alive = self.alive();
         if self.players.len() >= 2 && alive.len() == 1 {
             let id = alive[0].clone();
             world.depart(&id, "被提前开来的船接走，离开了荒岛");
-            let name = self
-                .player(&id)
-                .map_or_else(String::new, |p| p.name.clone());
+            let name = self.name_of(&id);
             self.sail(
                 world,
                 object,
                 &id,
-                &format!("岛上只剩{name}一个人了，船提前开来接走了他"),
+                &format!(
+                    "岛上只剩{name}一个人了，船提前开来接走了他。{name}是这一局唯一活着离开的人。"
+                ),
             );
         } else if alive.is_empty() && !self.players.is_empty() {
             self.over = true;
@@ -678,7 +686,13 @@ impl Tide {
             .min_by(|a, b| a.1.total_cmp(&b.1));
         if let Some((id, _)) = nearest {
             world.depart(&id, "被船带走，离开了荒岛");
-            self.sail(world, object, &id, "离船最近，被船带走了");
+            let name = self.name_of(&id);
+            self.sail(
+                world,
+                object,
+                &id,
+                &format!("{name}离船最近，被船带走了，是这一局唯一活着离开的人。"),
+            );
         }
     }
 }
