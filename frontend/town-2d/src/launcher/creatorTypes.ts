@@ -54,7 +54,8 @@ export type Draft = {
 export type Options = {
   templates: Kind[]
   limits: CreatorLimits
-  model: { available: boolean; provider?: string; model?: string; error?: string }
+  /** 管理服务 /options 回答的；还没问到时为空 */
+  model?: { available: boolean; provider?: string; model?: string; error?: string }
 }
 /** 玩家说到的一处地方对应地图上的哪些地点；refs 为空表示地图上没有 */
 export type Mention = { said: string; refs: string[] }

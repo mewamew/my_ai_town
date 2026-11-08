@@ -1,13 +1,16 @@
 import { button, el } from 'town-shared/dom'
 import { errorText } from 'town-shared/format'
+import library from '../../../../data/mapgen/templates.json'
+import { limits } from '../../../../scripts/mapgen/spec.mjs'
 import { type CreatorContext } from './creatorContext'
-import { createPlacePicker } from './creatorPicker'
-import { invalidate, setBusy } from './creatorPreview'
+import { createPlacePicker, type CreatorLimits } from './creatorPicker'
+import { invalidate } from './creatorPreview'
 import { stepStatus } from './creatorSteps'
 import type { Options } from './creatorTypes'
 
-// 地点模板、上限和模型信息：第一次打开建镇页时向管理服务要一次，拿到后建地点选择器；
-// 模型状态每次打开都重新问，在首页设定里刚连好的模型这里马上能用。
+// 地点模板和上限是页面自带的数据，和管理服务、手机上页面里的生成器读同一份
+// （data/mapgen/templates.json、scripts/mapgen/spec.mjs），地点选择器不等管理服务，服务停了也照样能选。
+// 要问管理服务的只有模型能不能用：每次打开建镇页都问，在首页设定里刚连好的模型这里马上能用。
 
 /** 新建小镇时预先点好的地点 */
 const defaultCounts: Record<string, number> = {
@@ -19,40 +22,49 @@ const defaultCounts: Record<string, number> = {
   clinic: 1,
 }
 
-async function loadOptions(c: CreatorContext) {
-  if (c.options) return c.options
-  const loaded = await c.request<Options>('/options')
-  c.options = loaded
-  c.el<HTMLTextAreaElement>('town-description').maxLength = loaded.limits.max_description
+/** 页面自带的地点模板和上限；模型状态要问过管理服务才有 */
+export function localOptions(): Options {
+  return {
+    templates: library.templates.map(({ kind, name, outdoor }) => ({ kind, name, outdoor })),
+    limits: limits as CreatorLimits,
+  }
+}
+
+/** 建地点选择器，点好新小镇默认的几处；建镇页创建时调用一次 */
+export function mountPlacePicker(c: CreatorContext) {
+  const { templates } = c.options
+  c.el<HTMLTextAreaElement>('town-description').maxLength = c.options.limits.max_description
   c.picker = createPlacePicker(
     c.el('town-places'),
     c.el('town-selected'),
     c.el('town-counts'),
-    [...loaded.templates].sort((a, b) => Number(a.kind === 'area') - Number(b.kind === 'area')),
-    loaded.limits,
+    [...templates].sort((a, b) => Number(a.kind === 'area') - Number(b.kind === 'area')),
+    c.options.limits,
     () => invalidate(c),
     (text) => c.status(text)
   )
   c.picker.set(
-    loaded.templates.flatMap((t) =>
+    templates.flatMap((t) =>
       defaultCounts[t.kind] ? [{ kind: t.kind, size: 'medium', count: defaultCounts[t.kind] }] : []
     )
   )
   c.panel.querySelector<HTMLButtonElement>('[data-place-filter][aria-selected="true"]')?.click()
-  setBusy(c, false)
-  renderModel(c)
-  return loaded
 }
 
-/** 一句话规划用哪个模型；没连上时在原处放「连接模型」，连好当场能用，写好的描述不丢 */
+/**
+ * 一句话规划用哪个模型；没连上时在原处放「连接模型」，连好当场能用，写好的描述不丢。
+ * 没问到（多半是小镇服务停了）就写明原因、给「重试」。
+ */
 export function renderModel(c: CreatorContext) {
-  const model = c.options?.model
+  const { model } = c.options
   const line = c.el('generation-model')
-  if (!model) {
-    line.replaceChildren()
-    return
-  }
-  if (model.available)
+  if (c.modelProblem)
+    line.replaceChildren(
+      el('span', `没问到模型状态：${c.modelProblem}。`),
+      button('重试', () => void refreshModel(c))
+    )
+  else if (!model) line.replaceChildren()
+  else if (model.available)
     line.replaceChildren(
       el('span', `用 ${model.provider} · ${model.model} 理解你的描述，点生成时调用一次。`)
     )
@@ -62,7 +74,7 @@ export function renderModel(c: CreatorContext) {
       ...(c.connectModel ? [button('连接模型', () => void connect(c))] : [])
     )
   for (const id of ['parse-town', 'refine-town', 'reparse-town'])
-    c.el<HTMLButtonElement>(id).disabled = c.busy || !model.available
+    c.el<HTMLButtonElement>(id).disabled = c.busy || !model?.available
   if (c.currentStep === 'basics' && !c.busy) c.status(stepStatus(c))
 }
 
@@ -70,32 +82,14 @@ async function connect(c: CreatorContext) {
   if ((await c.connectModel?.()) === 'connected') await refreshModel(c)
 }
 
-/** 再问一次模型状态；还没读过选项就整套读 */
+/** 问管理服务模型能不能用 */
 export async function refreshModel(c: CreatorContext) {
-  if (!c.options) return ensureOptions(c)
   try {
-    const latest = await c.request<Pick<Options, 'model'>>('/options')
-    if (c.options) c.options.model = latest.model
-  } catch {
-    // 读不到就沿用上一次的
+    c.options.model = (await c.request<Pick<Options, 'model'>>('/options')).model
+    c.modelProblem = undefined
+  } catch (error) {
+    c.options.model = undefined
+    c.modelProblem = errorText(error)
   }
   renderModel(c)
-}
-
-/** 还没有地点模板就去要；失败原因写在地点区域，状态栏一切步骤就会被步骤说明覆盖 */
-export function ensureOptions(c: CreatorContext) {
-  if (c.options) return
-  c.optionsRequest ??= loadOptions(c)
-    .catch((error) => {
-      const message = document.createElement('p')
-      message.className = 'creator-hint'
-      message.textContent = `地点列表没有加载出来：${errorText(error)}`
-      const retry = document.createElement('button')
-      retry.type = 'button'
-      retry.textContent = '重试'
-      retry.onclick = () => ensureOptions(c)
-      c.el('town-places').replaceChildren(message, retry)
-      c.status(message.textContent)
-    })
-    .finally(() => (c.optionsRequest = undefined))
 }

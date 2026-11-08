@@ -20,7 +20,6 @@ export const missingPrefabs = (maps: MapEntry[]) =>
 /** 生成预制小镇的岛并存成内置小镇，返回小镇编号 */
 export async function generatePrefab(prefab: Prefab) {
   const request = creationRequest()
-  await request('/options')
   const draft = await request<{ id: string; version: string }>('/preview', {
     request_id: newId(),
     spec: prefab.spec,

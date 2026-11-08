@@ -72,8 +72,7 @@ export function syncResourceEffect(c: CreatorContext) {
 
 /** 检查参数里的地点种类和数量，超出上限就抛出说明 */
 function checkPlaces(c: CreatorContext, s: EditableSpec) {
-  const { templates } = c.options!
-  const limits = c.options!.limits
+  const { templates, limits } = c.options
   // Old saved/model-generated specs may still contain size. The picker merges them by kind;
   // the next preview recalculates compatible internal groups automatically.
   const groups = new Map<string, number>()
@@ -100,7 +99,6 @@ function checkPlaces(c: CreatorContext, s: EditableSpec) {
 
 /** 把一份参数写回表单（一句话规划、编辑完整要求）；参数不合法时抛出说明 */
 export function fill(c: CreatorContext, s: EditableSpec) {
-  if (!c.options) return
   if (s.view_mode !== undefined && s.view_mode !== '2d')
     throw Error('仅支持 HD-2D，独立 3D 版本已停用')
   checkPlaces(c, s)

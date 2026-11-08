@@ -3,7 +3,7 @@ import { newId } from 'town-shared/ids'
 import { createMapRenderer } from '../mapRenderers'
 import type { CreatorContext } from './creatorContext'
 import { fill, spec } from './creatorForm'
-import { TownApiError } from './api'
+import { SERVICE_UNREACHABLE, TownApiError } from './api'
 import { failureMessage, trackProgress } from './creatorProgress'
 import { clearReport, renderReport } from './creatorReport'
 import { renderStepRows, setCreatorStep, stepStatus, syncStepControls } from './creatorSteps'
@@ -38,7 +38,7 @@ export function invalidate(c: CreatorContext) {
 
 export function setBusy(c: CreatorContext, value: boolean) {
   c.busy = value
-  const noModel = !c.options?.model.available
+  const noModel = !c.options.model?.available
   c.el<HTMLButtonElement>('generate-town').disabled = value
   c.el<HTMLButtonElement>('parse-town').disabled = value || noModel
   c.el<HTMLButtonElement>('refine-town').disabled = value || noModel
@@ -117,7 +117,7 @@ const FIELD_WORDS: Record<string, string> = {
 function playerNote(c: CreatorContext, note: string) {
   return note
     .replace(/\b[a-z][a-z_-]*\b/g, (word) =>
-      c.options?.templates.some((t) => t.kind === word)
+      c.options.templates.some((t) => t.kind === word)
         ? c.nameOf(word)
         : (FIELD_WORDS[word] ?? word)
     )
@@ -209,7 +209,7 @@ function startGenerating(c: CreatorContext) {
  */
 export async function preview<D extends Draft>(c: CreatorContext<D>, how: How = 'layout') {
   const language = how !== 'layout'
-  if (!c.options || !c.el<HTMLFormElement>('creator-form').reportValidity()) return
+  if (!c.el<HTMLFormElement>('creator-form').reportValidity()) return
   if (language && !c.el<HTMLTextAreaElement>('town-description').value.trim()) {
     c.status('先写一句话描述你想要的小镇，或者点一个例子。')
     c.el('town-description').focus()
@@ -271,10 +271,12 @@ export async function preview<D extends Draft>(c: CreatorContext<D>, how: How = 
       // 回到能再生成的一步：模型没理解成功回到描述，布局没排开回到地点；
       // 预览步骤没有草稿，也就没有「换一张布局」
       setCreatorStep(c, parsed ? 'places' : 'basics')
+      // 连不上服务时改要求没用，只说原因
+      const offline = error instanceof TownApiError && error.code === SERVICE_UNREACHABLE
       c.status(
         signal.aborted
           ? message
-          : `没有生成成功：${message}。可以去掉这条要求或调整地点，再生成一次。`
+          : `没有生成成功：${message}。${offline ? '' : '可以去掉这条要求或调整地点，再生成一次。'}`
       )
       c.el('creator-preview').replaceChildren(placeholder(message))
       revealResult(c)

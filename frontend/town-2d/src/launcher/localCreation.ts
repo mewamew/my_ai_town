@@ -1,8 +1,7 @@
 // 手机应用的建镇：应用里的管理服务（Rust）跑不了生成器，/options 回答 generation: 'client'。
 // 这时生成在网页的工作线程里做，管理服务只负责理解描述（调模型）、校验成品地图、暂存草稿和保存。
 // 对建镇页来说接口不变：还是 /options、/parse、/preview、/generation/编号、/save。
-import { APPEARANCE_SET, PARAMETERS } from '../../../../scripts/mapgen/budget.mjs'
-import { limits, resources } from '../../../../scripts/mapgen/spec.mjs'
+import { PARAMETERS } from '../../../../scripts/mapgen/budget.mjs'
 import { plannerKinds, tidyPlan } from '../../../../scripts/mapgen/plan.mjs'
 import library from '../../../../data/mapgen/templates.json'
 import { api, TownApiError } from './api'
@@ -52,22 +51,17 @@ function generateInWorker(
 
 /** 建镇页用的请求：管理服务说要在网页里生成时接管 /preview 和进度查询，其余照常转给服务 */
 export function creationRequest(base: Request = api): Request {
-  let client = false
+  // 在哪儿生成要问 /options 才知道；打开建镇页时那一问没问到（服务停了又起来），生成前补问
+  let client: boolean | undefined
+  const ask = async (signal?: AbortSignal) => {
+    const remote = await base<{ generation?: string }>('/options', undefined, signal)
+    client = remote.generation === 'client'
+    return remote
+  }
   const tasks = new Map<string, { stage: string; started: number }>()
   return async function request<T>(path: string, body?: unknown, signal?: AbortSignal) {
-    if (path === '/options') {
-      const remote = await base<Record<string, unknown>>(path, undefined, signal)
-      client = remote.generation === 'client'
-      if (!client) return remote as T
-      return {
-        templates: library.templates.map(({ kind, name, outdoor }) => ({ kind, name, outdoor })),
-        limits,
-        resources,
-        styles: [{ id: APPEARANCE_SET, name: '海岸乡镇' }],
-        model: remote.model,
-        uncompleted_drafts: '草稿保留两小时；重新打开创建页时需重新预览，已保存小镇不受影响',
-      } as T
-    }
+    if (path === '/options') return (await ask(signal)) as T
+    if (client === undefined) await ask(signal)
     if (!client) return base<T>(path, body, signal)
     if (path === '/parse') {
       // 生成器在页面里：模型能用哪些地点由这边告诉管理服务

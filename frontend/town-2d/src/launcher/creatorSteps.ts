@@ -1,6 +1,5 @@
 import { query } from 'town-shared/dom'
 import type { CreatorContext } from './creatorContext'
-import { ensureOptions } from './creatorOptions'
 import { creatorSteps, type CreatorStep } from './creatorTypes'
 
 // 建镇页的四个步骤：基础、环境、地点、预览。当前步骤展开，做完的步骤收成一行摘要。
@@ -56,10 +55,12 @@ export function stepStatus(c: CreatorContext) {
       ? '还没有可保存的预览，回到第一步点「生成小镇」。'
       : '还没有可保存的预览，请返回地点步骤生成。'
   // 一句话描述不填名字（由模型起名），第一步只要写描述
-  if (c.currentStep === 'basics' && c.languageMode)
-    return c.options && !c.options.model.available
+  if (c.currentStep === 'basics' && c.languageMode) {
+    if (c.modelProblem) return '还没问到模型状态，点上面的「重试」再问一次。'
+    return c.options.model && !c.options.model.available
       ? '先连接一个模型，再点「生成小镇」。'
       : '写一句话或点一个例子，再点「生成小镇」，几秒钟就好。'
+  }
   return stepHints[c.currentStep]
 }
 
@@ -84,7 +85,6 @@ export function setCreatorStep(c: CreatorContext, step: CreatorStep) {
   renderStepRows(c)
   c.status(stepStatus(c))
   syncStepControls(c)
-  if (step === 'places') ensureOptions(c)
   // 换了一步从顶上看起：手机上整页滚动，停在上一步滚到的位置会看不到这一步的标题
   c.panel.scrollTop = 0
   c.panel.querySelector('.creator-main')?.scrollTo(0, 0)

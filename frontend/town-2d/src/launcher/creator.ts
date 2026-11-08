@@ -4,7 +4,7 @@ import { creatorTemplate } from './creatorTemplate'
 import './creator.css'
 import { CreatorContext } from './creatorContext'
 import { fill, spec, syncResourceEffect, syncStyle } from './creatorForm'
-import { refreshModel } from './creatorOptions'
+import { mountPlacePicker, refreshModel } from './creatorOptions'
 import { mountChoiceCards } from './creatorPicker'
 import { dropPreview, idlePlaceholder, invalidate, placeholder, preview } from './creatorPreview'
 import { clearReport } from './creatorReport'
@@ -176,6 +176,7 @@ export function initCreator<D extends Draft = Draft>(
     return true
   })
   wireForm(c)
+  mountPlacePicker(c)
   wireSteps(c)
   c.el('save-town').onclick = () => saveDraft(c, leave, onSaved, enterTown)
   c.el('save-only').onclick = () => saveDraft(c, leave, onSaved)

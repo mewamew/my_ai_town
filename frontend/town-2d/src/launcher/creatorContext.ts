@@ -1,5 +1,6 @@
 import { query } from 'town-shared/dom'
 import { creationRequest } from './localCreation'
+import { localOptions } from './creatorOptions'
 import type { createPlacePicker } from './creatorPicker'
 import type { Constraint, CreatorStep, Draft, Mention, Options } from './creatorTypes'
 
@@ -9,9 +10,10 @@ import type { Constraint, CreatorStep, Draft, Mention, Options } from './creator
  * 都加一，异步回来时发现它变了就丢掉结果。
  */
 export class CreatorContext<D extends Draft = Draft> {
-  /** 后端给的地点模板、上限和模型信息；第一次进入地点步骤时读取 */
-  options?: Options
-  optionsRequest?: Promise<unknown>
+  /** 地点模板、上限（页面自带）和模型能不能用（打开建镇页时问管理服务） */
+  readonly options: Options = localOptions()
+  /** 没问到模型状态的原因，多半是小镇服务停了；写在模型那一行，点重试再问 */
+  modelProblem?: string
   picker?: ReturnType<typeof createPlacePicker>
   /** 一句话规划解析出的位置关系和地点名，只在一句话模式下带进参数 */
   parsedConstraints: Constraint[] = []
@@ -62,6 +64,6 @@ export class CreatorContext<D extends Draft = Draft> {
     this.el('creator-status').textContent = text
   }
   nameOf(kind: string) {
-    return this.options?.templates.find((t) => t.kind === kind)?.name ?? kind
+    return this.options.templates.find((t) => t.kind === kind)?.name ?? kind
   }
 }
