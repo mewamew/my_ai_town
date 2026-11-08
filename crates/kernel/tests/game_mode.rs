@@ -25,7 +25,11 @@ fn island() -> World {
 
 /// 同一座岛，住进这些人：loc_a 的落脚点在最高处，loc_b 的在东岸。
 fn island_with(people: &[(&str, &str, &str)]) -> World {
-    let mut w = common::world_with(common::tiny_topology(), 7.0 * HOUR, people);
+    island_on(common::tiny_topology(), people)
+}
+
+fn island_on(topo: kernel::Topology, people: &[(&str, &str, &str)]) -> World {
+    let mut w = common::world_with(topo, 7.0 * HOUR, people);
     let (columns, rows) = (41, 41);
     let heights = (0..rows)
         .flat_map(|z| {
@@ -292,6 +296,59 @@ fn tide_rings_shrink_onto_the_high_ground_and_drain_whoever_stands_in_water() {
     w.set_game_mode(None).unwrap();
     assert!(w.game_mode().is_none());
     no_trace(&w);
+}
+
+/// 乙站的地方只有导航空间知道、行走地图里没有：开局布置的棚子、石屋和船的操作位都是这样，只在导航覆盖里。
+/// 在那儿照样算站在水里，睡着了照样被泡醒。第二到第五局这些地方一直不算在水里，泡醒一次也没发生。
+#[test]
+fn tide_wakes_a_sleeper_whose_spot_only_navigation_knows() {
+    let topo = common::topology(&common::two_places_json(|data| {
+        data["props"].as_array_mut().unwrap().push(json!({
+            "id":"hut","name":"棚子","locale":"loc_b",
+            "verbs":[{"verb":"在棚子里睡觉","duration_minutes":480,
+              "action":{"id":"sleep","label":"在棚子里睡觉","duration_minutes":480,"completion":"sleep","rest":true,"during":[],"conditions":[]}}]
+        }));
+    }));
+    let mut w = island_on(topo, &[("a", "甲", "loc_a"), ("b", "乙", "loc_b")]);
+    let mut map = (**w.walk_map.as_ref().unwrap()).clone();
+    map.stations.remove("st_b");
+    w.walk_map = Some(Arc::new(map));
+    w.topo.navigation = Some(
+        serde_json::from_value(json!({
+            "navigation_revision": 1, "floors": [], "props": [], "routes": [],
+            "stations": [{"id": "st_b", "locale": "loc_b", "position": [36.0, 0.4, 18.0]}]
+        }))
+        .unwrap(),
+    );
+    w.set_game_mode(Some(&GameModeChoice::Tide { seed: Some(7) }))
+        .unwrap();
+    // 第 3 天傍晚第 3 圈涨到，离最高处 12 米的乙早已在水里
+    w.step(2.0 * DAY + 18.5 * HOUR - w.minutes());
+    let Some(GameModeContext::Tide(context)) = w.game_mode_context("b") else {
+        panic!("乙的模型该看到潮水这一栏");
+    };
+    assert!(context.standing.unwrap().starts_with("你站在潮水里"));
+    common::run(
+        &mut w,
+        "b",
+        "nap",
+        json!({"prop_id":"hut","intent":{"verb":"在棚子里睡觉"}}),
+    )
+    .unwrap();
+    w.step(10.0);
+    assert_eq!(
+        w.action_group("b", "nap").unwrap().status,
+        GroupStatus::Interrupted
+    );
+    assert!(w
+        .actor("b")
+        .unwrap()
+        .journal
+        .events_after(0)
+        .iter()
+        .any(|e| {
+            e.kind == FactKind::Notice && e.text.contains("潮水漫上来，把你泡醒了：你站在潮水里")
+        }));
 }
 
 const KNIFE: &str = r#"{"id":"core:kitchen_knife","version":1,"name":"菜刀","description":"一把厚背菜刀，刀口很利。","portable":true,

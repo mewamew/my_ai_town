@@ -175,12 +175,15 @@ fn direction(from: [f64; 2], to: [f64; 2]) -> &'static str {
     ["东", "东北", "北", "西北", "西", "西南", "南", "东南"][sector.min(7)]
 }
 
-/// 这个人此刻在行走地图上的位置；在室内、不在场或地图上找不到时为 None。
+/// 这个人此刻在行走地图上的位置；在室内、不在场或地图上找不到时为 None。站在运行时摆的道具上
+/// （开局布置的棚子、石屋，最后来的船）时，操作位只在导航覆盖里、不在最初的行走地图上，按本体的
+/// `actor_spot` 去覆盖里找：只查行走地图时，第二到第五局睡在被淹的棚子、石屋里的人一直不算在水里，
+/// 不掉精力、不湿，也不会被泡醒。
 fn outdoor_point(world: &World, a: &Actor) -> Option<[f64; 2]> {
     let map = world.walk_map.as_ref()?;
     let spot = map
         .transit_spot(&a.locus)
-        .or_else(|| map.station_locus(&a.locus))?;
+        .or_else(|| world.actor_spot(&a.id))?;
     (spot.space == map.outdoor_space).then_some(spot.position)
 }
 
