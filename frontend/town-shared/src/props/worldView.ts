@@ -5,7 +5,7 @@ import { renderPropDetail } from './detail'
 import { button, el } from './dom'
 import type { PropsView } from './pageState'
 import { propPicture } from './picture'
-import type { Action, BodyNeed, PropCatalog, PropView } from './types'
+import type { Action, BodyNeed, Definition, PropCatalog, PropView } from './types'
 
 /** 用途筛选：按村民拿它做什么分。分类名和下面 usesOf 的判断要一起改 */
 export const PURPOSES = [
@@ -23,8 +23,11 @@ function locationText(p: PropView, localeName: (id: string) => string) {
   return localeName(p.locale)
 }
 
-function definitionOf(view: PropsView, p: PropView) {
-  return view.state.catalog?.definitions.find((d) => `${d.id}@${d.version}` === p.definition)
+/** 镇上一件东西的定义，说明、按用途筛和「复制并修改」都靠它：先查道具库，库里删掉了或本来就没有的
+ *  （摘下来的椰子）再查目录里镇上自带的那份 */
+export function definitionOf(c: PropCatalog | null, p: PropView) {
+  const same = (d: Definition) => `${d.id}@${d.version}` === p.definition
+  return c?.definitions.find(same) ?? c?.town_definitions?.find(same)
 }
 
 /** 一个动作的用处，看效果和完成方式，玩家自己做的道具也能自动归类：恢复饱腹或水分算吃喝，
@@ -51,7 +54,9 @@ function matchesPurpose(view: PropsView, p: PropView) {
   const purpose = view.page.purpose.value
   if (!purpose) return true
   if (purpose === 'read' && (p.readable || p.bulletin_board)) return true
-  return (definitionOf(view, p)?.actions ?? []).some((a) => usesOf(a).includes(purpose))
+  return (definitionOf(view.state.catalog, p)?.actions ?? []).some((a) =>
+    usesOf(a).includes(purpose)
+  )
 }
 
 /** 格子右上角的状态点：空闲绿、使用中琥珀脉动、其余灰。公告有人在看也还能看，算空闲 */
@@ -150,7 +155,7 @@ function renderWorldDetail(view: PropsView, p: PropView) {
     localeName: view.localeName,
     personName: view.personName,
     connected: view.state.connected,
-    definition: definitionOf(view, p),
+    definition: definitionOf(view.state.catalog, p),
     needLabel: view.needLabel,
     size: 'page',
     buttons: worldActions(view, p),
@@ -161,7 +166,7 @@ function renderWorldDetail(view: PropsView, p: PropView) {
  *  复制修改与移除是创作操作，收在「更多」里 */
 function worldActions(view: PropsView, p: PropView) {
   const { deps } = view
-  const d = definitionOf(view, p)
+  const d = definitionOf(view.state.catalog, p)
   const buttons: HTMLElement[] = []
   const locate =
     p.on_map !== false

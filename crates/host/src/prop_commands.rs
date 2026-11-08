@@ -26,6 +26,13 @@ impl Runtime {
                 residential: p.residential,
             })
             .collect();
+        let town_definitions = self
+            .world
+            .placed_definitions()
+            .into_iter()
+            .filter(|(reference, _)| !catalog.definitions.contains_key(reference))
+            .map(|(_, d)| definition_json(d))
+            .collect();
         let catalog = PropsCatalog {
             capabilities: kernel::props::capabilities(),
             definition_actions,
@@ -35,6 +42,7 @@ impl Runtime {
             persistent: self.prop_library.persistent(),
             schema_version: CATALOG_SCHEMA_VERSION,
             spatial: self.world.spatial_overrides(),
+            town_definitions,
             world_id: self.population.world_id.clone(),
         };
         ServerMsg::Props { catalog }

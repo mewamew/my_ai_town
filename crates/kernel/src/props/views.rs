@@ -68,6 +68,17 @@ impl World {
             .collect()
     }
 
+    /// 运行中放进镇上、还没移走的道具（玩家摆的、做出来的、拿到手的）各自存着的定义，
+    /// 按「编号@版本」去重。道具库里删了的、本来就不在库里的定义，镇上的东西照样靠它们。
+    pub fn placed_definitions(&self) -> std::collections::BTreeMap<String, &super::Definition> {
+        self.props
+            .placed
+            .iter()
+            .filter(|(id, _)| !self.props.is_removed(id))
+            .map(|(_, p)| (p.definition.reference(), &p.definition))
+            .collect()
+    }
+
     /// 运行期空间覆盖与墓碑，随修订号一起给客户端；没有空间地图时为 None。
     pub fn spatial_overrides(&self) -> Option<SpatialOverridesView> {
         self.topo.navigation.as_ref().map(|s| SpatialOverridesView {

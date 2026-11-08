@@ -174,6 +174,10 @@ pub struct PropsCatalog {
     pub persistent: bool,
     pub schema_version: u32,
     pub spatial: Option<crate::SpatialOverridesView>,
+    /// 镇上有、道具库里没有的定义，原文同 definitions：从库里删掉的、本来就不在库里的（摘下来的椰子）。
+    /// 页面给镇上的东西写说明、按用途筛、复制修改时，库里找不到再查这里；都在库里时不发。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub town_definitions: Vec<serde_json::Value>,
     pub world_id: String,
 }
 

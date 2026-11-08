@@ -16,7 +16,7 @@ import { showValidation, renderPropDetail } from './detail'
 import { createPropCard } from './card'
 import { readPackage, renderLibrary } from './libraryView'
 import { createPropsPageState, type PropsDeps, type PropsView } from './pageState'
-import { PURPOSES, renderWorld } from './worldView'
+import { PURPOSES, definitionOf, renderWorld } from './worldView'
 import { createPlacing } from './placing'
 
 const worldHint = '点选一件物品，看它能做什么、现在能不能用。'
@@ -255,7 +255,7 @@ class PropsPage implements PropsView {
       this.cardSignature = text
       return
     }
-    const definition = catalog?.definitions.find((d) => `${d.id}@${d.version}` === p.definition)
+    const definition = definitionOf(catalog, p)
     const signature = JSON.stringify([p, definition?.description, connected])
     if (signature === this.cardSignature) return
     this.cardSignature = signature

@@ -16,7 +16,7 @@ import { newId } from '../ids'
 import { button, el } from './dom'
 import { propPicture } from './picture'
 import { definitionId, latestVersions } from './libraryView'
-import { PURPOSES, usesOf } from './worldView'
+import { PURPOSES, definitionOf, usesOf } from './worldView'
 import { blockedText, freeNear, roomText } from './placeGrid'
 import type { Definition, PropCatalog, PropView } from './types'
 import './placing.css'
@@ -449,7 +449,7 @@ export function createPlacing(deps: PlacingDeps) {
   function townMatches(c: PropCatalog, p: PropView) {
     if (purpose) {
       const read = purpose === 'read' && (!!p.readable || p.bulletin_board)
-      const d = c.definitions.find((x) => `${x.id}@${x.version}` === p.definition)
+      const d = definitionOf(c, p)
       if (!read && !(d?.actions ?? []).some((a) => usesOf(a).includes(purpose))) return false
     }
     return `${p.name} ${deps.localeName(p.locale)} ${p.actions.map((a) => a.label).join(' ')}`

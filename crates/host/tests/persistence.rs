@@ -98,8 +98,8 @@ fn killed_host_restores_memory_time_activity_then_reset_replaces_save() {
     town.shutdown();
 }
 
-/// 道具库删除只删图纸：存了两版的刀摆一把到广场，删掉以后两份文件和目录里的定义都没了，
-/// 广场上那把还在；强杀重开，存档照样读回，那把刀还能用。
+/// 道具库删除只删图纸：存了两版的刀摆一把到广场，删掉以后两份文件和库里的定义都没了，
+/// 广场上那把还在，目录另带着它那一版的定义（页面的说明、按用途筛靠它）；强杀重开，照样读回、还能用。
 #[test]
 fn deleting_a_library_prop_keeps_the_placed_copy_through_a_restart() {
     let mut town = Town::new();
@@ -142,30 +142,30 @@ fn deleting_a_library_prop_keeps_the_placed_copy_through_a_restart() {
     });
     assert_eq!(deleted["ok"], true, "{deleted}");
     assert_eq!(deleted["message"], "已删除「猎刀」");
+    // 目录里的刀：道具库里还有没有、镇上那把自带的定义、广场上那把
     let knife_in = |catalog: &Value| {
-        let defined = catalog["definitions"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|d| d["id"] == "player:knife");
-        let placed = catalog["instances"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|p| p["id"] == "user:knife")
-            .cloned();
-        (defined, placed)
+        let of = |field: &str| catalog[field].as_array().cloned().unwrap_or_default();
+        let knife = |d: &Value| d["id"] == "player:knife";
+        let defined = of("definitions").iter().any(knife);
+        let town_def = of("town_definitions").into_iter().find(knife);
+        let placed = of("instances")
+            .into_iter()
+            .find(|p| p["id"] == "user:knife");
+        (defined, town_def, placed)
     };
-    let (defined, placed) = knife_in(&until(&mut ws, |m| m["type"] == "props")["catalog"]);
+    let (defined, town_def, placed) =
+        knife_in(&until(&mut ws, |m| m["type"] == "props")["catalog"]);
     assert!(!defined);
+    assert_eq!(town_def.unwrap()["description"], "一把磨得很快的刀。");
     assert_eq!(placed.unwrap()["locale"], "square");
     assert_eq!(fs::read_dir(&library).unwrap().count(), 0);
 
     town.kill();
     drop(ws);
     let mut ws = town.start();
-    let (defined, placed) = knife_in(&query(&mut ws, "get_props", "props")["catalog"]);
+    let (defined, town_def, placed) = knife_in(&query(&mut ws, "get_props", "props")["catalog"]);
     assert!(!defined);
+    assert_eq!(town_def.unwrap()["version"], 1);
     let placed = placed.expect("广场上的刀重开后还在");
     assert_eq!(placed["definition"], "player:knife@1");
     assert_eq!(placed["actions"][0]["label"], "切东西");

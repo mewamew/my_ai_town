@@ -167,6 +167,8 @@ export interface PropCatalog {
   world_id: string
   persistent: boolean
   definitions: Definition[]
+  /** 镇上有、道具库里没有的定义：从库里删掉的、本来就不在库里的（摘下来的椰子）；都在库里时不发 */
+  town_definitions?: Definition[]
   instances: PropView[]
   locations: {
     id: string
