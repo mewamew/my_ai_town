@@ -2984,6 +2984,102 @@
     ]
   },
   {
+    "id": "core:island-ration-sack",
+    "version": 1,
+    "name": "干粮袋",
+    "description": "一大袋压得结实的干粮，可以就地吃；每天天亮还能领走几份带在身上，自己吃或者喂给身边的人。",
+    "actions": [
+      {
+        "id": "eat",
+        "label": "吃干粮",
+        "duration_minutes": 10,
+        "completion": "activity",
+        "recipient": true,
+        "supply": {
+          "initial": 100,
+          "cost": 1
+        },
+        "on_complete": [
+          {
+            "kind": "restore",
+            "need": "fullness",
+            "amount": 25.0
+          }
+        ]
+      },
+      {
+        "id": "take",
+        "label": "领一份干粮",
+        "duration_minutes": 3,
+        "completion": "activity",
+        "supply": {
+          "initial": 8,
+          "cost": 1,
+          "restock": {
+            "amount": 8,
+            "max": 8
+          }
+        },
+        "on_complete": [
+          {
+            "kind": "give_item",
+            "item": {
+              "id": "core:island-ration",
+              "version": 1,
+              "name": "一份干粮",
+              "description": "从干粮袋里领的一份干粮，能带在身上，自己吃或者喂给身边的人。",
+              "portable": true,
+              "stack_limit": 3,
+              "actions": [
+                {
+                  "id": "eat",
+                  "label": "吃一份干粮",
+                  "duration_minutes": 5,
+                  "completion": "activity",
+                  "consumes_item": true,
+                  "recipient": true,
+                  "on_complete": [
+                    {
+                      "kind": "restore",
+                      "need": "fullness",
+                      "amount": 25.0
+                    }
+                  ]
+                }
+              ]
+            },
+            "count": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "core:island-ration",
+    "version": 1,
+    "name": "一份干粮",
+    "description": "从干粮袋里领的一份干粮，能带在身上，自己吃或者喂给身边的人。",
+    "portable": true,
+    "stack_limit": 3,
+    "actions": [
+      {
+        "id": "eat",
+        "label": "吃一份干粮",
+        "duration_minutes": 5,
+        "completion": "activity",
+        "consumes_item": true,
+        "recipient": true,
+        "on_complete": [
+          {
+            "kind": "restore",
+            "need": "fullness",
+            "amount": 25.0
+          }
+        ]
+      }
+    ]
+  },
+  {
     "id": "core:book-12",
     "version": 1,
     "name": "末日之战纪实",

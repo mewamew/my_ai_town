@@ -30,6 +30,9 @@ type Waiter = { match: (m: ServerMsg) => unknown; resolve: (v: unknown) => void 
 /** 固定种子时输入框里先填的数 */
 const DEFAULT_SEED = 51
 
+/** 室外行走空间的编号（host 编译地图时定的），开局道具按坐标放时用 */
+const OUTDOOR_SPACE = 'town_outdoor'
+
 const ALL_OFF: PhysiologySwitches = {
   fullness: false,
   energy: false,
@@ -326,12 +329,13 @@ export function createPrefabSetup(d: {
         world_id,
         id,
       })).catch(() => undefined)
-    for (const { id, definition, locale } of f.place)
+    for (const { id, definition, locale, near } of f.place)
       await propCommand((world_id, request_id) => ({
         type: 'place_prop',
         request_id,
         world_id,
         instance: { id, definition, locale },
+        ...(near && { near: { space: OUTDOOR_SPACE, position: near } }),
       }))
   }
 

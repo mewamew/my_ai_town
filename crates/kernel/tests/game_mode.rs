@@ -198,7 +198,9 @@ fn tide_rings_shrink_onto_the_high_ground_and_drain_whoever_stands_in_water() {
         };
         assert_eq!((v.phase, v.ring), expected);
         assert!(dist(v.edge.center, previous.center) + v.edge.radius <= previous.radius + 1e-6);
-        assert!(dist(v.edge.center, GOAL) <= v.edge.radius);
+        // 终点一带（14 米，圈小时四分之三个半径）一直在圈里：圈心离终点不远于剩下的那点
+        let slack = (v.edge.radius - 14.0).max(v.edge.radius * 0.25);
+        assert!(dist(v.edge.center, GOAL) <= slack + 1e-6);
         previous = v.edge;
         if k == 1 {
             let Some(GameModeContext::Tide(context)) = w.game_mode_context("a") else {
@@ -231,6 +233,47 @@ fn tide_rings_shrink_onto_the_high_ground_and_drain_whoever_stands_in_water() {
         panic!("开着潮水圈时乙的模型该看到潮水这一栏");
     };
     assert!(context.standing.unwrap().starts_with("你站在潮水里"));
+
+    // 乙在水里的棚子上睡觉：几分钟内就被泡醒，通知里写着往哪边走能回到圈里
+    let hut: kernel::props::Definition = serde_json::from_value(json!({
+        "id":"core:island-shelter","version":1,"name":"棚子","shelter":true,
+        "actions":[{"id":"sleep","label":"在棚子里睡觉","duration_minutes":480,"completion":"sleep","rest":true}]
+    }))
+    .unwrap();
+    w.place_prop_near(
+        serde_json::from_value(json!({
+            "instance":{"id":"hut","definition":hut.reference(),"locale":"loc_b"},
+            "definition":hut
+        }))
+        .unwrap(),
+        Some(&protocol::PlaceNear {
+            space: "town_outdoor".into(),
+            position: [36., 18.],
+        }),
+    )
+    .unwrap();
+    common::run(
+        &mut w,
+        "b",
+        "nap",
+        json!({"prop_id":"hut","intent":{"verb":"在棚子里睡觉"}}),
+    )
+    .unwrap();
+    w.step(10.0);
+    assert_eq!(
+        w.action_group("b", "nap").unwrap().status,
+        GroupStatus::Interrupted
+    );
+    let woken = w
+        .actor("b")
+        .unwrap()
+        .journal
+        .events_after(0)
+        .iter()
+        .any(|e| {
+            e.kind == FactKind::Notice && e.text.contains("潮水漫上来，把你泡醒了：你站在潮水里")
+        });
+    assert!(woken, "乙该被泡醒");
 
     // 没人去登船，第 4 天 18:00 水漫过全岛，船带走离它最近的甲。
     let events = w.step(3.0 * DAY + 18.0 * HOUR - w.minutes());

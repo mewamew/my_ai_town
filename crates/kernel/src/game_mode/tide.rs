@@ -1,12 +1,14 @@
 //! 潮水圈：大逃杀式的缩圈，只有一个人能活着离开。
 //! 打开后从下一个天亮起收圈，五圈三天收完（时间表见 `PACE`）：头一天 06:00 公布第 1 圈，12:00 开始涨，
 //! 18:00 涨到；后两天每天两圈，06:00 公布、08:00 到 12:00 涨，12:00 公布、14:00 到 18:00 涨。圈外的地
-//! 被水盖住。圈从整座岛的外接圆开始，按种子一圈圈缩小：每一圈都落在上一圈里、都包住终点（全岛最高处），
-//! 最后一圈缩到终点上，傍晚水漫过全岛。人在不在水里只看行走地图上的坐标，不按地点。
+//! 被水盖住。圈从整座岛的外接圆开始，按种子一圈圈缩小：每一圈都落在上一圈里、都把终点（全岛最高处）
+//! 周围一带包在里面（见 `HAVEN`），最后一圈缩到终点上，傍晚水漫过全岛。人在不在水里只看行走地图上的坐标，
+//! 不按地点。水淹到正在睡觉、躲雨、歇着的人，就把他泡醒：打断手上的事，告诉他往哪边走能回到圈里。
 //!
 //! 输赢：打开时在岛上的人是这一局的选手，开局每人口袋里一张纸条写明规则和每一圈的钟点。最后一圈公布时，
-//! 终点停一条船，只坐得下一个人，谁先登上去（道具动作「登船」，离开这个世界）谁赢；拖到这一圈涨完没人
-//! 登船，船带走离它最近的那个人。在那之前只剩一个人活着，船就提前来接。一个人也没剩下就没有赢家。
+//! 终点一带离终点最近的空位停一条船，只坐得下一个人，谁先登上去（道具动作「登船」，离开这个世界）谁赢；
+//! 拖到这一圈涨完没人登船，船带走离它最近的那个人。在那之前只剩一个人活着，船就提前来接。一个人也没剩下
+//! 就没有赢家。
 //! 第 1 到第 3 圈公布时，潮水往新圈里冲上来一只木箱：一把菜刀、一个急救包、一包压缩饼干各一箱；
 //! 菜刀在前两箱里，其余顺序按种子定。每一圈公布时的公告和题面都写着还剩谁。
 //! 有人对人动手、有人倒下、箱子和船都记进战报，名册里给画面看。
@@ -17,8 +19,8 @@ use super::Rules;
 use crate::actor::Actor;
 use crate::avatar::WalkMap;
 use crate::error::{KernelError, Result};
-use crate::physiology::{note, Rates, Trace};
-use crate::props::{Definition, Instance, Need, Placement};
+use crate::physiology::{body_spot, note, Rates, Trace};
+use crate::props::{Completion, Definition, Instance, Need, Placement};
 use crate::{World, DAY};
 use protocol::{
     BodyConditionKind, EventInfo, FactKind, GameModeContext, GameModeView, PlaceNear, TideCircle,
@@ -32,6 +34,11 @@ use std::f64::consts::TAU;
 /// 三成多、不到两成、约半成的陆地；最后一圈缩成一点（终点）。岛不是圆的，按外接圆算会让头一圈
 /// 几乎淹不到什么。
 const SHRINK: [f64; 5] = [0.8, 0.6, 0.42, 0.24, 0.0];
+/// 终点一带（米）：最后一圈之前，每一圈都把终点周围这么远包在里面，摆在这一带的棚子、水和最后来的船
+/// 熬得到最后一圈。第四局圈心随机落到离终点 15 米处，第 3 圈涨到后八处躲雨处全在圈外，第 4 圈里一件东西
+/// 也没有，船的登船位在水里。大逃杀荒岛的终点夹在两个地点中间，离它最近的空位在 9.5–13 米。
+/// 圈小到包不下时，至少包住终点周围四分之三个半径。
+const HAVEN: f64 = 14.0;
 /// 每一圈的时间表：第 1 圈公布那天之后的第几天，当天几点公布、开始涨、涨到（当天第几分钟）。
 /// 第 1 圈占一整天；后两天每天两圈，上午一圈、下午一圈；最后一圈中午公布、船跟着来，傍晚水漫过全岛。
 /// 第 1 圈在第 2 天时，第 4 天傍晚收完（第三局照每天一圈要打满 6 天，最后两圈还没到，人就病垮了）。
@@ -69,8 +76,9 @@ const FIRST_AID: &str = r#"{"id":"tide:first-aid","version":1,"name":"急救包"
    "on_complete":[{"kind":"cure_condition","condition":"illness"}]},
   {"id":"injury","label":"用急救包包扎","duration_minutes":5,"completion":"activity","consumes_item":true,"recipient":true,
    "on_complete":[{"kind":"cure_condition","condition":"injury"},{"kind":"restore","need":"health","amount":20.0}]}]}"#;
-const BISCUITS: &str = r#"{"id":"tide:biscuits","version":1,"name":"压缩饼干","description":"油纸包着的压缩饼干，一块顶一顿。","portable":true,"stack_limit":5,
- "actions":[{"id":"eat","label":"吃压缩饼干","duration_minutes":5,"completion":"activity","consumes_item":true,
+/// 第 2 版能喂给身边的人：第四局苏蔓、程默在营地饿倒，身边的人拿着饼干也喂不了。
+const BISCUITS: &str = r#"{"id":"tide:biscuits","version":2,"name":"压缩饼干","description":"油纸包着的压缩饼干，一块顶一顿，能带在身上，自己吃或者喂给身边的人。","portable":true,"stack_limit":5,
+ "actions":[{"id":"eat","label":"吃压缩饼干","duration_minutes":5,"completion":"activity","consumes_item":true,"recipient":true,
   "on_complete":[{"kind":"restore","need":"fullness","amount":35.0}]}]}"#;
 /// 船沿用道具库里救援小船的图：画面按编号后半段找图。
 const BOAT: &str = r#"{"id":"tide:island-rescue-boat","version":1,"name":"来接人的船","description":"最后一天靠岸的小船，只坐得下一个人。谁先登上去，船就带谁走。",
@@ -304,21 +312,23 @@ impl Tide {
                 });
                 continue;
             }
-            // 新圈在上一圈里随机落位，要包住终点、圆心落在陆地上；抽不中就朝终点平移到刚好包住。
+            // 新圈在上一圈里随机落位，圆心离终点不超过 slack（终点一带都在圈里）、落在陆地上；
+            // 抽不中就朝终点平移到刚好够近。
             let room = prev.radius - radius;
+            let slack = (radius - HAVEN).max(radius * 0.25).min(radius * 0.92);
             let mut center = None;
             for _ in 0..400 {
                 let a = roll(&mut dice) * TAU;
                 let d = roll(&mut dice).sqrt() * room;
                 let p = [prev.center[0] + a.cos() * d, prev.center[1] + a.sin() * d];
-                if dist(p, goal) <= radius * 0.92 && on_land(map, p) {
+                if dist(p, goal) <= slack && on_land(map, p) {
                     center = Some(p);
                     break;
                 }
             }
             let center = center.unwrap_or_else(|| {
                 let gap = dist(prev.center, goal);
-                let d = (gap - radius).clamp(0.0, room);
+                let d = (gap - slack).clamp(0.0, room);
                 if gap <= 1e-9 {
                     prev.center
                 } else {
@@ -459,6 +469,23 @@ impl Tide {
         let edge = self.shape(world.minutes()).edge;
         let d = dist(outdoor_point(world, a)?, edge.center) - edge.radius;
         (d > 0.0).then_some(d)
+    }
+
+    /// 站在水里的人此刻做的事该不该被泡醒：睡觉、在遮蔽处躲雨、歇着的要醒，返回打断的说法；
+    /// 走路、登船、干活不打断，倒下动不了的人醒了也走不开。
+    fn soaked(world: &World, a: &Actor) -> Option<&'static str> {
+        if a.needs.incapacitated() {
+            return None;
+        }
+        let spot = body_spot(world, a)?;
+        let action = spot.action.as_ref();
+        if action.is_some_and(|x| x.completion == Completion::Sleep) {
+            Some("潮水漫上来，把你泡醒了")
+        } else if world.is_shelter(&spot.prop) || action.is_some_and(|x| x.rest) {
+            Some("潮水漫了上来，这里待不住了")
+        } else {
+            None
+        }
     }
 
     /// 圈心一带叫什么：离圆心最近的落脚点所在的地点。
@@ -616,26 +643,58 @@ impl Tide {
         world.log(EventInfo::default(), text.to_string());
     }
 
-    /// 在离 p 最近的地点里、靠近 p 的空位放一件道具；放不下就算了。返回地点名。
+    /// 在 p 附近放一件道具；放不下就算了。返回地点名。离 p 最近的几个户外地点各试放一次，挑用它的人
+    /// 站的位置离 p 最近的那处：终点常夹在两个地点中间（这座岛在东岬和椰林之间），只看哪个地点的落脚点
+    /// 最近，第四局的船停到了东岬离终点 9.5 米的一角，登船位在第 4 圈外。没有空间地图试放不了时，
+    /// 放进落脚点离 p 最近的地点。
     fn drop_near(world: &mut World, id: &str, def: Definition, p: [f64; 2]) -> Option<String> {
-        let (locale, name) = locale_near(world, p)?;
-        let space = world.walk_map.as_ref()?.outdoor_space.clone();
-        let placement = Placement {
+        let map = world.walk_map.clone()?;
+        let near = PlaceNear {
+            space: map.outdoor_space.clone(),
+            position: p,
+        };
+        let mut locales: Vec<(&String, f64)> = Vec::new();
+        for s in map
+            .stations
+            .values()
+            .filter(|s| s.space == map.outdoor_space)
+        {
+            let d = dist(s.position, p);
+            match locales.iter_mut().find(|(l, _)| **l == s.locale) {
+                Some(best) => best.1 = best.1.min(d),
+                None => locales.push((&s.locale, d)),
+            }
+        }
+        locales.sort_by(|a, b| a.1.total_cmp(&b.1));
+        let placement = |locale: &str| Placement {
             instance: Instance {
                 id: id.into(),
                 definition: def.reference(),
-                locale,
+                locale: locale.into(),
                 name: None,
                 board: None,
             },
-            definition: def,
+            definition: def.clone(),
         };
-        let near = PlaceNear { space, position: p };
+        let tried = locales.iter().take(3).filter_map(|(locale, _)| {
+            let spot = world
+                .preview_placement(&placement(locale), Some(&near))
+                .ok()??;
+            Some((
+                locale.to_string(),
+                dist([spot.anchor[0], spot.anchor[2]], p),
+            ))
+        });
+        let locale = match tried.min_by(|a, b| a.1.total_cmp(&b.1)) {
+            Some((locale, _)) => locale,
+            None => locale_near(world, p)?.0,
+        };
+        let placement = placement(&locale);
         world
             .place_prop_near(placement.clone(), Some(&near))
             .or_else(|_| world.place_prop(placement))
             .ok()
-            .map(|()| name)
+            .map(|()| world.topo.locale_name(&locale))
     }
 
     /// 第 k 圈公布时冲上来的木箱：菜刀在前两箱里的哪一箱、急救包和压缩饼干谁先，按种子定。
@@ -854,16 +913,19 @@ impl Rules for Tide {
         }
         let mut wading = BTreeSet::new();
         let mut caught = Vec::new();
+        let mut woken = Vec::new();
         for (id, a) in &world.actors {
-            if a.is_avatar() || !a.present() || a.needs.body.dead {
+            if a.is_avatar() || !a.present() || a.needs.body.dead || self.depth(world, a).is_none()
+            {
                 continue;
             }
-            if self.depth(world, a).is_some() {
-                wading.insert(id.clone());
-                if !self.wading.contains(id) {
-                    if let Some(text) = self.standing(world, a) {
-                        caught.push((id.clone(), text));
-                    }
+            wading.insert(id.clone());
+            let text = self.standing(world, a);
+            if let Some(why) = Self::soaked(world, a) {
+                woken.push((id.clone(), why, text));
+            } else if !self.wading.contains(id) {
+                if let Some(text) = text {
+                    caught.push((id.clone(), text));
                 }
             }
         }
@@ -877,6 +939,13 @@ impl Rules for Tide {
                 None,
                 None,
             );
+        }
+        // 泡醒：打断手上的事，通知里写往哪边走能回到圈里。第四局睡着的人被水泡着也不醒，梁婆一个人在水里
+        // 泡了 3.7 小时，着凉 37 次里 33 次和潮水有关。在水里接着睡、接着躲，下一次结算又会被泡醒。
+        for (id, why, text) in woken {
+            world.interrupt_actions(&id, why);
+            let text = text.map_or_else(|| why.to_string(), |t| format!("{why}：{t}"));
+            world.notify(&id, text);
         }
         self.check_players(world, &object);
     }

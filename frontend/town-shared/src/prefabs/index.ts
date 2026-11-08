@@ -52,11 +52,13 @@ export interface Prefab {
  *  入住后换上（只换这位居民的，不回写村民库） */
 export type PrefabPersona = Omit<TemplateFields, 'appearance'> & { look?: VillagerLook }
 
-/** 开局时放的一件道具：实例编号（和玩家放的一样带 user: 前缀）、定义（编号@版本）、放在哪个地点 */
+/** 开局时放的一件道具：实例编号（和玩家放的一样带 user: 前缀）、定义（编号@版本）、放在哪个地点；
+ *  near 是室外的行走坐标（米），放在这个地点里离它最近的空位，不写由放置器自己挑 */
 export interface PrefabProp {
   id: string
   definition: string
   locale: string
+  near?: [number, number]
 }
 
 /** 开局设置里的一行分段选择；可以有一个取值要另填种子 */

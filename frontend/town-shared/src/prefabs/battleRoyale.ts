@@ -5,10 +5,13 @@ import { seedOption, type Prefab, type PrefabPersona, type PrefabProp } from '.'
 // 选手是为这座岛写的八个人：目标一样（活下去），肯做到哪一步、牵挂和旧识不一样；长相借村民库里年纪、
 // 性别相近的模板，人设不进村民库。
 // 岛上的东西开局重新布置：建镇生成器每块空地放的床、干粮、水大多撤掉，吃喝集中到淡水泉和破码头，
-// 能躲雨、睡觉的地方只有椰林的三处棕榈棚、废墟的三间残墙石屋和营地的两处棚子，没有床（第三局营地
-// 两张床在露天，睡在那里的梁婆、阿布最先病倒）；淡水泉和东岬各一丛草药，每天天亮长回一把，药一直有
-// 但要抢（第三局两份草药用完就没了，生病 40 次只治好 3 次）；
+// 能躲雨、睡觉的地方只有椰林的三处棕榈棚、废墟的三间残墙石屋、营地的两处棚子和终点一带的两处棚子，
+// 没有床（第三局营地两张床在露天，睡在那里的梁婆、阿布最先病倒）；淡水泉和东岬各一丛草药，每天天亮
+// 长回一把，药一直有但要抢（第三局两份草药用完就没了，生病 40 次只治好 3 次）；
 // 淡水泉和码头各有一堆空竹筒，灌了水能带走、能喂给倒下的人（第二局有人倒下后谁也救不了）；
+// 码头的干粮袋能就地吃，每天也能领走几份，带着的干粮能喂给倒下的人（第四局苏蔓、程默在营地饿死）；
+// 终点（全岛最高处，潮水最后缩到的那一点，在东岬和椰林之间）一带放两处棚子和一桶水，潮水圈一直把
+// 这一带留在圈里：第四局第 3 圈涨到后八处躲雨处全在水里，第 4 圈里一件东西也没有。
 // 石块和木棍摆在明处，两把鱼叉藏着要搜（世界观里点了一句在码头和潮池）。菜刀不放，第 2 天起才可能
 // 随潮水冲上来的木箱出现。气候是热带：不下雪、雷暴少、淋雨湿得慢一半（第二局下了两场雪，四个人病死）。
 
@@ -146,6 +149,12 @@ const CAST: PrefabPersona[] = [
 const at = (locale: string, definition: string, ...ids: string[]): PrefabProp[] =>
   ids.map((id) => ({ id: `user:br-${id}`, definition, locale }))
 
+/** 全岛最高处（行走坐标，米）：潮水最后缩到这一点，船也停在这一带。建镇参数固定，每局的岛都一样，
+ *  这一点夹在东岬和椰林之间、不在哪个地点里；两处靠它那一侧多是入口和路，离它最近的空位在 9.5–13 米 */
+const SUMMIT: [number, number] = [108, 53.8]
+const summit = (locale: string, definition: string, ...ids: string[]): PrefabProp[] =>
+  at(locale, definition, ...ids).map((p) => ({ ...p, near: SUMMIT }))
+
 export const battleRoyale: Prefab = {
   id: 'battle-royale',
   name: '大逃杀荒岛',
@@ -247,10 +256,14 @@ export const battleRoyale: Prefab = {
       ),
       ...at('park_1', 'core:island-palms@2', 'palms'),
       ...at('temple_1', 'core:island-stone-hut@1', 'stone-hut-1', 'stone-hut-2', 'stone-hut-3'),
-      ...at('harbor_1', 'core:rations@2', 'rations'),
+      ...at('harbor_1', 'core:island-ration-sack@1', 'rations'),
       ...at('harbor_1', 'core:drinking_water@1', 'water'),
       ...at('harbor_1', 'core:island-bamboo@1', 'bamboo-2'),
       ...at('harbor_1', 'core:island-harpoon@1', 'harpoon-2'),
+      // 东岬只放一处：它离终点第二近的空位留给最后一天来的船（离终点约 10 米，再远就可能出第 4 圈）
+      ...summit('area_6', 'core:island-shelter@1', 'summit-shelter-1'),
+      ...summit('park_1', 'core:island-shelter@1', 'summit-shelter-2'),
+      ...summit('park_1', 'core:drinking_water@1', 'summit-water'),
     ],
   },
 }
