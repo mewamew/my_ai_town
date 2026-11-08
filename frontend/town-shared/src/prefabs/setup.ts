@@ -340,7 +340,7 @@ export function createPrefabSetup(d: {
     const request_id = newId()
     d.send({ type: 'set_agent_limits', request_id, limits: { ...current, ...limits } })
     const reply = await waitFor((m) =>
-      m.type === 'agent_saved' && m.request_id === request_id ? m : undefined
+      m.type === 'config_saved' && m.request_id === request_id ? m : undefined
     )
     if (!reply.ok) throw Error(reply.message)
   }

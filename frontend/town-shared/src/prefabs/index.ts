@@ -41,7 +41,7 @@ export interface Prefab {
 /** 预制小镇的选手人设：村民库模板的字段，长相不写（借 roster 里的模板） */
 export type PrefabPersona = Omit<TemplateFields, 'appearance'>
 
-/** 开局时放的一件道具：实例编号、定义（编号@版本）、放在哪个地点 */
+/** 开局时放的一件道具：实例编号（和玩家放的一样带 user: 前缀）、定义（编号@版本）、放在哪个地点 */
 export interface PrefabProp {
   id: string
   definition: string

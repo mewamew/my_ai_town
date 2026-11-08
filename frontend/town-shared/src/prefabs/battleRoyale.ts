@@ -138,9 +138,9 @@ const CAST: PrefabPersona[] = [
   }),
 ]
 
-/** 开局摆上的东西：编号前缀 br: */
+/** 开局摆上的东西：玩家放的道具编号要带 user: 前缀，这里再加 br- 认出是开局布置的 */
 const at = (locale: string, definition: string, ...ids: string[]): PrefabProp[] =>
-  ids.map((id) => ({ id: `br:${id}`, definition, locale }))
+  ids.map((id) => ({ id: `user:br-${id}`, definition, locale }))
 
 export const battleRoyale: Prefab = {
   id: 'battle-royale',
