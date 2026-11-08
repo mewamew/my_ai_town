@@ -636,12 +636,17 @@ export interface ReelView {
 /** 玩法：有自己的目标、时间表和输赢的一套规则，一个世界同时最多开一个 */
 export type GameModeId = GameModeView['kind']
 /** 名册里开着的玩法此刻的状态，按 kind 认出是哪个玩法 */
-export type GameModeView = ({ kind: 'tide' } & TideView) | ({ kind: 'werewolf' } & WerewolfView)
+export type GameModeView =
+  | ({ kind: 'tide' } & TideView)
+  | ({ kind: 'werewolf' } & WerewolfView)
+  | ({ kind: 'swordholder' } & SwordholderView)
 /** 打开哪个玩法、带什么设置；set_game_mode 不带它就是关掉 */
 export type GameModeChoice =
   | { kind: 'tide'; seed?: number }
   /** 狼人杀：seed 定下谁拿什么身份；day_hours 是白天自由活动几小时（天亮到 16:30 敲钟） */
   | { kind: 'werewolf'; seed?: number; day_hours?: number }
+  /** 执剑人之夜：seed 定下演说和表态的先后、平票时抽签；day_hours 是白天自由活动几小时（天亮到 16:30 敲钟） */
+  | { kind: 'swordholder'; seed?: number; day_hours?: number }
 
 /** 潮水圈里的一个圈：圆心和半径都是行走地图上的米（x 和地面上的 z） */
 export interface TideCircle {
@@ -737,6 +742,74 @@ export interface WerewolfView {
   night?: WerewolfNight
   dawn?: number[]
   winner?: WerewolfSide
+}
+
+/** 执剑人之夜的身份：按入住的号码，1 号现任执剑人，2、3 号候选人，4 号三体世界的代表，其余是选民 */
+export type SwordholderRole = 'holder' | 'candidate' | 'envoy' | 'voter'
+export type SwordholderPhase =
+  | 'waiting'
+  | 'day'
+  | 'gather'
+  | 'speech'
+  | 'vote'
+  | 'tiebreak'
+  | 'interval'
+  | 'handover'
+  | 'attack'
+  | 'aftermath'
+  | 'over'
+/** 结局：按下了（引力波广播发出），或没按、到点（威慑失败，天线被毁） */
+export type SwordholderEnding = 'broadcast' | 'failed'
+/** 一个座位；gone 是法官没经手就不在了（被人害死、饿死、离开） */
+export interface SwordholderSeat {
+  seat: number
+  id: string
+  name: string
+  role: SwordholderRole
+  gone?: boolean
+}
+/** 一段话：occasion 是场合（一句话、演说、表态、交接、宣布）；away 是说的时候人不在广场或联合国大厅，
+ *  reason 是交的时候写的打算（只给旁观的人看） */
+export interface SwordholderLine {
+  seat: number
+  occasion: string
+  text: string
+  at: number
+  away?: boolean
+  reason?: string
+}
+/** 一张票；没有 target 是弃票（亮票前也不给 target） */
+export interface SwordholderBallot {
+  voter: number
+  target?: number
+  reason?: string
+}
+/** 执剑人在水滴来袭时交的决定；到点没交就没有 */
+export interface SwordholderDecision {
+  seat: number
+  press: boolean
+  at: number
+  text?: string
+  reason?: string
+}
+/** 执剑人之夜（上帝视角）：座位和身份、轮到谁、说过的话、票、当选的人、此刻握着开关的人、
+ *  水滴来袭的倒计时（left，分钟）、执剑人的决定、结局，以及水滴要飞向的引力波天线（地点编号） */
+export interface SwordholderView {
+  phase: SwordholderPhase
+  seats: SwordholderSeat[]
+  notice: string
+  turn?: number
+  until?: number
+  left?: number
+  lines?: SwordholderLine[]
+  ballots?: SwordholderBallot[]
+  revealed?: boolean
+  elected?: number
+  appointed?: boolean
+  swordholder: number
+  decision?: SwordholderDecision
+  ending?: SwordholderEnding
+  antenna?: string
 }
 
 /** 摆道具界面画「哪里能放」用的一个地点的格子：后端放置器找空位时逐个试的那些格点（米）。

@@ -237,6 +237,21 @@ function waterGridOf(ground: Ground, outerWater: boolean) {
   return { cells, gw, gh, outerWater }
 }
 
+/** 按地点编号找它的地标落在哪儿：和 landmarkSprites 一样取地点格子的外框中心（场景的 x、z 就是地图坐标） */
+function landmarkSpot(atlas: Atlas) {
+  const regions = new Map(atlas.regions.map((r) => [r.id, r]))
+  return (locale: string) => {
+    const r = regions.get(locale)
+    if (!r?.cells.length) return null
+    const xs = r.cells.map(([x]) => x * r.cell_size),
+      ys = r.cells.map(([, y]) => y * r.cell_size)
+    return {
+      x: (Math.min(...xs) + Math.max(...xs) + r.cell_size) / 2,
+      z: (Math.min(...ys) + Math.max(...ys) + r.cell_size) / 2,
+    }
+  }
+}
+
 /** 一栋房子的窗和灯在入夜后什么时候亮（亮灯程度的门槛），按房子编号错开 */
 const houseLightsOn = (house: House) => 0.12 + hash(house.seed, 3, 11) * 0.62
 
@@ -463,6 +478,7 @@ export class HdScene {
     this.addPiers(ground, glowMap, seed)
     // 地标立牌和散落物先占地，剩下的空地再撒树、放微粒
     const open = this.placeStandees(atlas, ground, seed)
+    for (const look of this.looks) look.addToScene?.(this.scene, landmarkSpot(atlas))
     const clear = { width: ground.width, height: ground.height, open }
     this.addTrees(decor, clear, seed)
     this.addLamps(atlas, ground.wet, ground.width, glowMap)
@@ -664,6 +680,7 @@ export class HdScene {
     if (bolt && !this.bolt) this.villagers.startle()
     this.bolt = bolt
     if (weather.light) this.applyLight(false)
+    for (const look of this.looks) if (look.step?.(t / 1000)) changed = true
     changed ||= weather.changed || this.ambient
     this.ambient = false
     if (!this.reduceMotion.matches) {

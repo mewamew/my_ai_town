@@ -1,4 +1,4 @@
-//! 玩法：有自己的目标、时间表和输赢的一套规则（大逃杀的潮水圈、狼人杀……），一个世界同时最多开一个，随快照保存。
+//! 玩法：有自己的目标、时间表和输赢的一套规则（大逃杀的潮水圈、狼人杀、执剑人之夜……），一个世界同时最多开一个，随快照保存。
 //! 本体只在这几处接玩法，见 `Rules`：推进时间时要停下来结算的时刻和到点结算（simulation.rs）、
 //! 身体的额外消耗（physiology）、名册里的状态（projection.rs）、给模型看的一栏（agent 的观察）、
 //! 模型交选择用的玩法动作（agent 的 mode_action 工具）、世界走几倍速（host 的正常速度）、
@@ -7,6 +7,7 @@
 //!
 //! 加一个玩法：在这个目录写一个文件，实现 `Rules`；再在下面的 `GameMode`、`each!` 和
 //! `World::set_game_mode` 里各加一项，协议那边在 protocol 的 game_mode 里加对应的类型。
+mod swordholder;
 mod tide;
 mod werewolf;
 
@@ -62,6 +63,7 @@ trait Rules {
 pub enum GameMode {
     Tide(tide::Tide),
     Werewolf(werewolf::Werewolf),
+    Swordholder(swordholder::Swordholder),
 }
 
 /// 对开着的玩法调同一个 `Rules` 方法。
@@ -70,6 +72,7 @@ macro_rules! each {
         match $mode {
             GameMode::Tide($m) => $body,
             GameMode::Werewolf($m) => $body,
+            GameMode::Swordholder($m) => $body,
         }
     };
 }
@@ -94,6 +97,10 @@ impl World {
             (choice, &self.game_mode),
             (GameModeChoice::Tide { .. }, Some(GameMode::Tide(_)))
                 | (GameModeChoice::Werewolf { .. }, Some(GameMode::Werewolf(_)))
+                | (
+                    GameModeChoice::Swordholder { .. },
+                    Some(GameMode::Swordholder(_))
+                )
         );
         if same {
             return Ok(());
@@ -105,6 +112,9 @@ impl World {
             }
             GameModeChoice::Werewolf { seed, day_hours } => GameMode::Werewolf(
                 werewolf::Werewolf::open(self, seed.unwrap_or(1).max(1), *day_hours)?,
+            ),
+            GameModeChoice::Swordholder { seed, day_hours } => GameMode::Swordholder(
+                swordholder::Swordholder::open(self, seed.unwrap_or(1).max(1), *day_hours)?,
             ),
         };
         self.game_mode = Some(mode);

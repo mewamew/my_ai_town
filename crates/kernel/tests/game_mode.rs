@@ -7,8 +7,9 @@ use kernel::{
 };
 use protocol::{
     FactKind, GameModeAction, GameModeChoice, GameModeContext, GameModeView, GroupStatus,
-    PhysiologySwitches, TideCircle, TideNewsKind, TidePhase, TideView, WerewolfOut, WerewolfPhase,
-    WerewolfRole, WerewolfSide, WerewolfView,
+    PhysiologySwitches, SwordholderEnding, SwordholderPhase, SwordholderRole, SwordholderView,
+    TideCircle, TideNewsKind, TidePhase, TideView, WerewolfOut, WerewolfPhase, WerewolfRole,
+    WerewolfSide, WerewolfView,
 };
 use serde_json::json;
 use std::{collections::BTreeMap, sync::Arc};
@@ -637,4 +638,205 @@ fn werewolf_judge_runs_a_whole_game_through_turns_deadlines_and_a_reload() {
 
     w.set_game_mode(None).unwrap();
     no_trace(&w);
+}
+
+fn swordholder(w: &World) -> SwordholderView {
+    match w.game_mode_view() {
+        Some(GameModeView::Swordholder(v)) => v,
+        other => panic!("开着的该是执剑人之夜：{other:?}"),
+    }
+}
+
+/// 执剑人之夜走一整局：用给模型看的那一栏（swordholder.actions）当成模型，按固定打法交动作。
+/// press 时：一个选民表态超时、投票 2 比 2 平票由现任执剑人指定 3 号，交接后执剑人按下开关，三体代表说最后一段话，
+/// 投票中途存档读档；不按时：票多的 2 号当选，水滴来袭后执剑人一直不交（到点算没按），三体代表也不开口，法官替他宣布。
+fn play_swordholder(press: bool) {
+    let names = [
+        "罗辑", "程心", "维德", "智子", "艾AA", "老秦", "林朵", "白杨", "小庄",
+    ];
+    let ids: Vec<String> = (1..=9).map(|n| format!("r{n}")).collect();
+    let people: Vec<(&str, &str, &str)> = ids
+        .iter()
+        .zip(names)
+        .map(|(id, name)| (id.as_str(), name, "loc_a"))
+        .collect();
+    let fresh = || {
+        let mut w = common::world_with(common::tiny_topology(), 7.0 * HOUR, &people);
+        w.set_physiology(PhysiologySwitches {
+            fullness: false,
+            energy: false,
+            water: false,
+            health: false,
+            weather: false,
+        });
+        w
+    };
+    let mut w = fresh();
+    // 人不够开不了，原来的世界不受影响
+    let mut few = common::world_with(common::tiny_topology(), 7.0 * HOUR, &people[..5]);
+    assert!(few
+        .set_game_mode(Some(&GameModeChoice::Swordholder {
+            seed: Some(3),
+            day_hours: None
+        }))
+        .is_err());
+    assert!(few.game_mode().is_none());
+
+    w.set_game_mode(Some(&GameModeChoice::Swordholder {
+        seed: Some(5),
+        day_hours: Some(8),
+    }))
+    .unwrap();
+    assert_eq!(w.game_mode(), Some("swordholder"));
+    let v = swordholder(&w);
+    let roles: Vec<SwordholderRole> = v.seats.iter().map(|s| s.role).collect();
+    use SwordholderRole::*;
+    assert_eq!(
+        roles,
+        [Holder, Candidate, Candidate, Envoy, Voter, Voter, Voter, Voter, Voter]
+    );
+    assert_eq!((v.phase, v.swordholder), (SwordholderPhase::Waiting, 1));
+    // 开局前就有玩法动作工具（整局工具表不变），但没有要交的；空档走快一点
+    assert!(w.game_mode_tool("r5").unwrap().contains("press"));
+    assert_eq!(w.game_mode_tempo(), 3.0);
+    // 08:30 天亮：每人单独收到自己的座号和身份
+    w.step(1.6 * HOUR);
+    assert_eq!(swordholder(&w).phase, SwordholderPhase::Day);
+    for id in &ids {
+        let told = w
+            .actor(id)
+            .unwrap()
+            .journal
+            .events_after(0)
+            .iter()
+            .any(|e| e.kind == FactKind::Notice && e.text.contains("身份是"));
+        assert!(told, "{id} 没收到身份");
+    }
+
+    let id_of = |seat: u32| ids[seat as usize - 1].clone();
+    let mut skipped = false;
+    let mut reloaded = false;
+    let mut logged = vec![];
+    for _ in 0..3000 {
+        logged.extend(w.take_events());
+        let v = swordholder(&w);
+        if v.phase == SwordholderPhase::Over {
+            break;
+        }
+        // 有期限的回合照常速
+        if v.phase == SwordholderPhase::Speech {
+            assert_eq!(w.game_mode_tempo(), 1.0);
+        }
+        // 第三个表态的选民不交，到点跳过
+        if press && v.phase == SwordholderPhase::Speech && v.lines.len() == 5 && !skipped {
+            skipped = true;
+            let silent = v.turn.unwrap();
+            assert_eq!(v.seats[silent as usize - 1].role, Voter);
+            w.step(16.0);
+            let after = swordholder(&w);
+            assert_ne!(after.turn, Some(silent));
+            assert_eq!(after.lines.len(), 5);
+            continue;
+        }
+        // 投票交了两张时存档，读进一个新世界接着走；亮票前看不到票投给了谁
+        if press && v.phase == SwordholderPhase::Vote && v.ballots.len() == 2 && !reloaded {
+            reloaded = true;
+            assert!(v.ballots.iter().all(|b| b.target.is_none()));
+            w = common::restore(&w, fresh());
+            assert_eq!(swordholder(&w), v);
+        }
+        let mut acted = false;
+        for seat in 1..=9u32 {
+            let id = id_of(seat);
+            let Some(GameModeContext::Swordholder(c)) = w.game_mode_context(&id) else {
+                continue;
+            };
+            let Some(first) = c.actions.first().cloned() else {
+                continue;
+            };
+            match first.as_str() {
+                "speak" if press || v.phase != SwordholderPhase::Aftermath => {
+                    mode_act(&mut w, &id, "speak", None, Some("我想说几句。"))
+                }
+                "vote" => {
+                    // press 时 5、6 号投 2 号，7、8 号投 3 号，9 号弃票：平票；不按时都投 2 号
+                    let target = match seat {
+                        _ if !press => Some(2),
+                        5 | 6 => Some(2),
+                        7 | 8 => Some(3),
+                        _ => None,
+                    };
+                    let action = if target.is_some() { "vote" } else { "abstain" };
+                    mode_act(&mut w, &id, action, target, None);
+                }
+                "appoint" => mode_act(&mut w, &id, "appoint", Some(3), None),
+                "press" if press => mode_act(&mut w, &id, "press", None, Some("按下。")),
+                // 执剑人一直不交，到点算没按；三体代表也不开口
+                _ => {
+                    w.step(5.0);
+                }
+            }
+            acted = true;
+            break;
+        }
+        if !acted {
+            w.step(5.0);
+        }
+    }
+    logged.extend(w.take_events());
+    let v = swordholder(&w);
+    assert_eq!(v.phase, SwordholderPhase::Over);
+    let history = match w.game_mode_context("r5") {
+        Some(GameModeContext::Swordholder(c)) => c.history,
+        other => panic!("{other:?}"),
+    };
+    let occasions: std::collections::BTreeSet<String> =
+        v.lines.iter().map(|l| l.occasion.clone()).collect();
+    if press {
+        assert!(skipped && reloaded);
+        assert_eq!((v.elected, v.appointed, v.swordholder), (Some(3), true, 3));
+        assert!(history.iter().any(|h| h.contains("平票")), "{history:?}");
+        let d = v.decision.as_ref().expect("执剑人交了决定");
+        assert_eq!((d.seat, d.press), (3, true));
+        assert!(d
+            .reason
+            .as_deref()
+            .is_some_and(|r| r.ends_with("心里这么想")));
+        assert_eq!(v.ending, Some(SwordholderEnding::Broadcast));
+        for occasion in ["一句话", "演说", "表态", "交接", "宣布"] {
+            assert!(occasions.contains(occasion), "{occasions:?}");
+        }
+        // 亮票后票型和理由都给旁观的人看
+        assert_eq!(v.ballots.len(), 5);
+        assert!(v.ballots.iter().any(|b| b.target == Some(3)));
+    } else {
+        assert_eq!((v.elected, v.appointed, v.swordholder), (Some(2), false, 2));
+        assert!(v.decision.is_none());
+        assert_eq!(v.ending, Some(SwordholderEnding::Failed));
+        assert!(!occasions.contains("宣布"));
+        assert!(
+            history.iter().any(|h| h.contains("迁往澳大利亚")),
+            "{history:?}"
+        );
+    }
+    // 说过的话写进日志时都带着「一段话」：发言人、座号、场合和原话
+    let spoken = logged
+        .iter()
+        .filter(|Event::Log { info, .. }| info.speech.is_some())
+        .count();
+    assert_eq!(spoken, v.lines.len());
+    // 一局结束：没有玩法动作工具了，世界照常走；关掉后存档和名册里没有玩法的痕迹
+    assert!(w.game_mode_tool("r3").is_none());
+    w.set_game_mode(None).unwrap();
+    no_trace(&w);
+}
+
+#[test]
+fn swordholder_night_elects_hands_over_and_ends_when_the_switch_is_pressed() {
+    play_swordholder(true);
+}
+
+#[test]
+fn swordholder_night_fails_when_the_swordholder_never_presses() {
+    play_swordholder(false);
 }

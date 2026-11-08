@@ -1,0 +1,404 @@
+/* 执剑人之夜的界面层（gameModes/swordholder.ts）：浮在地图上，白底、浅色细边、柔和投影，不接点击。
+   水滴来袭时横幅变成红色警报，底下的卡片换成开关卡；结局卡在正中，等撞击那几秒过后浮出来。 */
+.sh-hud {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  font-family: var(--font-ui);
+  color: var(--text);
+}
+.sh-hud[hidden] {
+  display: none;
+}
+.sh-px {
+  display: block;
+  flex: none;
+  image-rendering: pixelated;
+}
+.sh-banner,
+.sh-seats,
+.sh-stage,
+.sh-board,
+.sh-ending {
+  position: absolute;
+  background: var(--surface);
+  border: 1px solid rgb(31 36 33 / 0.1);
+  box-shadow: 0 2px 8px rgb(20 24 22 / 0.16);
+}
+.sh-face {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--surface-sunken);
+  font-size: 12px;
+}
+.sh-face img {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+.sh-role {
+  padding: 0 7px;
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.sh-role.holder {
+  background: #f6ead0;
+  color: #8a6418;
+}
+.sh-role.candidate {
+  background: #e3ebf8;
+  color: #2d4f92;
+}
+.sh-role.envoy {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* ---------- 横幅 ---------- */
+.sh-banner {
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 18px 4px 6px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+.sh-banner b {
+  font-size: 16px;
+  letter-spacing: 0.02em;
+}
+.sh-banner span {
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.sh-banner.alarm {
+  background: #d23a3a;
+  border-color: transparent;
+  color: #fff;
+}
+.sh-banner.alarm span {
+  border-left-color: rgb(255 255 255 / 0.35);
+  color: #ffe0e0;
+  font-weight: 700;
+}
+
+/* ---------- 名单 ---------- */
+.sh-seats {
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  min-width: 196px;
+  padding: 6px 8px;
+  border-radius: var(--r-m);
+}
+.sh-seat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 6px 0 4px;
+  border-radius: var(--r-s);
+  font-size: 13px;
+}
+.sh-seat.turn {
+  background: var(--ok-soft);
+  box-shadow: inset 0 0 0 2px var(--ok);
+}
+.sh-seat.gone {
+  opacity: 0.45;
+}
+.sh-seat.gone b {
+  text-decoration: line-through;
+}
+.sh-seat > .sh-px,
+.sh-state {
+  margin-left: auto;
+}
+.sh-state {
+  padding-left: 6px;
+  font-size: 11px;
+  font-style: normal;
+  color: var(--text-3);
+}
+.sh-state.ok {
+  color: var(--ok);
+}
+
+/* ---------- 刚说的话 / 开关卡 ---------- */
+.sh-stage {
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  width: min(720px, calc(100% - 580px));
+  min-width: 320px;
+  padding: 12px 16px 14px;
+  border-radius: var(--r-m);
+}
+/* 重演拍素材时底下没有事件条，卡片贴近底边 */
+body.replay-clean .sh-stage {
+  bottom: 20px;
+}
+.sh-stage-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+.sh-stage-head em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.sh-stage p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+.sh-stage.long p {
+  font-size: 14px;
+  line-height: 1.55;
+}
+/* 「心里」：交的时候写的打算，只给旁观的人看 */
+.sh-mind {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: start;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-2);
+  text-align: left;
+}
+.sh-mind b {
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.sh-next {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.sh-next.alone {
+  margin-top: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.sh-dots {
+  letter-spacing: 2px;
+  color: var(--ok);
+}
+.sh-switch {
+  box-shadow:
+    inset 0 0 0 2px #d23a3a,
+    0 2px 8px rgb(20 24 22 / 0.16);
+}
+.sh-switch .sh-dots {
+  color: #d23a3a;
+}
+.sh-clock {
+  font-size: 22px !important;
+  font-weight: 700;
+  color: #d23a3a !important;
+  font-variant-numeric: tabular-nums;
+}
+.sh-options {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.sh-options span {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 0;
+  border-radius: var(--r-s);
+  border: 1px solid var(--line);
+  font-size: 14px;
+  font-weight: 700;
+}
+.sh-options .press {
+  background: #d23a3a;
+  border-color: transparent;
+  color: #fff;
+}
+.sh-options .hold {
+  color: var(--text-2);
+}
+
+/* ---------- 右边：票型 ---------- */
+.sh-board {
+  right: 14px;
+  top: 70px;
+  width: 272px;
+  max-height: calc(100% - 200px);
+  overflow: hidden;
+  padding: 10px 14px 12px;
+  border-radius: var(--r-m);
+  font-size: 13px;
+}
+.sh-board h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+.sh-tally {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1px 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.sh-tally small {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.sh-tally.top b,
+.sh-tally.top span {
+  color: #2d4f92;
+}
+.sh-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.sh-note.strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.sh-reasons {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+.sh-reason {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.sh-reason span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---------- 正中：结局卡 ---------- */
+.sh-ending {
+  top: 30%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: min(440px, calc(100% - 32px));
+  padding: 18px 26px 16px;
+  border-radius: var(--r-l, 16px);
+  text-align: center;
+  animation: sh-rise 0.6s ease-out both;
+}
+.sh-ending > b {
+  font-size: 24px;
+  letter-spacing: 0.06em;
+  color: #2d4f92;
+}
+.sh-ending.failed > b {
+  color: #d23a3a;
+}
+.sh-ending small {
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.sh-quote {
+  margin: 4px 0 0;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.sh-ending .sh-mind {
+  width: 100%;
+}
+@keyframes sh-rise {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -42%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* ---------- 窄屏：名单缩成一行头像，票型不放 ---------- */
+@media (max-width: 760px) {
+  .sh-seats {
+    top: 62px;
+    left: 50%;
+    transform: translateX(-50%);
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    min-width: 0;
+    max-width: calc(100% - 24px);
+    padding: 6px;
+  }
+  .sh-seat {
+    padding: 0 3px;
+  }
+  .sh-seat b,
+  .sh-seat .sh-role,
+  .sh-state {
+    display: none;
+  }
+  .sh-stage {
+    width: calc(100% - 24px);
+    min-width: 0;
+  }
+  .sh-board {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sh-ending {
+    animation: none;
+  }
+}

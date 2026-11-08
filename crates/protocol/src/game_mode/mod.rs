@@ -1,9 +1,14 @@
-//! 玩法（大逃杀的潮水圈、狼人杀……）在线上的形状。一个世界同时最多开一个玩法；没开时名册、设定里都没有
+//! 玩法（大逃杀的潮水圈、狼人杀、执剑人之夜……）在线上的形状。一个世界同时最多开一个玩法；没开时名册、设定里都没有
 //! 玩法的字段，给模型的观察里也没有那一栏。加一个玩法：在这个目录写它自己的类型，再在下面三个枚举里
 //! 各加一项（内核那边见 kernel 的 game_mode）。
+mod swordholder;
 mod tide;
 mod werewolf;
 
+pub use swordholder::{
+    SwordholderBallot, SwordholderContext, SwordholderDecision, SwordholderEnding, SwordholderLine,
+    SwordholderPhase, SwordholderRole, SwordholderSeat, SwordholderView,
+};
 pub use tide::{TideCircle, TideContext, TideNews, TideNewsKind, TidePhase, TidePlayer, TideView};
 pub use werewolf::{
     WerewolfBallot, WerewolfCheck, WerewolfContext, WerewolfLine, WerewolfNight, WerewolfOut,
@@ -18,6 +23,7 @@ use serde::{Deserialize, Serialize};
 pub enum GameModeView {
     Tide(TideView),
     Werewolf(WerewolfView),
+    Swordholder(SwordholderView),
 }
 
 /// 打开哪个玩法、带什么设置；SetGameMode 不带它就是关掉。
@@ -36,6 +42,14 @@ pub enum GameModeChoice {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         day_hours: Option<u32>,
     },
+    /// 执剑人之夜：seed 定下两位候选人演说和选民表态的先后、平票时抽签；
+    /// day_hours 是白天自由活动几小时（天亮到 16:30 敲钟）
+    Swordholder {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        seed: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        day_hours: Option<u32>,
+    },
 }
 
 /// 给模型看的一栏：观察里的键名是 `key()`，值就是这一项本身。
@@ -44,6 +58,7 @@ pub enum GameModeChoice {
 pub enum GameModeContext {
     Tide(TideContext),
     Werewolf(WerewolfContext),
+    Swordholder(SwordholderContext),
 }
 
 impl GameModeContext {
@@ -51,6 +66,7 @@ impl GameModeContext {
         match self {
             GameModeContext::Tide(_) => "tide",
             GameModeContext::Werewolf(_) => "werewolf",
+            GameModeContext::Swordholder(_) => "swordholder",
         }
     }
 }

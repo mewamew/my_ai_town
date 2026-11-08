@@ -1347,10 +1347,68 @@ fn werewolf_roster() -> ServerMsg {
     roster
 }
 
+/// 名册里开着执剑人之夜：说过的话、亮过的票、执剑人的决定和结局都给全。
+fn swordholder_roster() -> ServerMsg {
+    let mut roster = server_samples()
+        .into_iter()
+        .find(|m| matches!(m, ServerMsg::Roster { .. }))
+        .expect("有名册样本");
+    let seat = |seat, id: &str, name: &str, role, gone| SwordholderSeat {
+        seat,
+        id: id.into(),
+        name: name.into(),
+        role,
+        gone,
+    };
+    if let ServerMsg::Roster { game_mode, .. } = &mut roster {
+        *game_mode = Some(GameModeView::Swordholder(SwordholderView {
+            phase: SwordholderPhase::Attack,
+            seats: vec![
+                seat(1, "resident_001", "罗辑", SwordholderRole::Holder, false),
+                seat(2, "resident_002", "程心", SwordholderRole::Candidate, false),
+                seat(3, "resident_003", "智子", SwordholderRole::Envoy, false),
+                seat(4, "resident_004", "老秦", SwordholderRole::Voter, true),
+            ],
+            notice: "水滴来袭".into(),
+            turn: Some(2),
+            until: Some(1155.0),
+            left: Some(6.8),
+            lines: vec![SwordholderLine {
+                seat: 2,
+                occasion: "演说".into(),
+                text: "我会守住这个开关。".into(),
+                at: 1032.0,
+                away: true,
+                reason: Some("先让大家安心".into()),
+            }],
+            ballots: vec![SwordholderBallot {
+                voter: 4,
+                target: Some(2),
+                reason: Some("她不会乱来".into()),
+            }],
+            revealed: true,
+            elected: Some(2),
+            appointed: true,
+            swordholder: 2,
+            decision: Some(SwordholderDecision {
+                seat: 2,
+                press: false,
+                at: 1150.0,
+                text: Some("不……".into()),
+                reason: Some("下不了手".into()),
+            }),
+            ending: Some(SwordholderEnding::Failed),
+            antenna: Some("obelisk_1".into()),
+        }));
+    }
+    roster
+}
+
 pub fn shape_samples() -> (Vec<ServerMsg>, Vec<ClientMsg>) {
     (
         vec![
             werewolf_roster(),
+            swordholder_roster(),
             // 玩法里说的一段话：日志正文照旧，另带发言人、座号、场合和原话
             ServerMsg::Event {
                 sim_minutes: 2588.0,
@@ -1398,6 +1456,14 @@ pub fn shape_samples() -> (Vec<ServerMsg>, Vec<ClientMsg>) {
                 game_mode: Some(GameModeChoice::Werewolf {
                     seed: Some(7),
                     day_hours: Some(6),
+                }),
+            },
+            ClientMsg::SetGameMode {
+                request_id: "mode-3".into(),
+                world_id: "w1".into(),
+                game_mode: Some(GameModeChoice::Swordholder {
+                    seed: Some(62),
+                    day_hours: Some(8),
                 }),
             },
             avatar(AvatarCommand::Action {

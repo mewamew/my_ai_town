@@ -109,7 +109,7 @@ impl Runtime {
     }
 
     /// 打开或关掉玩法（不带 choice 是关掉）。没给种子时随机取一个：潮水圈从下一个天亮起公布第一圈，
-    /// 狼人杀按此刻镇上的村民发身份。不暂停世界：玩法的公告到点会自己写进每个人的经历。
+    /// 狼人杀按此刻镇上的村民发身份，执剑人之夜按此刻镇上的村民排座次、定身份。不暂停世界：玩法的公告到点会自己写进每个人的经历。
     pub(crate) fn save_game_mode(
         &mut self,
         request_id: String,
@@ -119,6 +119,10 @@ impl Runtime {
         let choice = choice.map(|c| match c {
             GameModeChoice::Tide { seed } => GameModeChoice::Tide { seed: roll(seed) },
             GameModeChoice::Werewolf { seed, day_hours } => GameModeChoice::Werewolf {
+                seed: roll(seed),
+                day_hours,
+            },
+            GameModeChoice::Swordholder { seed, day_hours } => GameModeChoice::Swordholder {
                 seed: roll(seed),
                 day_hours,
             },
@@ -141,6 +145,10 @@ impl Runtime {
                     }
                     Some(GameModeChoice::Werewolf { .. }) => {
                         "狼人杀已打开：身份已发下，天亮开局；每天 16:30 敲钟、17:00 议事".into()
+                    }
+                    Some(GameModeChoice::Swordholder { .. }) => {
+                        "执剑人之夜已打开：天亮开局，16:30 敲钟、17:00 演说和投票，19:00 交接"
+                            .into()
                     }
                     None => "玩法已关掉，世界恢复原样".into(),
                 }),
