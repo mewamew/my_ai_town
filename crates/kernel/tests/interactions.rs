@@ -318,6 +318,18 @@ fn saying_you_give_something_leaves_it_with_the_speaker_and_both_are_told() {
         "id":"player:biscuits","version":1,"name":"压缩饼干","portable":true,"stack_limit":5,"actions":[]
     }))
     .unwrap();
+    let tube: kernel::props::Definition = serde_json::from_value(json!({
+        "id":"player:tube","version":1,"name":"竹筒水","portable":true,"actions":[]
+    }))
+    .unwrap();
+    w.place_prop(
+        serde_json::from_value(json!({
+            "instance":{"id":"t1","definition":tube.reference(),"locale":"loc_a"},
+            "definition":tube
+        }))
+        .unwrap(),
+    )
+    .unwrap();
     for id in ["b1", "b2"] {
         w.place_prop(
             serde_json::from_value(json!({
@@ -329,7 +341,7 @@ fn saying_you_give_something_leaves_it_with_the_speaker_and_both_are_told() {
         .unwrap();
     }
     let pick = protocol::InventoryAction::PickUp {
-        items: vec!["b1".into(), "b2".into()],
+        items: vec!["b1".into(), "b2".into(), "t1".into()],
     };
     common::run(
         &mut w,
@@ -368,6 +380,9 @@ fn saying_you_give_something_leaves_it_with_the_speaker_and_both_are_told() {
     };
     say(&mut w, "r1", "饼干不给你，自己找去。");
     say(&mut w, "r2", "那算了。");
+    // 「水线归你」说的是看水的差事，不是身上的竹筒水（第五局误认过）
+    say(&mut w, "r1", "水线归你，我不抢。");
+    say(&mut w, "r2", "好。");
     assert_eq!((notices(&w, "r1").len(), notices(&w, "r2").len()), before);
 
     say(&mut w, "r1", "行，一块饼干给你，先垫垫。");

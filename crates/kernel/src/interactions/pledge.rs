@@ -4,7 +4,7 @@
 //! 认出这种话时，给说的人和听的人各记一条通知：东西还在说的人身上，要他发赠予、对方接受了才算给了。
 //!
 //! 认法只看说的人此刻身上带着的东西：同一句或上一句提到它（全名、去掉开头「一份」的名字、三个字以上的
-//! 头两个字或末两个字，或紧挨着「给你」的末一个字），这一句有「给你」「分你」「拿去」这类说法，
+//! 头两个字或末两个字，或贴着「给你」的末一个字），这一句有「给你」「分你」「拿去」这类说法，
 //! 没有「不给」「报给你」这类否定和传话。认错了只是多一条提醒。
 use crate::World;
 use protocol::{Interaction, InteractionCommand, InteractionKind};
@@ -82,13 +82,16 @@ pub(crate) fn pledged<'a>(text: &str, carried: &'a [String]) -> Vec<&'a str> {
             let named = names(name)
                 .iter()
                 .any(|n| clause.contains(n.as_str()) || before.contains(n.as_str()));
-            // 单字只认紧挨着说法的：「水给你」「叉子给你」「给你水」
+            // 单字只认贴着说法的：「水给你」「叉子给你」「给你水」。隔一个字就不算，第五局「水线归你」
+            // 被当成了竹筒水
             let close = core(name)
                 .last()
                 .filter(|c| !MEASURES.contains(**c))
                 .is_some_and(|c| {
-                    clause[..at].chars().rev().take(2).any(|x| x == *c)
-                        || clause[at + said.len()..].chars().take(2).any(|x| x == *c)
+                    let before = &clause[..at];
+                    before.ends_with(*c)
+                        || before.ends_with(&format!("{c}子"))
+                        || clause[at + said.len()..].starts_with(*c)
                 });
             if named || close {
                 hits.push(name);
