@@ -202,7 +202,7 @@ impl World {
                 return self.join_walk(actor, interaction_id, message);
             }
         }
-        match command {
+        let result = match command {
             InteractionCommand::Offer {
                 partner_id,
                 interaction,
@@ -236,7 +236,16 @@ impl World {
                 self.interactions
                     .chat_command(&mut self.actors, now, actor, command)
             }
+        };
+        // 嘴上说把身上的东西给对方：东西还在他身上，两边各提醒一句（pledge.rs）
+        if let Some((text, listener)) = result
+            .as_ref()
+            .ok()
+            .and_then(|item| super::pledge::spoken(actor, command, item))
+        {
+            self.note_pledge(actor, &listener, text);
         }
+        result
     }
 
     fn offer(

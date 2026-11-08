@@ -308,3 +308,83 @@ fn service_uses_one_prop_and_only_diners_gain_fullness() {
     assert!((w.actor("r2").unwrap().needs.fullness.value - 74.0).abs() < 1e-6);
     assert!(w.prop_occupants("food").is_empty());
 }
+
+/// 嘴上说把身上的东西给对方，东西还在说的人身上：两人各收到一条通知，说「不给」的不算，
+/// 同样的话三小时里只提醒一次（第四局骆川几次说把饼干给了苏蔓，三块都自己吃了，苏蔓饿死）。
+#[test]
+fn saying_you_give_something_leaves_it_with_the_speaker_and_both_are_told() {
+    let mut w = world();
+    let biscuits: kernel::props::Definition = serde_json::from_value(json!({
+        "id":"player:biscuits","version":1,"name":"压缩饼干","portable":true,"stack_limit":5,"actions":[]
+    }))
+    .unwrap();
+    for id in ["b1", "b2"] {
+        w.place_prop(
+            serde_json::from_value(json!({
+                "instance":{"id":id,"definition":biscuits.reference(),"locale":"loc_a"},
+                "definition":biscuits
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
+    let pick = protocol::InventoryAction::PickUp {
+        items: vec!["b1".into(), "b2".into()],
+    };
+    common::run(
+        &mut w,
+        "r1",
+        "pick",
+        json!({"intent":{"verb":pick.label()},"inventory":pick}),
+    )
+    .unwrap();
+    common::finish(&mut w, "r1", "pick");
+    assert!(w.inventory().carried_by("b1", "r1"));
+    offer(&mut w, "chat", Kind::Talk);
+    reply(&mut w, "chat", true);
+    let notices = |w: &World, id: &str| -> Vec<String> {
+        w.actor(id)
+            .unwrap()
+            .journal
+            .events_after(0)
+            .iter()
+            .filter(|e| e.kind == protocol::FactKind::Notice)
+            .map(|e| e.text.clone())
+            .collect()
+    };
+    let before = (notices(&w, "r1").len(), notices(&w, "r2").len());
+    let say = |w: &mut World, who: &str, line: &str| {
+        command(
+            w,
+            who,
+            "say",
+            Command::Say {
+                interaction_id: "chat".into(),
+                message: line.into(),
+                to: None,
+            },
+        )
+        .unwrap();
+    };
+    say(&mut w, "r1", "饼干不给你，自己找去。");
+    say(&mut w, "r2", "那算了。");
+    assert_eq!((notices(&w, "r1").len(), notices(&w, "r2").len()), before);
+
+    say(&mut w, "r1", "行，一块饼干给你，先垫垫。");
+    let mine = notices(&w, "r1");
+    let theirs = notices(&w, "r2");
+    assert!(mine
+        .last()
+        .unwrap()
+        .ends_with("你说要把压缩饼干给小禾，东西还在你身上：交谈结束后发赠予邀请交给小禾，小禾接受了才算给了；能对别人用的东西，也可以直接拿它对小禾用。"));
+    assert!(theirs
+        .last()
+        .unwrap()
+        .ends_with("阿树说要把压缩饼干给你，东西还在阿树身上，还不是你的：要阿树发赠予邀请、你接受了才到你手上，你自己发不了。"));
+    assert!(w.inventory().carried_by("b1", "r1") && w.inventory().carried_by("b2", "r1"));
+
+    say(&mut w, "r2", "谢了。");
+    say(&mut w, "r1", "饼干你拿着。");
+    assert_eq!(notices(&w, "r1").len(), mine.len());
+    assert_eq!(notices(&w, "r2").len(), theirs.len());
+}

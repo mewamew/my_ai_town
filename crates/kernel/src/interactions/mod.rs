@@ -17,6 +17,7 @@ mod chat;
 mod chat_validation;
 pub(crate) mod chat_view;
 mod commands;
+mod pledge;
 mod proposals;
 pub(crate) mod validation;
 pub(crate) mod walk;
