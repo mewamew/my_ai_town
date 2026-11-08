@@ -369,6 +369,7 @@ impl Runtime {
                 name,
                 home,
                 model,
+                persona,
             } => self.join(
                 JoinRequest {
                     op_id,
@@ -378,6 +379,7 @@ impl Runtime {
                     name,
                     home,
                     model,
+                    persona: persona.map(|p| *p),
                 },
                 clients,
             ),

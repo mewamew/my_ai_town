@@ -7,7 +7,7 @@ use crate::{
     transaction::{Abort, Aborted},
 };
 use host::{
-    library::{render_persona, NAME_MAX_CHARS},
+    library::{render_persona, validate_fields, NAME_MAX_CHARS},
     population::{fingerprint, Registration},
     world_settings::{instructions_chars, INSTRUCTIONS_MAX_CHARS},
 };
@@ -18,7 +18,7 @@ use kernel::{
 };
 use protocol::{
     Appearance, HomeView, JoinOutcome, JoinPreview, ModelChoice, PopulationView,
-    ResidentRegistration, ResidentTemplate, ServerMsg,
+    ResidentRegistration, ResidentTemplate, ServerMsg, TemplateFields,
 };
 use rand::seq::SliceRandom;
 
@@ -31,6 +31,8 @@ pub(crate) struct JoinRequest {
     pub home: Option<String>,
     /// 入住时选好的模型；没带时先住下，等玩家选好模型再行动
     pub model: Option<ModelChoice>,
+    /// 预制小镇给这位选手的人设；没带时照模板
+    pub persona: Option<TemplateFields>,
 }
 
 /// 检查通过、尚未安置的新人：编号、姓名、住宅、出生位置与采用的模板。
@@ -352,9 +354,16 @@ impl Runtime {
             req.name.trim(),
             req.home.as_deref().unwrap_or(""),
         ];
-        // 不带模型时摘要和以前一样，旧操作记录照样能认出同一次加入
+        // 不带模型、人设时摘要和以前一样，旧操作记录照样能认出同一次加入
         if let Some(model) = &req.model {
             parts.extend([model.provider.as_str(), &model.model]);
+        }
+        let persona = req
+            .persona
+            .as_ref()
+            .map(|p| serde_json::to_string(p).unwrap_or_default());
+        if let Some(persona) = &persona {
+            parts.push(persona);
         }
         let print = fingerprint(&parts);
         if let Some(record) = self.population.joins.get(&req.op_id) {
@@ -437,6 +446,26 @@ impl Runtime {
             .get(&req.template_id)
             .cloned()
             .ok_or("模板不存在")?;
+        let persona = match &req.persona {
+            // 选手的人设：姓名取这次入住的名字，长相照模板，按村民库的规则校验
+            Some(fields) => {
+                let fields = TemplateFields {
+                    name: preview.name.clone(),
+                    appearance: template.fields.appearance.clone(),
+                    ..fields.clone()
+                };
+                validate_fields(&fields).map_err(|e| e.to_string())?;
+                let persona = render_persona(&fields);
+                let total = instructions_chars(&persona, &self.world_settings.worldview);
+                if total > INSTRUCTIONS_MAX_CHARS {
+                    return Err(format!(
+                        "人设加公共知识共 {total} 字，超过 {INSTRUCTIONS_MAX_CHARS} 字上限"
+                    ));
+                }
+                persona
+            }
+            None => render_persona(&template.fields),
+        };
         // 仅在确认加入时抽取一次；实际位置随世界检查点保存，重试返回原加入结果。
         let candidates = self
             .world
@@ -457,7 +486,7 @@ impl Runtime {
             home_name: preview.home_name,
             entry_name: self.world.topo.locale_name(&entry.locale),
             entry,
-            persona: render_persona(&template.fields),
+            persona,
             template,
         })
     }

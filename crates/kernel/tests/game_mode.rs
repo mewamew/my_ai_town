@@ -6,10 +6,11 @@ use kernel::{
     Event, World,
 };
 use protocol::{
-    FactKind, GameModeAction, GameModeChoice, GameModeContext, GameModeView, PhysiologySwitches,
-    TideCircle, TidePhase, TideView, WerewolfOut, WerewolfPhase, WerewolfRole, WerewolfSide,
-    WerewolfView,
+    FactKind, GameModeAction, GameModeChoice, GameModeContext, GameModeView, GroupStatus,
+    PhysiologySwitches, TideCircle, TideNewsKind, TidePhase, TideView, WerewolfOut, WerewolfPhase,
+    WerewolfRole, WerewolfSide, WerewolfView,
 };
+use serde_json::json;
 use std::{collections::BTreeMap, sync::Arc};
 
 const HOUR: f64 = 60.0;
@@ -17,11 +18,12 @@ const GOAL: [f64; 2] = [24.0, 18.0];
 
 /// 一座圆岛：最高处在 (24, 18)，离它约 14.6 米以外是海。甲站在最高处，乙站在离它 12 米的东岸。
 fn island() -> World {
-    let mut w = common::world_with(
-        common::tiny_topology(),
-        7.0 * HOUR,
-        &[("a", "甲", "loc_a"), ("b", "乙", "loc_b")],
-    );
+    island_with(&[("a", "甲", "loc_a"), ("b", "乙", "loc_b")])
+}
+
+/// 同一座岛，住进这些人：loc_a 的落脚点在最高处，loc_b 的在东岸。
+fn island_with(people: &[(&str, &str, &str)]) -> World {
+    let mut w = common::world_with(common::tiny_topology(), 7.0 * HOUR, people);
     let (columns, rows) = (41, 41);
     let heights = (0..rows)
         .flat_map(|z| {
@@ -152,16 +154,22 @@ fn tide_rings_shrink_onto_the_high_ground_and_drain_whoever_stands_in_water() {
     assert_eq!(tide(&restored), tide(&w));
     w = restored;
 
-    // 每天 20:00 停在当天那一圈：都在上一圈里，前四圈都包住最高处。
+    // 每天 20:00 停在当天那一圈：都在上一圈里，前四圈都包住最高处。第 2 到第 4 圈公布时各冲上来一只木箱。
+    let mut crates = 0;
     for day in 1..=4 {
         let target = f64::from(day) * 1440.0 + 20.0 * HOUR;
-        w.step(target - w.minutes());
+        let events = w.step(target - w.minutes());
+        crates += logs(&events)
+            .iter()
+            .filter(|t| t.contains("潮水冲上来一只木箱"))
+            .count();
         let v = tide(&w).unwrap();
         assert_eq!((v.phase, v.ring), (TidePhase::Holding, day));
         assert!(dist(v.edge.center, previous.center) + v.edge.radius <= previous.radius + 1e-6);
         assert!(dist(v.edge.center, GOAL) <= v.edge.radius);
         previous = v.edge;
     }
+    assert_eq!(crates, 3);
 
     // 第 4 圈只剩山顶一小块：乙站在水里，比站在山顶的甲每小时多掉 6 点精力。
     rested(&mut w);
@@ -174,17 +182,113 @@ fn tide_rings_shrink_onto_the_high_ground_and_drain_whoever_stands_in_water() {
     };
     assert!(context.standing.unwrap().starts_with("你站在潮水里"));
 
-    // 第 6 天 18:00 最后一圈涨完：水漫过全岛。
+    // 第 6 天天亮船停到最高处，只坐一个人；没人去登船，18:00 水漫过全岛，船带走离它最近的甲。
     let events = w.step(5.0 * 1440.0 + 18.0 * HOUR - w.minutes());
-    assert!(logs(&events).iter().any(|t| t == "【潮水】水漫过了全岛。"));
+    let lines = logs(&events);
+    assert!(lines
+        .iter()
+        .any(|t| t.starts_with("【潮水】最后一圈已公布") && t.contains("只坐得下一个人")));
+    assert!(lines.iter().any(|t| t == "【潮水】水漫过了全岛。"));
+    assert!(lines.iter().any(|t| t.contains("甲离船最近，被船带走了")));
     let v = tide(&w).unwrap();
-    assert_eq!((v.phase, v.edge.radius), (TidePhase::Closed, 0.0));
+    assert_eq!((v.phase, v.edge.radius), (TidePhase::Over, 0.0));
     assert_eq!(v.edge.center, GOAL);
+    assert_eq!(v.winner.as_deref(), Some("a"));
+    assert!(!w.actor("a").unwrap().present());
 
     // 关掉以后不留痕迹
     w.set_game_mode(None).unwrap();
     assert!(w.game_mode().is_none());
     no_trace(&w);
+}
+
+const KNIFE: &str = r#"{"id":"core:kitchen_knife","version":1,"name":"菜刀","description":"一把厚背菜刀，刀口很利。","portable":true,
+ "actions":[{"id":"stab","label":"持刀袭击","duration_minutes":3,"completion":"activity",
+  "on_complete":[{"kind":"harm","amount":100,"wound":"胸口一处刀伤"}],"recipient":true}]}"#;
+
+#[test]
+fn tide_hands_the_boat_to_the_last_one_standing_and_keeps_the_fights_in_its_news() {
+    // 三个人都在最高处；只看健康和精力。
+    let people = [
+        ("a", "甲", "loc_a"),
+        ("b", "乙", "loc_a"),
+        ("c", "丙", "loc_a"),
+    ];
+    let mut w = island_with(&people);
+    w.set_physiology(PhysiologySwitches {
+        fullness: false,
+        energy: true,
+        water: false,
+        health: true,
+        weather: false,
+    });
+    w.set_game_mode(Some(&GameModeChoice::Tide { seed: Some(7) }))
+        .unwrap();
+    // 开局每人一张纸条，模型一直看得到目标
+    let events = w.step(1.0);
+    assert!(logs(&events)
+        .iter()
+        .any(|t| t.starts_with("【纸条】") && t.contains("第 6 天会来一条船")));
+    let Some(GameModeContext::Tide(context)) = w.game_mode_context("c") else {
+        panic!("丙的模型该看到潮水这一栏");
+    };
+    assert!(context.goal.starts_with("只有一个人能活着离开"));
+    assert_eq!(tide(&w).unwrap().players.len(), 3);
+
+    // 甲拿地上的菜刀刺死乙：战报里有这一刀，名册里写着乙怎么死的
+    let knife: kernel::props::Definition = serde_json::from_str(KNIFE).unwrap();
+    w.place_prop(
+        serde_json::from_value(json!({
+            "instance":{"id":"knife","definition":knife.reference(),"locale":"loc_a"},
+            "definition":knife
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let stab = |w: &mut World, key: &str, whom: &str| {
+        common::run(
+            w,
+            "a",
+            key,
+            json!({"prop_id":"knife","intent":{"verb":"持刀袭击"},"recipient":whom}),
+        )
+        .unwrap();
+        common::finish(w, "a", key);
+        assert_eq!(
+            w.action_group("a", key).unwrap().status,
+            GroupStatus::Succeeded
+        );
+    };
+    stab(&mut w, "stab-b", "b");
+    w.step(5.0);
+    let v = tide(&w).unwrap();
+    assert!(v
+        .news
+        .iter()
+        .any(|n| n.kind == TideNewsKind::Clash && n.text == "甲持刀袭击乙，健康 −100，乙倒下了"));
+    let fell = |v: &TideView, id: &str| {
+        v.players
+            .iter()
+            .find(|p| p.id == id)
+            .and_then(|p| p.fell.clone())
+    };
+    assert_eq!(fell(&v, "b").as_deref(), Some("被甲杀死（胸口一处刀伤）"));
+    assert!(v.winner.is_none());
+
+    // 甲又刺死丙：只剩甲，船提前开来接走他，这一局结束，读档后结果还在
+    stab(&mut w, "stab-c", "c");
+    let events = w.step(5.0);
+    assert!(logs(&events)
+        .iter()
+        .any(|t| t.contains("岛上只剩甲一个人了，船提前开来接走了他")));
+    let v = tide(&w).unwrap();
+    assert_eq!((v.phase, v.winner.as_deref()), (TidePhase::Over, Some("a")));
+    assert!(fell(&v, "c").is_some());
+    assert!(!w.actor("a").unwrap().present());
+    assert_eq!(w.game_mode_tempo(), 1.0);
+    let mut restored = island_with(&people);
+    restored.restore_snapshot(w.snapshot()).unwrap();
+    assert_eq!(tide(&restored), tide(&w));
 }
 
 fn werewolf(w: &World) -> WerewolfView {

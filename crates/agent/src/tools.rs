@@ -284,7 +284,7 @@ pub const TOOLS: [ToolSpec; 15] = [
         name: ToolName::RunActions,
         description: || {
             format!(
-                "提交 1–{} 项串行动作，失败停止后续步骤。前往、停留的参数见已知地图的 basic_actions；道具动作给 prop_id；背包转移 intent.verb 填拾取/放下/存放/取回/领取并给 inventory，不填 prop_id；写作给 writing；对人动手 intent.verb 填 people_here 里对方的 force_verbs 之一，recipient 填对方 ID，抢和偷再用 prop_id 填对方 carrying 里那件东西的 ID。",
+                "提交 1–{} 项串行动作，失败停止后续步骤。前往、停留的参数见已知地图的 basic_actions；道具动作给 prop_id；背包转移 intent.verb 填拾取/放下/存放/取回/领取并给 inventory，不填 prop_id；写作给 writing；对人动手 intent.verb 填 people_here 里对方的 force_verbs 之一，recipient 填对方 ID，抢和偷再用 prop_id 填对方 carrying 里那件东西的 ID，搜身不填 prop_id、一次拿走死者身上的东西。",
                 limits::ACTIONS_MAX
             )
         },

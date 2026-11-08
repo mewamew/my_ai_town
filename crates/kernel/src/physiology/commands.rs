@@ -394,6 +394,10 @@ impl World {
         check_body_use(self, id, &locale, &spot.prop, &action, recipient.as_deref())?;
         let target = recipient.unwrap_or_else(|| id.to_string());
         let was = self.actors[&target].needs.abilities();
+        let health_before = self.actors[&target]
+            .needs
+            .track(crate::props::Need::Health)
+            .value;
         let key = format!("{}/{}@{}", spot.prop, action.id, self.minutes.to_bits());
         let (effects, misses) = self.roll_effects(id, &action.on_complete);
         self.check_made_items(id, &effects, &key)?;
@@ -432,6 +436,20 @@ impl World {
         );
         if attacked && self.actors[&target].needs.body.dead {
             changes.push(crate::outcome::killed(&self.actors[&target].name));
+        }
+        // 拿道具伤了别人：告诉开着的玩法（战报）
+        if target != id && action.harms() {
+            let (me, them) = (&self.actors[id].name, &self.actors[&target].name);
+            let lost = health_before
+                - self.actors[&target]
+                    .needs
+                    .track(crate::props::Need::Health)
+                    .value;
+            let mut text = format!("{me}{}{them}，健康 −{lost:.0}", action.label);
+            if self.actors[&target].needs.body.dead {
+                text.push_str(&format!("，{them}倒下了"));
+            }
+            self.game_mode_clash(id, &target, &text);
         }
         // 自己用道具：这些变化已经写在自己的动作结果里，身体事件只进身体记录和当天流水，
         // 不再给本人另记一条事实，免得一次吃饭在经历里出现好几回。

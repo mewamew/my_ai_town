@@ -297,6 +297,10 @@ pub enum ClientMsg {
         /// 入住时就定下用哪个模型思考；不带时先住下，选好模型后再行动
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<ModelChoice>,
+        /// 预制小镇的选手：用这份人设（来历、处境、目标……）入住，姓名取 name，长相照模板；
+        /// 只给这一位居民，不回写村民库。不带时照模板的人设
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        persona: Option<Box<TemplateFields>>,
     },
     /// 断线后按操作编号查询加入结果（回 JoinResult）
     GetResidentJoinResult {

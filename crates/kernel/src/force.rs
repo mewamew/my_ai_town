@@ -1,9 +1,11 @@
-//! 对在场的人动手：推搡、抢、偷。都是动作组里带 recipient 的内建动作，抢和偷再用 prop_id 指明对方
+//! 对在场的人动手：推搡、抢、偷、搜身。都是动作组里带 recipient 的内建动作，抢和偷再用 prop_id 指明对方
 //! 身上的那件东西；入队、开始、完成时各查一遍条件，结算在完成那一刻。
 //! - 推搡：扣一点健康，打断对方手上的事（睡着的会被推醒）；扣到 0 就是遇害，记下是谁推的。
 //! - 抢：对方醒着才抢得了，按双方的精力和健康掷成败；成没成对方都马上知道。
 //! - 偷：对方睡着或倒下时才偷得了。睡着的人有一定可能惊醒、当场撞见；没惊醒的，醒来才发现东西不见了。
+//! - 搜身：对方死了才搜得了，不用指明东西，背包放得下的一次全拿走。
 //!
+//! 每次动手都告诉开着的玩法（`World::game_mode_clash`），玩法可以记进自己的战报。
 //! 同一处所醒着、能行动的旁人都看得见，记下所见并收到通知；观察日志各记一笔。
 use crate::error::{KernelError, Result};
 use crate::intent::BuiltinVerb;
@@ -16,6 +18,7 @@ pub enum Force {
     Push,
     Rob,
     Steal,
+    Loot,
 }
 
 /// 推搡扣的健康和留下的伤。
@@ -37,6 +40,7 @@ impl Force {
             Self::Push => BuiltinVerb::Push,
             Self::Rob => BuiltinVerb::Rob,
             Self::Steal => BuiltinVerb::Steal,
+            Self::Loot => BuiltinVerb::Loot,
         }
     }
 
@@ -46,6 +50,7 @@ impl Force {
             BuiltinVerb::Push => Some(Self::Push),
             BuiltinVerb::Rob => Some(Self::Rob),
             BuiltinVerb::Steal => Some(Self::Steal),
+            BuiltinVerb::Loot => Some(Self::Loot),
             _ => None,
         }
     }
@@ -54,12 +59,13 @@ impl Force {
         Self::from_verb(verb).expect("调用方已按动手的动词分支")
     }
 
-    /// 花多少分钟：推一把很快，抢要拉扯一阵，偷要轻手轻脚。
+    /// 花多少分钟：推一把很快，抢要拉扯一阵，偷要轻手轻脚，搜身要把全身翻一遍。
     pub(crate) fn minutes(self) -> f64 {
         match self {
             Self::Push => 1.0,
             Self::Rob => 2.0,
             Self::Steal => 3.0,
+            Self::Loot => 5.0,
         }
     }
 }
@@ -71,7 +77,7 @@ pub(crate) fn of_draft(draft: &ActionDraft) -> Option<Force> {
 
 impl World {
     /// 动手的条件：对方在眼前、不是自己也不是化身；推搡要对方活着；抢、偷要写明对方身上带着的东西、
-    /// 自己背包放得下，抢要对方醒着，偷要对方睡着或倒下。
+    /// 自己背包放得下，抢要对方醒着，偷要对方睡着或倒下；搜身要对方死了、身上有自己放得下的东西。
     pub(crate) fn check_force(&self, actor: &str, draft: &ActionDraft, kind: Force) -> Result<()> {
         let label = kind.label();
         let target = draft
@@ -108,6 +114,29 @@ impl World {
             );
             return Ok(());
         }
+        if kind == Force::Loot {
+            ensure!(
+                draft.prop_id.is_none(),
+                KernelError::action("搜身不用填 prop_id，放得下的一次全拿走")
+            );
+            ensure!(
+                other.needs.body.dead,
+                KernelError::action(format!("{name}还活着，搜不了身；睡着、倒下的可以偷"))
+            );
+            let items = self.carried(target);
+            ensure!(
+                !items.is_empty(),
+                KernelError::action(format!("{name}身上什么也没有"))
+            );
+            return items
+                .iter()
+                .find_map(|item| {
+                    self.inventory
+                        .check_seize(&self.topo, &self.props, target, actor, item)
+                        .ok()
+                })
+                .ok_or_else(|| KernelError::action("背包满了，一件也拿不下"));
+        }
         let item = draft.prop_id.as_deref().ok_or_else(|| {
             KernelError::action(format!("{label}要在 prop_id 填{name}身上那件东西的 ID"))
         })?;
@@ -140,6 +169,7 @@ impl World {
             Force::Push => self.push(actor, &target),
             Force::Rob => self.rob(actor, &target, draft.prop_id.as_deref().unwrap())?,
             Force::Steal => self.steal(actor, &target, draft.prop_id.as_deref().unwrap())?,
+            Force::Loot => self.loot(actor, &target)?,
         };
         let now = self.minutes;
         for text in &changes {
@@ -263,6 +293,45 @@ impl World {
         }])
     }
 
+    /// 翻死人的身：背包放得下的一件件拿走，放不下的留在他身上。
+    fn loot(&mut self, actor: &str, target: &str) -> Result<Vec<String>> {
+        let (me, them) = (
+            self.actors[actor].name.clone(),
+            self.actors[target].name.clone(),
+        );
+        let (mut taken, mut left) = (Vec::new(), Vec::new());
+        for item in self.carried(target) {
+            let thing = self.props.item(&self.topo, &item)?.name.clone();
+            if self
+                .inventory
+                .check_seize(&self.topo, &self.props, target, actor, &item)
+                .is_ok()
+            {
+                self.take_item(target, actor, &item);
+                taken.push(thing);
+            } else {
+                left.push(thing);
+            }
+        }
+        let list = taken.join("、");
+        self.happened(actor, target, format!("{me}搜了{them}的身，拿走了{list}"));
+        let mut changes = vec![format!("从{them}的尸体上拿走了{list}")];
+        if !left.is_empty() {
+            changes.push(format!("背包放不下，{}留在了他身上", left.join("、")));
+        }
+        Ok(changes)
+    }
+
+    /// 这个人身上带着的东西（道具编号）。
+    fn carried(&self, id: &str) -> Vec<String> {
+        self.topo
+            .props()
+            .iter()
+            .filter(|p| !p.withdrawn && self.inventory.carried_by(&p.id, id))
+            .map(|p| p.id.clone())
+            .collect()
+    }
+
     /// 东西从 from 身上到 to 的背包里（check_force 已查过还在、放得下）。
     fn take_item(&mut self, from: &str, to: &str, item: &str) {
         // 对方正拿着它做事（比如正在吃这罐罐头）：那件事做不下去了
@@ -306,6 +375,7 @@ impl World {
     fn happened(&mut self, actor: &str, target: &str, text: String) {
         let locale = self.actors[actor].locus.locale.clone();
         self.onlookers(&locale, &[actor, target], &format!("看见{text}"), true);
+        self.game_mode_clash(actor, target, &text);
         let info = self.actors[actor].event_info();
         self.log(info, text);
     }

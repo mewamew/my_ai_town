@@ -4,8 +4,8 @@
 //! 动词、处所、落脚点全部对着封闭集合查。绝对坐标/时刻在草案类型上
 //! 已不可表示（protocol 侧 deny_unknown_fields），这里管的是 id 与取值。
 //!
-//! 动词封闭集合 = 内建 { 前往, 停留, 坐下, 躺下, 查看四周, 搜寻, 藏, 推搡, 抢, 偷 } ∪ 道具动作词（affordance.rs）。
-//! 坐下、躺下是换了姿势的停留；搜寻、藏管藏着的东西（exploration.rs）；推搡、抢、偷是对在场的人动手（force.rs）。
+//! 动词封闭集合 = 内建 { 前往, 停留, 坐下, 躺下, 查看四周, 搜寻, 藏, 推搡, 抢, 偷, 搜身 } ∪ 道具动作词（affordance.rs）。
+//! 坐下、躺下是换了姿势的停留；搜寻、藏管藏着的东西（exploration.rs）；推搡、抢、偷、搜身是对在场的人动手（force.rs）。
 //! 「工作 / 睡觉 / 吃饭」三个泛动词已退役：睡觉、吃饭本来就是道具动作词，
 //! 「工作」没有内容，不能作为当前封闭动作集合中的泛动词。
 
@@ -36,10 +36,12 @@ pub enum BuiltinVerb {
     Rob,
     /// 趁对方睡着或倒下时拿走他身上的东西。
     Steal,
+    /// 翻死人的身，把他身上的东西一次拿走。
+    Loot,
 }
 
 impl BuiltinVerb {
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 11] = [
         Self::Goto,
         Self::Stay,
         Self::Sit,
@@ -50,6 +52,7 @@ impl BuiltinVerb {
         Self::Push,
         Self::Rob,
         Self::Steal,
+        Self::Loot,
     ];
 
     pub fn label(self) -> &'static str {
@@ -64,6 +67,7 @@ impl BuiltinVerb {
             Self::Push => "推搡",
             Self::Rob => "抢",
             Self::Steal => "偷",
+            Self::Loot => "搜身",
         }
     }
 
@@ -259,7 +263,9 @@ pub fn validate(topo: &Topology, aff: &Affordances, d: &IntentDraft) -> Result<I
                 },
             })
         }
-        Some(verb @ (BuiltinVerb::Push | BuiltinVerb::Rob | BuiltinVerb::Steal)) => {
+        Some(
+            verb @ (BuiltinVerb::Push | BuiltinVerb::Rob | BuiltinVerb::Steal | BuiltinVerb::Loot),
+        ) => {
             ensure!(
                 d.locale.is_none()
                     && d.target.is_none()

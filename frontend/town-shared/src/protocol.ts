@@ -637,14 +637,31 @@ export interface TideCircle {
   center: [number, number]
   radius: number
 }
-export type TidePhase = 'waiting' | 'announced' | 'rising' | 'holding' | 'closed'
-/** 潮水圈：此刻的水边（圈外的地被水盖住）、已公布还没涨到的下一圈、第几圈 */
+export type TidePhase = 'waiting' | 'announced' | 'rising' | 'holding' | 'closed' | 'over'
+/** 潮水圈：此刻的水边（圈外的地被水盖住）、已公布还没涨到的下一圈、第几圈，
+ * 这一局的选手、最近的战报和上了船的人 */
 export interface TideView {
   edge: TideCircle
   next?: TideCircle
   phase: TidePhase
   ring: number
   rings: number
+  players?: TidePlayer[]
+  news?: TideNews[]
+  winner?: string
+}
+/** 一位选手；倒下了就写怎么倒下的 */
+export interface TidePlayer {
+  id: string
+  name: string
+  fell?: string
+}
+export type TideNewsKind = 'clash' | 'fell' | 'crate' | 'boat'
+/** 战报里的一条：世界分钟、哪一类、一句话 */
+export interface TideNews {
+  at: number
+  kind: TideNewsKind
+  text: string
 }
 
 export type WerewolfRole = 'wolf' | 'seer' | 'witch' | 'hunter' | 'guard' | 'villager'
@@ -1047,6 +1064,8 @@ export type ClientMsg =
       home?: string
       /** 入住时就定下用哪个模型思考；不带时先住下，选好模型再行动 */
       model?: ModelChoice
+      /** 预制小镇的选手：用这份人设入住，姓名取 name，长相照模板；不回写村民库 */
+      persona?: TemplateFields
     }
   | { type: 'get_resident_join_result'; world_id: string; op_id: string }
   | { type: 'get_agent_config' | 'get_diary'; resident?: string }

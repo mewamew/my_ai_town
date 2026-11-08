@@ -1,7 +1,8 @@
 //! 玩法：有自己的目标、时间表和输赢的一套规则（大逃杀的潮水圈、狼人杀……），一个世界同时最多开一个，随快照保存。
 //! 本体只在这几处接玩法，见 `Rules`：推进时间时要停下来结算的时刻和到点结算（simulation.rs）、
 //! 身体的额外消耗（physiology）、名册里的状态（projection.rs）、给模型看的一栏（agent 的观察）、
-//! 模型交选择用的玩法动作（agent 的 mode_action 工具）、世界走几倍速（host 的正常速度）。
+//! 模型交选择用的玩法动作（agent 的 mode_action 工具）、世界走几倍速（host 的正常速度）、
+//! 人对人动手的经过（force.rs 和拿道具伤人）。
 //! 没开玩法时这些都不出现，存档、名册、设定和给模型的观察、工具表和没有玩法时一字不差。
 //!
 //! 加一个玩法：在这个目录写一个文件，实现 `Rules`；再在下面的 `GameMode`、`each!` 和
@@ -49,6 +50,9 @@ trait Rules {
     ) -> Result<String> {
         Err(KernelError::action("这个玩法没有要交的动作"))
     }
+    /// 有人对人动了手（推搡、抢、偷、搜身、拿道具伤人），text 是一句写好的经过，
+    /// 比如「骆川用鱼叉刺白鸦，健康 −40」；玩法可以记进自己的战报。
+    fn clash(&mut self, _world: &World, _actor: &str, _target: &str, _text: &str) {}
 }
 
 /// 世界里开着的玩法。存档里写成 `{"tide": {...}}`。一个世界只有一份，各玩法大小不一不要紧。
@@ -161,5 +165,14 @@ impl World {
         let result = each!(&mut mode, m => m.act(self, actor, action));
         self.game_mode = Some(mode);
         result
+    }
+
+    /// 有人对人动了手：告诉开着的玩法（见 `Rules::clash`）。
+    pub(crate) fn game_mode_clash(&mut self, actor: &str, target: &str, text: &str) {
+        let Some(mut mode) = self.game_mode.take() else {
+            return;
+        };
+        each!(&mut mode, m => m.clash(self, actor, target, text));
+        self.game_mode = Some(mode);
     }
 }

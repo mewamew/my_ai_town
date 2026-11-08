@@ -105,6 +105,7 @@ pub fn draft_verb_kind(draft: &ActionDraft) -> VerbKind {
             BuiltinVerb::Push
             | BuiltinVerb::Rob
             | BuiltinVerb::Steal
+            | BuiltinVerb::Loot
             | BuiltinVerb::Search
             | BuiltinVerb::Hide,
         )

@@ -1,5 +1,5 @@
 //! 对人动手与亲近：推搡伤人、打断对方；抢只对醒着的人、偷只对睡着的人，东西真的换了主人；睡着时
-//! 被偷的人醒来才发现；牵手、依偎、拥抱要对方答应，躲开了双方和旁人都看得见；坐下是换了姿势的停留。
+//! 被偷的人醒来才发现；死人身上的东西搜身一次拿走；牵手、依偎、拥抱要对方答应，躲开了双方和旁人都看得见；坐下是换了姿势的停留。
 //! 都走 run_actions、interact 与 step 的完整路径。
 use crate::common;
 use kernel::World;
@@ -210,6 +210,54 @@ fn sleepers_can_be_robbed_only_by_stealth_and_find_out_when_they_wake() {
     w.interrupt_actions("zhou", "天亮了");
     w.step(0.5);
     assert!(texts(&w, "zhou", FactKind::Notice).contains("醒来发现随身的罐头不见了"));
+}
+
+#[test]
+fn the_dead_can_be_searched_and_what_they_carried_changes_hands() {
+    let mut w = world();
+    pick_up(&mut w, "zhou");
+    let alive = act(
+        &mut w,
+        "lin",
+        "loot-alive",
+        json!({"intent":{"verb":"搜身"},"recipient":"zhou"}),
+    );
+    assert!(alive.unwrap_err().contains("还活着，搜不了身"));
+    // 老渔夫拿刀刺死周屿，林晚搜他的身：罐头到了林晚身上，老渔夫看见了
+    let knife: kernel::props::Definition = serde_json::from_str(
+        r#"{"id":"test:knife","version":1,"name":"菜刀","portable":true,"actions":[
+          {"id":"stab","label":"持刀袭击","duration_minutes":3,"recipient":true,
+           "on_complete":[{"kind":"harm","amount":100,"wound":"胸口一处刀伤"}]}]}"#,
+    )
+    .unwrap();
+    w.place_prop(
+        serde_json::from_value(json!({
+            "instance":{"id":"knife","definition":knife.reference(),"locale":"loc_a"},
+            "definition":knife
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let (status, why) = act(
+        &mut w,
+        "old",
+        "stab",
+        json!({"prop_id":"knife","intent":{"verb":"持刀袭击"},"recipient":"zhou"}),
+    )
+    .unwrap();
+    assert_eq!(status, GroupStatus::Succeeded, "{why}");
+    assert!(w.actor("zhou").unwrap().needs.body.dead);
+    let (status, text) = act(
+        &mut w,
+        "lin",
+        "loot",
+        json!({"intent":{"verb":"搜身"},"recipient":"zhou"}),
+    )
+    .unwrap();
+    assert_eq!(status, GroupStatus::Succeeded, "{text}");
+    assert!(text.contains("从周屿的尸体上拿走了罐头"), "{text}");
+    assert!(holds(&w, "lin") && !holds(&w, "zhou"));
+    assert!(texts(&w, "old", FactKind::Observation).contains("看见林晚搜了周屿的身，拿走了罐头"));
 }
 
 #[test]

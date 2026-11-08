@@ -134,13 +134,15 @@ fn people_here(world: &World, actor: &str, locale: &str) -> Vec<Value> {
                 .into_iter()
                 .map(|s| json!({"name": s.name, "items": s.items}))
                 .collect();
-            // 眼下能对他动手的方式：活人能推；身上有东西时，醒着的能抢，睡着、倒下的能偷
+            // 眼下能对他动手的方式：活人能推；身上有东西时，醒着的能抢，睡着、倒下的能偷，死了的能搜身
             let mut force = Vec::new();
             if alive {
                 force.push(BuiltinVerb::Push.label());
             }
             if !carrying.is_empty() {
-                force.push(if awake {
+                force.push(if !alive {
+                    BuiltinVerb::Loot.label()
+                } else if awake {
                     BuiltinVerb::Rob.label()
                 } else {
                     BuiltinVerb::Steal.label()
