@@ -2720,5 +2720,138 @@
         "recipient": true
       }
     ]
+  },
+  {
+    "id": "core:island-stone",
+    "version": 1,
+    "name": "石块",
+    "description": "拳头大的石块，砸人很疼，一下砸不死人。",
+    "portable": true,
+    "stack_limit": 3,
+    "actions": [
+      {
+        "id": "hit",
+        "label": "用石块砸",
+        "duration_minutes": 2,
+        "completion": "activity",
+        "recipient": true,
+        "on_complete": [
+          {
+            "kind": "harm",
+            "amount": 15,
+            "wound": "额头被石块砸破"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "core:island-club",
+    "version": 1,
+    "name": "木棍",
+    "description": "一根结实的硬木棍，挥起来能把人打得青紫。",
+    "portable": true,
+    "actions": [
+      {
+        "id": "hit",
+        "label": "用木棍打",
+        "duration_minutes": 2,
+        "completion": "activity",
+        "recipient": true,
+        "on_complete": [
+          {
+            "kind": "harm",
+            "amount": 15,
+            "wound": "身上被木棍打得青紫"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "core:island-harpoon",
+    "version": 1,
+    "name": "鱼叉",
+    "description": "渔民落下的铁头鱼叉，被塞在不起眼的角落，不仔细搜找不到。",
+    "portable": true,
+    "hidden": true,
+    "actions": [
+      {
+        "id": "stab",
+        "label": "用鱼叉刺",
+        "duration_minutes": 3,
+        "completion": "activity",
+        "recipient": true,
+        "on_complete": [
+          {
+            "kind": "harm",
+            "amount": 40,
+            "wound": "被鱼叉刺穿的伤口"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "core:island-herbs",
+    "version": 1,
+    "name": "草药",
+    "description": "一把能退烧的草药，嚼碎了敷上、煎水喝都行，只够用一次。",
+    "portable": true,
+    "actions": [
+      {
+        "id": "cure",
+        "label": "用草药治病",
+        "duration_minutes": 10,
+        "completion": "activity",
+        "consumes_item": true,
+        "recipient": true,
+        "on_complete": [
+          {
+            "kind": "cure_condition",
+            "condition": "illness"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "core:island-stone-hut",
+    "version": 1,
+    "name": "残墙石屋",
+    "description": "废墟里还剩半截墙的石屋，顶上搭着棕榈叶，挤得下一个人避雨、睡觉。",
+    "shelter": true,
+    "actions": [
+      {
+        "id": "hide",
+        "label": "在石屋里避雨",
+        "duration_minutes": 30,
+        "completion": "activity",
+        "rest": true,
+        "during": [
+          {
+            "kind": "restore_need",
+            "need": "energy",
+            "per_minute": 0.05,
+            "pause_decay": true
+          }
+        ]
+      },
+      {
+        "id": "sleep",
+        "label": "在石屋里睡觉",
+        "duration_minutes": 480,
+        "completion": "sleep",
+        "rest": true,
+        "during": [
+          {
+            "kind": "restore_need",
+            "need": "energy",
+            "per_minute": 0.15625,
+            "pause_decay": true
+          }
+        ]
+      }
+    ]
   }
 ]

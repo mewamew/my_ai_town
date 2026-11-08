@@ -1064,8 +1064,8 @@ export type ClientMsg =
       home?: string
       /** 入住时就定下用哪个模型思考；不带时先住下，选好模型再行动 */
       model?: ModelChoice
-      /** 预制小镇的选手：用这份人设入住，姓名取 name，长相照模板；不回写村民库 */
-      persona?: TemplateFields
+      /** 预制小镇的选手：用这份人设入住，姓名取 name，长相照模板（这里的 appearance 不用）；不回写村民库 */
+      persona?: Omit<TemplateFields, 'appearance'> & { appearance?: Appearance }
     }
   | { type: 'get_resident_join_result'; world_id: string; op_id: string }
   | { type: 'get_agent_config' | 'get_diary'; resident?: string }

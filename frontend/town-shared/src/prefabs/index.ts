@@ -1,4 +1,4 @@
-import type { GameModeChoice, PhysiologySwitches } from '../protocol'
+import type { AgentLimits, GameModeChoice, PhysiologySwitches, TemplateFields } from '../protocol'
 import { battleRoyale } from './battleRoyale'
 import { werewolf } from './werewolf'
 
@@ -20,8 +20,14 @@ export interface Prefab {
   spec: Record<string, unknown>
   /** 开局时打开的玩法；种子由开局设置决定 */
   gameMode: GameModeChoice
-  /** 选手：村民库里的模板，按号码排，人数从头取 */
+  /** 选手：村民库里的模板，按号码排，人数从头取；有 cast 时只借它们的长相 */
   roster: string[]
+  /** 这一局专门写的选手人设，和 roster 按号码对应：长相照 roster 的模板，人设用这里的，不进村民库 */
+  cast?: PrefabPersona[]
+  /** 开局时调的额度（每人每天、全镇总量……）；没写的项不动 */
+  limits?: Partial<AgentLimits>
+  /** 开局时布置地图上的道具：先按实例编号撤掉建镇生成器放的几件，再放这一局要的 */
+  furnish?: { remove: string[]; place: PrefabProp[] }
   players: { default: number; min: number; max: number }
   /** 「吃喝睡」打开时的生理开关；关掉时全关 */
   needs: PhysiologySwitches
@@ -30,6 +36,16 @@ export interface Prefab {
   needsHint: { on: string; off: string }
   /** 开局设置里这个玩法自己的几行（圈的位置、身份、白天长短……） */
   options: PrefabOption[]
+}
+
+/** 预制小镇的选手人设：村民库模板的字段，长相不写（借 roster 里的模板） */
+export type PrefabPersona = Omit<TemplateFields, 'appearance'>
+
+/** 开局时放的一件道具：实例编号、定义（编号@版本）、放在哪个地点 */
+export interface PrefabProp {
+  id: string
+  definition: string
+  locale: string
 }
 
 /** 开局设置里的一行分段选择；可以有一个取值要另填种子 */

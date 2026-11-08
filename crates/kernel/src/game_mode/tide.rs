@@ -64,7 +64,8 @@ const FIRST_AID: &str = r#"{"id":"tide:first-aid","version":1,"name":"急救包"
 const BISCUITS: &str = r#"{"id":"tide:biscuits","version":1,"name":"压缩饼干","description":"油纸包着的压缩饼干，一块顶一顿。","portable":true,"stack_limit":5,
  "actions":[{"id":"eat","label":"吃压缩饼干","duration_minutes":5,"completion":"activity","consumes_item":true,
   "on_complete":[{"kind":"restore","need":"fullness","amount":35.0}]}]}"#;
-const BOAT: &str = r#"{"id":"tide:boat","version":1,"name":"来接人的船","description":"最后一天靠岸的小船，只坐得下一个人。谁先登上去，船就带谁走。",
+/// 船沿用道具库里救援小船的图：画面按编号后半段找图。
+const BOAT: &str = r#"{"id":"tide:island-rescue-boat","version":1,"name":"来接人的船","description":"最后一天靠岸的小船，只坐得下一个人。谁先登上去，船就带谁走。",
  "actions":[{"id":"board","label":"登船","duration_minutes":10,"completion":"activity",
   "on_complete":[{"kind":"depart","text":"登上了船，离开了荒岛"}]}]}"#;
 
@@ -159,12 +160,14 @@ fn definition(json: &str) -> Definition {
     serde_json::from_str(json).expect("潮水圈自带的道具定义是写死的")
 }
 
-/// 一只装着 `content` 的木箱：撬开一次，东西进撬箱人的背包。
+/// 一只装着 `content` 的木箱：撬开一次，东西进撬箱人的背包。编号是 tide:crate-加上东西编号的后半段，
+/// 画面按它找木箱的图。
 fn crate_of(k: u32, content: &str, count: u32) -> Definition {
     let item = definition(content);
+    let what = item.id.rsplit(':').next().unwrap_or("item").to_string();
     definition(
         &serde_json::json!({
-            "id": format!("tide:crate-{}", item.id.replace(':', "-")),
+            "id": format!("tide:crate-{what}"),
             "version": 1,
             "name": "漂来的木箱",
             "description": format!("第 {k} 圈公布时潮水冲上岸的木箱，钉得很牢，撬开才知道里面是什么。"),

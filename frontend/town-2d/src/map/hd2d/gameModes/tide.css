@@ -1,0 +1,144 @@
+/* 潮水圈的界面层（gameModes/tide.ts）：浮在地图上，白底、浅色细边、柔和投影，不接点击。
+   顶上正中一排选手头像，右边菜单钮下面一列战报，分出结果时正中一张卡。 */
+.tide-hud {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  font-family: var(--font-ui);
+  color: var(--text);
+}
+.tide-hud[hidden] {
+  display: none;
+}
+.tide-px {
+  display: block;
+  flex: none;
+  image-rendering: pixelated;
+}
+.tide-lineup,
+.tide-news,
+.tide-ending {
+  background: var(--surface);
+  border: 1px solid rgb(31 36 33 / 0.1);
+  box-shadow: 0 2px 8px rgb(20 24 22 / 0.16);
+}
+
+/* ---------- 顶上：剩几个人 ---------- */
+.tide-lineup {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px 4px 14px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+.tide-lineup b {
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+.tide-faces {
+  display: flex;
+  gap: 3px;
+}
+.tide-face {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2, #f2efe8);
+  font-size: 13px;
+}
+.tide-face img {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+.tide-face.out {
+  filter: grayscale(1);
+  opacity: 0.4;
+}
+.tide-face.won {
+  box-shadow: 0 0 0 2px #e0b54a;
+}
+
+/* ---------- 右边：战报 ---------- */
+.tide-feed {
+  position: absolute;
+  top: 86px;
+  right: 14px;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.tide-news {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 12px 5px 6px;
+  border-radius: var(--r-m);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.tide-news-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tide-news-text small {
+  color: var(--text-2);
+  font-size: 11px;
+}
+/* 旧的几条淡一点 */
+.tide-news:nth-child(n + 3) {
+  opacity: 0.82;
+}
+.tide-news:nth-child(n + 4) {
+  opacity: 0.64;
+}
+
+/* ---------- 正中：结局 ---------- */
+.tide-ending {
+  position: absolute;
+  top: 34%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 18px 28px 16px;
+  border-radius: var(--r-l, 16px);
+  text-align: center;
+  max-width: min(420px, calc(100% - 32px));
+}
+.tide-ending b {
+  font-size: 20px;
+  letter-spacing: 0.02em;
+}
+.tide-ending small {
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+/* 窄屏：战报只留两条，贴在头像下面 */
+[data-layout='compact'] .tide-feed {
+  top: 56px;
+  right: 10px;
+  width: min(260px, 70vw);
+}
+[data-layout='compact'] .tide-news:nth-child(n + 3) {
+  display: none;
+}
+[data-layout='compact'] .tide-face {
+  width: 22px;
+  height: 22px;
+}

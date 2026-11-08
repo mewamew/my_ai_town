@@ -3,6 +3,7 @@ import { newId } from '../ids'
 import type { ModelOption } from '../models/session'
 import { portraitFor, templateKey } from '../portraits'
 import type {
+  AgentLimits,
   ClientMsg,
   JoinOutcome,
   JoinPreview,
@@ -13,12 +14,13 @@ import type {
 import { segmented, settingRow, switchControl } from '../settings/controls'
 import type { ShellPanel } from '../shell/panel'
 import type { createWorldSettings } from '../worldSettings'
-import type { Prefab, PrefabOption } from '.'
+import type { Prefab, PrefabOption, PrefabPersona } from '.'
 
 // 开局设置：第一次进预制小镇（还没设世界观）时代替开局向导。玩家只改几项：人数、每位选手用的模型、
 // 玩法自己的几行（预制小镇的 options：圈的位置、身份、白天长短……）、吃喝睡开不开；
 // 世界观、玩法和其余设定由预制小镇写好。
-// 点「开始这一局」依次保存世界观、生理开关，按号码请人入住（入住时带上各自的模型），最后打开玩法；
+// 点「开始这一局」依次保存世界观、生理开关，布置地图上的道具、调额度（预制小镇写了才做），
+// 按号码请人入住（入住时带上各自的模型；有这一局自己的人设时带上人设），最后打开玩法；
 // 哪一步出错就停在那一步说明原因，再点一次从那一步接着做。做完世界还停着，玩家点左上角的 ▶ 开始。
 // 跳过就交回原来的首次对话框，像普通小镇一样自己设。
 
@@ -74,6 +76,8 @@ export function createPrefabSetup(d: {
   let status = ''
   let worldviewSaved = false
   let needsSaved = false
+  let furnished = false
+  let limitsSaved = false
   let modeSaved = false
   const joined: (string | null)[] = []
   /** 正在请入住的号码（从 0 数），头像上的号码变成橙色 */
@@ -170,7 +174,7 @@ export function createPrefabSetup(d: {
     const pickable = options.length > 1
     for (let i = 0; i < p.players.max; i++) {
       const id = p.roster[i]
-      const name = names.get(id) ?? ''
+      const name = p.cast?.[i]?.name ?? names.get(id) ?? ''
       const on = i < players
       const cell = el('div', '', 'prefab-player')
       cell.classList.toggle('off', !on)
@@ -296,8 +300,61 @@ export function createPrefabSetup(d: {
     render()
   }
 
-  async function join(templateId: string, model: ModelChoice | null): Promise<string> {
-    d.send({ type: 'preview_resident_join', template_id: templateId })
+  /** 改道具的一条命令：等回执，没成时带着原因停下 */
+  async function propCommand(msg: (world_id: string, request_id: string) => ClientMsg) {
+    const world = d.worldSettings.state()
+    if (!world) throw Error('还没读到世界设定')
+    const request_id = newId()
+    d.send(msg(world.world_id, request_id))
+    const reply = await waitFor((m) =>
+      m.type === 'prop_result' && m.request_id === request_id ? m : undefined
+    )
+    if (!reply.ok) throw Error(reply.message)
+  }
+
+  /** 按预制小镇的布置撤掉、放上道具；撤和放同一个编号再做一次都没有副作用，出错后可以从头再来 */
+  async function furnish(f: NonNullable<Prefab['furnish']>) {
+    for (const id of f.remove)
+      // 建镇生成器换了版本、编号对不上时少撤一件不要紧
+      await propCommand((world_id, request_id) => ({
+        type: 'remove_prop',
+        request_id,
+        world_id,
+        id,
+      })).catch(() => undefined)
+    for (const { id, definition, locale } of f.place)
+      await propCommand((world_id, request_id) => ({
+        type: 'place_prop',
+        request_id,
+        world_id,
+        instance: { id, definition, locale },
+      }))
+  }
+
+  /** 额度：读到现在的，把预制小镇写了的几项换掉再存 */
+  async function setLimits(limits: Partial<AgentLimits>) {
+    d.send({ type: 'get_agent_limits' })
+    const current: AgentLimits = await waitFor((m) =>
+      m.type === 'agent_limits' ? m.limits : undefined
+    )
+    const request_id = newId()
+    d.send({ type: 'set_agent_limits', request_id, limits: { ...current, ...limits } })
+    const reply = await waitFor((m) =>
+      m.type === 'agent_saved' && m.request_id === request_id ? m : undefined
+    )
+    if (!reply.ok) throw Error(reply.message)
+  }
+
+  async function join(
+    templateId: string,
+    model: ModelChoice | null,
+    persona?: PrefabPersona
+  ): Promise<string> {
+    d.send({
+      type: 'preview_resident_join',
+      template_id: templateId,
+      ...(persona ? { name: persona.name } : {}),
+    })
     const preview: JoinPreview = await waitFor((m) =>
       m.type === 'join_preview' && m.preview.template_id === templateId ? m.preview : undefined
     )
@@ -314,6 +371,7 @@ export function createPrefabSetup(d: {
       name: preview.name,
       home: preview.home,
       ...(model ? { model } : {}),
+      ...(persona ? { persona } : {}),
     })
     const outcome: JoinOutcome = await waitFor((m) =>
       m.type === 'resident_joined' && m.outcome.op_id === op_id
@@ -348,12 +406,24 @@ export function createPrefabSetup(d: {
         await saved((done) => ws.savePhysiology(needs ? p.needs : ALL_OFF, revision, done))
         needsSaved = true
       }
+      if (p.furnish && !furnished) {
+        status = '正在布置岛上的东西…'
+        render()
+        await furnish(p.furnish)
+        furnished = true
+      }
+      if (p.limits && !limitsSaved) {
+        status = '正在调额度…'
+        render()
+        await setLimits(p.limits)
+        limitsSaved = true
+      }
       for (let i = 0; i < players; i++) {
         if (joined[i]) continue
         status = `正在请 ${i + 1} 号入住…`
         joining = i
         render()
-        joined[i] = await join(p.roster[i], slotModel(i))
+        joined[i] = await join(p.roster[i], slotModel(i), p.cast?.[i])
         joining = -1
       }
       if (!modeSaved) {

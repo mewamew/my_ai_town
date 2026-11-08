@@ -1,10 +1,14 @@
 import * as THREE from 'three'
-import type { GameModeView, TideCircle } from 'town-shared/protocol'
+import { el } from 'town-shared/dom'
+import { residentPortrait } from 'town-shared/portraits'
+import type { GameModeView, TideCircle, TideNews, TidePlayer, TideView } from 'town-shared/protocol'
 import { PIXEL } from '../../grid'
 import type { MapTheme } from '../../themes/types'
 import { SEA_DEPTH_HOOK } from '../sea'
 import { VILLAGER_SCALE } from '../villagerSprite'
 import type { GameModeLook } from '.'
+import { tideIcon } from './tideIcons'
+import './tide.css'
 
 // 潮水圈：圈外的岛沉到水下。
 // 地面：圈外的像素不画，露出底下的海。海面按「离新水边多远」重新算水深：圈外原来的地离水边越远越深，
@@ -14,6 +18,8 @@ import type { GameModeLook } from '.'
 // 投影跟着沉。村民也往下沉，但沉得再深也露出头。
 // 全部按地面像素格取整，保持像素风。圆心和半径是行走地图上的米，乘每米的地图单位换成场景坐标。
 // 外圈不是海的地图（干海床、冰原）上，圈外露出的是外圈本来的样子，水深不重算。
+// 界面（上帝视角）：顶上一排选手头像和还剩几个人，倒下的变灰；右边一列战报（谁对谁动了手、谁倒下了、
+// 木箱、船），新的在上；分出结果时正中打出谁活着离开。选手、战报、输赢都由内核的潮水插件给。
 
 /** 海面上，圈外原来的地每离水边一个像素，水深算几个像素：小于 1 时新水边的浅水带比天然海岸宽一些 */
 const SLOPE = 0.5
@@ -22,6 +28,16 @@ const SINK_FROM = 2
 const SINK_RATE = 0.6
 /** 村民最多沉到离脚底多高（人物像素）：一个人 28 像素高，水线压到下巴 */
 const WADE_TEXELS = 11
+/** 战报列几条 */
+const NEWS_SHOWN = 5
+
+/** 世界分钟写成「第 3 天 14:20」 */
+function clock(at: number) {
+  const day = Math.floor(at / 1440) + 1
+  const m = Math.floor(at % 1440)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `第 ${day} 天 ${pad(Math.floor(m / 60))}:${pad(m % 60)}`
+}
 
 const P = PIXEL.toFixed(1)
 
@@ -166,6 +182,10 @@ export class TideLook implements GameModeLook {
   private readonly uniforms: TideUniforms
   private readonly outerIsSea: boolean
   waterAnywhere = false
+  private layer: HTMLElement | null = null
+  private view: TideView | null = null
+  /** 上次画界面时选手、战报和输赢的样子：水边每拍都在动，这些没变就不重画 */
+  private drawn = ''
 
   constructor(theme: MapTheme) {
     this.outerIsSea = theme.outer === 'sea'
@@ -188,6 +208,13 @@ export class TideLook implements GameModeLook {
     )
   }
 
+  mount(layer: HTMLElement) {
+    this.layer = el('div', '', 'tide-hud')
+    this.layer.hidden = true
+    layer.append(this.layer)
+    this.render()
+  }
+
   apply(view: GameModeView | null, metre: number) {
     const tide = view?.kind === 'tide' ? view : null
     const set = (target: THREE.Vector4, c: TideCircle | null | undefined) =>
@@ -197,5 +224,68 @@ export class TideLook implements GameModeLook {
     set(this.uniforms.uTideEdge.value, tide?.edge)
     set(this.uniforms.uTideNext.value, tide?.next)
     this.waterAnywhere = tide !== null
+    this.view = tide
+    this.render()
+  }
+
+  private render() {
+    const root = this.layer
+    if (!root) return
+    const v = this.view
+    const players = v?.players ?? []
+    const key = v ? JSON.stringify([players, v.news ?? [], v.winner ?? '', v.phase === 'over']) : ''
+    if (key === this.drawn) return
+    this.drawn = key
+    root.hidden = !v || players.length === 0
+    root.replaceChildren()
+    if (!v || !players.length) return
+    root.append(this.lineup(v, players))
+    const news = v.news ?? []
+    if (news.length) root.append(this.feed(news))
+    if (v.phase === 'over') root.append(this.ending(v, players))
+  }
+
+  /** 顶上：还剩几个人，一排头像，倒下的变灰，上了船的亮金边 */
+  private lineup(v: TideView, players: TidePlayer[]) {
+    const box = el('div', '', 'tide-lineup')
+    const left = players.filter((p) => !p.fell && p.id !== v.winner).length
+    box.append(el('b', v.phase === 'over' ? '结束' : `剩 ${left} 人`))
+    const faces = el('div', '', 'tide-faces')
+    for (const p of players) {
+      const face = residentPortrait(p.id, p.name)
+      face.classList.add('tide-face')
+      if (p.fell) face.classList.add('out')
+      if (p.id === v.winner) face.classList.add('won')
+      face.title = p.fell ? `${p.name}：${p.fell}` : p.name
+      faces.append(face)
+    }
+    box.append(faces)
+    return box
+  }
+
+  /** 右边：最近几条战报，新的在上 */
+  private feed(news: TideNews[]) {
+    const box = el('div', '', 'tide-feed')
+    for (const n of news.slice(-NEWS_SHOWN).reverse()) {
+      const card = el('div', '', `tide-news ${n.kind}`)
+      const text = el('div', '', 'tide-news-text')
+      text.append(el('span', n.text), el('small', clock(n.at)))
+      card.append(tideIcon(n.kind), text)
+      box.append(card)
+    }
+    return box
+  }
+
+  /** 正中：谁活着离开了；没人等到船时也说一声 */
+  private ending(v: TideView, players: TidePlayer[]) {
+    const box = el('div', '', 'tide-ending')
+    const winner = players.find((p) => p.id === v.winner)
+    const last = [...(v.news ?? [])].reverse().find((n) => n.kind === (winner ? 'boat' : 'fell'))
+    box.append(
+      tideIcon(winner ? 'boat' : 'fell', 4),
+      el('b', winner ? `${winner.name} 活着离开了荒岛` : '没有人等到船')
+    )
+    if (last) box.append(el('small', last.text))
+    return box
   }
 }
