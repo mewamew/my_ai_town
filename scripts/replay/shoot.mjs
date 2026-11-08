@@ -27,7 +27,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import { launch, sleep } from './chrome.mjs'
+import { ANGLES, launch, sleep } from './chrome.mjs'
 import { loadMap, loadReel, scriptOf, segmentsFor, timeOfClock, townName } from './reels.mjs'
 
 const args = process.argv.slice(2)
@@ -70,12 +70,7 @@ for (const clip of list.clips) {
   console.log(
     `拍 ${name}：录像 ${(from / 1000).toFixed(1)} 秒起 ${clip.seconds} 秒，${width}×${height} ${fps} 帧`
   )
-  const chrome = await launch()
-  try {
-    await shoot(chrome, clip, from, ms, name)
-  } finally {
-    await chrome.close()
-  }
+  await shootWithWebGl(clip, from, ms, name)
   writeSubtitles(name, from, ms)
   sheet(name, clip.seconds)
   console.log(
@@ -83,6 +78,22 @@ for (const clip of list.clips) {
   )
 }
 
+/** 依次换图形后端开页；立体场景建不起来（退回了平面地图）就换下一个，都不行就报错退出，不拍假画面 */
+async function shootWithWebGl(clip, from, ms, name) {
+  for (const angle of ANGLES) {
+    const chrome = await launch(angle)
+    try {
+      if (await shoot(chrome, clip, from, ms, name)) return
+      console.log(`  用 ${angle} 建不起 WebGL，页面退回了平面地图，换下一个图形后端`)
+    } finally {
+      await chrome.close()
+    }
+  }
+  console.error(`无头 Chrome 用 ${ANGLES.join('、')} 都建不起 WebGL，拍不了 HD-2D 画面`)
+  process.exit(1)
+}
+
+/** 拍一段；立体场景没建起来时什么也不拍，返回 false */
 async function shoot(chrome, clip, from, ms, name) {
   const { send, evaluate } = chrome
   await send('Page.enable')
@@ -109,6 +120,8 @@ async function shoot(chrome, clip, from, ms, name) {
   }
   await evaluate(`window.__replay.provide(${JSON.stringify(input)})`)
   await until(() => evaluate('!!window.director'), '画面没有建起来', 120000)
+  // 立体场景建好时地图的 svg 带 hd2d；退回平面地图时没有
+  if (!(await evaluate("!!document.querySelector('svg.hd2d')"))) return false
   const ui = { names: true, bubbles: true, ...list.ui }
   await evaluate(`director.ui(${JSON.stringify({ clean: true, ...ui })}); director.hold()`)
   const people = await evaluate('director.residents()')
@@ -189,6 +202,7 @@ async function shoot(chrome, clip, from, ms, name) {
   ffmpeg.stdin.end()
   await done
   process.stdout.write('\r')
+  return true
 }
 
 /** 台词和心声各出一份 SRT（时刻按这段视频算），名字写在前面；字幕不烧进画面，进 PR 的字幕轨 */

@@ -9,7 +9,9 @@
 //! - `{"t","m":消息}`：名册以外的广播原样照抄（事件、世界设定、道具、人口……）；
 //! - `{"t","k":名册}`：完整名册。这一卷的第一份、每段开头，以及名册变了而离上一份完整的已过 10 秒时写；
 //! - `{"t","d":变化}`：名册只记跟上一份不同的地方：`s` 变了的顶层字段，`u` 没了的顶层字段，
-//!   `m` 按人记变了（或新来的人的全部）字段，`x` 按人记没了的字段，`o` 处所和人的先后（变了才记）。
+//!   `m` 按人记变了（或新来的人的全部）字段，`x` 按人记没了的字段，`o` 处所和人的先后（变了才记）；
+//!   `b` 按人记身体（body）里变了的地方：`s` 变了的项、`u` 没了的项、`h` 经历列表末尾新添的几条。
+//!   病人的身体每拍都在变，经历列表越积越长，整份重写会让录像暴涨，所以身体单独往下拆一层。
 //!   跟上一份一样的名册不写，重演时上一份一直有效。
 //!
 //! 每段开头先抄一遍最近的世界设定、道具和人口，再写一份完整名册，所以每一段都能单独拿来重演。
@@ -32,8 +34,9 @@ pub const RECORDINGS_DIR: &str = "recordings";
 /// 录像目录下按摘要存地图的子目录
 pub const MAPS_DIR: &str = "maps";
 const HEADER: &str = "header.json";
-/// 录像文件的格式号；读的一方只认得这个号，改了行的写法要加一
-pub const FORMAT: u32 = 1;
+/// 录像文件的格式号；读的一方只认得这个号，改了行的写法要加一。
+/// 2：名册变化里身体单独记（`b`），读 2 的一方也读得了 1。
+pub const FORMAT: u32 = 2;
 /// 一段录这么久（现实时间）就换下一段
 const SEGMENT: Duration = Duration::from_secs(5 * 60);
 /// 名册变了、离上一份完整名册已过这么久，就写完整的，跳到任意时刻最多从 10 秒前接起
@@ -420,17 +423,23 @@ pub fn roster_delta(prev: &Value, next: &Value) -> Option<Value> {
         .map(|k| Value::String(k.clone()))
         .collect();
     let before = members(prev);
-    let (mut changed, mut gone) = (Map::new(), Map::new());
+    let (mut changed, mut gone, mut bodies) = (Map::new(), Map::new(), Map::new());
     for (id, member) in members(next) {
         let Some(old) = before.get(&id) else {
             changed.insert(id, Value::Object(member.clone()));
             continue;
         };
-        let fields: Map<String, Value> = member
+        let mut fields: Map<String, Value> = member
             .iter()
             .filter(|(k, v)| old.get(*k) != Some(*v))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
+        if let (Some(Value::Object(was)), Some(Value::Object(now))) =
+            (old.get("body"), fields.get("body"))
+        {
+            bodies.insert(id.clone(), body_delta(was, now));
+            fields.remove("body");
+        }
         let missing: Vec<Value> = old
             .keys()
             .filter(|k| !member.contains_key(*k))
@@ -448,6 +457,7 @@ pub fn roster_delta(prev: &Value, next: &Value) -> Option<Value> {
         ("u", Value::Array(unset)),
         ("m", Value::Object(changed)),
         ("x", Value::Object(gone)),
+        ("b", Value::Object(bodies)),
     ] {
         let empty = match &value {
             Value::Object(o) => o.is_empty(),
@@ -463,6 +473,42 @@ pub fn roster_delta(prev: &Value, next: &Value) -> Option<Value> {
         delta.insert("o".into(), seated);
     }
     (!delta.is_empty()).then_some(Value::Object(delta))
+}
+
+/// 一个人身体里变了的地方：`s` 变了的项，`u` 没了的项，`h` 经历列表末尾新添的；
+/// 经历不是只往后添（比如复活后清了）时整份放进 `s`。
+fn body_delta(was: &Map<String, Value>, now: &Map<String, Value>) -> Value {
+    let mut set: Map<String, Value> = now
+        .iter()
+        .filter(|(k, v)| k.as_str() != "history" && was.get(*k) != Some(*v))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    let unset: Vec<Value> = was
+        .keys()
+        .filter(|k| !now.contains_key(*k))
+        .map(|k| Value::String(k.clone()))
+        .collect();
+    let mut delta = Map::new();
+    match (was.get("history"), now.get("history")) {
+        (Some(Value::Array(old)), Some(Value::Array(new)))
+            if new.len() >= old.len() && new[..old.len()] == old[..] =>
+        {
+            if new.len() > old.len() {
+                delta.insert("h".into(), Value::Array(new[old.len()..].to_vec()));
+            }
+        }
+        (old, Some(new)) if old != Some(new) => {
+            set.insert("history".into(), new.clone());
+        }
+        _ => {}
+    }
+    if !set.is_empty() {
+        delta.insert("s".into(), Value::Object(set));
+    }
+    if !unset.is_empty() {
+        delta.insert("u".into(), Value::Array(unset));
+    }
+    Value::Object(delta)
 }
 
 /// 名册里每个人：编号 → 字段

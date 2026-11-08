@@ -3,8 +3,10 @@
 // 每一份完整的，按 t 的先后交出 {t, msg}。只用纯 JS，浏览器（重演画面）和 Node（拍摄工具）共用；
 // 解压由调用方做（浏览器 DecompressionStream，Node zlib）。
 
-/** 能读的录像格式号，和 recording.rs 的 FORMAT 一致 */
-export const FORMAT = 1
+/** 录像格式号，和 recording.rs 的 FORMAT 一致；2 在名册变化里把身体单独记（b），1 的录像照样读 */
+export const FORMAT = 2
+/** 读得了的格式号 */
+export const FORMATS = [1, 2]
 
 /** 一段的原文 → 一行行的对象；进程意外退出时最后一行可能没写完，丢掉它 */
 export function parseSegment(text) {
@@ -44,7 +46,8 @@ export function createRosterState() {
       })
       return build()
     },
-    /** 变化：s 变了的顶层字段，u 没了的顶层字段，m 按人变了的字段，x 按人没了的字段，o 先后 */
+    /** 变化：s 变了的顶层字段，u 没了的顶层字段，m 按人变了的字段，x 按人没了的字段，o 先后，
+     *  b 按人身体里变了的地方（s 变了的项、u 没了的项、h 经历末尾新添的） */
     delta(d) {
       if (!top) throw Error('录像缺少开头的完整名册')
       if (d.s || d.u) {
@@ -59,6 +62,13 @@ export function createRosterState() {
         const member = { ...members.get(id) }
         for (const key of keys) delete member[key]
         members.set(id, member)
+      }
+      for (const [id, b] of Object.entries(d.b ?? {})) {
+        const member = members.get(id)
+        const body = { ...member?.body, ...b.s }
+        for (const key of b.u ?? []) delete body[key]
+        if (b.h) body.history = [...(body.history ?? []), ...b.h]
+        members.set(id, { ...member, body })
       }
       if (d.o) {
         order = d.o

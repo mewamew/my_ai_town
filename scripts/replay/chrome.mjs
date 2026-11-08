@@ -1,4 +1,6 @@
-// 拍素材用的无头 Chrome：走真 GPU（mac 上是 Metal），软件渲染跑不动 HD-2D 的整套后期。
+// 拍素材用的无头 Chrome：走真 GPU（mac 上先用 Metal），软件渲染跑不动 HD-2D 的整套后期。
+// 无头 Chrome 的 Metal 有时建不起 WebGL（实测半夜出现过），页面会悄悄退回平面地图：
+// 拍摄工具开页后看一眼，没建起来就换 OpenGL 再开一次（见 ANGLES）。
 // 只用 Chrome 自带的调试协议（CDP），不装别的包。
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
@@ -23,14 +25,17 @@ export function chromePath() {
   throw Error('找不到 Chrome：装一个 Google Chrome，或用 CHROME_PATH 指定')
 }
 
+/** 依次试的图形后端：Metal 建不起 WebGL 时换 OpenGL */
+export const ANGLES = ['metal', 'gl']
+
 /** 起一个无头 Chrome，返回连上第一个页面的 CDP 客户端；close() 关掉浏览器并删掉临时目录 */
-export async function launch() {
+export async function launch(angle = ANGLES[0]) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-town-shoot-'))
   const child = spawn(
     chromePath(),
     [
       '--headless=new',
-      '--use-angle=metal',
+      `--use-angle=${angle}`,
       '--ignore-gpu-blocklist',
       '--remote-debugging-port=0',
       `--user-data-dir=${profile}`,

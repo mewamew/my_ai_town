@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
 import { dataRoot } from '../towns/storage.mjs'
-import { FORMAT, createRosterState, messages, parseSegment, segmentFiles } from './reel.mjs'
+import { FORMATS, createRosterState, messages, parseSegment, segmentFiles } from './reel.mjs'
 
 /** 小镇目录：AI_TOWN_HOME（或系统默认的数据目录）下的 towns/<小镇> */
 export function townDir(town) {
@@ -43,7 +43,8 @@ export function loadReel(town, reel) {
   if (!id) throw Error(`小镇 ${town} 还没有录像`)
   const dir = path.join(root, id)
   const header = JSON.parse(fs.readFileSync(path.join(dir, 'header.json'), 'utf8'))
-  if (header.format !== FORMAT) throw Error(`录像格式 ${header.format} 读不了（只认 ${FORMAT}）`)
+  if (!FORMATS.includes(header.format))
+    throw Error(`录像格式 ${header.format} 读不了（只认 ${FORMATS.join('、')}）`)
   const segments = segmentFiles(fs.readdirSync(dir)).map((name) => {
     const raw = fs.readFileSync(path.join(dir, name))
     const text = (name.endsWith('.gz') ? zlib.gunzipSync(raw) : raw).toString('utf8')
