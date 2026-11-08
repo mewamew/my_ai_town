@@ -135,11 +135,18 @@ fn tide_rings_shrink_onto_the_high_ground_and_drain_whoever_stands_in_water() {
     let mut previous: TideCircle = v.edge;
     assert!(dist(previous.center, GOAL) + 0.1 < previous.radius);
 
-    // 第 2 天 08:00：第 1 圈已公布，所有人都收到公告。
+    // 第 2 天 08:00：第 1 圈已公布，所有人都收到公告，公告里写着还剩谁；第一只木箱冲上来。
     let events = w.step(25.0 * HOUR);
-    assert!(logs(&events)
-        .iter()
-        .any(|t| t.starts_with("【潮水】第 1 圈已公布")));
+    assert!(logs(&events).iter().any(
+        |t| t.starts_with("【潮水】第 1 圈已公布") && t.ends_with("岛上还剩 2 个人：甲、乙。")
+    ));
+    let crate_lines = |events: &[Event]| {
+        logs(events)
+            .iter()
+            .filter(|t| t.contains("潮水冲上来一只木箱"))
+            .count()
+    };
+    let mut crates = crate_lines(&events);
     let v = tide(&w).unwrap();
     assert_eq!((v.phase, v.ring), (TidePhase::Announced, 1));
     let first = v.next.unwrap();
@@ -154,15 +161,20 @@ fn tide_rings_shrink_onto_the_high_ground_and_drain_whoever_stands_in_water() {
     assert_eq!(tide(&restored), tide(&w));
     w = restored;
 
-    // 每天 20:00 停在当天那一圈：都在上一圈里，前四圈都包住最高处。第 2 到第 4 圈公布时各冲上来一只木箱。
-    let mut crates = 0;
+    // 每天 20:00 停在当天那一圈：都在上一圈里，前四圈都包住最高处。第 1 到第 3 圈公布时各冲上来一只木箱。
     for day in 1..=4 {
         let target = f64::from(day) * 1440.0 + 20.0 * HOUR;
         let events = w.step(target - w.minutes());
-        crates += logs(&events)
-            .iter()
-            .filter(|t| t.contains("潮水冲上来一只木箱"))
-            .count();
+        crates += crate_lines(&events);
+        if day == 2 {
+            // 第 3 天晚上：菜刀那箱在前两箱里，已经冲上来了
+            let snapshot = serde_json::to_value(w.snapshot()).unwrap();
+            assert!(snapshot["placed_props"]
+                .as_object()
+                .unwrap()
+                .values()
+                .any(|p| p["definition"]["id"] == "tide:crate-kitchen_knife"));
+        }
         let v = tide(&w).unwrap();
         assert_eq!((v.phase, v.ring), (TidePhase::Holding, day));
         assert!(dist(v.edge.center, previous.center) + v.edge.radius <= previous.radius + 1e-6);
@@ -235,6 +247,9 @@ fn tide_hands_the_boat_to_the_last_one_standing_and_keeps_the_fights_in_its_news
         panic!("丙的模型该看到潮水这一栏");
     };
     assert!(context.goal.starts_with("只有一个人能活着离开"));
+    assert!(context
+        .goal
+        .ends_with("眼下岛上还活着 3 个人：甲、乙、丙。"));
     assert_eq!(tide(&w).unwrap().players.len(), 3);
 
     // 甲拿地上的菜刀刺死乙：战报里有这一刀，名册里写着乙怎么死的

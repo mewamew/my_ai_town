@@ -2853,5 +2853,83 @@
         ]
       }
     ]
+  },
+  {
+    "id": "core:island-water-tube",
+    "version": 1,
+    "name": "竹筒水",
+    "description": "一节灌满淡水的竹筒，能带在身上，自己喝或者喂给身边的人。",
+    "portable": true,
+    "stack_limit": 3,
+    "actions": [
+      {
+        "id": "drink",
+        "label": "喝竹筒水",
+        "duration_minutes": 2,
+        "completion": "activity",
+        "consumes_item": true,
+        "recipient": true,
+        "on_complete": [
+          {
+            "kind": "restore",
+            "need": "water",
+            "amount": 35
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "core:island-bamboo",
+    "version": 1,
+    "name": "空竹筒堆",
+    "description": "一捆砍好的空竹筒，就着水源灌一筒带走。每天天亮能再找到几节。",
+    "actions": [
+      {
+        "id": "fill",
+        "label": "灌一筒水",
+        "duration_minutes": 3,
+        "completion": "activity",
+        "supply": {
+          "initial": 6,
+          "cost": 1,
+          "restock": {
+            "amount": 3,
+            "max": 6
+          }
+        },
+        "on_complete": [
+          {
+            "kind": "give_item",
+            "item": {
+              "id": "core:island-water-tube",
+              "version": 1,
+              "name": "竹筒水",
+              "description": "一节灌满淡水的竹筒，能带在身上，自己喝或者喂给身边的人。",
+              "portable": true,
+              "stack_limit": 3,
+              "actions": [
+                {
+                  "id": "drink",
+                  "label": "喝竹筒水",
+                  "duration_minutes": 2,
+                  "completion": "activity",
+                  "consumes_item": true,
+                  "recipient": true,
+                  "on_complete": [
+                    {
+                      "kind": "restore",
+                      "need": "water",
+                      "amount": 35
+                    }
+                  ]
+                }
+              ]
+            },
+            "count": 1
+          }
+        ]
+      }
+    ]
   }
 ]

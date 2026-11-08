@@ -5,9 +5,10 @@ import { seedOption, type Prefab, type PrefabPersona, type PrefabProp } from '.'
 // 选手是为这座岛写的八个人：目标一样（活下去），肯做到哪一步、牵挂和旧识不一样；长相借村民库里年纪、
 // 性别相近的模板，人设不进村民库。
 // 岛上的东西开局重新布置：建镇生成器每块空地放的床、干粮、水大多撤掉，吃喝集中到淡水泉和破码头，
-// 能躲雨的地方只有椰林的三处棕榈棚和废墟的三间残墙石屋，营地留两张露天的床；草药两份，
-// 石块和木棍摆在明处，两把鱼叉藏着要搜。菜刀不放，第 3 天起才可能随潮水冲上来的木箱出现。
-// 气候是热带：不下雪、雷暴少（第二局下了两场雪，四个人病死）。
+// 能躲雨的地方只有椰林的三处棕榈棚和废墟的三间残墙石屋，营地留两张露天的床；草药两份；
+// 淡水泉和码头各有一堆空竹筒，灌了水能带走、能喂给倒下的人（第二局有人倒下后谁也救不了）；
+// 石块和木棍摆在明处，两把鱼叉藏着要搜（世界观里点了一句在码头和潮池）。菜刀不放，第 2 天起才可能
+// 随潮水冲上来的木箱出现。气候是热带：不下雪、雷暴少（第二局下了两场雪，四个人病死）。
 
 /** 八个人共同的开局处境 */
 const AWAKE =
@@ -152,6 +153,7 @@ export const battleRoyale: Prefab = {
     '岛上有淡水泉、椰林、礁石潮池、废墟和一处破码头；吃的、喝的、能躲雨的地方都不多，有的东西藏着，要搜寻才找得到。' +
     '潮水每天涨一圈：天亮 06:00 公布今天要涨到的圈，12:00 开始涨，18:00 涨到，圈外的地会被淹没；第 1 圈第 2 天天亮才公布。' +
     '圈一天比一天小，最后只剩岛上最高的地方。站在水里很快就会耗尽力气。' +
+    '听说码头和礁石潮池的石缝里，有渔民落下的东西。' +
     '每个人口袋里都有一张纸条：只有一个人能活着离开。',
   spec: {
     schema_version: 2,
@@ -230,6 +232,7 @@ export const battleRoyale: Prefab = {
       ...at('area_3', 'core:island-stone@1', 'stone-3'),
       ...at('area_3', 'core:island-club@1', 'club'),
       ...at('area_4', 'core:island-herbs@1', 'herbs-1'),
+      ...at('area_4', 'core:island-bamboo@1', 'bamboo-1'),
       ...at('area_5', 'core:bed@2', 'bed-2'),
       ...at('area_6', 'core:island-herbs@1', 'herbs-2'),
       ...at(
@@ -243,6 +246,7 @@ export const battleRoyale: Prefab = {
       ...at('temple_1', 'core:island-stone-hut@1', 'stone-hut-1', 'stone-hut-2', 'stone-hut-3'),
       ...at('harbor_1', 'core:rations@2', 'rations'),
       ...at('harbor_1', 'core:drinking_water@1', 'water'),
+      ...at('harbor_1', 'core:island-bamboo@1', 'bamboo-2'),
       ...at('harbor_1', 'core:island-harpoon@1', 'harpoon-2'),
     ],
   },

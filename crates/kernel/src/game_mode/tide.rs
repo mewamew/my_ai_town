@@ -6,8 +6,9 @@
 //! 输赢：打开时在岛上的人是这一局的选手，开局每人口袋里一张纸条写明规则。最后一天天亮，终点停一条船，
 //! 只坐得下一个人，谁先登上去（道具动作「登船」，离开这个世界）谁赢；拖到 18:00 没人登船，船带走离它
 //! 最近的那个人。在那之前只剩一个人活着，船就提前来接他。一个人也没剩下就没有赢家。
-//! 第 2 到第 4 圈公布时，潮水往新圈里冲上来一只木箱：一把菜刀、一个急救包、一包压缩饼干各一箱，
-//! 顺序按种子定。有人对人动手、有人倒下、箱子和船都记进战报，名册里给画面看。
+//! 第 1 到第 3 圈公布时，潮水往新圈里冲上来一只木箱：一把菜刀、一个急救包、一包压缩饼干各一箱；
+//! 菜刀在前两箱里（第 2、3 天），其余顺序按种子定。每天天亮的公告和题面都写着还剩谁。
+//! 有人对人动手、有人倒下、箱子和船都记进战报，名册里给画面看。
 //!
 //! 圈、公告进度、选手、战报和输赢随快照保存；行走地图不存档，读档后按存下的圈接着涨。
 use super::Rules;
@@ -44,8 +45,8 @@ const WADING_WET: f64 = 3.0;
 const FREE_TEMPO: f64 = 3.0;
 /// 战报留几条。
 const NEWS_KEPT: usize = 12;
-/// 第几圈公布时冲上来一只木箱。
-const CRATE_RINGS: [u32; 3] = [2, 3, 4];
+/// 第几圈公布时冲上来一只木箱（第二局第 3 天才来第一只，那时只剩两个人）。
+const CRATE_RINGS: [u32; 3] = [1, 2, 3];
 const BOAT_ID: &str = "tide-boat";
 
 /// 给每位选手的模型一直看着的目标。
@@ -510,6 +511,16 @@ impl Tide {
         self.players.iter().find(|p| p.id == id)
     }
 
+    /// 还活着的人的名字，按入住顺序用顿号连起来。
+    fn alive_names(&self) -> String {
+        self.alive()
+            .iter()
+            .filter_map(|id| self.player(id))
+            .map(|p| p.name.as_str())
+            .collect::<Vec<_>>()
+            .join("、")
+    }
+
     fn alive(&self) -> Vec<String> {
         self.players
             .iter()
@@ -570,15 +581,25 @@ impl Tide {
             .map(|()| name)
     }
 
-    /// 第 k 圈公布时冲上来的木箱：三箱各装什么按种子定。
+    /// 第 k 圈公布时冲上来的木箱：菜刀在前两箱里的哪一箱、急救包和压缩饼干谁先，按种子定。
     fn wash_up_crate(&mut self, world: &mut World, k: u32) -> Option<String> {
         let slot = CRATE_RINGS.iter().position(|&r| r == k)?;
-        let mut contents = [(KNIFE, 1), (FIRST_AID, 1), (BISCUITS, 3)];
         let mut dice = self.seed.max(1) ^ 0x5bd1_e995;
-        for i in (1..contents.len()).rev() {
-            let j = (roll(&mut dice) * (i + 1) as f64) as usize;
-            contents.swap(i, j.min(i));
+        let knife = usize::from(roll(&mut dice) >= 0.5);
+        let mut rest = [(FIRST_AID, 1), (BISCUITS, 3)];
+        if roll(&mut dice) >= 0.5 {
+            rest.swap(0, 1);
         }
+        let mut rest = rest.into_iter();
+        let contents: Vec<_> = (0..CRATE_RINGS.len())
+            .map(|i| {
+                if i == knife {
+                    (KNIFE, 1)
+                } else {
+                    rest.next().expect("三箱：一箱菜刀，另两样各一箱")
+                }
+            })
+            .collect();
         let (content, count) = contents[slot];
         let center = self.rings[k as usize].center;
         let place = Self::drop_near(
@@ -756,6 +777,15 @@ impl Rules for Tide {
                     text = format!("{text}{}", line.replace("【潮水】", ""));
                 }
             }
+            // 天亮公布时提一句还剩谁：第二局 834 条心声里只有 4 条想到「只活一个」
+            if node % 3 == 0 && !self.players.is_empty() {
+                let alive = self.alive();
+                text = format!(
+                    "{text}岛上还剩 {} 个人：{}。",
+                    alive.len(),
+                    self.alive_names()
+                );
+            }
             Self::announce(world, &object, &text);
             if node % 3 == 2 && last {
                 self.check_players(world, &object);
@@ -856,8 +886,17 @@ impl Rules for Tide {
             }
         };
         let playing = !self.over && self.player(actor).is_some_and(|p| p.fell.is_none());
+        let goal = if playing {
+            format!(
+                "{GOAL}眼下岛上还活着 {} 个人：{}。",
+                self.alive().len(),
+                self.alive_names()
+            )
+        } else {
+            String::new()
+        };
         Some(GameModeContext::Tide(TideContext {
-            goal: if playing { GOAL.into() } else { String::new() },
+            goal,
             notice,
             standing: self.standing(world, a),
         }))
