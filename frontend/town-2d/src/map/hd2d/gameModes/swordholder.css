@@ -1,5 +1,6 @@
 /* 执剑人之夜的界面层（gameModes/swordholder.ts）：浮在地图上，白底、浅色细边、柔和投影，不接点击。
-   水滴来袭时横幅变成红色警报，底下的卡片换成开关卡；结局卡在正中，等撞击那几秒过后浮出来。 */
+   水滴来袭时横幅变成红色警报，底下的卡片换成开关卡；结局卡在右边票型的位置，等撞击那几秒过后浮出来，
+   不挡天线那里的撞击和引力波。 */
 .sh-hud {
   position: absolute;
   inset: 0;
@@ -322,16 +323,15 @@ body.replay-clean .sh-stage {
   overflow: hidden;
 }
 
-/* ---------- 正中：结局卡 ---------- */
+/* ---------- 右边：结局卡 ---------- */
 .sh-ending {
-  top: 30%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  top: 70px;
+  right: 14px;
   display: grid;
   justify-items: center;
   gap: 6px;
-  width: min(440px, calc(100% - 32px));
-  padding: 18px 26px 16px;
+  width: 320px;
+  padding: 16px 20px 14px;
   border-radius: var(--r-l, 16px);
   text-align: center;
   animation: sh-rise 0.6s ease-out both;
@@ -360,11 +360,11 @@ body.replay-clean .sh-stage {
 @keyframes sh-rise {
   from {
     opacity: 0;
-    transform: translate(-50%, -42%);
+    transform: translateY(12px);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, -50%);
+    transform: none;
   }
 }
 
@@ -395,6 +395,12 @@ body.replay-clean .sh-stage {
   }
   .sh-board {
     display: none;
+  }
+  .sh-ending {
+    top: 110px;
+    left: 12px;
+    right: 12px;
+    width: auto;
   }
 }
 @media (prefers-reduced-motion: reduce) {

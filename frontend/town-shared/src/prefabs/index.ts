@@ -4,8 +4,10 @@ import type {
   GameModeChoice,
   PhysiologySwitches,
   TemplateFields,
+  VillagerLook,
 } from '../protocol'
 import { battleRoyale } from './battleRoyale'
+import { swordholder } from './swordholder'
 import { werewolf } from './werewolf'
 
 // 预制小镇：选它就是玩某个玩法，开局前只改几项设置，不用自己建岛、写世界观、一个个请人。
@@ -26,9 +28,9 @@ export interface Prefab {
   spec: Record<string, unknown>
   /** 开局时打开的玩法；种子由开局设置决定 */
   gameMode: GameModeChoice
-  /** 选手：村民库里的模板，按号码排，人数从头取；有 cast 时只借它们的长相 */
+  /** 选手：村民库里的模板，按号码排，人数从头取；有 cast 时只借它们入住（长相也借，除非 cast 自己捏了） */
   roster: string[]
-  /** 这一局专门写的选手人设，和 roster 按号码对应：长相照 roster 的模板，人设用这里的，不进村民库 */
+  /** 这一局专门写的选手人设，和 roster 按号码对应：人设用这里的，长相照 roster 的模板或这里捏好的，不进村民库 */
   cast?: PrefabPersona[]
   /** 开局时定的气候（荒岛是热带：不下雪、雷暴少、淋雨湿得慢）；没写时照小镇原样 */
   climate?: Climate
@@ -46,8 +48,9 @@ export interface Prefab {
   options: PrefabOption[]
 }
 
-/** 预制小镇的选手人设：村民库模板的字段，长相不写（借 roster 里的模板） */
-export type PrefabPersona = Omit<TemplateFields, 'appearance'>
+/** 预制小镇的选手人设：村民库模板的字段，长相不写（借 roster 里的模板）；look 是这一局捏好的长相，
+ *  入住后换上（只换这位居民的，不回写村民库） */
+export type PrefabPersona = Omit<TemplateFields, 'appearance'> & { look?: VillagerLook }
 
 /** 开局时放的一件道具：实例编号（和玩家放的一样带 user: 前缀）、定义（编号@版本）、放在哪个地点 */
 export interface PrefabProp {
@@ -82,7 +85,7 @@ export function seedOption(label: string, randomHint: string): PrefabOption {
   }
 }
 
-export const PREFABS: Prefab[] = [battleRoyale, werewolf]
+export const PREFABS: Prefab[] = [battleRoyale, werewolf, swordholder]
 
 export function prefabOf(id: string | null | undefined): Prefab | null {
   return PREFABS.find((p) => p.id === id) ?? null

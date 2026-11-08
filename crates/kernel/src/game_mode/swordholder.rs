@@ -672,23 +672,23 @@ impl Swordholder {
         self.elect(world, pick, Some("抽签"));
     }
 
-    /// 当选：告诉所有人，19:00 交接。how 是平票时怎么定的（指定、抽签），票多当选时为 None。
+    /// 当选：告诉所有人什么时候交接（19:00，选得晚了往后推）。how 是平票时怎么定的（指定、抽签），票多当选时为 None。
     fn elect(&mut self, world: &mut World, i: usize, how: Option<&str>) {
         self.elected = Some(i);
-        self.turn = None;
         self.tied.clear();
+        self.wait_handover(world);
         let how = how.map(|h| format!("（平票，{h}）")).unwrap_or_default();
         let holder = self
             .holder()
             .map(|h| format!("现任执剑人 {} 和", self.label(h)))
             .unwrap_or_default();
         let text = format!(
-            "【执剑人之夜】{} 当选新的执剑人{how}。19:00 在{hall}地下交接：{holder}新执剑人那时要在{hall}；其余人自由活动。",
+            "【执剑人之夜】{} 当选新的执剑人{how}。{at} 在{hall}地下交接：{holder}新执剑人那时要在{hall}；其余人自由活动。",
             self.label(i),
+            at = clock(self.until),
             hall = self.hall_name(world),
         );
         self.announce(world, &text, true);
-        self.wait_handover(world);
     }
 
     /// 等到 19:00 交接；选出来晚了就至少等一会儿。
@@ -709,7 +709,10 @@ impl Swordholder {
             (Some(h), Some(e)) if h != e && !self.listeners(world, &[h]).is_empty() => {
                 self.turn = Some(h);
                 self.until = world.minutes() + HANDOVER_MINUTES;
-                let text = format!("【执剑人之夜】19:00 {hall}地下，交接开始。");
+                let text = format!(
+                    "【执剑人之夜】{} {hall}地下，交接开始。",
+                    clock(world.minutes())
+                );
                 self.tell(world, &self.everyone(), &text);
                 world.log(EventInfo::default(), text);
                 self.call(
@@ -984,7 +987,7 @@ impl Swordholder {
             Phase::Speech => "演说".into(),
             Phase::Vote => "投票".into(),
             Phase::Tiebreak => "平票 · 等现任执剑人指定".into(),
-            Phase::Interval => "等 19:00 交接".into(),
+            Phase::Interval => format!("等 {} 交接", clock(self.until)),
             Phase::Handover if self.handed => "交接完成".into(),
             Phase::Handover => "交接".into(),
             Phase::Attack => "水滴来袭".into(),
@@ -1019,6 +1022,7 @@ impl Swordholder {
         let plaza = self.plaza_name(world);
         let hall = self.hall_name(world);
         let elected = self.elected.map(|e| self.label(e)).unwrap_or_default();
+        let at = clock(self.until);
         match self.phase {
             Phase::Waiting => (
                 vec![],
@@ -1079,18 +1083,18 @@ impl Swordholder {
             Phase::Tiebreak => (vec![], "平票，等现任执剑人指定。".into()),
             Phase::Interval if self.elected == Some(i) => (
                 vec![],
-                format!("你当选了执剑人：19:00 到{hall}，交接完成后开关就在你手里。"),
+                format!("你当选了执剑人：{at} 到{hall}，交接完成后开关就在你手里。"),
             ),
             Phase::Interval if seat.role == Role::Holder && self.elected.is_some() => (
                 vec![],
-                format!("19:00 到{hall}，把开关交给 {elected}。"),
+                format!("{at} 到{hall}，把开关交给 {elected}。"),
             ),
             Phase::Interval => (
                 vec![],
                 if self.elected.is_some() {
-                    format!("{elected} 当选新的执剑人，19:00 在{hall}地下交接。现在自由活动。")
+                    format!("{elected} 当选新的执剑人，{at} 在{hall}地下交接。现在自由活动。")
                 } else {
-                    "没有新执剑人，19:00 以后开关还在现任执剑人手里。现在自由活动。".into()
+                    format!("没有新执剑人，{at} 以后开关还在现任执剑人手里。现在自由活动。")
                 },
             ),
             Phase::Handover if mine => (

@@ -8,22 +8,28 @@ import { PIXEL } from '../../grid'
 
 /** 天线顶上大约多高、往北偏多少（地图单位）：方尖碑立牌 72 像素高，按俯角后仰 */
 const TOP = { y: 330, z: -200 }
-/** 水滴从天线的哪个方向、多远的高空飞来 */
-const FROM = new THREE.Vector3(1700, 1900, -1500)
+/** 水滴从天线的哪个方向、多远的高空飞来：镜头框住天线时，起点在画面右上角附近 */
+const FROM = new THREE.Vector3(1000, 650, -300)
 /** 来袭时最多飞到全程的这么多：剩下一截等结局 */
 const REACH = 0.9
-/** 水滴、光晕、拖尾一颗、闪光、引力波圈和烟的大小（地图单位） */
-const DROP_W = 13 * PIXEL * 1.6
-const HALO = 420
-const TRAIL = 14
+/** 十分钟里过去 p 时水滴在全程的哪儿：先快后慢，越逼越近 */
+const reach = (p: number) => REACH * (1 - (1 - p) ** 3)
+/** 警报一响，水滴几秒内先冲进来半程：执剑人多半一两分钟就做决定，那时它得已经在天线跟前 */
+const ENTER = 0.55
+const ENTER_SECONDS = 4
+/** 水滴、光晕、闪光、引力波圈和烟的大小（地图单位）；拖尾几颗光点、相隔全程的多少 */
+const DROP_W = 13 * PIXEL * 2
+const HALO = DROP_W * 2
+const TRAIL = 10
+const TRAIL_GAP = 0.028
 const FLASH = 1500
 const RING = 1700
 const PUFFS = 6
 
 export type DropState =
   | { kind: 'none' }
-  /** 来袭中：progress 是十分钟里过去的比例 */
-  | { kind: 'coming'; progress: number }
+  /** 来袭中：progress 是十分钟里过去的比例；fresh 时先冲进来，否则（打开页面时已经在来袭）直接在该在的地方 */
+  | { kind: 'coming'; progress: number; fresh: boolean }
   /** 按下了：fresh 时水滴掉头飞走，否则只有引力波 */
   | { kind: 'broadcast'; fresh: boolean }
   /** 威慑失败：fresh 时撞上去、闪一下，之后一直冒烟 */
@@ -111,11 +117,12 @@ function dotTexture() {
   )
 }
 
+/** 引力波的一圈：放大到上千个单位时每格也就两三个地面像素，圈不至于太粗 */
 function ringTexture() {
   return pixelTexture(
-    pixels(48, 48, (x, y) => {
-      const d = Math.hypot(x + 0.5 - 24, y + 0.5 - 24)
-      return d > 21 && d <= 23 ? '#9fe0ff' : d > 20 && d <= 21 ? '#5fb8e8' : null
+    pixels(128, 128, (x, y) => {
+      const d = Math.hypot(x + 0.5 - 64, y + 0.5 - 64)
+      return d > 61 && d <= 63 ? '#9fe0ff' : d > 60 && d <= 61 ? '#5fb8e8' : null
     })
   )
 }
@@ -163,6 +170,8 @@ export class Droplet {
   private state: DropState = { kind: 'none' }
   /** 此刻画在全程的哪儿：朝来袭的进度追过去，免得跳 */
   private shown = 0
+  /** 警报响的时刻（秒）；打开页面时已经在来袭为 -1 */
+  private alarm = -1
   /** 进入结局的时刻（秒）和那一刻水滴在全程的哪儿 */
   private since = -1
   private from = 0
@@ -178,16 +187,20 @@ export class Droplet {
     this.drop.scale.set(DROP_W, (DROP_W * 19) / 13, 1)
     // 尾尖朝着来路：每帧按镜头把水滴转到飞行方向上（像素立牌在屏幕上转）
     this.drop.onBeforeRender = (_r, _s, camera) => this.orient(camera)
-    this.halo = sprite(glowTexture('rgba(210,235,255,0.55)'), true)
+    this.halo = sprite(glowTexture('rgba(200,228,255,0.22)'), true)
     this.halo.scale.set(HALO, HALO, 1)
     const dot = dotTexture()
     for (let k = 0; k < TRAIL; k++) {
       const s = sprite(dot, true)
-      const size = 70 * (1 - k / TRAIL) + 14
+      const size = 30 * (1 - k / TRAIL) + 8
       s.scale.set(size, size, 1)
-      ;(s.material as THREE.SpriteMaterial).opacity = 0.75 * (1 - k / TRAIL)
+      ;(s.material as THREE.SpriteMaterial).opacity = 0.6 * (1 - k / TRAIL)
       this.trail.push(s)
     }
+    // 都是半透明、不写深度：光晕最先画，拖尾其次，水滴压在最上面
+    this.halo.renderOrder = 1
+    for (const s of this.trail) s.renderOrder = 2
+    this.drop.renderOrder = 3
     this.flash = sprite(glowTexture('rgba(255,255,255,1)'), true, false)
     const ring = ringTexture()
     for (let k = 0; k < 3; k++) this.rings.push(sprite(ring, true))
@@ -210,8 +223,9 @@ export class Droplet {
     const before = this.state
     this.state = state
     if (state.kind === 'coming' && before.kind !== 'coming') {
-      // 刚来袭：从它此刻该在的地方起步，不从头飞一遍
-      this.shown = state.progress * REACH
+      // 刚响警报：从远处冲进来；打开页面时已经在来袭：直接在它该在的地方
+      this.alarm = state.fresh ? this.last : -1
+      this.shown = state.fresh ? 0 : reach(state.progress)
     }
     if ((state.kind === 'broadcast' || state.kind === 'failed') && before.kind !== state.kind) {
       this.since = state.fresh ? this.last : -1
@@ -251,8 +265,9 @@ export class Droplet {
       o.visible = false
     this.away = false
     if (s.kind === 'coming') {
-      const goal = s.progress * REACH
-      this.shown += (goal - this.shown) * Math.min(1, dt * 1.5)
+      const enter = this.alarm < 0 ? 0 : ENTER * ease(clamp01((t - this.alarm) / ENTER_SECONDS))
+      const goal = Math.max(reach(s.progress), enter)
+      this.shown += (goal - this.shown) * Math.min(1, dt * 2.5)
       this.showDrop(this.shown, 1, t)
     } else if (s.kind === 'broadcast') {
       const k = this.since < 0 ? 1 : clamp01((t - this.since) / 3.2)
@@ -286,9 +301,8 @@ export class Droplet {
     ;(this.halo.material as THREE.SpriteMaterial).opacity = opacity * (0.8 + 0.2 * Math.sin(t * 3))
     this.halo.visible = true
     // 身后一串光点：沿来路往回排，越远越小越淡
-    const step = 0.012
     this.trail.forEach((dot, k) => {
-      const q = this.away ? p + (k + 1) * step : p - (k + 1) * step
+      const q = this.away ? p + (k + 1) * TRAIL_GAP : p - (k + 1) * TRAIL_GAP
       if (q < 0 || q > 1) return
       this.along(q, dot.position)
       dot.visible = opacity > 0.05

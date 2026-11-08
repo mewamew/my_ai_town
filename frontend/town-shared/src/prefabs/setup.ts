@@ -1,7 +1,7 @@
 import { button, el } from '../dom'
 import { newId } from '../ids'
 import type { ModelOption } from '../models/session'
-import { portraitFor, templateKey } from '../portraits'
+import { lookKey, portraitFor, templateKey } from '../portraits'
 import type {
   AgentLimits,
   ClientMsg,
@@ -9,6 +9,7 @@ import type {
   JoinPreview,
   ModelChoice,
   PhysiologySwitches,
+  PopulationView,
   ServerMsg,
 } from '../protocol'
 import { segmented, settingRow, switchControl } from '../settings/controls'
@@ -20,7 +21,7 @@ import type { Prefab, PrefabOption, PrefabPersona } from '.'
 // 玩法自己的几行（预制小镇的 options：圈的位置、身份、白天长短……）、吃喝睡开不开；
 // 世界观、玩法和其余设定由预制小镇写好。
 // 点「开始这一局」依次保存世界观、生理开关，定气候、布置地图上的道具、调额度（预制小镇写了才做），
-// 按号码请人入住（入住时带上各自的模型；有这一局自己的人设时带上人设），最后打开玩法；
+// 按号码请人入住（入住时带上各自的模型；有这一局自己的人设时带上人设），换上这一局捏好的长相，最后打开玩法；
 // 哪一步出错就停在那一步说明原因，再点一次从那一步接着做。做完世界还停着，玩家点左上角的 ▶ 开始。
 // 跳过就交回原来的首次对话框，像普通小镇一样自己设。
 
@@ -79,6 +80,7 @@ export function createPrefabSetup(d: {
   let climateSaved = false
   let furnished = false
   let limitsSaved = false
+  let dressed = false
   let modeSaved = false
   const joined: (string | null)[] = []
   /** 正在请入住的号码（从 0 数），头像上的号码变成橙色 */
@@ -182,7 +184,8 @@ export function createPrefabSetup(d: {
       cell.classList.toggle('joined', !!joined[i])
       cell.classList.toggle('joining', running && joining === i)
       const face = el('span', '', 'prefab-face')
-      const key = keys.get(id)
+      const look = p.cast?.[i]?.look
+      const key = look ? lookKey(look) : keys.get(id)
       const url = key ? portraitFor(key) : undefined
       if (url) {
         const img = el('img')
@@ -372,7 +375,7 @@ export function createPrefabSetup(d: {
       name: preview.name,
       home: preview.home,
       ...(model ? { model } : {}),
-      ...(persona ? { persona } : {}),
+      ...(persona ? { persona: personaFields(persona) } : {}),
     })
     const outcome: JoinOutcome = await waitFor((m) =>
       m.type === 'resident_joined' && m.outcome.op_id === op_id
@@ -383,6 +386,39 @@ export function createPrefabSetup(d: {
     )
     if (!outcome.ok || !outcome.resident_id) throw Error(outcome.message)
     return outcome.resident_id
+  }
+
+  /** 入住带的人设：捏好的长相不在人设里，入住后另外换上 */
+  function personaFields({ look: _look, ...fields }: PrefabPersona) {
+    return fields
+  }
+
+  /** 选手入住后换上这一局捏好的长相：一位一位换，每次带上刚回来的人口版本 */
+  async function dress(p: Prefab) {
+    d.send({ type: 'get_population' })
+    let population: PopulationView = await waitFor((m) =>
+      m.type === 'population' ? m.population : undefined
+    )
+    for (let i = 0; i < players; i++) {
+      const look = p.cast?.[i]?.look
+      const registration = population.residents.find((r) => r.id === joined[i])
+      if (!look || !registration) continue
+      if (JSON.stringify(registration.appearance.look) === JSON.stringify(look)) continue
+      const request_id = newId()
+      d.send({
+        type: 'set_resident_appearance',
+        request_id,
+        world_id: population.world_id,
+        expected_revision: population.revision,
+        resident_id: registration.id,
+        appearance: { ...registration.appearance, look },
+      })
+      const reply = await waitFor((m) =>
+        m.type === 'resident_appearance_saved' && m.request_id === request_id ? m : undefined
+      )
+      if (!reply.ok) throw Error(reply.message)
+      population = reply.population
+    }
   }
 
   async function start() {
@@ -415,7 +451,7 @@ export function createPrefabSetup(d: {
         climateSaved = true
       }
       if (p.furnish && !furnished) {
-        status = '正在布置岛上的东西…'
+        status = '正在布置地图上的东西…'
         render()
         await furnish(p.furnish)
         furnished = true
@@ -433,6 +469,12 @@ export function createPrefabSetup(d: {
         render()
         joined[i] = await join(p.roster[i], slotModel(i), p.cast?.[i])
         joining = -1
+      }
+      if (p.cast?.some((c) => c.look) && !dressed) {
+        status = '正在换上这一局的长相…'
+        render()
+        await dress(p)
+        dressed = true
       }
       if (!modeSaved) {
         status = '正在打开玩法…'

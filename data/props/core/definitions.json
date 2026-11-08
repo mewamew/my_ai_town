@@ -2982,5 +2982,82 @@
         ]
       }
     ]
+  },
+  {
+    "id": "core:book-12",
+    "version": 1,
+    "name": "末日之战纪实",
+    "description": "完成阅读后可访问正文；记忆由阅读者自主决定。",
+    "readable": {
+      "work_id": "k-doomsday-battle",
+      "version": 1,
+      "kind": "book",
+      "title": "末日之战纪实",
+      "author": "太空军战史编写组",
+      "text": "危机纪元二百零五年，人类两千艘恒星级战舰在柯伊伯带外列成方阵，迎接三体世界派来的一个探测器。它只有几米长，形状像一滴水银，表面光滑得能映出整支舰队，人们叫它「水滴」。舰队打算把它捕获回去研究，很多人在舰上举杯，以为战争就要以人类的胜利结束。几分钟后，水滴开始加速。它在方阵里穿行，一艘接一艘撞穿战舰，炮火打在它身上不留一点痕迹。不到半个小时，两千艘战舰只剩几艘逃了出去。后来人们才知道，水滴用强相互作用力材料造成，比人类知道的一切东西都硬。末日之战以后，挡在三体舰队前面的不再是战舰，而是威慑：只要执剑人的手还放在开关上，水滴就不敢再来。",
+      "origin": {
+        "kind": "builtin"
+      }
+    },
+    "actions": [
+      {
+        "id": "read",
+        "label": "阅读",
+        "duration_minutes": 30,
+        "completion": "read_book"
+      }
+    ]
+  },
+  {
+    "id": "core:book-13",
+    "version": 1,
+    "name": "威慑纪元宪章",
+    "description": "完成阅读后可访问正文；记忆由阅读者自主决定。",
+    "readable": {
+      "work_id": "k-deterrence-charter",
+      "version": 1,
+      "kind": "book",
+      "title": "威慑纪元宪章",
+      "author": "联合国",
+      "text": "第一条　执剑人掌握引力波宇宙广播的开关。三体世界一旦进攻地球，执剑人应当按下开关，把三体世界的坐标广播给全宇宙。第二条　执剑人由公众选举产生，在联合国大厅地下的控制室值守，开关时刻不离执剑人身边。第三条　交接时，前任执剑人当面交出开关；新任执剑人从接过开关的那一刻起，独自承担全部责任。第四条　按与不按，由执剑人一人决定，任何人不得干预。第五条　威慑的力量不在开关本身，而在三体世界相信执剑人一定会按下它。（页边有人用铅笔写了一行小字：要是他们不信呢？）",
+      "origin": {
+        "kind": "builtin"
+      }
+    },
+    "actions": [
+      {
+        "id": "read",
+        "label": "阅读",
+        "duration_minutes": 30,
+        "completion": "read_book"
+      }
+    ]
+  },
+  {
+    "id": "core:tea-table",
+    "version": 1,
+    "name": "茶席",
+    "description": "矮茶几上摆着一把青瓷茶壶和几只小杯。坐下来喝一杯，也可以给同在这里的客人倒一杯。",
+    "actions": [
+      {
+        "id": "tea",
+        "label": "喝茶",
+        "duration_minutes": 20,
+        "completion": "activity",
+        "recipient": true,
+        "on_complete": [
+          {
+            "kind": "restore",
+            "need": "water",
+            "amount": 20
+          },
+          {
+            "kind": "restore",
+            "need": "energy",
+            "amount": 5
+          }
+        ]
+      }
+    ]
   }
 ]

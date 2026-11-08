@@ -17,7 +17,7 @@ import './swordholder.css'
 // 顶上一条横幅：威慑纪元 62 年、此刻在做什么、轮到谁；水滴来袭时变成红色警报，带倒计时。
 // 左边一列名单：头像、身份、谁握着开关、谁投了票。底下一张卡片放刚说的那段话和「心里」（交的时候写的打算）；
 // 水滴来袭的十分钟里换成开关卡：执剑人、倒计时、按下还是不按。右边亮票后是票型和每个人投票时的心里。
-// 结局定了正中一张结局卡（撞击那几秒过后才浮出来，不挡水滴）。名册每来一拍整层重画，状态没变时场景不会叫它。
+// 结局定了右边一张结局卡（撞击那几秒过后才浮出来）。名册每来一拍整层重画，状态没变时场景不会叫它。
 
 const ROLE: Record<SwordholderRole, string> = {
   holder: '现任执剑人',
@@ -86,7 +86,8 @@ export class SwordholderLook implements GameModeLook {
       state = { kind: v.ending === 'broadcast' ? 'broadcast' : 'failed', fresh }
     } else if (v?.phase === 'attack') {
       const left = v.left ?? ATTACK_MINUTES
-      state = { kind: 'coming', progress: Math.min(1, Math.max(0, 1 - left / ATTACK_MINUTES)) }
+      const progress = Math.min(1, Math.max(0, 1 - left / ATTACK_MINUTES))
+      state = { kind: 'coming', progress, fresh: !!before && before.phase !== 'attack' }
     }
     drop.set(state)
   }
@@ -278,7 +279,7 @@ export class SwordholderLook implements GameModeLook {
     return box
   }
 
-  /** 正中的结局卡：按下了还是威慑失败，执剑人当时说的话和心里 */
+  /** 右边的结局卡：按下了还是威慑失败，执剑人当时说的话和心里 */
   private ending(v: SwordholderView) {
     const failed = v.ending === 'failed'
     const box = el('div', '', failed ? 'sh-ending failed' : 'sh-ending')
