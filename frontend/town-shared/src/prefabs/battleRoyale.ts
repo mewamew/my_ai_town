@@ -5,10 +5,12 @@ import { seedOption, type Prefab, type PrefabPersona, type PrefabProp } from '.'
 // 选手是为这座岛写的八个人：目标一样（活下去），肯做到哪一步、牵挂和旧识不一样；长相借村民库里年纪、
 // 性别相近的模板，人设不进村民库。
 // 岛上的东西开局重新布置：建镇生成器每块空地放的床、干粮、水大多撤掉，吃喝集中到淡水泉和破码头，
-// 能躲雨的地方只有椰林的三处棕榈棚和废墟的三间残墙石屋，营地留两张露天的床；草药两份；
+// 能躲雨、睡觉的地方只有椰林的三处棕榈棚、废墟的三间残墙石屋和营地的两处棚子，没有床（第三局营地
+// 两张床在露天，睡在那里的梁婆、阿布最先病倒）；淡水泉和东岬各一丛草药，每天天亮长回一把，药一直有
+// 但要抢（第三局两份草药用完就没了，生病 40 次只治好 3 次）；
 // 淡水泉和码头各有一堆空竹筒，灌了水能带走、能喂给倒下的人（第二局有人倒下后谁也救不了）；
 // 石块和木棍摆在明处，两把鱼叉藏着要搜（世界观里点了一句在码头和潮池）。菜刀不放，第 2 天起才可能
-// 随潮水冲上来的木箱出现。气候是热带：不下雪、雷暴少（第二局下了两场雪，四个人病死）。
+// 随潮水冲上来的木箱出现。气候是热带：不下雪、雷暴少、淋雨湿得慢一半（第二局下了两场雪，四个人病死）。
 
 /** 八个人共同的开局处境 */
 const AWAKE =
@@ -147,12 +149,14 @@ const at = (locale: string, definition: string, ...ids: string[]): PrefabProp[] 
 export const battleRoyale: Prefab = {
   id: 'battle-royale',
   name: '大逃杀荒岛',
-  description: '一群人困在荒岛上，潮水每天涨一圈，只有最后一个人能坐船离开。',
+  description: '一群人困在荒岛上，潮水四天里收五圈，只有最后一个人能坐船离开。',
   worldview:
     '这是一座无人荒岛。你们醒来时就在岛上，不知道是怎么来的，也没有船能离开。' +
     '岛上有淡水泉、椰林、礁石潮池、废墟和一处破码头；吃的、喝的、能躲雨的地方都不多，有的东西藏着，要搜寻才找得到。' +
-    '潮水每天涨一圈：天亮 06:00 公布今天要涨到的圈，12:00 开始涨，18:00 涨到，圈外的地会被淹没；第 1 圈第 2 天天亮才公布。' +
-    '圈一天比一天小，最后只剩岛上最高的地方。站在水里很快就会耗尽力气。' +
+    '岛上没有火种、锅和柴刀，生不了火，也煮不了东西。' +
+    '潮水一共收五圈，每一圈先公布、再涨，圈外的地会被淹没：第 2 天收第 1 圈（06:00 公布，12:00 开始涨，18:00 涨到）；' +
+    '第 3、4 天每天收两圈，上午一圈（06:00 公布，08:00 开始涨，12:00 涨到），下午一圈（12:00 公布，14:00 开始涨，18:00 涨到）。' +
+    '圈一次比一次小，最后只剩岛上最高的地方：第 4 天中午最后一圈公布时会来一条船，傍晚水漫过全岛。站在水里很快就会耗尽力气。' +
     '听说码头和礁石潮池的石缝里，有渔民落下的东西。' +
     '每个人口袋里都有一张纸条：只有一个人能活着离开。',
   spec: {
@@ -203,7 +207,7 @@ export const battleRoyale: Prefab = {
   needsHint: { on: '会饿会渴会困，淋雨会着凉，站在水里会掉体力', off: '只比谁会躲水' },
   options: [seedOption('圈的位置', '每一局圈缩向哪里都不一样')],
   climate: 'tropical',
-  // 第一局一个人一天最多用了 263 万 token；一局要跑五天半，全镇总量也放宽
+  // 第一局一个人一天最多用了 263 万 token；一局跑到第 4 天傍晚，全镇总量也放宽
   limits: {
     calls_per_day: 600,
     tokens_per_day: 4_000_000,
@@ -211,15 +215,14 @@ export const battleRoyale: Prefab = {
     total_tokens: 200_000_000,
   },
   furnish: {
-    // 建镇生成器放的：area_N_prop_1/2/3 是床、干粮、水；椰林是座位和水；码头是渔网和渔具整理点
+    // 建镇生成器放的：area_N_prop_1/2/3 是床、干粮、水；椰林是座位和水；码头是渔网和渔具整理点。
+    // 淡水泉只留水
     remove: [
-      ...['area_1', 'area_2', 'area_3', 'area_6'].flatMap((a) =>
+      ...['area_1', 'area_2', 'area_3', 'area_5', 'area_6'].flatMap((a) =>
         [1, 2, 3].map((n) => `${a}_prop_${n}`)
       ),
       'area_4_prop_1',
       'area_4_prop_2',
-      'area_5_prop_2',
-      'area_5_prop_3',
       'park_1_prop_1',
       'park_1_prop_2',
       'harbor_1_prop_1',
@@ -231,10 +234,10 @@ export const battleRoyale: Prefab = {
       ...at('area_2', 'core:island-harpoon@1', 'harpoon-1'),
       ...at('area_3', 'core:island-stone@1', 'stone-3'),
       ...at('area_3', 'core:island-club@1', 'club'),
-      ...at('area_4', 'core:island-herbs@1', 'herbs-1'),
+      ...at('area_4', 'core:island-herb-bush@1', 'herb-bush-1'),
       ...at('area_4', 'core:island-bamboo@1', 'bamboo-1'),
-      ...at('area_5', 'core:bed@2', 'bed-2'),
-      ...at('area_6', 'core:island-herbs@1', 'herbs-2'),
+      ...at('area_5', 'core:island-shelter@1', 'camp-shelter-1', 'camp-shelter-2'),
+      ...at('area_6', 'core:island-herb-bush@1', 'herb-bush-2'),
       ...at(
         'park_1',
         'core:island-shelter@1',

@@ -14,6 +14,7 @@ use serde_json::json;
 use std::{collections::BTreeMap, sync::Arc};
 
 const HOUR: f64 = 60.0;
+const DAY: f64 = 1440.0;
 const GOAL: [f64; 2] = [24.0, 18.0];
 
 /// 一座圆岛：最高处在 (24, 18)，离它约 14.6 米以外是海。甲站在最高处，乙站在离它 12 米的东岸。
@@ -161,13 +162,50 @@ fn tide_rings_shrink_onto_the_high_ground_and_drain_whoever_stands_in_water() {
     assert_eq!(tide(&restored), tide(&w));
     w = restored;
 
-    // 每天 20:00 停在当天那一圈：都在上一圈里，前四圈都包住最高处。第 1 到第 3 圈公布时各冲上来一只木箱。
-    for day in 1..=4 {
-        let target = f64::from(day) * 1440.0 + 20.0 * HOUR;
-        let events = w.step(target - w.minutes());
+    // 旧存档没有时间表：照当时每天一圈接着涨，第 3 天 13:00 还在涨第 2 圈。
+    let mut old = serde_json::to_value(w.snapshot()).unwrap();
+    old["game_mode"]["tide"]
+        .as_object_mut()
+        .unwrap()
+        .remove("timetable")
+        .unwrap();
+    let mut daily = island();
+    daily
+        .restore_snapshot(serde_json::from_value(old).unwrap())
+        .unwrap();
+    daily.step(2.0 * DAY + 13.0 * HOUR - daily.minutes());
+    let v = tide(&daily).unwrap();
+    assert_eq!((v.phase, v.ring), (TidePhase::Rising, 2));
+
+    // 后两天上午、下午各收一圈。每一圈涨到时水边停在那一圈：都在上一圈里、都包住最高处；中午涨到的那一刻
+    // 下一圈接着公布。第 1 到第 3 圈公布时各冲上来一只木箱，菜刀那箱在前两箱里。
+    let mut lines = Vec::new();
+    for (k, day, hour) in [
+        (1, 1.0, 18.0),
+        (2, 2.0, 12.0),
+        (3, 2.0, 18.0),
+        (4, 3.0, 12.0),
+    ] {
+        let events = w.step(day * DAY + hour * HOUR + 30.0 - w.minutes());
         crates += crate_lines(&events);
-        if day == 2 {
-            // 第 3 天晚上：菜刀那箱在前两箱里，已经冲上来了
+        lines = logs(&events);
+        let v = tide(&w).unwrap();
+        let expected = if hour < 18.0 {
+            (TidePhase::Announced, k + 1)
+        } else {
+            (TidePhase::Holding, k)
+        };
+        assert_eq!((v.phase, v.ring), expected);
+        assert!(dist(v.edge.center, previous.center) + v.edge.radius <= previous.radius + 1e-6);
+        assert!(dist(v.edge.center, GOAL) <= v.edge.radius);
+        previous = v.edge;
+        if k == 1 {
+            let Some(GameModeContext::Tide(context)) = w.game_mode_context("a") else {
+                panic!("甲的模型该看到潮水这一栏");
+            };
+            assert_eq!(context.notice, "潮水停在第 1 圈；明天 06:00 公布下一圈。");
+        }
+        if k == 2 {
             let snapshot = serde_json::to_value(w.snapshot()).unwrap();
             assert!(snapshot["placed_props"]
                 .as_object()
@@ -175,13 +213,12 @@ fn tide_rings_shrink_onto_the_high_ground_and_drain_whoever_stands_in_water() {
                 .values()
                 .any(|p| p["definition"]["id"] == "tide:crate-kitchen_knife"));
         }
-        let v = tide(&w).unwrap();
-        assert_eq!((v.phase, v.ring), (TidePhase::Holding, day));
-        assert!(dist(v.edge.center, previous.center) + v.edge.radius <= previous.radius + 1e-6);
-        assert!(dist(v.edge.center, GOAL) <= v.edge.radius);
-        previous = v.edge;
     }
     assert_eq!(crates, 3);
+    // 第 4 天中午第 4 圈涨到，最后一圈公布，船停到最高处，只坐一个人。
+    assert!(lines.iter().any(|t| t
+        .starts_with("【潮水】最后一圈已公布：今天 14:00 开始涨，18:00 前水会漫过全岛。")
+        && t.contains("只坐得下一个人")));
 
     // 第 4 圈只剩山顶一小块：乙站在水里，比站在山顶的甲每小时多掉 6 点精力。
     rested(&mut w);
@@ -194,12 +231,9 @@ fn tide_rings_shrink_onto_the_high_ground_and_drain_whoever_stands_in_water() {
     };
     assert!(context.standing.unwrap().starts_with("你站在潮水里"));
 
-    // 第 6 天天亮船停到最高处，只坐一个人；没人去登船，18:00 水漫过全岛，船带走离它最近的甲。
-    let events = w.step(5.0 * 1440.0 + 18.0 * HOUR - w.minutes());
+    // 没人去登船，第 4 天 18:00 水漫过全岛，船带走离它最近的甲。
+    let events = w.step(3.0 * DAY + 18.0 * HOUR - w.minutes());
     let lines = logs(&events);
-    assert!(lines
-        .iter()
-        .any(|t| t.starts_with("【潮水】最后一圈已公布") && t.contains("只坐得下一个人")));
     assert!(lines.iter().any(|t| t == "【潮水】水漫过了全岛。"));
     assert!(lines
         .iter()
@@ -242,7 +276,7 @@ fn tide_hands_the_boat_to_the_last_one_standing_and_keeps_the_fights_in_its_news
     let events = w.step(1.0);
     assert!(logs(&events)
         .iter()
-        .any(|t| t.starts_with("【纸条】") && t.contains("第 6 天会来一条船")));
+        .any(|t| t.starts_with("【纸条】") && t.contains("最后一圈在第 4 天 12:00 公布")));
     let Some(GameModeContext::Tide(context)) = w.game_mode_context("c") else {
         panic!("丙的模型该看到潮水这一栏");
     };

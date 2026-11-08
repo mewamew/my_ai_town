@@ -101,7 +101,9 @@ impl Runtime {
                 ok: result.is_ok(),
                 message: result.err().unwrap_or_else(|| match climate {
                     protocol::Climate::Temperate => "气候改成了温带：天气照常".into(),
-                    protocol::Climate::Tropical => "气候改成了热带：不再下雪，雷暴少一半".into(),
+                    protocol::Climate::Tropical => {
+                        "气候改成了热带：不再下雪，雷暴少一半，淋雨湿得慢一半".into()
+                    }
                 }),
             })
     }
@@ -134,7 +136,8 @@ impl Runtime {
                 ok: result.is_ok(),
                 message: result.err().unwrap_or_else(|| match choice {
                     Some(GameModeChoice::Tide { .. }) => {
-                        "潮水圈已打开：每天 06:00 公布下一圈，12:00 开始涨，18:00 涨到".into()
+                        "潮水圈已打开：下一个天亮公布第 1 圈，之后两天每天两圈，最后一圈公布时来船"
+                            .into()
                     }
                     Some(GameModeChoice::Werewolf { .. }) => {
                         "狼人杀已打开：身份已发下，天亮开局；每天 16:30 敲钟、17:00 议事".into()

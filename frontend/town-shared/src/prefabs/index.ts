@@ -30,7 +30,7 @@ export interface Prefab {
   roster: string[]
   /** 这一局专门写的选手人设，和 roster 按号码对应：长相照 roster 的模板，人设用这里的，不进村民库 */
   cast?: PrefabPersona[]
-  /** 开局时定的气候（荒岛是热带：不下雪、雷暴少）；没写时照小镇原样 */
+  /** 开局时定的气候（荒岛是热带：不下雪、雷暴少、淋雨湿得慢）；没写时照小镇原样 */
   climate?: Climate
   /** 开局时调的额度（每人每天、全镇总量……）；没写的项不动 */
   limits?: Partial<AgentLimits>

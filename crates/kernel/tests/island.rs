@@ -346,4 +346,13 @@ fn rain_wears_down_the_exposed_until_ill_and_a_shelter_keeps_them_dry() {
     assert_eq!(w.exposure_at("r"), Exposure::Indoor);
     w.step(10.0);
     assert!(w.actor("r").unwrap().needs.body.wet < wet - 5.0);
+
+    // 热带的雨淋湿得慢一半：避完雨出来，大雨里淋一小时只湿到 30（温带 60），三小时才着凉。
+    w.set_climate(protocol::Climate::Tropical).unwrap();
+    w.step(20.0);
+    assert_eq!(w.exposure_at("r"), Exposure::Outdoor);
+    let start = w.actor("r").unwrap().needs.body.wet;
+    w.step(60.0);
+    let gained = w.actor("r").unwrap().needs.body.wet - start;
+    assert!((gained - 30.0).abs() < 1e-6, "{gained}");
 }

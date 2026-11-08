@@ -594,7 +594,7 @@ export interface PhysiologySwitches {
   /** 天气影响身体：露天淋雨雪额外消耗精力，淋久了生病；旧存档没有，按关闭 */
   weather?: boolean
 }
-/** 气候：温带照天气规则的转移表；热带不下雪，转到雷暴的机会减半 */
+/** 气候：温带照天气规则的转移表；热带不下雪，转到雷暴的机会减半，淋雨湿得慢一半 */
 export type Climate = 'temperate' | 'tropical'
 export interface WorldSettingsState {
   world_id: string
@@ -607,7 +607,7 @@ export interface WorldSettingsState {
   persistent: boolean
   max_chars: number
   physiology: PhysiologySwitches
-  /** 气候：温带照常；热带不下雪、雷暴少一半。随存档保存，缺省为温带 */
+  /** 气候：温带照常；热带不下雪、雷暴少一半、淋雨湿得慢一半。随存档保存，缺省为温带 */
   climate: Climate
   /** 化身神力：化身能对够得着的人复活、治愈、补满。随存档保存，缺省为关 */
   miracles: boolean

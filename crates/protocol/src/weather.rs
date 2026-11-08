@@ -1,8 +1,8 @@
 //! 世界天气事实；随机数与渲染参数不在线上暴露。
 use serde::{Deserialize, Serialize};
 
-/// 气候：天气怎么转的倾向，世界级，随存档保存。温带照天气规则的转移表（默认）；热带不下雪，
-/// 转到雷暴的机会减半（荒岛这类地方）。
+/// 气候：天气怎么转的倾向和雨有多伤身，世界级，随存档保存。温带照天气规则的转移表（默认）；
+/// 热带不下雪，转到雷暴的机会减半，雨是暖的、淋湿得慢一半（荒岛这类地方）。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Climate {
@@ -13,6 +13,14 @@ pub enum Climate {
 impl Climate {
     pub fn is_temperate(&self) -> bool {
         *self == Self::Temperate
+    }
+    /// 露天淋雨时身上湿得多快，乘在天气的淋湿速度上：热带小雨淋 6 小时才着凉，温带 3 小时
+    /// （第三局荒岛 39 次着凉里 23 次在淋雨）。
+    pub fn wet_scale(self) -> f64 {
+        match self {
+            Self::Temperate => 1.0,
+            Self::Tropical => 0.5,
+        }
     }
     pub fn label(self) -> &'static str {
         match self {

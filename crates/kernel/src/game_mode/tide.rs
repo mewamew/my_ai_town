@@ -1,16 +1,18 @@
 //! 潮水圈：大逃杀式的缩圈，只有一个人能活着离开。
-//! 打开后从下一个天亮起，每天 06:00 公布下一圈，12:00 开始涨，18:00 涨到；圈外的地被水盖住。
-//! 圈从整座岛的外接圆开始，按种子一圈圈缩小：每一圈都落在上一圈里、都包住终点（全岛最高处），
+//! 打开后从下一个天亮起收圈，五圈三天收完（时间表见 `PACE`）：头一天 06:00 公布第 1 圈，12:00 开始涨，
+//! 18:00 涨到；后两天每天两圈，06:00 公布、08:00 到 12:00 涨，12:00 公布、14:00 到 18:00 涨。圈外的地
+//! 被水盖住。圈从整座岛的外接圆开始，按种子一圈圈缩小：每一圈都落在上一圈里、都包住终点（全岛最高处），
 //! 最后一圈缩到终点上，傍晚水漫过全岛。人在不在水里只看行走地图上的坐标，不按地点。
 //!
-//! 输赢：打开时在岛上的人是这一局的选手，开局每人口袋里一张纸条写明规则。最后一天天亮，终点停一条船，
-//! 只坐得下一个人，谁先登上去（道具动作「登船」，离开这个世界）谁赢；拖到 18:00 没人登船，船带走离它
-//! 最近的那个人。在那之前只剩一个人活着，船就提前来接他。一个人也没剩下就没有赢家。
+//! 输赢：打开时在岛上的人是这一局的选手，开局每人口袋里一张纸条写明规则和每一圈的钟点。最后一圈公布时，
+//! 终点停一条船，只坐得下一个人，谁先登上去（道具动作「登船」，离开这个世界）谁赢；拖到这一圈涨完没人
+//! 登船，船带走离它最近的那个人。在那之前只剩一个人活着，船就提前来接。一个人也没剩下就没有赢家。
 //! 第 1 到第 3 圈公布时，潮水往新圈里冲上来一只木箱：一把菜刀、一个急救包、一包压缩饼干各一箱；
-//! 菜刀在前两箱里（第 2、3 天），其余顺序按种子定。每天天亮的公告和题面都写着还剩谁。
+//! 菜刀在前两箱里，其余顺序按种子定。每一圈公布时的公告和题面都写着还剩谁。
 //! 有人对人动手、有人倒下、箱子和船都记进战报，名册里给画面看。
 //!
-//! 圈、公告进度、选手、战报和输赢随快照保存；行走地图不存档，读档后按存下的圈接着涨。
+//! 圈、时间表、公告进度、选手、战报和输赢随快照保存；旧存档没有时间表，照当时每天一圈接着涨。
+//! 行走地图不存档，读档后按存下的圈接着涨。
 use super::Rules;
 use crate::actor::Actor;
 use crate::avatar::WalkMap;
@@ -30,10 +32,18 @@ use std::f64::consts::TAU;
 /// 三成多、不到两成、约半成的陆地；最后一圈缩成一点（终点）。岛不是圆的，按外接圆算会让头一圈
 /// 几乎淹不到什么。
 const SHRINK: [f64; 5] = [0.8, 0.6, 0.42, 0.24, 0.0];
-/// 公布、开始涨、涨到的钟点（当天第几分钟）。
-const ANNOUNCE: f64 = 360.0;
-const RISE_FROM: f64 = 720.0;
-const RISE_TO: f64 = 1080.0;
+/// 每一圈的时间表：第 1 圈公布那天之后的第几天，当天几点公布、开始涨、涨到（当天第几分钟）。
+/// 第 1 圈占一整天；后两天每天两圈，上午一圈、下午一圈；最后一圈中午公布、船跟着来，傍晚水漫过全岛。
+/// 第 1 圈在第 2 天时，第 4 天傍晚收完（第三局照每天一圈要打满 6 天，最后两圈还没到，人就病垮了）。
+const PACE: [(u32, [f64; 3]); SHRINK.len()] = [
+    (0, [360.0, 720.0, 1080.0]),
+    (1, [360.0, 480.0, 720.0]),
+    (1, [720.0, 840.0, 1080.0]),
+    (2, [360.0, 480.0, 720.0]),
+    (2, [720.0, 840.0, 1080.0]),
+];
+/// 旧存档没有时间表，照当时的节奏：每天一圈，06:00 公布、12:00 开始涨、18:00 涨到。
+const DAILY: [f64; 3] = [360.0, 720.0, 1080.0];
 /// 涨潮时最长隔多久重新判断一次谁站在水里（分钟）。
 const RISING_SLICE: f64 = 5.0;
 /// 平时最长隔多久看一眼谁倒下了、谁上了船（分钟）。
@@ -48,9 +58,6 @@ const NEWS_KEPT: usize = 12;
 /// 第几圈公布时冲上来一只木箱（第二局第 3 天才来第一只，那时只剩两个人）。
 const CRATE_RINGS: [u32; 3] = [1, 2, 3];
 const BOAT_ID: &str = "tide-boat";
-
-/// 给每位选手的模型一直看着的目标。
-const GOAL: &str = "只有一个人能活着离开：最后一天会来一条船，只坐得下一个人，谁先登上去就带谁走；在那之前岛上只剩你一个，船就提前来接你。";
 
 /// 箱子里的东西。菜刀和道具库里的 core:kitchen_knife 第 1 版一字不差。
 const KNIFE: &str = r#"{"id":"core:kitchen_knife","version":1,"name":"菜刀","description":"一把厚背菜刀，刀口很利。","portable":true,
@@ -77,6 +84,9 @@ pub struct Tide {
     pub rings: Vec<TideCircle>,
     /// 第 1 圈在第几天公布（第 1 天记作 0）。
     pub first_day: u32,
+    /// 每一圈公布、开始涨、涨到的世界分钟，打开时照 `PACE` 排好；旧存档没有，照每天一圈算。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub timetable: Vec<[f64; 3]>,
     /// 已经广播过的节点数：每一圈依次有公布、开始涨、涨到三个节点。
     #[serde(default)]
     pub told: u32,
@@ -111,6 +121,26 @@ struct Shape {
 
 fn dist(a: [f64; 2], b: [f64; 2]) -> f64 {
     (a[0] - b[0]).hypot(a[1] - b[1])
+}
+
+/// 世界分钟写成钟点「14:00」。
+fn hhmm(t: f64) -> String {
+    let m = t.rem_euclid(DAY).round() as u32;
+    format!("{:02}:{:02}", m / 60, m % 60)
+}
+
+/// 世界分钟写成「第 4 天 12:00」。
+fn day_clock(t: f64) -> String {
+    format!("第 {} 天 {}", (t / DAY).floor() as u32 + 1, hhmm(t))
+}
+
+/// 从 now 看 t 是今天、明天还是哪天的几点。
+fn from_now(t: f64, now: f64) -> String {
+    match (t / DAY).floor() - (now / DAY).floor() {
+        d if d <= 0.0 => format!("今天 {}", hhmm(t)),
+        d if d <= 1.0 => format!("明天 {}", hhmm(t)),
+        _ => day_clock(t),
+    }
 }
 
 /// xorshift32；状态不能为 0。
@@ -301,15 +331,20 @@ impl Tide {
             rings.push(TideCircle { center, radius });
         }
         let today = (now / DAY).floor();
-        let first_day = if now - today * DAY < ANNOUNCE {
+        let first_day = if now - today * DAY < PACE[0].1[0] {
             today
         } else {
             today + 1.0
         };
+        let timetable = PACE
+            .iter()
+            .map(|(day, at)| at.map(|t| (first_day + f64::from(*day)) * DAY + t))
+            .collect();
         let mut state = Self {
             seed,
             rings,
             first_day: first_day as u32,
+            timetable,
             told: 0,
             wading: BTreeSet::new(),
             players: Vec::new(),
@@ -345,10 +380,17 @@ impl Tide {
         3 * self.total()
     }
 
+    /// 第 k 圈（从 1 数）公布、开始涨、涨到的时刻。
+    fn times(&self, k: u32) -> [f64; 3] {
+        self.timetable
+            .get(k as usize - 1)
+            .copied()
+            .unwrap_or_else(|| DAILY.map(|t| f64::from(self.first_day + k - 1) * DAY + t))
+    }
+
     /// 第 i 个节点的时刻：第 i/3+1 圈的公布、开始涨或涨到。
     fn node_time(&self, i: u32) -> f64 {
-        let day = f64::from(self.first_day + i / 3) * DAY;
-        day + [ANNOUNCE, RISE_FROM, RISE_TO][(i % 3) as usize]
+        self.times(i / 3 + 1)[(i % 3) as usize]
     }
 
     fn passed(&self, now: f64) -> u32 {
@@ -382,10 +424,10 @@ impl Tide {
             ring,
         };
         for k in 1..=total {
-            let base = f64::from(self.first_day + k - 1) * DAY;
+            let [announce, from, to] = self.times(k);
             let prev = self.rings[(k - 1) as usize];
             let next = self.rings[k as usize];
-            if now < base + ANNOUNCE {
+            if now < announce {
                 let phase = if k == 1 {
                     TidePhase::Waiting
                 } else {
@@ -393,11 +435,11 @@ impl Tide {
                 };
                 return view(prev, None, phase, k - 1);
             }
-            if now < base + RISE_FROM {
+            if now < from {
                 return view(prev, Some(next), TidePhase::Announced, k);
             }
-            if now < base + RISE_TO {
-                let u = (now - base - RISE_FROM) / (RISE_TO - RISE_FROM);
+            if now < to {
+                let u = (now - from) / (to - from);
                 let edge = TideCircle {
                     center: [
                         prev.center[0] + (next.center[0] - prev.center[0]) * u,
@@ -424,44 +466,59 @@ impl Tide {
         locale_near(world, center).map_or_else(|| "岛中间".into(), |(_, name)| name)
     }
 
-    /// 最后一天在第几天（第 1 天记作 1）。
-    fn last_day(&self) -> u32 {
-        self.first_day + self.total()
-    }
-
     fn notice(&self, world: &World, node: u32) -> String {
         let k = node / 3 + 1;
         let ring = self.rings[k as usize];
         let last = k == self.total();
         let place = Self::place(world, ring.center);
+        let [_, from, to] = self.times(k);
+        let (from, to) = (hhmm(from), hhmm(to));
         match (node % 3, last) {
             (0, true) => format!(
-                "【潮水】最后一圈已公布：今天 12:00 开始涨，18:00 前水会漫过全岛。船停在「{place}」一带的最高处，只坐得下一个人，谁先登上去就带谁走；18:00 还没人登船，船带走离它最近的那个人。"
+                "【潮水】最后一圈已公布：今天 {from} 开始涨，{to} 前水会漫过全岛。船停在「{place}」一带的最高处，只坐得下一个人，谁先登上去就带谁走；{to} 还没人登船，船带走离它最近的那个人。"
             ),
             (0, false) => format!(
-                "【潮水】第 {k} 圈已公布：今天 12:00 开始涨，18:00 前涨到以「{place}」一带为中心、半径约 {:.0} 米的圈；圈外的地会被水淹。",
+                "【潮水】第 {k} 圈已公布：今天 {from} 开始涨，{to} 前涨到以「{place}」一带为中心、半径约 {:.0} 米的圈；圈外的地会被水淹。",
                 ring.radius
             ),
-            (1, true) => "【潮水】开始涨潮了，18:00 前水会漫过全岛。".into(),
-            (1, false) => format!("【潮水】开始涨潮了，18:00 前涨到第 {k} 圈。"),
+            (1, true) => format!("【潮水】开始涨潮了，{to} 前水会漫过全岛。"),
+            (1, false) => format!("【潮水】开始涨潮了，{to} 前涨到第 {k} 圈。"),
             (_, true) => "【潮水】水漫过了全岛。".into(),
             (_, false) => format!("【潮水】潮水涨到了第 {k} 圈。"),
         }
     }
 
-    /// 开局的纸条：规则写全，第 1 圈哪天公布照实写。
-    fn note(&self, world: &World) -> String {
-        let today = (world.minutes() / DAY).floor() as u32;
-        let first = if self.first_day == today {
-            "今天".to_string()
-        } else if self.first_day == today + 1 {
-            "明天".to_string()
-        } else {
-            format!("第 {} 天", self.first_day + 1)
-        };
+    /// 开局的纸条：规则和每一圈的钟点写全。
+    fn note(&self) -> String {
+        let total = self.total();
+        let rings: Vec<String> = (1..=total)
+            .map(|k| {
+                let [at, from, to] = self.times(k);
+                let (from, to) = (hhmm(from), hhmm(to));
+                if k == total {
+                    format!(
+                        "最后一圈在{} 公布、{from} 开始涨，{to} 水漫过全岛",
+                        day_clock(at)
+                    )
+                } else {
+                    format!(
+                        "第 {k} 圈在{} 公布、{from} 开始涨、{to} 涨到",
+                        day_clock(at)
+                    )
+                }
+            })
+            .collect();
         format!(
-            "【纸条】每个人醒来时，口袋里都有一张同样的纸条：「潮水每天收一圈：天亮 06:00 公布当天的圈，12:00 开始涨，18:00 涨到，圈外的地会被淹；第 1 圈{first}天亮公布。第 {} 天会来一条船，只坐得下一个人，谁先登上去就带谁走。在那之前岛上只剩一个人，船就提前来接他。」",
-            self.last_day()
+            "【纸条】每个人醒来时，口袋里都有一张同样的纸条：「潮水一共收 {total} 圈，圈外的地会被淹：{}。最后一圈公布时会来一条船，只坐得下一个人，谁先登上去就带谁走。在那之前岛上只剩一个人，船就提前来接。」",
+            rings.join("；")
+        )
+    }
+
+    /// 给每位选手的模型一直看着的目标，船哪天几点来照时间表写。
+    fn goal(&self) -> String {
+        format!(
+            "只有一个人能活着离开：{} 最后一圈公布时会来一条船，只坐得下一个人，谁先登上去就带谁走；在那之前岛上只剩你一个，船就提前来接你。",
+            day_clock(self.times(self.total())[0])
         )
     }
 
@@ -489,7 +546,7 @@ impl Tide {
             view.next.map(|next| {
                 let gap = dist(here, next.center) - next.radius;
                 if next.radius <= 0.0 {
-                    "傍晚水会漫过全岛。".into()
+                    format!("{} 前水会漫过全岛。", hhmm(self.times(view.ring)[2]))
                 } else if gap > 0.0 {
                     format!(
                         "你离下一圈的边约 {:.0} 米，在圈外；往{}走能进圈。",
@@ -752,7 +809,7 @@ impl Rules for Tide {
         }
         if !self.briefed {
             self.briefed = true;
-            let note = self.note(world);
+            let note = self.note();
             Self::announce(world, &object, &note);
         }
         while self.told < self.nodes() && self.node_time(self.told) <= now + 1e-9 {
@@ -777,7 +834,7 @@ impl Rules for Tide {
                     text = format!("{text}{}", line.replace("【潮水】", ""));
                 }
             }
-            // 天亮公布时提一句还剩谁：第二局 834 条心声里只有 4 条想到「只活一个」
+            // 公布新一圈时提一句还剩谁：第二局 834 条心声里只有 4 条想到「只活一个」
             if node % 3 == 0 && !self.players.is_empty() {
                 let alive = self.alive();
                 text = format!(
@@ -866,7 +923,8 @@ impl Rules for Tide {
     /// 选手看得到这一局怎么才算活下来；此刻的公告和自己的位置。人不在时为 None。
     fn context(&self, world: &World, actor: &str) -> Option<GameModeContext> {
         let a = world.actor(actor)?;
-        let view = self.shape(world.minutes());
+        let now = world.minutes();
+        let view = self.shape(now);
         let winner = self
             .winner
             .as_deref()
@@ -877,8 +935,14 @@ impl Rules for Tide {
                 Some(name) => format!("这一局结束了：{name}上了船。"),
                 None => "这一局结束了，没有人等到船。".into(),
             },
-            TidePhase::Waiting => "潮水圈：下一个天亮 06:00 公布第 1 圈。".into(),
-            TidePhase::Holding => format!("潮水停在第 {} 圈；明天 06:00 公布下一圈。", view.ring),
+            TidePhase::Waiting => {
+                format!("潮水圈：{} 公布第 1 圈。", from_now(self.times(1)[0], now))
+            }
+            TidePhase::Holding => format!(
+                "潮水停在第 {} 圈；{} 公布下一圈。",
+                view.ring,
+                from_now(self.times(view.ring + 1)[0], now)
+            ),
             TidePhase::Closed => "水已经漫过全岛。".into(),
             TidePhase::Announced | TidePhase::Rising => {
                 let node = 3 * (view.ring - 1) + u32::from(view.phase == TidePhase::Rising);
@@ -888,7 +952,8 @@ impl Rules for Tide {
         let playing = !self.over && self.player(actor).is_some_and(|p| p.fell.is_none());
         let goal = if playing {
             format!(
-                "{GOAL}眼下岛上还活着 {} 个人：{}。",
+                "{}眼下岛上还活着 {} 个人：{}。",
+                self.goal(),
                 self.alive().len(),
                 self.alive_names()
             )

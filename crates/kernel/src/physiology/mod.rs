@@ -568,8 +568,8 @@ fn walking_rates(a: &Actor, r: &mut Rates, trace: &mut Trace<'_>) {
     );
 }
 
-/// 天气影响身体：开启时露天淋雨雪额外消耗精力、越来越湿；在室内、遮蔽处或不下雨雪时慢慢变干。
-/// 位置未知时不算淋着。
+/// 天气影响身体：开启时露天淋雨雪额外消耗精力、越来越湿（热带湿得慢一半）；在室内、遮蔽处或
+/// 不下雨雪时慢慢变干。位置未知时不算淋着。
 fn weather_rates(w: &World, a: &Actor, r: &mut Rates, trace: &mut Trace<'_>) {
     let n = &a.needs;
     if !w.physiology.weather || n.body.dead {
@@ -582,6 +582,7 @@ fn weather_rates(w: &World, a: &Actor, r: &mut Rates, trace: &mut Trace<'_>) {
         .and_then(|weather| precipitation(weather.view.kind).map(|p| (weather.view.kind, p)));
     match exposed {
         Some((kind, (energy, wet))) => {
+            let wet = wet * w.climate().wet_scale();
             if n.on(Need::Energy) {
                 r.values[Need::Energy] -= energy;
             }

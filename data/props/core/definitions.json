@@ -2931,5 +2931,56 @@
         ]
       }
     ]
+  },
+  {
+    "id": "core:island-herb-bush",
+    "version": 1,
+    "name": "草药丛",
+    "description": "石缝里长着的一丛退烧草药，一次只够采一把。采光了，第二天天亮又能长出一把。",
+    "actions": [
+      {
+        "id": "pick",
+        "label": "采草药",
+        "duration_minutes": 10,
+        "completion": "activity",
+        "supply": {
+          "initial": 1,
+          "cost": 1,
+          "restock": {
+            "amount": 1,
+            "max": 1
+          }
+        },
+        "on_complete": [
+          {
+            "kind": "give_item",
+            "item": {
+              "id": "core:island-herbs",
+              "version": 1,
+              "name": "草药",
+              "description": "一把能退烧的草药，嚼碎了敷上、煎水喝都行，只够用一次。",
+              "portable": true,
+              "actions": [
+                {
+                  "id": "cure",
+                  "label": "用草药治病",
+                  "duration_minutes": 10,
+                  "completion": "activity",
+                  "consumes_item": true,
+                  "recipient": true,
+                  "on_complete": [
+                    {
+                      "kind": "cure_condition",
+                      "condition": "illness"
+                    }
+                  ]
+                }
+              ]
+            },
+            "count": 1
+          }
+        ]
+      }
+    ]
   }
 ]
