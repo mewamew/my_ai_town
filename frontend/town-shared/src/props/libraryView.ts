@@ -1,12 +1,17 @@
 // 道具页「可复用道具库」视图：一件道具一行，右栏是定义详情与放入当前地图的表单；道具包的导出与读取也在这里。
 import { newId } from '../ids'
-import { defaultAppearance, savedAppearance, validateAppearance } from './appearances'
+import {
+  defaultAppearance,
+  forgetAppearance,
+  savedAppearance,
+  validateAppearance,
+} from './appearances'
 import { actionList, listRow } from './detail'
 import { caption, slot } from '../design/ui'
 import { propPicture } from './picture'
 import { button, el, field, input, select } from './dom'
 import type { PropsView } from './pageState'
-import type { Definition, PropCatalog } from './types'
+import type { Definition, PropCatalog, PropView } from './types'
 
 /** 「编号@版本」里的编号 */
 export const definitionId = (reference: string | null | undefined) =>
@@ -42,23 +47,30 @@ export function renderLibrary(view: PropsView, c: PropCatalog, q: string) {
     ])
   }
   // 选中的是旧版本（别的页面刚改过它）时跟到同一件的最新版
-  const d = items.find((d) => d.id === definitionId(state.selected)) ?? items[0]
+  const at = Math.max(
+    0,
+    items.findIndex((d) => d.id === definitionId(state.selected))
+  )
+  const d = items[at]
   if (!d) {
     page.detail.append(el('p', '道具库里没有匹配内容。'))
     return
   }
   state.selected = `${d.id}@${d.version}`
-  renderDefinition(view, c, d)
+  // 删掉这件以后选中下一件；删的是最后一件就选上一件
+  const after = items[at + 1] ?? items[at - 1]
+  renderDefinition(view, c, d, after ? `${after.id}@${after.version}` : '')
 }
 
-function renderDefinition(view: PropsView, c: PropCatalog, d: Definition) {
+function renderDefinition(view: PropsView, c: PropCatalog, d: Definition, next: string) {
   const { detail } = view.page
   const reference = `${d.id}@${d.version}`
+  const own = !d.id.startsWith('core:')
   const head = el('header', '', 'pd-head')
   const id = el('div', '', 'pd-id')
   const meta = el('div', '', 'pd-meta')
   meta.append(
-    el('span', d.id.startsWith('core:') ? '自带的' : '自己做的'),
+    el('span', own ? '自己做的' : '自带的'),
     el('span', d.portable ? '可以放进背包' : '固定在原地')
   )
   if (d.storage_slots) meta.append(el('span', `能存放 ${d.storage_slots} 格`))
@@ -67,17 +79,118 @@ function renderDefinition(view: PropsView, c: PropCatalog, d: Definition) {
   id.append(el('h2', d.name, 'ui-title pd-name'), meta)
   head.append(slot(propPicture(reference, d.readable ? 'book' : 'bag'), 'md'), id)
   detail.append(head, el('p', d.description || '暂无说明', 'pd-desc'))
-  const buttons = el('div', '', 'pd-foot')
-  buttons.append(
-    button(d.id.startsWith('core:') ? '复制并修改' : '修改', () => view.edit(d)),
-    button('导出道具包', () => exportPackage(d))
-  )
   const actions = el('section', '', 'pd-section')
   actions.append(caption('可以做的事'))
   actionList(actions, c.definition_actions[reference] ?? [], d, view.needLabel)
   const place = el('section', '', 'pd-section')
   place.append(caption('放进小镇'), placementForm(view, c, d))
-  detail.append(actions, place, buttons)
+  // 换了一件看，上一件没确认的删除就作罢
+  if (view.state.confirmDelete !== d.id) view.state.confirmDelete = ''
+  const foot = own && view.state.confirmDelete ? deleteConfirm(view, c, d, next) : buttons(view, d)
+  detail.append(actions, place, foot)
+}
+
+/** 详情底下的按钮条：自己做的最右边是红字「删除」，和改、导出隔开免得手滑；自带的在那儿说一句删不了 */
+function buttons(view: PropsView, d: Definition) {
+  const own = !d.id.startsWith('core:')
+  const foot = el('div', '', 'pd-foot')
+  foot.append(
+    button(own ? '修改' : '复制并修改', () => view.edit(d)),
+    button('导出道具包', () => exportPackage(d))
+  )
+  if (!own) {
+    foot.append(el('span', '自带的删不了', 'pd-foot-note'))
+    return foot
+  }
+  const remove = button(
+    '删除',
+    () => {
+      view.state.confirmDelete = d.id
+      view.render()
+      // 焦点放在「取消」上：键盘一按回车不会误删，焦点留在详情里，目录刷新也不重画这块
+      view.page.detail.querySelector<HTMLElement>('.pd-confirm button')?.focus({
+        preventScroll: true,
+      })
+    },
+    'ui-btn danger pd-delete'
+  )
+  foot.append(remove)
+  return foot
+}
+
+/** 镇上已经摆着的那几件在哪，确认时和删完以后各说一句；镇上没有就都不说。
+ *  一处只写地方名，几处的写各有几件，地方太多只写前三处 */
+function keptCopies(view: PropsView, copies: PropView[]) {
+  if (!copies.length) return { before: '', after: '' }
+  const count = new Map<string, number>()
+  for (const p of copies) {
+    const where =
+      p.location?.kind === 'carried'
+        ? `${p.location_name ?? '村民'}的背包`
+        : p.location?.kind === 'stored'
+          ? `${p.location_name ?? '容器'}里`
+          : view.localeName(p.locale)
+    count.set(where, (count.get(where) ?? 0) + 1)
+  }
+  const parts = [...count].map(([where, n]) =>
+    count.size > 1 && n > 1 ? `${where} ${n} 件` : where
+  )
+  const text =
+    parts.length > 3 ? `${parts.slice(0, 3).join('、')}等 ${parts.length} 处` : parts.join('、')
+  const n = copies.length
+  return {
+    before: `镇上已经摆着的 ${n} 件（${text}）还在，不受影响。`,
+    after: `镇上已经摆着的${n === 1 ? '那' : ''} ${n} 件还在${count.size > 1 ? '：' : ''}${text}。`,
+  }
+}
+
+/** 点了「删除」：按钮条原地换成一块确认，照设定里「删除内置模型？」，不弹系统对话框。
+ *  删的是道具库里这件的所有版本；镇上已经摆着的各自存着整份定义，不受影响，这里写清楚在哪 */
+function deleteConfirm(view: PropsView, c: PropCatalog, d: Definition, next: string) {
+  const kept = keptCopies(view, townCopies(c, d.id))
+  const box = el('div', '', 'pd-confirm')
+  box.append(
+    el('strong', `删除「${d.name}」？`),
+    el('p', '道具库里不再有它，以后也不能再往镇上放。')
+  )
+  if (kept.before) box.append(el('p', kept.before))
+  const cancel = button('取消', () => {
+    view.state.confirmDelete = ''
+    view.render()
+  })
+  const yes = button(
+    '删除',
+    () => {
+      const sent = view.sendWorldCommand(
+        'delete_prop',
+        (_, request_id) => ({ type: 'delete_prop', request_id, id: d.id }),
+        (ok, message) => {
+          view.state.confirmDelete = ''
+          if (ok) {
+            view.state.selected = next
+            forgetUnusedAppearances(view.state.catalog ?? c, d.id)
+            view.report(`${message}。${kept.after}`)
+          }
+          view.render()
+        }
+      )
+      if (!sent) return
+      cancel.disabled = yes.disabled = true
+      yes.textContent = '正在删除…'
+    },
+    'pd-confirm-delete'
+  )
+  const row = el('div', '', 'pd-confirm-actions')
+  row.append(cancel, yes)
+  box.append(row)
+  return box
+}
+
+/** 删掉的道具各版本的外观：镇上还有东西用着的那一版留着（地图画它要用），其余的清掉 */
+function forgetUnusedAppearances(c: PropCatalog, id: string) {
+  const used = new Set(c.instances.map((p) => p.definition))
+  for (const d of c.definitions)
+    if (d.id === id && !used.has(`${d.id}@${d.version}`)) forgetAppearance(`${d.id}@${d.version}`)
 }
 
 /** 把定义放进当前地图：地点、实例名，公告还要挑同地点的公告栏。 */

@@ -99,6 +99,7 @@ fn client_variants() -> Vec<String> {
         Content,
         ValidateProp,
         SaveProp,
+        DeleteProp,
         RemoveProp,
         PlaceProp,
         GetPlacementGrid,

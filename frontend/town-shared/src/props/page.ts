@@ -141,7 +141,9 @@ class PropsPage implements PropsView {
   private cardPoll: number | null = null
   /** 地点下拉框上次按哪份地点表建的 */
   private locationSignature = ''
-  private readonly announce: ReturnType<typeof announcer>
+  private readonly say: ReturnType<typeof announcer>
+  /** 顶上那行正说着 report 的结果：目录刷新不擦掉它 */
+  private reported = false
   readonly placing: ReturnType<typeof createPlacing> | null
   readonly localeName = (id: string) =>
     this.state.catalog?.locations.find((l) => l.id === id)?.name ?? id
@@ -167,7 +169,7 @@ class PropsPage implements PropsView {
       2000,
       deps.game
     )
-    this.announce = announcer(this.page.status)
+    this.say = announcer(this.page.status)
     this.placing = deps.map
       ? createPlacing({
           map: deps.map,
@@ -211,6 +213,17 @@ class PropsPage implements PropsView {
 
   close() {
     this.lifecycle.close()
+  }
+
+  /** 顶上那行提示；bad 时标成错误 */
+  private announce(text: string, bad = false) {
+    this.reported = false
+    this.say(text, bad)
+  }
+
+  report(text: string) {
+    this.announce(text)
+    this.reported = true
   }
 
   /** 地图上点了一件道具：弹出对象卡片，随服务端目录更新 */
@@ -289,6 +302,8 @@ class PropsPage implements PropsView {
     const { page } = this
     this.closeCard()
     this.placing?.exit()
+    // 上回删除的结果到这次打开已经过时了
+    if (this.reported) this.announce('')
     if (id) {
       page.mode.value = 'world'
       page.search.value = ''
@@ -451,6 +466,7 @@ class PropsPage implements PropsView {
       state.pending.clear()
       page.editor.hidden = true
       state.selected = ''
+      state.confirmDelete = ''
     }
     state.catalog = next
     if (this.cardId) this.renderCard()
@@ -485,8 +501,8 @@ class PropsPage implements PropsView {
       this.render()
       state.renderSignature = signature
     }
-    // 数量在列表顶部写了，这里只在有话要说时出声
-    if (!page.status.classList.contains('error'))
+    // 数量在列表顶部写了，这里只在有话要说时出声；错误和删除的结果留着
+    if (!this.reported && !page.status.classList.contains('error'))
       this.announce(next.persistent ? '' : '当前运行不保存到磁盘')
   }
 
@@ -562,6 +578,7 @@ class PropsPage implements PropsView {
     state.mapSignature = ''
     state.renderSignature = ''
     state.pending.clear()
+    state.confirmDelete = ''
     this.asked.clear()
     this.page.editor.hidden = true
     this.placing?.reset()

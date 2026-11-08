@@ -255,6 +255,46 @@
   gap: 8px;
   margin-top: 16px;
 }
+/* 道具库详情：「删除」在按钮条最右边，和改、导出隔开；自带的在那儿写一句删不了 */
+.pd-foot .pd-delete,
+.pd-foot-note {
+  margin-left: auto;
+}
+.pd-foot-note {
+  color: var(--text-3);
+  font-size: 12px;
+}
+/* 点了「删除」：按钮条原地换成一块确认，和设定里「删除内置模型？」同一种 */
+.pd-confirm {
+  display: grid;
+  gap: 4px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: var(--r-m);
+  background: var(--danger-soft);
+}
+.pd-confirm strong {
+  margin-bottom: 2px;
+  font-size: 15px;
+}
+.pd-confirm p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.pd-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.pd-confirm button.pd-confirm-delete {
+  border-color: var(--danger);
+  background: var(--danger);
+  /* 浅色页是深红底配浅字，深色页是浅红底配深字 */
+  color: var(--surface-page);
+  font-weight: 600;
+}
 /* 创作操作收在「更多」里：展开时占满一行 */
 .prop-more {
   margin-left: auto;

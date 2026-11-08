@@ -33,6 +33,15 @@ export function savedAppearance(reference: string): Appearance | null {
     return null
   }
 }
+/** 删掉道具以后清掉它的外观；镇上还用着的版本别清，地图画它还要用 */
+export function forgetAppearance(reference: string) {
+  sessionAppearances.delete(reference)
+  try {
+    localStorage.removeItem(prefix + reference)
+  } catch {
+    // 本机存储不能用时本来也没存下
+  }
+}
 export function saveAppearance(reference: string, value: Appearance) {
   const appearance = validateAppearance(value)
   sessionAppearances.set(reference, appearance)

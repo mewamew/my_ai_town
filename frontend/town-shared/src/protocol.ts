@@ -1085,6 +1085,8 @@ export type ClientMsg =
       request_id: string
       definition: Definition
     }
+  /** 从道具库删掉自己做的一件道具，所有版本一起删；镇上已经摆着的不受影响 */
+  | { type: 'delete_prop'; request_id: string; id: string }
   | { type: 'remove_prop'; request_id: string; world_id: string; id: string }
   | {
       type: 'place_prop'

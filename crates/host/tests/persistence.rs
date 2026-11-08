@@ -98,6 +98,79 @@ fn killed_host_restores_memory_time_activity_then_reset_replaces_save() {
     town.shutdown();
 }
 
+/// 道具库删除只删图纸：存了两版的刀摆一把到广场，删掉以后两份文件和目录里的定义都没了，
+/// 广场上那把还在；强杀重开，存档照样读回，那把刀还能用。
+#[test]
+fn deleting_a_library_prop_keeps_the_placed_copy_through_a_restart() {
+    let mut town = Town::new();
+    let mut ws = town.start();
+    let world_id = query(&mut ws, "get_props", "props")["catalog"]["world_id"].clone();
+    let knife = |version: u32, name: &str| {
+        json!({"id":"player:knife","version":version,"name":name,"description":"一把磨得很快的刀。",
+            "actions":[{"id":"cut","label":"切东西","duration_minutes":10,"during":[],"completion":"activity","conditions":[]}]})
+    };
+    for (request_id, definition) in [("save-1", knife(1, "刀")), ("save-2", knife(2, "猎刀"))] {
+        let saved = reply(
+            &mut ws,
+            json!({"type":"save_prop","request_id":request_id,"definition":definition}),
+            "prop_result",
+        );
+        assert_eq!(saved["ok"], true, "{saved}");
+    }
+    let placed = reply(
+        &mut ws,
+        json!({"type":"place_prop","request_id":"place","world_id":world_id,
+            "instance":{"id":"user:knife","definition":"player:knife@1","locale":"square"}}),
+        "prop_result",
+    );
+    assert_eq!(placed["ok"], true, "{placed}");
+    let library = town.dir.join("state/prop-library");
+    assert_eq!(fs::read_dir(&library).unwrap().count(), 2);
+
+    let builtin = reply(
+        &mut ws,
+        json!({"type":"delete_prop","request_id":"core","id":"core:bed"}),
+        "prop_result",
+    );
+    assert_eq!(builtin["ok"], false, "{builtin}");
+    send(
+        &mut ws,
+        json!({"type":"delete_prop","request_id":"delete","id":"player:knife"}),
+    );
+    let deleted = until(&mut ws, |m| {
+        m["type"] == "prop_result" && m["request_id"] == "delete"
+    });
+    assert_eq!(deleted["ok"], true, "{deleted}");
+    assert_eq!(deleted["message"], "已删除「猎刀」");
+    let knife_in = |catalog: &Value| {
+        let defined = catalog["definitions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["id"] == "player:knife");
+        let placed = catalog["instances"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["id"] == "user:knife")
+            .cloned();
+        (defined, placed)
+    };
+    let (defined, placed) = knife_in(&until(&mut ws, |m| m["type"] == "props")["catalog"]);
+    assert!(!defined);
+    assert_eq!(placed.unwrap()["locale"], "square");
+    assert_eq!(fs::read_dir(&library).unwrap().count(), 0);
+
+    town.kill();
+    drop(ws);
+    let mut ws = town.start();
+    let (defined, placed) = knife_in(&query(&mut ws, "get_props", "props")["catalog"]);
+    assert!(!defined);
+    let placed = placed.expect("广场上的刀重开后还在");
+    assert_eq!(placed["definition"], "player:knife@1");
+    assert_eq!(placed["actions"][0]["label"], "切东西");
+}
+
 /// 管理进程握着 host 的 stdin 且从不写入；它消失后 host 读到 EOF，保存完整存档后自行退出。
 #[test]
 fn host_saves_and_exits_on_its_own_when_stdin_closes() {

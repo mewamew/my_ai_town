@@ -155,6 +155,12 @@ pub enum ClientMsg {
         request_id: String,
         definition: serde_json::Value,
     },
+    /// 从道具库删掉自己做的一件道具，这个编号的所有版本一起删（回 PropResult，成功后广播道具目录）。
+    /// 只删道具库：镇上已经摆着的、背包里的各自存着整份定义，不受影响；自带的、地图本身摆着的删不了。
+    DeleteProp {
+        request_id: String,
+        id: String,
+    },
     RemoveProp {
         request_id: String,
         world_id: String,
@@ -358,6 +364,7 @@ impl ClientMsg {
             | Content { request_id, .. }
             | ValidateProp { request_id, .. }
             | SaveProp { request_id, .. }
+            | DeleteProp { request_id, .. }
             | RemoveProp { request_id, .. }
             | PlaceProp { request_id, .. }
             | GetPlacementGrid { request_id, .. }

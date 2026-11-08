@@ -1674,6 +1674,10 @@ pub fn client_samples() -> Vec<ClientMsg> {
             request_id: "r5".into(),
             definition: definition(),
         },
+        ClientMsg::DeleteProp {
+            request_id: "r5-delete".into(),
+            id: "player:knife".into(),
+        },
         ClientMsg::RemoveProp {
             request_id: "r6".into(),
             world_id: "w1".into(),

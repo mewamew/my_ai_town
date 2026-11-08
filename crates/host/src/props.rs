@@ -4,7 +4,9 @@ use crate::persistence::atomic_write;
 use crate::HostError;
 use kernel::props::{Catalog, Definition};
 use std::{
+    collections::BTreeSet,
     fs,
+    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
@@ -21,6 +23,8 @@ pub fn load_catalog(path: &str) -> Result<Catalog, HostError> {
 pub struct PropLibrary {
     pub catalog: Catalog,
     root: Option<PathBuf>,
+    /// 地图文件自己摆的道具用到的定义编号：每次开镇都要按它们找定义，删不得。
+    map_uses: BTreeSet<String>,
 }
 impl PropLibrary {
     pub fn load(
@@ -30,7 +34,7 @@ impl PropLibrary {
         map_document: &serde_json::Value,
     ) -> Result<Self, HostError> {
         let mut catalog = load_catalog(builtin)?;
-        let referenced: std::collections::BTreeSet<_> = map_document
+        let referenced: BTreeSet<_> = map_document
             .get("topology")
             .unwrap_or(map_document)
             .get("props")
@@ -44,6 +48,10 @@ impl PropLibrary {
                 catalog.insert(definition)?;
             }
         }
+        let map_uses = referenced
+            .iter()
+            .map(|reference| reference.split('@').next().unwrap_or(reference).to_owned())
+            .collect();
         let root = root.map(|p| p.join("prop-library"));
         if let Some(root) = &root {
             if root.is_dir() {
@@ -55,10 +63,39 @@ impl PropLibrary {
                 }
             }
         }
-        Ok(Self { catalog, root })
+        Ok(Self {
+            catalog,
+            root,
+            map_uses,
+        })
     }
     pub fn persistent(&self) -> bool {
         self.root.is_some()
+    }
+    /// 删掉自己做的一件道具：这个编号的所有版本连同道具库里的文件，返回最新一版的名字。
+    /// 不碰存档：镇上已经摆着的、背包里的各自存着整份定义，照样能用。
+    pub fn delete(&mut self, id: &str) -> Result<String, HostError> {
+        if id.starts_with(CORE_PREFIX) {
+            return Err(HostError::Props("自带的道具删不了".into()));
+        }
+        let name = self
+            .catalog
+            .definitions
+            .values()
+            .filter(|d| d.id == id)
+            .max_by_key(|d| d.version)
+            .map(|d| d.name.clone())
+            .ok_or_else(|| HostError::Props("道具库里没有这件道具，可能已经删掉了".into()))?;
+        if self.map_uses.contains(id) {
+            return Err(HostError::Props(format!(
+                "地图本身摆着「{name}」，删了小镇就打不开了"
+            )));
+        }
+        if let Some(root) = &self.root {
+            remove_files(root, id)?;
+        }
+        self.catalog.definitions.retain(|_, d| d.id != id);
+        Ok(name)
     }
     pub fn save(&mut self, d: Definition) -> Result<(), HostError> {
         d.validate()?;
@@ -87,6 +124,39 @@ impl PropLibrary {
         self.catalog = next;
         Ok(())
     }
+}
+
+/// 道具库文件夹里定义这个编号的文件，哪一版都删。保存时文件按编号起名，手放进来的就不一定，
+/// 所以按内容认。已经不在的不算失败：删了一半出错时，再删一次能删完。
+fn remove_files(root: &Path, id: &str) -> Result<(), HostError> {
+    let entries = match fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(HostError::Props(format!("读取道具库失败：{e}"))),
+    };
+    for entry in entries {
+        let path = entry.map_err(|e| HostError::Props(e.to_string()))?.path();
+        if path.extension().is_none_or(|x| x != "json") {
+            continue;
+        }
+        let defines = fs::read_to_string(&path).is_ok_and(|text| {
+            serde_json::from_str::<serde_json::Value>(&text)
+                .is_ok_and(|d| d.get("id").and_then(serde_json::Value::as_str) == Some(id))
+        });
+        if !defines {
+            continue;
+        }
+        match fs::remove_file(&path) {
+            Err(e) if e.kind() != ErrorKind::NotFound => {
+                return Err(HostError::Props(format!(
+                    "删除道具文件 {} 失败：{e}",
+                    path.display()
+                )))
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 fn read_definition(path: &Path) -> Result<Definition, HostError> {

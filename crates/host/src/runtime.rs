@@ -210,6 +210,7 @@ impl Runtime {
             | ClientMsg::GetProps
             | ClientMsg::ValidateProp { .. }
             | ClientMsg::SaveProp { .. }
+            | ClientMsg::DeleteProp { .. }
             | ClientMsg::SetSpeed { .. }
             | ClientMsg::GetModelConfig
             | ClientMsg::SetModelConfig { .. }
@@ -314,6 +315,7 @@ impl Runtime {
                 request_id,
                 definition,
             } => self.save_prop(request_id, definition),
+            DeleteProp { request_id, id } => self.delete_prop(request_id, &id),
             RemoveProp { request_id, id, .. } => self.remove_prop(request_id, &id),
             PlaceProp {
                 request_id,
@@ -752,6 +754,7 @@ fn world_id_of(msg: &ClientMsg) -> Option<&str> {
         | ClientMsg::GetProps
         | ClientMsg::ValidateProp { .. }
         | ClientMsg::SaveProp { .. }
+        | ClientMsg::DeleteProp { .. }
         | ClientMsg::SetSpeed { .. }
         | ClientMsg::GetModelConfig
         | ClientMsg::SetModelConfig { .. }
@@ -807,6 +810,7 @@ fn requires_ready(msg: &ClientMsg) -> bool {
         | ClientMsg::PreviewPlacement { .. }
         | ClientMsg::ValidateProp { .. }
         | ClientMsg::SaveProp { .. }
+        | ClientMsg::DeleteProp { .. }
         | ClientMsg::GetModelConfig
         | ClientMsg::SetModelConfig { .. }
         | ClientMsg::SetResidentModel { .. }

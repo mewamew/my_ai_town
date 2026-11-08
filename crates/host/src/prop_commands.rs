@@ -92,6 +92,16 @@ impl Runtime {
         self.prop_reply(request_id, result)
     }
 
+    /// 从道具库删掉自己做的一件道具（所有版本）。只动道具库的文件、不改世界，所以不走存档事务；
+    /// 回执只写删了什么，镇上还摆着几件、在哪，页面按删除前的目录接在后面说。
+    pub(crate) fn delete_prop(&mut self, request_id: String, id: &str) -> Outcome {
+        let (result, done) = match self.prop_library.delete(id) {
+            Ok(name) => (Ok(PropPreview::Done {}), format!("已删除「{name}」")),
+            Err(e) => (Err(e.to_string()), String::new()),
+        };
+        self.prop_reply_saying(request_id, result, done)
+    }
+
     /// 移除是事务：世界改动加存盘，失败时恢复移除前的状态。
     pub(crate) fn remove_prop(&mut self, request_id: String, id: &str) -> Outcome {
         let before = self.world.missing_materials();

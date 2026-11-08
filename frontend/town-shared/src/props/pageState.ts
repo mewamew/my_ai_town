@@ -38,6 +38,8 @@ interface PropsPageState {
   renderSignature: string
   /** 按请求编号 */
   pending: Map<string, PendingOp>
+  /** 道具库详情里正等着确认删除的道具编号；目录每两秒刷新、重画详情，确认块靠它留住 */
+  confirmDelete: string
 }
 
 export function createPropsPageState(): PropsPageState {
@@ -48,6 +50,7 @@ export function createPropsPageState(): PropsPageState {
     mapSignature: '',
     renderSignature: '',
     pending: new Map(),
+    confirmDelete: '',
   }
 }
 
@@ -69,10 +72,12 @@ export interface PropsView {
   close(): void
   /** 以这个定义为底打开编辑器 */
   edit(d: Definition): void
-  /** 放置、移除这类改世界的命令：登记请求编号，回包按编号对上后才提示结果；没连上时返回 false */
+  /** 放置、移除、删除这类要等回执的命令：登记请求编号，回包按编号对上后才提示结果；没连上时返回 false */
   sendWorldCommand(
     kind: string,
     command: (world_id: string, request_id: string) => ClientMsg,
     done?: (ok: boolean, message: string) => void
   ): boolean
+  /** 删除这类做完以后列表里看不出痕迹的结果：写在顶上那行，目录刷新不擦掉，下一句话才换掉 */
+  report(text: string): void
 }
