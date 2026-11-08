@@ -85,6 +85,27 @@ impl Runtime {
             })
     }
 
+    /// 改气候：和神力开关一样不暂停世界、不占修订号；存盘失败时撤回。回执后广播世界设定。
+    pub(crate) fn save_climate(
+        &mut self,
+        request_id: String,
+        climate: protocol::Climate,
+    ) -> Outcome {
+        let result = self
+            .transact(|rt| rt.world.set_climate(climate).map_err(HostError::from))
+            .map_err(|aborted| aborted.to_string());
+        Outcome::none()
+            .and_all(self.world_settings_msg())
+            .and_reply(ServerMsg::WorldSettingsSaved {
+                request_id,
+                ok: result.is_ok(),
+                message: result.err().unwrap_or_else(|| match climate {
+                    protocol::Climate::Temperate => "气候改成了温带：天气照常".into(),
+                    protocol::Climate::Tropical => "气候改成了热带：不再下雪，雷暴少一半".into(),
+                }),
+            })
+    }
+
     /// 打开或关掉玩法（不带 choice 是关掉）。没给种子时随机取一个：潮水圈从下一个天亮起公布第一圈，
     /// 狼人杀按此刻镇上的村民发身份。不暂停世界：玩法的公告到点会自己写进每个人的经历。
     pub(crate) fn save_game_mode(
@@ -225,6 +246,7 @@ impl Runtime {
 
     pub(crate) fn world_settings_msg(&self) -> ServerMsg {
         let state = WorldSettingsView {
+            climate: self.world.climate(),
             game_mode: self.world.game_mode().map(str::to_owned),
             max_chars: host::world_settings::MAX_WORLDVIEW_CHARS,
             miracles: self.world.miracles(),

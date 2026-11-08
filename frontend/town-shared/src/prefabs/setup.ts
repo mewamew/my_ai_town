@@ -19,7 +19,7 @@ import type { Prefab, PrefabOption, PrefabPersona } from '.'
 // 开局设置：第一次进预制小镇（还没设世界观）时代替开局向导。玩家只改几项：人数、每位选手用的模型、
 // 玩法自己的几行（预制小镇的 options：圈的位置、身份、白天长短……）、吃喝睡开不开；
 // 世界观、玩法和其余设定由预制小镇写好。
-// 点「开始这一局」依次保存世界观、生理开关，布置地图上的道具、调额度（预制小镇写了才做），
+// 点「开始这一局」依次保存世界观、生理开关，定气候、布置地图上的道具、调额度（预制小镇写了才做），
 // 按号码请人入住（入住时带上各自的模型；有这一局自己的人设时带上人设），最后打开玩法；
 // 哪一步出错就停在那一步说明原因，再点一次从那一步接着做。做完世界还停着，玩家点左上角的 ▶ 开始。
 // 跳过就交回原来的首次对话框，像普通小镇一样自己设。
@@ -76,6 +76,7 @@ export function createPrefabSetup(d: {
   let status = ''
   let worldviewSaved = false
   let needsSaved = false
+  let climateSaved = false
   let furnished = false
   let limitsSaved = false
   let modeSaved = false
@@ -405,6 +406,13 @@ export function createPrefabSetup(d: {
         if (revision === undefined) throw Error('还没读到世界设定')
         await saved((done) => ws.savePhysiology(needs ? p.needs : ALL_OFF, revision, done))
         needsSaved = true
+      }
+      if (p.climate && !climateSaved) {
+        status = '正在定气候…'
+        render()
+        const climate = p.climate
+        await saved((done) => ws.saveClimate(climate, done))
+        climateSaved = true
       }
       if (p.furnish && !furnished) {
         status = '正在布置岛上的东西…'

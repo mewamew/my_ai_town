@@ -27,6 +27,23 @@ impl World {
     pub fn weather(&self) -> Option<&WeatherState> {
         self.weather.as_ref()
     }
+    /// 此刻的气候；地图没有天气时是温带。
+    pub fn climate(&self) -> protocol::Climate {
+        self.weather
+            .as_ref()
+            .map_or_else(Default::default, |w| w.climate)
+    }
+    /// 改气候：下一次换天气起按它抽，眼下的天气不变。地图没有天气时拒绝。
+    pub fn set_climate(&mut self, climate: protocol::Climate) -> Result<()> {
+        let w = self.weather.as_mut().ok_or_else(|| {
+            crate::KernelError::weather(
+                protocol::WeatherCode::WeatherUnavailable,
+                "此地图未启用 2D 天气",
+            )
+        })?;
+        w.climate = climate;
+        Ok(())
+    }
     pub fn set_weather(&mut self, request: WeatherRequest) -> Result<WeatherView> {
         let w = self.weather.as_ref().ok_or_else(|| {
             crate::KernelError::weather(

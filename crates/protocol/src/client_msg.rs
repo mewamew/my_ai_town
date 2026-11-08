@@ -93,6 +93,13 @@ pub enum ClientMsg {
         expected_revision: u64,
         switches: crate::PhysiologySwitches,
     },
+    /// 改气候（温带、热带）；回执与世界观相同（WorldSettingsSaved），随后广播世界设定。
+    /// 不暂停世界，不核对设定修订号；地图没有天气时拒绝。
+    SetClimate {
+        request_id: String,
+        world_id: String,
+        climate: crate::Climate,
+    },
     /// 打开或关掉化身神力；回执与世界观相同（WorldSettingsSaved），随后广播世界设定。
     /// 只是一个开关，不暂停世界，不核对设定修订号：别的页面正在改的世界观不会因此被拒。
     SetMiracles {
@@ -342,6 +349,7 @@ impl ClientMsg {
             | GetChatHistory { request_id, .. }
             | SetWorldview { request_id, .. }
             | SetPhysiology { request_id, .. }
+            | SetClimate { request_id, .. }
             | SetMiracles { request_id, .. }
             | SetRecording { request_id, .. }
             | DeleteRecording { request_id, .. }

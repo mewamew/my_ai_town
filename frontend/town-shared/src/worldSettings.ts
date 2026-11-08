@@ -1,5 +1,6 @@
 import type {
   ClientMsg,
+  Climate,
   GameModeChoice,
   PhysiologySwitches,
   ReelView,
@@ -305,6 +306,18 @@ export function createWorldSettings(
           request_id: id,
           world_id: current.world_id,
           enabled,
+        }),
+        done
+      )
+    },
+    /** 改气候：切换就保存，不带修订号，世界不暂停 */
+    saveClimate(climate: Climate, done: Done) {
+      submit(
+        (current, id) => ({
+          type: 'set_climate',
+          request_id: id,
+          world_id: current.world_id,
+          climate,
         }),
         done
       )

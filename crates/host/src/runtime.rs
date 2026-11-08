@@ -155,6 +155,7 @@ impl Runtime {
             ClientMsg::SetWorldview { request_id, .. }
             | ClientMsg::SetPhysiology { request_id, .. }
             | ClientMsg::SetMiracles { request_id, .. }
+            | ClientMsg::SetClimate { request_id, .. }
             | ClientMsg::SetRecording { request_id, .. }
             | ClientMsg::DeleteRecording { request_id, .. }
             | ClientMsg::SetStrangers { request_id, .. }
@@ -273,6 +274,11 @@ impl Runtime {
                 enabled,
                 ..
             } => self.save_miracles(request_id, enabled),
+            SetClimate {
+                request_id,
+                climate,
+                ..
+            } => self.save_climate(request_id, climate),
             SetStrangers {
                 request_id,
                 enabled,
@@ -724,6 +730,7 @@ fn world_id_of(msg: &ClientMsg) -> Option<&str> {
         | ClientMsg::SetWorldview { world_id, .. }
         | ClientMsg::SetPhysiology { world_id, .. }
         | ClientMsg::SetMiracles { world_id, .. }
+        | ClientMsg::SetClimate { world_id, .. }
         | ClientMsg::SetRecording { world_id, .. }
         | ClientMsg::DeleteRecording { world_id, .. }
         | ClientMsg::SetStrangers { world_id, .. }
@@ -789,6 +796,7 @@ fn requires_ready(msg: &ClientMsg) -> bool {
         | ClientMsg::SetWorldview { .. }
         | ClientMsg::SetPhysiology { .. }
         | ClientMsg::SetMiracles { .. }
+        | ClientMsg::SetClimate { .. }
         | ClientMsg::SetRecording { .. }
         | ClientMsg::GetRecordings
         | ClientMsg::DeleteRecording { .. }

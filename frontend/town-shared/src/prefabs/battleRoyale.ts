@@ -5,8 +5,9 @@ import { seedOption, type Prefab, type PrefabPersona, type PrefabProp } from '.'
 // 选手是为这座岛写的八个人：目标一样（活下去），肯做到哪一步、牵挂和旧识不一样；长相借村民库里年纪、
 // 性别相近的模板，人设不进村民库。
 // 岛上的东西开局重新布置：建镇生成器每块空地放的床、干粮、水大多撤掉，吃喝集中到淡水泉和破码头，
-// 能躲雨的地方只有椰林的两处棕榈棚和废墟的两间残墙石屋，营地留两张露天的床；草药两份，
+// 能躲雨的地方只有椰林的三处棕榈棚和废墟的三间残墙石屋，营地留两张露天的床；草药两份，
 // 石块和木棍摆在明处，两把鱼叉藏着要搜。菜刀不放，第 3 天起才可能随潮水冲上来的木箱出现。
+// 气候是热带：不下雪、雷暴少（第二局下了两场雪，四个人病死）。
 
 /** 八个人共同的开局处境 */
 const AWAKE =
@@ -199,6 +200,7 @@ export const battleRoyale: Prefab = {
   needsDefault: true,
   needsHint: { on: '会饿会渴会困，淋雨会着凉，站在水里会掉体力', off: '只比谁会躲水' },
   options: [seedOption('圈的位置', '每一局圈缩向哪里都不一样')],
+  climate: 'tropical',
   // 第一局一个人一天最多用了 263 万 token；一局要跑五天半，全镇总量也放宽
   limits: {
     calls_per_day: 600,
@@ -230,9 +232,15 @@ export const battleRoyale: Prefab = {
       ...at('area_4', 'core:island-herbs@1', 'herbs-1'),
       ...at('area_5', 'core:bed@2', 'bed-2'),
       ...at('area_6', 'core:island-herbs@1', 'herbs-2'),
-      ...at('park_1', 'core:island-shelter@1', 'palm-shelter-1', 'palm-shelter-2'),
+      ...at(
+        'park_1',
+        'core:island-shelter@1',
+        'palm-shelter-1',
+        'palm-shelter-2',
+        'palm-shelter-3'
+      ),
       ...at('park_1', 'core:island-palms@2', 'palms'),
-      ...at('temple_1', 'core:island-stone-hut@1', 'stone-hut-1', 'stone-hut-2'),
+      ...at('temple_1', 'core:island-stone-hut@1', 'stone-hut-1', 'stone-hut-2', 'stone-hut-3'),
       ...at('harbor_1', 'core:rations@2', 'rations'),
       ...at('harbor_1', 'core:drinking_water@1', 'water'),
       ...at('harbor_1', 'core:island-harpoon@1', 'harpoon-2'),

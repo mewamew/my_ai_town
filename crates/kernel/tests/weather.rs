@@ -316,3 +316,32 @@ fn active_chat_is_interrupted_but_outdoor_food_is_allowed() {
         protocol::ActionStatus::Succeeded
     );
 }
+
+/// 气候：热带不下雪、雷暴少，存档读回来还是热带；温带照原来的转移表。
+#[test]
+fn a_tropical_climate_never_snows_and_storms_less_and_survives_a_reload() {
+    let count = |climate: protocol::Climate| {
+        let mut w = world();
+        w.set_climate(climate).unwrap();
+        let (mut snow, mut storm) = (0, 0);
+        for _ in 0..4000 {
+            w.step(60.);
+            match w.weather().unwrap().view.kind {
+                Kind::Snow => snow += 1,
+                Kind::Thunderstorm => storm += 1,
+                _ => {}
+            }
+        }
+        (w, snow, storm)
+    };
+    let (_, snow, storm) = count(protocol::Climate::Temperate);
+    let (tropical, tropical_snow, tropical_storm) = count(protocol::Climate::Tropical);
+    assert!(snow > 0, "温带该下过雪");
+    assert_eq!(tropical_snow, 0);
+    assert!(
+        tropical_storm * 3 < storm * 2,
+        "热带雷暴 {tropical_storm}，温带 {storm}"
+    );
+    let restored = common::restore(&tropical, world());
+    assert_eq!(restored.climate(), protocol::Climate::Tropical);
+}

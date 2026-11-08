@@ -1,6 +1,6 @@
 use super::WeatherRules;
 use crate::error::{KernelError, Result};
-use protocol::{WeatherKind, WeatherMode, WeatherSource, WeatherTransition, WeatherView};
+use protocol::{Climate, WeatherKind, WeatherMode, WeatherSource, WeatherTransition, WeatherView};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
@@ -49,6 +49,9 @@ pub struct WeatherReceipt {
 pub struct WeatherState {
     pub view: WeatherView,
     pub rules: WeatherRules,
+    /// 气候：温带照转移表；热带不下雪、转到雷暴的机会减半。旧存档没有这一项，按温带读。
+    #[serde(default, skip_serializing_if = "Climate::is_temperate")]
+    pub climate: Climate,
     pub rng: RandomState,
     pub next_check_at: Option<f64>,
     pub next_event_id: u64,
@@ -83,6 +86,7 @@ impl WeatherState {
                 last_transition: None,
             },
             rules,
+            climate: Climate::Temperate,
             rng: RandomState {
                 algorithm: "xorshift32-v1".into(),
                 seed,
@@ -138,10 +142,11 @@ impl WeatherState {
     }
     pub fn tick(&mut self, now: f64) -> Option<WeatherTransition> {
         let at = self.next_check_at.filter(|at| *at <= now + 1e-9)?;
-        let roll = self.rng.uniform(100);
+        let row = self.row(self.view.kind);
+        let roll = self.rng.uniform(row.iter().sum::<u32>().max(1));
         let mut weight = 0;
         let mut kind = self.view.kind;
-        for (i, n) in self.rules.transitions[kind.index()].iter().enumerate() {
+        for (i, n) in row.iter().enumerate() {
             weight += n;
             if roll < weight {
                 kind = self.rules.order[i];
@@ -152,6 +157,22 @@ impl WeatherState {
         self.schedule(at);
         event
     }
+    /// 从这种天气转出去的各份权重，按气候改过：温带原样（合计 100，随机数用法和以前一样）；
+    /// 热带去掉下雪、雷暴减半，按剩下的合计抽。
+    fn row(&self, from: WeatherKind) -> [u32; 7] {
+        let mut row = self.rules.transitions[from.index()];
+        if self.climate == Climate::Tropical {
+            for (i, kind) in self.rules.order.iter().enumerate() {
+                match kind {
+                    WeatherKind::Snow => row[i] = 0,
+                    WeatherKind::Thunderstorm => row[i] /= 2,
+                    _ => {}
+                }
+            }
+        }
+        row
+    }
+
     pub fn cached(&self, request: &WeatherRequest) -> Result<Option<WeatherView>> {
         ensure!(
             !request.request_id.is_empty() && request.request_id.len() <= crate::ID_MAX_BYTES,

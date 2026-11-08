@@ -11,6 +11,8 @@ use serde::Serialize;
 /// 运行世界的设定：世界观、模型与生理开关。线上按字段名字母序输出。
 #[derive(Debug, Clone, Serialize)]
 pub struct WorldSettingsView {
+    /// 气候：温带或热带（不下雪、雷暴少）。随存档保存，缺省为温带。
+    pub climate: crate::Climate,
     /// 开着的玩法（如 "tide"）；没开时不出现。随存档保存。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub game_mode: Option<String>,

@@ -498,6 +498,7 @@ pub fn server_samples() -> Vec<ServerMsg> {
         },
         ServerMsg::WorldSettings {
             state: WorldSettingsView {
+                climate: Climate::Tropical,
                 game_mode: Some("tide".into()),
                 max_chars: 6000,
                 miracles: true,
@@ -1534,6 +1535,11 @@ pub fn client_samples() -> Vec<ClientMsg> {
             request_id: "r1".into(),
             world_id: "w1".into(),
             enabled: true,
+        },
+        ClientMsg::SetClimate {
+            request_id: "r1".into(),
+            world_id: "w1".into(),
+            climate: Climate::Tropical,
         },
         ClientMsg::SetRecording {
             request_id: "rec-1".into(),

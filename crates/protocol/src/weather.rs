@@ -1,6 +1,27 @@
 //! 世界天气事实；随机数与渲染参数不在线上暴露。
 use serde::{Deserialize, Serialize};
 
+/// 气候：天气怎么转的倾向，世界级，随存档保存。温带照天气规则的转移表（默认）；热带不下雪，
+/// 转到雷暴的机会减半（荒岛这类地方）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Climate {
+    #[default]
+    Temperate,
+    Tropical,
+}
+impl Climate {
+    pub fn is_temperate(&self) -> bool {
+        *self == Self::Temperate
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Temperate => "温带",
+            Self::Tropical => "热带",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WeatherKind {

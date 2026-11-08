@@ -587,6 +587,8 @@ export interface PhysiologySwitches {
   /** 天气影响身体：露天淋雨雪额外消耗精力，淋久了生病；旧存档没有，按关闭 */
   weather?: boolean
 }
+/** 气候：温带照天气规则的转移表；热带不下雪，转到雷暴的机会减半 */
+export type Climate = 'temperate' | 'tropical'
 export interface WorldSettingsState {
   world_id: string
   revision: number
@@ -598,6 +600,8 @@ export interface WorldSettingsState {
   persistent: boolean
   max_chars: number
   physiology: PhysiologySwitches
+  /** 气候：温带照常；热带不下雪、雷暴少一半。随存档保存，缺省为温带 */
+  climate: Climate
   /** 化身神力：化身能对够得着的人复活、治愈、补满。随存档保存，缺省为关 */
   miracles: boolean
   /** 录像开关：开着时把发生的事录进小镇目录，事后能重演、换角度拍素材。随存档保存，缺省为开；
@@ -979,6 +983,8 @@ export type ClientMsg =
     }
   /** 打开或关掉化身神力：只是开关，不暂停世界，不核对设定修订号 */
   | { type: 'set_miracles'; request_id: string; world_id: string; enabled: boolean }
+  /** 改气候：不暂停世界，不核对设定修订号；地图没有天气时拒绝。回执同世界设定 */
+  | { type: 'set_climate'; request_id: string; world_id: string; climate: Climate }
   /** 打开或关掉录像：打开就开新的一卷，关掉就收起正在录的；回执同世界设定 */
   | { type: 'set_recording'; request_id: string; world_id: string; enabled: boolean }
   | { type: 'get_recordings' }
