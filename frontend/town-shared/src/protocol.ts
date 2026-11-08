@@ -730,7 +730,7 @@ export interface WerewolfView {
 
 /** 摆道具界面画「哪里能放」用的一个地点的格子：后端放置器找空位时逐个试的那些格点（米）。
  *  cells 逐行每格一个字符：'.' 能放，'a' 离入口太近，'p' 碰到已有的东西，'r' 压着路，
- *  'b' 从入口走过来会被挡住，'s' 从入口过来的坡太陡；by 同位置记着碰到或挡路的是 props 里第几件 */
+ *  'b' 从入口走过来会被挡住，'s' 从入口过来的坡太陡，'w' 用的人站不到它跟前；by 同位置记着碰到或挡路的是 props 里第几件 */
 export interface PlaceGrid {
   by: string
   cells: string

@@ -66,6 +66,8 @@ export function blockedText(code: string, thing?: string) {
       return thing ? `从入口走过来会被${thing}挡住` : '从入口走过来会被挡住'
     case 's':
       return '从入口过来的坡太陡'
+    case 'w':
+      return '用的人站不到它跟前'
     default:
       return '这里放不了'
   }

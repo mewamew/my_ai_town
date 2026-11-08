@@ -1,5 +1,5 @@
 //! 同行：交谈里说好就走、世界带着跟随的人穿门跟上、到了就结束；存档中途读回接着走；
-//! 带路的化身离开小镇时同行结束，跟随的人不会卡住。
+//! 带路的化身离开小镇时同行结束，跟随的人不会卡住；站在走不通的地方的人也走得开，这样的存档读得回来。
 use crate::common;
 use kernel::{
     avatar::{Area, Obstacle, Portal, Spot, Surface, WalkMap, ID},
@@ -644,5 +644,60 @@ fn a_follower_on_the_bed_gets_up_and_follows_out_of_the_door() {
         w.actor("a").unwrap().locus.locale,
         "loc_b",
         "起身跟着穿过了门"
+    );
+}
+
+/// 大逃杀第二局：有人站在新放的道具跟前、落在可走格子外，之后每个动作都被拒，三个人卡到渴死；
+/// 那样的存档也读不回来。现在站在走不通的地方先迈出去再走；读档时落在区域外的人挪回区域里。
+#[test]
+fn a_resident_left_where_nobody_can_stand_walks_away_and_the_save_reloads() {
+    let bed = |w: &mut World| {
+        let mut map = (**w.walk_map.as_ref().unwrap()).clone();
+        map.obstacles.push(Obstacle {
+            id: "bed".into(),
+            spot: spot("loc_a", 6., 6.),
+            half: [0.6, 0.6],
+        });
+        w.walk_map = Some(Arc::new(map));
+    };
+    let at = |w: &World, position: [f64; 2]| {
+        let mut snap = serde_json::to_value(w.snapshot()).unwrap();
+        snap["actors"]["a"]["locus"]["at"] =
+            json!({"kind": "free", "space": "loc_a", "position": position});
+        let mut restored = world(&[("a", "林夏", "loc_a")]);
+        bed(&mut restored);
+        restored
+            .restore_snapshot(serde_json::from_value(snap).unwrap())
+            .unwrap();
+        restored
+    };
+    let mut w = world(&[("a", "林夏", "loc_a")]);
+    bed(&mut w);
+
+    // 贴着床站：人物半径里碰着床，这一格走不通，照样能走到乙处
+    let mut stuck = at(&w, [6.7, 6.]);
+    common::run(
+        &mut stuck,
+        "a",
+        "go",
+        json!({"intent":{"verb":"前往","locale":"loc_b"}}),
+    )
+    .unwrap();
+    let r = common::finish(&mut stuck, "a", "go");
+    assert_eq!(
+        stuck.action_group("a", "go").unwrap().status,
+        protocol::GroupStatus::Succeeded,
+        "{r:?}"
+    );
+    assert_eq!(stuck.actor("a").unwrap().locus.locale, "loc_b");
+
+    // 站在甲处区域外 0.3 米：读档时挪回区域里，读得回来
+    let outside = at(&w, [20.3, 6.]);
+    let protocol::At::Free { position, .. } = &outside.actor("a").unwrap().locus.at else {
+        panic!("该还在自由位置上");
+    };
+    assert!(
+        position[0] < 20. && (position[1] - 6.).abs() < 1.,
+        "{position:?}"
     );
 }

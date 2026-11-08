@@ -210,6 +210,9 @@ pub struct PlacementRequest<'a> {
     pub obstacles: Vec<&'a PropPosition>,
     pub occupied: Vec<Point>,
     pub near: Option<[f64; 2]>,
+    /// 人能不能站在这一点（水平面 x、z，米）：用道具的人要站到操作锚点上。有行走地图时按它的
+    /// 可走格子判断，没有时哪里都能站（见 `navigation::stand_check`）。
+    pub stand: &'a dyn Fn([f64; 2]) -> bool,
 }
 
 /// 空间放置的计算方。几何搜索与场景包读取都在 host；内核拿到结果后只做 `check_override`。
@@ -217,13 +220,14 @@ pub trait Placer: Send + Sync {
     fn plan(&self, space: &Space, request: &PlacementRequest) -> Result<Override>;
 
     /// 摆道具界面用的格子：按没有专门模型的道具的占地，把 `plan` 会试的格点逐个试一遍，记下
-    /// 哪些能放、不能放的为什么。obstacles 同 `PlacementRequest`；不算在场的人，人会走开。
+    /// 哪些能放、不能放的为什么。obstacles、stand 同 `PlacementRequest`；不算在场的人，人会走开。
     /// 地点没有可放置范围或入口时没有格子。
     fn grid(
         &self,
         _space: &Space,
         _locale: &str,
         _obstacles: &[&PropPosition],
+        _stand: &dyn Fn([f64; 2]) -> bool,
     ) -> Option<protocol::PlaceGrid> {
         None
     }

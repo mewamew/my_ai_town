@@ -147,6 +147,11 @@ impl World {
         candidate.strangers = snapshot.strangers;
         candidate.game_mode = snapshot.game_mode.clone();
         candidate.concealed = snapshot.concealed.clone();
+        if let Some(map) = candidate.walk_map.as_deref() {
+            for a in snapshot.actors.values_mut() {
+                settle_free(map, &mut a.locus);
+            }
+        }
         snapshot.validate(&candidate)?;
         candidate.minutes = snapshot.minutes;
         candidate.actors = snapshot.actors;
@@ -555,4 +560,26 @@ fn check_cond(cond: &StopCond) -> Result<()> {
         KernelError::snapshot("存档活动剩余时长无效")
     );
     Ok(())
+}
+
+/// 自由位置落在所在区域外（大逃杀第二局：有人站在新放的道具跟前，落在可走格子外面）：挪到同一处所里
+/// 最近的走得通的一点，读档不再整个失败。挪不了的不动，照旧由校验拒绝。
+fn settle_free(map: &crate::avatar::WalkMap, locus: &mut Locus) {
+    let At::Free {
+        space, position, ..
+    } = &mut locus.at
+    else {
+        return;
+    };
+    if map.locale_at(space, *position, &locus.locale) == Some(locus.locale.as_str()) {
+        return;
+    }
+    let here = crate::avatar::Spot {
+        locale: locus.locale.clone(),
+        space: space.clone(),
+        position: *position,
+    };
+    if let Some(spot) = map.nearest_clear(&here, &[], true) {
+        *position = spot.position;
+    }
 }

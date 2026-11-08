@@ -71,7 +71,13 @@ impl Placer for ScenePlacer {
         request: &PlacementRequest,
     ) -> Result<kernel::navigation::space::Override, KernelError> {
         let prop = request.prop;
-        let site = Site::new(s, &prop.locale, &request.obstacles, &request.occupied)?;
+        let site = Site::new(
+            s,
+            &prop.locale,
+            &request.obstacles,
+            &request.occupied,
+            request.stand,
+        )?;
         let (model, size) = self.model(prop);
         let item = Item {
             id: &prop.id,
@@ -86,8 +92,14 @@ impl Placer for ScenePlacer {
         Ok(kernel::navigation::space::Override { prop: pp, route })
     }
 
-    fn grid(&self, s: &Space, locale: &str, obstacles: &[&PropPosition]) -> Option<PlaceGrid> {
-        let mut site = Site::new(s, locale, obstacles, &[]).ok()?;
+    fn grid(
+        &self,
+        s: &Space,
+        locale: &str,
+        obstacles: &[&PropPosition],
+        stand: &dyn Fn([f64; 2]) -> bool,
+    ) -> Option<PlaceGrid> {
+        let mut site = Site::new(s, locale, obstacles, &[], stand).ok()?;
         let item = Item {
             id: "",
             locale,
@@ -110,6 +122,7 @@ impl Placer for ScenePlacer {
                 Err(Blocked::Route) => ('r', None),
                 Err(Blocked::Path(i)) => ('b', i),
                 Err(Blocked::Steep) => ('s', None),
+                Err(Blocked::Stand) => ('w', None),
             };
             cells.push(code);
             by.push(who.and_then(|i| DIGITS.get(i)).map_or('-', |&d| d as char));
@@ -168,6 +181,8 @@ enum Blocked {
     Path(Option<usize>),
     /// 从入口过来的坡太陡
     Steep,
+    /// 用道具的人站不到操作锚点上（落在行走地图的可走格子外）
+    Stand,
 }
 
 /// 放置搜索的固定输入：区域、入口、既有障碍与人物位置，以及经过区域的路。
@@ -178,6 +193,8 @@ struct Site<'a> {
     occupied: &'a [Point],
     /// 和区域有交集的路的折点。道具连同留白都在区域里，碰不到区域的路也碰不到它，先筛掉。
     routes: Vec<Vec<Point>>,
+    /// 人能不能站在这一点（见 `PlacementRequest::stand`）
+    stand: &'a dyn Fn([f64; 2]) -> bool,
 }
 
 impl<'a> Site<'a> {
@@ -186,6 +203,7 @@ impl<'a> Site<'a> {
         locale: &str,
         obstacles: &[&PropPosition],
         occupied: &'a [Point],
+        stand: &'a dyn Fn([f64; 2]) -> bool,
     ) -> Result<Self, KernelError> {
         let floor = s
             .floor(locale)
@@ -206,6 +224,7 @@ impl<'a> Site<'a> {
                 .collect(),
             occupied,
             routes,
+            stand,
         })
     }
 
@@ -254,6 +273,9 @@ impl<'a> Site<'a> {
             .any(|route| route.windows(2).any(|p| intersects(p[0], p[1], &r)))
         {
             return Err(Blocked::Route);
+        }
+        if !(self.stand)([pp.anchor[0], pp.anchor[2]]) {
+            return Err(Blocked::Stand);
         }
         if let Some(i) = self
             .obstacles
@@ -411,8 +433,10 @@ mod tests {
         let s = camp();
         let placer = ScenePlacer::default();
         let obstacles: Vec<_> = s.props.iter().collect();
-        let grid = placer.grid(&s, "camp", &obstacles).unwrap();
-        for code in ['.', 'a', 'p', 'r', 'b'] {
+        // 西边 1.6 米宽的一条不在可走格子上：操作锚点落在那里的格子放不下（w）
+        let stand = |p: [f64; 2]| p[0] >= 1.6;
+        let grid = placer.grid(&s, "camp", &obstacles, &stand).unwrap();
+        for code in ['.', 'a', 'p', 'r', 'b', 'w'] {
             assert!(grid.cells.contains(code), "缺 {code}：{}", grid.cells);
         }
         assert!(grid.room > 0 && !grid.room_capped);
@@ -431,6 +455,7 @@ mod tests {
                 obstacles: obstacles.clone(),
                 occupied: Vec::new(),
                 near: Some(at),
+                stand: &stand,
             };
             let placed = placer.plan(&s, &request).unwrap().prop;
             let landed = [placed.position[0], placed.position[2]];

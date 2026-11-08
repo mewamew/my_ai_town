@@ -74,6 +74,7 @@ pub(crate) fn plan_override(
         .placer
         .as_ref()
         .ok_or_else(|| KernelError::navigation("缺少空间放置器，不能放置道具"))?;
+    let stand = stand_check(w, &prop.locale);
     let request = PlacementRequest {
         prop,
         obstacles: obstacles(w, s, &prop.locale),
@@ -83,8 +84,20 @@ pub(crate) fn plan_override(
             .filter_map(|a| w.topo.point(&a.locus.locale, &a.locus.at))
             .collect(),
         near: near.map(|n| n.position),
+        stand: &stand,
     };
     placer.plan(s, &request).map(Some)
+}
+
+/// 人能不能站在 locale 里的这一点（水平面 x、z，米）：有行走地图时要落在可走格子上、人物半径内
+/// 没有出界，没有行走地图时都能站。放置器用它挑操作锚点：锚点落在可走格子外，用道具的人走过去就
+/// 停在区域外，之后哪儿也去不了（大逃杀第二局）。
+fn stand_check<'a>(w: &'a World, locale: &str) -> impl Fn([f64; 2]) -> bool + 'a {
+    let space = w.walk_map.as_ref().map(|m| m.space_of(locale).to_string());
+    move |p| match (&w.walk_map, &space) {
+        (Some(m), Some(space)) => m.clear(space, p, &[], crate::avatar::RADIUS),
+        _ => true,
+    }
 }
 
 /// 放东西时要让开的家具：同一地点里还摆在地图上的道具（收进背包或容器的不算）。
@@ -109,6 +122,6 @@ pub(crate) fn placement_grids(w: &World) -> Vec<protocol::PlaceGrid> {
     s.floors
         .iter()
         .filter(|f| w.topo.is_dwell(&f.id))
-        .filter_map(|f| placer.grid(s, &f.id, &obstacles(w, s, &f.id)))
+        .filter_map(|f| placer.grid(s, &f.id, &obstacles(w, s, &f.id), &stand_check(w, &f.id)))
         .collect()
 }
