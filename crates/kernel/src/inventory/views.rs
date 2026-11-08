@@ -71,6 +71,50 @@ impl World {
         }
     }
 
+    /// 一组物品按叠放键分堆：身份和状态完全相同的一堆（和背包分格同一个键），堆按键排，堆里按编号排。
+    /// 给村民看时一堆只列一个编号，要几件由 agent 从这一堆里挑（`stack_mates`）。
+    pub fn item_stacks<'a>(&self, items: impl IntoIterator<Item = &'a Prop>) -> Vec<Vec<&'a Prop>> {
+        let mut groups: BTreeMap<String, Vec<&Prop>> = BTreeMap::new();
+        for p in items {
+            groups
+                .entry(Inventory::stack_key(&self.props, p))
+                .or_default()
+                .push(p);
+        }
+        groups
+            .into_values()
+            .map(|mut stack| {
+                stack.sort_by(|a, b| a.id.cmp(&b.id));
+                stack
+            })
+            .collect()
+    }
+
+    /// 和这件物品同一堆的物品编号，含它自己，按编号排：同一个人身上、同一个容器里或地上同一个
+    /// 落脚点，叠放键相同。不是还在世界里的可携带物品时为空。
+    pub fn stack_mates(&self, id: &str) -> Vec<String> {
+        let live = |p: &&Prop| p.portable && !p.withdrawn && !self.props.is_removed(&p.id);
+        let Some(item) = self.topo.prop(id).filter(live) else {
+            return vec![];
+        };
+        // 地图自带、没挪过的物品各在自己的操作点上，只算它自己
+        let place = |p: &Prop| match self.inventory.location(&p.id) {
+            Some(location) => serde_json::to_string(location).unwrap_or_default(),
+            None => format!("map:{}", p.id),
+        };
+        let (here, key) = (place(item), Inventory::stack_key(&self.props, item));
+        let mut ids: Vec<_> = self
+            .topo
+            .props()
+            .iter()
+            .filter(live)
+            .filter(|p| place(p) == here && Inventory::stack_key(&self.props, p) == key)
+            .map(|p| p.id.clone())
+            .collect();
+        ids.sort();
+        ids
+    }
+
     /// 本人看得到的容器里存着的物品；够不着或进不了别人家时为空。
     pub fn container_items(&self, actor: &str, container: &str) -> Vec<StoredItem> {
         let w = self;

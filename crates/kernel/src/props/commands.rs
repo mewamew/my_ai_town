@@ -9,6 +9,11 @@ impl World {
         self.place_prop_near(placement, None)
     }
 
+    /// 这个编号已经有道具用着，用掉、移除了的墓碑也算：新生成的编号要避开（`short_hash`）。
+    pub(crate) fn prop_id_taken(&self, id: &str) -> bool {
+        self.topo.prop(id).is_some() || self.props.is_removed(id)
+    }
+
     /// 玩家在地图上点了位置再放：near 只决定在哪片空位里挑，校验和留白与自动选点相同。
     pub fn place_prop_near(
         &mut self,

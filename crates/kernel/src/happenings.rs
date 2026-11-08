@@ -5,7 +5,6 @@ use crate::props::{Instance, InstantEffect, Placement, ScheduledProp};
 use crate::World;
 use protocol::{At, EventInfo};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 /// 随机流的起点；旧存档没有随机流时也从这里开始。
 const DICE_SEED: u32 = 0x9E37_79B9;
@@ -203,10 +202,12 @@ impl World {
     fn fire_event(&mut self, key: &str, text: &str, locale: &str, place: Option<ScheduledProp>) {
         if let Some(p) = place {
             let at = p.locale.clone().unwrap_or_else(|| locale.to_string());
-            let id = format!(
-                "event:{key}-{:x}",
-                Sha256::digest(format!("{key}/{}", self.minutes.to_bits()))
-            );
+            // 编号里的哈希取短的一段（props::short_hash），村民看得见、要拿来用
+            let hash =
+                crate::props::short_hash(&format!("{key}/{}", self.minutes.to_bits()), |h| {
+                    self.prop_id_taken(&format!("event:{key}-{h}"))
+                });
+            let id = format!("event:{key}-{hash}");
             let placement = Placement {
                 instance: Instance {
                     id: id.clone(),

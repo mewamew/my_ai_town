@@ -38,6 +38,21 @@ pub(crate) fn check_room(existing: usize, incoming: usize) -> Result<()> {
     Ok(())
 }
 
+/// 运行中新生成的编号（做出来的物品、领取的单份、写好的书、定时出现的道具）里那段哈希先取几位。
+const SHORT_HASH: usize = 6;
+
+/// 新编号里的那段哈希：`seed` 的 SHA-256 先取前 6 位，`taken` 说撞了就多取一位，最多取满 64 位
+/// （就是原来的长编号）。编号要短：村民拿它调工具，题面里每次都带着；旧存档里的长编号照样认。
+pub(crate) fn short_hash(seed: &str, taken: impl Fn(&str) -> bool) -> String {
+    use sha2::{Digest, Sha256};
+    let full = format!("{:x}", Sha256::digest(seed));
+    (SHORT_HASH..full.len())
+        .map(|n| &full[..n])
+        .find(|hash| !taken(hash))
+        .unwrap_or(&full)
+        .to_string()
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Definition {

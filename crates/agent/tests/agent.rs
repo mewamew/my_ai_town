@@ -6,5 +6,6 @@ mod resident_context;
 mod resident_interactions;
 mod resident_notebook;
 mod resident_possession;
+mod resident_prompt;
 mod resident_reading;
 mod resident_runtime;

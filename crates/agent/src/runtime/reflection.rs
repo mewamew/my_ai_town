@@ -68,6 +68,7 @@ pub(super) fn messages(
         .context_goals()
         .into_iter()
         .filter(|g| g.updated_at <= source_until)
+        .map(crate::context::view::goal_view)
         .collect();
     let focus = Focus::of_episodes(&events);
     let mut task = json!({
@@ -109,5 +110,5 @@ pub(super) fn messages(
         Message::text(Role::User, task.to_string()),
     ];
     messages.extend(s.notebook.reading_dialogue.clone());
-    messages
+    crate::context::clean::messages(&messages)
 }

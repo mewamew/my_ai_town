@@ -24,15 +24,37 @@ type Excerpt = (u8, String);
 struct Collector<'a> {
     excerpts: Vec<Excerpt>,
     event_ids: BTreeSet<u64>,
-    times: Vec<f64>,
+    /// 各轮观察的钟点，摘要开头写起止。
+    clocks: Vec<String>,
     /// 调用编号到工具名，供工具结果摘录使用。
     names: BTreeMap<&'a str, &'a str>,
 }
 
+/// 观察里的钟点；没有 clock 的旧观察按分钟数换算。
+fn clock_of(observation: &Value) -> Option<String> {
+    observation["clock"]
+        .as_str()
+        .map(str::to_owned)
+        .or_else(|| {
+            observation["sim_minutes"]
+                .as_f64()
+                .map(kernel::clock_string)
+        })
+}
+
 impl<'a> Collector<'a> {
     fn user(&mut self, message: &Message) {
-        let observation = match serde_json::from_str::<Value>(&message.content) {
-            Ok(value) if value.get("observation").is_some() => value["observation"].clone(),
+        let value = serde_json::from_str::<Value>(&message.content).ok();
+        // 收到邀请时还在做的那组动作，做完的结果补成一条 user 消息
+        if let Some(result) = value.as_ref().and_then(|v| v.get("action_result")) {
+            if let Some(line) = actions_line(result) {
+                let priority = if result["ok"] == false { 0 } else { 2 };
+                self.excerpts.push((priority, line));
+            }
+            return;
+        }
+        let observation = match value {
+            Some(value) if value.get("observation").is_some() => value["observation"].clone(),
             _ => {
                 let line = format!(
                     "{}{}",
@@ -43,9 +65,7 @@ impl<'a> Collector<'a> {
                 return;
             }
         };
-        if let Some(at) = observation["sim_minutes"].as_f64() {
-            self.times.push(at);
-        }
+        self.clocks.extend(clock_of(&observation));
         for event in observation["events"].as_array().into_iter().flatten() {
             let Some(event_id) = event["event_id"].as_u64() else {
                 continue;
@@ -60,19 +80,9 @@ impl<'a> Collector<'a> {
                 _ if reading => 0,
                 _ => 1,
             };
-            let source = event
-                .get("readable")
-                .filter(|v| !v.is_null())
-                .map(|v| {
-                    format!(
-                        "〔来源 {}；版本 {}〕",
-                        v["id"].as_str().unwrap_or_default(),
-                        v["version"].as_str().unwrap_or_default()
-                    )
-                })
-                .unwrap_or_default();
+            // 读的是哪本、第几版，正文里写着；内容指纹是给程序核对的哈希，不进摘要
             let line = format!(
-                "事件 #{event_id} {}{source}：{}",
+                "事件 #{event_id} {}：{}",
                 kernel::clock_string(event["at"].as_f64().unwrap_or(0.0)),
                 clip(text, 200)
             );
@@ -92,6 +102,7 @@ impl<'a> Collector<'a> {
             self.excerpts.push((3, line));
         }
     }
+    /// 工具结果写成一句话；服务商给的调用编号和原样的结果 JSON 不进摘要。
     fn tool(&mut self, message: &Message) {
         let call_id = message.call_id.as_deref().unwrap_or_default();
         let name = self.names.get(call_id).copied().unwrap_or_default();
@@ -99,22 +110,125 @@ impl<'a> Collector<'a> {
         let reading = name == ToolName::ReadContent.as_str()
             || value.get("reading_result").is_some()
             || value["result"].get("reading_result").is_some();
-        if reading {
+        if reading && value["ok"] != false {
             let id = value
                 .get("event_id")
                 .unwrap_or(&value["result"]["event_id"]);
             self.excerpts.push((2, prompts::summary_reading(id)));
             return;
         }
-        let failed = value["ok"] == false;
-        let priority = if failed || name == ToolName::SetGoal.as_str() {
-            0
-        } else {
-            2
+        let tool = name.parse::<ToolName>().ok();
+        if value["ok"] == false {
+            if let Some(error) = value["error"].as_str() {
+                let priority = if tool.is_some_and(ToolName::is_lookup) {
+                    2
+                } else {
+                    0
+                };
+                let line = prompts::summary_failed(name, &clip(error, 160));
+                self.excerpts.push((priority, line));
+                return;
+            }
+        }
+        let result = value.get("result").unwrap_or(&value);
+        let line = match tool {
+            Some(ToolName::RunActions) => actions_line(&value),
+            Some(ToolName::SetGoal) => result["title"].as_str().map(|title| {
+                prompts::summary_goal(
+                    &clip(title, 60),
+                    result["status"].as_str().unwrap_or_default(),
+                    result["reason"]
+                        .as_str()
+                        .filter(|r| !r.is_empty())
+                        .map(|r| clip(r, 80))
+                        .as_deref(),
+                )
+            }),
+            Some(ToolName::OfferInvitation | ToolName::ReplyInvitation | ToolName::Interact) => {
+                interaction_line(&result["interaction"])
+                    .or_else(|| interaction_line(&value["invitation"]))
+                    .or_else(|| interaction_line(&value["interaction"]))
+            }
+            Some(ToolName::WaitFor) => value["invitation"]
+                .is_object()
+                .then(|| interaction_line(&value["invitation"]))
+                .flatten()
+                .or_else(|| {
+                    let at = value["at"].as_f64()?;
+                    Some(prompts::summary_wait(
+                        &kernel::clock_string(at),
+                        value["woke_by"] == "event",
+                    ))
+                }),
+            Some(ToolName::ModeAction) => result
+                .as_str()
+                .map(|text| prompts::summary_mode(&clip(text, 160))),
+            // 查看、回想、翻记忆：看到的东西在之后的观察和事件里，不另记
+            _ => None,
         };
-        let line = prompts::summary_tool(call_id, name, &clip(&message.content, 300));
-        self.excerpts.push((priority, line));
+        if let Some(line) = line {
+            let priority = if tool == Some(ToolName::SetGoal) {
+                0
+            } else {
+                2
+            };
+            self.excerpts.push((priority, line));
+        }
     }
+}
+
+/// 一组动作的结果写成一句：开始的钟点，每项动作的动词、结果、变化和原因。
+fn actions_line(value: &Value) -> Option<String> {
+    let results = value["group"]["results"].as_array()?;
+    let at = results
+        .first()
+        .and_then(|r| r["started_at"].as_f64().or(r["ended_at"].as_f64()))
+        .or(value["group"]["accepted_at"].as_f64())?;
+    let steps: Vec<String> = results
+        .iter()
+        .map(|r| {
+            let changes: Vec<&str> = r["changes"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .take(3)
+                .collect();
+            prompts::summary_step(
+                r["verb"].as_str().unwrap_or_default(),
+                r["status"].as_str().unwrap_or_default(),
+                &changes,
+                r["reason"].as_str(),
+            )
+        })
+        .collect();
+    if steps.is_empty() {
+        let status = value["group"]["status"].as_str().unwrap_or_default();
+        return Some(prompts::summary_actions(
+            &kernel::clock_string(at),
+            &[prompts::summary_step("这组动作", status, &[], None)],
+        ));
+    }
+    Some(clip(
+        &prompts::summary_actions(&kernel::clock_string(at), &steps),
+        300,
+    ))
+}
+
+/// 邀请、交谈、同行这些互动：种类、状态和最后一句变化。
+fn interaction_line(interaction: &Value) -> Option<String> {
+    let kind =
+        serde_json::from_value::<protocol::InteractionKind>(interaction["kind"].clone()).ok()?;
+    let last = interaction["changes"]
+        .as_array()
+        .and_then(|c| c.last())
+        .and_then(Value::as_str)
+        .map(|c| clip(c, 80));
+    Some(prompts::summary_interaction(
+        kind.label(),
+        interaction["status"].as_str().unwrap_or_default(),
+        last.as_deref(),
+    ))
 }
 
 /// 折叠一批消息的摘要文本，以及其中最后一个事件的编号。
@@ -133,12 +247,8 @@ pub(super) fn summarize(messages: &[Message], id: u64) -> (String, Option<u64>) 
         (Some(a), Some(b)) => format!("事件 #{a}—#{b}"),
         _ => prompts::SUMMARY_NO_EVENTS.into(),
     };
-    let span = match (collector.times.first(), collector.times.last()) {
-        (Some(a), Some(b)) => format!(
-            "，{}—{}",
-            kernel::clock_string(*a),
-            kernel::clock_string(*b)
-        ),
+    let span = match (collector.clocks.first(), collector.clocks.last()) {
+        (Some(a), Some(b)) => format!("，{a}—{b}"),
         _ => String::new(),
     };
     let mut text = prompts::summary_header(id, &range, &span);

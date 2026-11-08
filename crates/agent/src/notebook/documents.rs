@@ -16,11 +16,7 @@ pub(crate) fn render_page(page: &Page) -> String {
         prompts::PAGE_STATUS_NOTE,
         kernel::clock_string(page.updated_at),
         page.text,
-        page.evidence
-            .iter()
-            .map(|id| format!("#{id}"))
-            .collect::<Vec<_>>()
-            .join("、")
+        crate::context::clean::event_ranges(&page.evidence)
     )
 }
 

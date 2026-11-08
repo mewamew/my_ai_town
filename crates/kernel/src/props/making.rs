@@ -4,7 +4,6 @@ use super::{Action, Definition, Instance, InstantEffect, Placement, Requirement}
 use crate::error::{KernelError, Result};
 use crate::{inventory::Inventory, World};
 use protocol::ItemLocation;
-use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
 /// 道具实例引用的定义编号（去掉 @版本）。
@@ -105,7 +104,7 @@ impl World {
                 let locale = self.actors[actor].locus.locale.clone();
                 let placement = Placement {
                     instance: Instance {
-                        id: made_id(&format!("{actor}/{key}/{n}"), 0),
+                        id: self.made_ids(&format!("{actor}/{key}/{n}"), 1).remove(0),
                         definition: prop.reference(),
                         locale: locale.clone(),
                         name: None,
@@ -149,11 +148,11 @@ impl World {
     }
 
     fn made_items(&self, actor: &str, item: &Definition, count: u32, key: &str) -> Vec<Placement> {
-        let seed = format!("{actor}/{key}");
-        (0..count)
-            .map(|i| Placement {
+        self.made_ids(&format!("{actor}/{key}"), count)
+            .into_iter()
+            .map(|id| Placement {
                 instance: Instance {
-                    id: made_id(&seed, i),
+                    id,
                     definition: item.reference(),
                     locale: self.actors[actor].locus.locale.clone(),
                     name: None,
@@ -162,6 +161,16 @@ impl World {
                 definition: item.clone(),
             })
             .collect()
+    }
+
+    /// 产出实例的编号 `made:{哈希}_{序号}`：哈希由本人、动作和完成时刻派生，取短的一段（`short_hash`），
+    /// 同一次完成的几件共用一段、按序号区分；和已有的撞了整批一起加长。
+    fn made_ids(&self, seed: &str, count: u32) -> Vec<String> {
+        let id = |hash: &str, i: u32| format!("made:{hash}_{i}");
+        let hash = super::short_hash(seed, |hash| {
+            (0..count).any(|i| self.prop_id_taken(&id(hash, i)))
+        });
+        (0..count).map(|i| id(&hash, i)).collect()
     }
 }
 
@@ -240,11 +249,6 @@ impl World {
         }
         missing
     }
-}
-
-/// 产出实例的编号：由本人、动作和完成时刻派生，同一次完成里按序号区分。
-fn made_id(seed: &str, i: u32) -> String {
-    format!("made:{:x}_{i}", Sha256::digest(seed))
 }
 
 /// 前提的说明（观察与道具目录用）。

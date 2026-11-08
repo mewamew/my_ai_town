@@ -339,7 +339,7 @@ impl ResidentRuntime {
         };
         let mut outdated = false;
         let mut retry_tools = std::collections::BTreeSet::new();
-        for call in &calls {
+        for (index, call) in calls.iter().enumerate() {
             self.record(
                 world,
                 s,
@@ -351,7 +351,7 @@ impl ResidentRuntime {
                     outdated |= error.kind == ToolErrorKind::Outdated;
                     Err(error)
                 }
-                None => self.run_tool(world, s, round.id, call),
+                None => self.run_tool(world, s, round.id, index, call),
             };
             let value = match outcome {
                 Ok(ToolOutcome::Complete(value)) => json!({"ok":true,"result":value}),
@@ -393,6 +393,7 @@ impl ResidentRuntime {
         world: &mut World,
         s: &mut Session,
         request: u64,
+        call_index: usize,
         call: &ToolCall,
     ) -> Result<ToolOutcome, ToolError> {
         let documents = self.documents.entry(s.actor_id.clone()).or_default();
@@ -402,6 +403,7 @@ impl ResidentRuntime {
             index: &mut self.index,
             documents,
             request,
+            call_index,
         };
         tools::execute(&mut ctx, call)
     }

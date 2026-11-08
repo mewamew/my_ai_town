@@ -176,11 +176,13 @@ pub(crate) fn check_draft(
     }
 }
 
-/// 活动开始时冻结正文：阅读锁定当前版本，写作把草稿定成作品。
+/// 活动开始时冻结正文：阅读锁定当前版本，写作把草稿定成作品。`taken` 说一个编号是否已经被
+/// 别的道具或别人写到一半的书占了，新书的编号要避开。
 pub(crate) fn pending_for(
     affordances: &Affordances,
     topo: &Topology,
     a: &Actor,
+    taken: &dyn Fn(&str) -> bool,
 ) -> Result<Option<Pending>> {
     let prop_id = a
         .current
@@ -206,12 +208,16 @@ pub(crate) fn pending_for(
                     .ok_or_else(|| KernelError::content("道具没有可读正文"))?,
             }))
         }
-        Some(Completion::WriteBook) => writing_draft(affordances, a).map(Some),
+        Some(Completion::WriteBook) => writing_draft(affordances, a, taken).map(Some),
         _ => Ok(None),
     }
 }
 
-fn writing_draft(affordances: &Affordances, a: &Actor) -> Result<Pending> {
+fn writing_draft(
+    affordances: &Affordances,
+    a: &Actor,
+    taken: &dyn Fn(&str) -> bool,
+) -> Result<Pending> {
     let binding = a
         .current
         .action
@@ -223,10 +229,10 @@ fn writing_draft(affordances: &Affordances, a: &Actor) -> Result<Pending> {
         .writing
         .as_ref()
         .ok_or_else(|| KernelError::content("写作需要 writing.title 和 writing.text"))?;
-    let key = format!(
-        "{:x}",
-        Sha256::digest(format!("{}/{}", a.id, binding.action_id))
-    );
+    // 书的编号也是村民要抄的，取短的一段哈希（props::short_hash）
+    let key = crate::props::short_hash(&format!("{}/{}", a.id, binding.action_id), |key| {
+        taken(&format!("written:{key}"))
+    });
     let id = format!("written:{key}");
     let text = Text {
         work_id: id.clone(),

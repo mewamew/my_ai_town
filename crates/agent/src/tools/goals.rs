@@ -7,7 +7,7 @@ use crate::{
 use kernel::World;
 use protocol::{ActionStatus, InteractionStatus};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -208,7 +208,7 @@ pub(super) fn set_goal(
         due_clock,
         evidence,
     };
-    let value = json!(goal);
+    let value = crate::context::view::goal_view(&goal);
     let closed = !goal.status.is_open() || goal.status == GoalStatus::Paused;
     session.goals.insert(args.id, goal);
     if closed {

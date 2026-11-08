@@ -64,7 +64,15 @@ impl World {
 
     /// 活动开始时冻结正文：阅读锁定当前版本，写作把草稿定成作品。
     pub(crate) fn prepare_content(&mut self, actor: &str) -> Result<()> {
-        let pending = rules::pending_for(&self.affordances, &self.topo, &self.actors[actor])?;
+        // 别人写到一半的书还没放进世界，编号也算占着
+        let taken = |id: &str| {
+            self.prop_id_taken(id)
+                || self.actors.values().any(|other| {
+                    matches!(&other.current.content, Some(Pending::Writing { placement }) if placement.instance.id == id)
+                })
+        };
+        let pending =
+            rules::pending_for(&self.affordances, &self.topo, &self.actors[actor], &taken)?;
         self.actor_mut(actor).current.content = pending;
         Ok(())
     }

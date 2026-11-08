@@ -863,6 +863,6 @@ fn a_planned_stay_ends_when_someone_from_the_goals_shows_up() {
     let woke = request(&mut r, &mut w);
     let body = &woke.messages.last().unwrap().content;
     assert!(body.contains("何青来了"), "醒来时看到她来了");
-    let group = w.action_group("r1", "s1-r1-stay").unwrap();
+    let group = w.action_group("r1", "a1-1").unwrap();
     assert_eq!(group.status, protocol::GroupStatus::Interrupted);
 }

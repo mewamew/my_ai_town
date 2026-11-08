@@ -118,6 +118,8 @@ pub struct ToolContext<'a> {
     pub index: &'a mut MemoryIndex,
     pub documents: &'a mut DocumentsCache,
     pub request: u64,
+    /// 这是本次回复里的第几个调用（从 0 起），世界命令的编号靠它区分。
+    pub call_index: usize,
 }
 
 #[derive(Debug)]
@@ -471,9 +473,41 @@ fn me<'w>(world: &'w World, ctx_actor: &str) -> Result<&'w kernel::world::Actor,
     Ok(resident(world, ctx_actor)?)
 }
 
-/// 世界命令的编号：会话、请求与调用三段，重放时可辨认。
-fn command_id(ctx: &ToolContext, call: &ToolCall) -> String {
-    format!("s{}-r{}-{}", ctx.session.id, ctx.request, call.id)
+/// 世界命令的种类：编号的头一个字母。
+#[derive(Clone, Copy)]
+enum Command {
+    /// 发起交谈、同行、赠予这些邀请：编号就是互动的编号，模型回应、加入、立目标都要抄。
+    Interaction,
+    /// 一组身体动作。
+    Actions,
+    /// 倾听：不留下编号。
+    Listen,
+}
+
+/// 世界命令的编号：交谈和邀请写 `c{请求号}`，动作组写 `a{请求号}`，一次回复里第二个调用起再加
+/// `-{第几个}`。请求号全镇不重复，重放同一次回复得到同一个编号。世界里已有同号的（换过存档、运行器
+/// 从头数了）就退回原来的长写法：会话、请求与服务商的调用编号。长写法一个七十来字，动作回执里一次写
+/// 三遍，聊天编号每次观察都带着。
+fn command_id(ctx: &ToolContext, call: &ToolCall, kind: Command) -> String {
+    let prefix = match kind {
+        Command::Interaction => 'c',
+        Command::Actions => 'a',
+        Command::Listen => 'l',
+    };
+    let mut id = format!("{prefix}{}", ctx.request);
+    if ctx.call_index > 0 {
+        id.push_str(&format!("-{}", ctx.call_index));
+    }
+    let taken = match kind {
+        Command::Interaction => ctx.world.interactions().contains(&id),
+        Command::Actions => ctx.world.action_group(&ctx.session.actor_id, &id).is_some(),
+        Command::Listen => false,
+    };
+    if taken {
+        format!("s{}-r{}-{}", ctx.session.id, ctx.request, call.id)
+    } else {
+        id
+    }
 }
 fn revision(ctx: &ToolContext) -> Result<u64, ToolError> {
     Ok(me(ctx.world, &ctx.session.actor_id)?.actions.revision)
@@ -589,6 +623,7 @@ fn interact(ctx: &mut ToolContext, call: &ToolCall) -> Result<ToolOutcome, ToolE
                 &mut args["interaction"],
             );
             resolve_appointment(ctx.world, &mut args["interaction"])?;
+            expand_gift(ctx.world, &mut args["interaction"])?;
         }
         if let Some(to) = args["to"].as_str() {
             let members = chat.chat.as_ref().map(|c| &c.members);
@@ -712,7 +747,7 @@ fn execute_interaction(
     if !talk_reply || ctx.session.pending.iter().any(PendingTool::blocks_request) {
         require_idle(ctx, "先等待当前工具结果，再处理互动")?;
     }
-    let (id, revision) = (command_id(ctx, call), revision(ctx)?);
+    let (id, revision) = (command_id(ctx, call, Command::Interaction), revision(ctx)?);
     let actor = ctx.session.actor_id.clone();
     let result = ctx.world.interact(&actor, &id, revision, &command)?;
     if result.status == InteractionStatus::Running && result.chat.is_none() {
@@ -745,10 +780,71 @@ fn execute_interaction(
     }
     complete(json!({"interaction":view}))
 }
+/// 背包、柜子和别人递过来的东西一堆只列一个编号：模型要几件就把它写几遍，这里换成这一堆里不同的
+/// 几件（`World::stack_mates`），世界只认不重复的编号。不够数就退回，说明这一堆只有几件。
+pub(crate) fn expand_stacks(world: &World, items: &mut Vec<String>) -> Result<(), ToolError> {
+    let mut picked: Vec<String> = Vec::new();
+    for id in items.iter() {
+        if !picked.contains(id) {
+            picked.push(id.clone());
+            continue;
+        }
+        let mates = world.stack_mates(id);
+        match mates.iter().find(|mate| !picked.contains(mate)) {
+            Some(mate) => picked.push(mate.clone()),
+            None => {
+                let name = world.topo.prop(id).map_or(id.as_str(), |p| p.name.as_str());
+                let count = items.iter().filter(|i| *i == id).count();
+                return Err(ToolError::new(
+                    ToolErrorKind::World,
+                    format!(
+                        "{name}这一堆只有 {} 件，{id} 写了 {count} 遍",
+                        mates.len().max(1)
+                    ),
+                ));
+            }
+        }
+    }
+    *items = picked;
+    Ok(())
+}
+
+/// 赠予的物品写在 interaction.items 里：同样按堆展开。
+fn expand_gift(world: &World, interaction: &mut Value) -> Result<(), ToolError> {
+    if interaction["kind"] != "give" {
+        return Ok(());
+    }
+    let Some(list) = interaction["items"].as_array() else {
+        return Ok(());
+    };
+    let Some(mut items) = list
+        .iter()
+        .map(|i| i.as_str().map(str::to_owned))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(());
+    };
+    expand_stacks(world, &mut items)?;
+    interaction["items"] = json!(items);
+    Ok(())
+}
+
 fn run_actions(ctx: &mut ToolContext, call: &ToolCall) -> Result<ToolOutcome, ToolError> {
-    let args = action_arguments::decode(&call.arguments)?;
+    let mut args = action_arguments::decode(&call.arguments)?;
+    for draft in &mut args.actions {
+        use protocol::InventoryAction as Op;
+        if let Some(
+            Op::PickUp { items }
+            | Op::Drop { items }
+            | Op::Store { items, .. }
+            | Op::Retrieve { items, .. },
+        ) = &mut draft.inventory
+        {
+            expand_stacks(ctx.world, items)?;
+        }
+    }
     require_idle(ctx, "一次会话只能等待一组身体动作或事件")?;
-    let (group_id, revision) = (command_id(ctx, call), revision(ctx)?);
+    let (group_id, revision) = (command_id(ctx, call, Command::Actions), revision(ctx)?);
     ctx.world
         .run_actions(&ctx.session.actor_id, &group_id, revision, &args.actions)?;
     Ok(ToolOutcome::Pending(PendingTool::Actions {
@@ -811,7 +907,7 @@ fn wait_for(ctx: &mut ToolContext, call: &ToolCall) -> Result<ToolOutcome, ToolE
         let command = InteractionCommand::Listen {
             interaction_id: chat.id.clone(),
         };
-        let (id, revision) = (command_id(ctx, call), revision(ctx)?);
+        let (id, revision) = (command_id(ctx, call, Command::Listen), revision(ctx)?);
         ctx.world.interact(&actor, &id, revision, &command)?;
         return complete(json!({"listening":true}));
     }

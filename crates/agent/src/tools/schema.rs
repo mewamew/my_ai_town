@@ -187,7 +187,7 @@ fn tagged<T: Serialize>(
 fn items() -> Value {
     described(
         json!({"type":"array","items":{"type":"string"},"minItems":1,"maxItems":ITEMS_MAX}),
-        "实际物品 ID，来自 inventory 或可见道具",
+        "实际物品 ID，来自 inventory、可见道具或柜子里存的；同一堆只列一个 id，要几件就把它写几遍，由系统从这一堆里挑",
     )
 }
 

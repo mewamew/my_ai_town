@@ -1,6 +1,6 @@
 //! 只投影本人状态、眼前对象与已知地图。观察仪的世界全貌不进入村民上下文。
 use crate::{interaction, prompts, resident, AgentError};
-use kernel::{intent::BuiltinVerb, world::ActKind, World};
+use kernel::{intent::BuiltinVerb, topology::Prop, world::ActKind, World};
 use protocol::FactKind;
 use serde_json::{json, Value};
 
@@ -53,6 +53,65 @@ pub fn static_map(world: &World, actor: &str) -> Result<Value, AgentError> {
     }))
 }
 
+/// 给村民看的一组物品：同样的东西一堆只列一个编号（堆里编号最小的那件）和件数，要几件时把编号写几遍，
+/// 由系统从这一堆里挑（tools 的 expand_stacks）。编号是 64 位哈希的那些年头，一堆五件就是五个
+/// 七十字的编号，背包在题面里被截成开头一段（大逃杀第三局）。`detail` 时再带能拿它做的事（动作名）
+/// 和书信的元数据；动作的完整说明用 inspect 看。
+pub(crate) fn item_stacks<'a>(
+    world: &World,
+    items: impl IntoIterator<Item = &'a Prop>,
+    detail: bool,
+) -> Vec<Value> {
+    world
+        .item_stacks(items)
+        .into_iter()
+        .map(|stack| {
+            let p = stack[0];
+            let mut view = json!({"id": p.id, "name": p.name, "quantity": stack.len()});
+            if detail {
+                let actions: Vec<_> = p
+                    .verbs
+                    .iter()
+                    .filter(|v| v.action.is_some())
+                    .map(|v| &v.verb)
+                    .collect();
+                if !actions.is_empty() {
+                    view["actions"] = json!(actions);
+                }
+                if let Some(text) = &p.readable {
+                    view["readable"] = json!(text.metadata());
+                }
+            }
+            view
+        })
+        .collect()
+}
+
+/// 本人背包：格数照背包算，物品一堆一条。
+fn inventory_view(world: &World, actor: &str) -> Value {
+    let bag = world.inventory_view(actor);
+    let carried = world
+        .topo
+        .props()
+        .iter()
+        .filter(|p| !p.withdrawn && world.inventory().carried_by(&p.id, actor));
+    json!({"capacity": bag.capacity, "used": bag.used, "slots": item_stacks(world, carried, true)})
+}
+
+/// 本人看得到的容器里存着的东西，一堆一条；够不着或进不了别人家时为空。
+fn stored_view(world: &World, actor: &str, container: &str) -> Vec<Value> {
+    let ids: std::collections::BTreeSet<String> = world
+        .container_items(actor, container)
+        .into_iter()
+        .map(|item| item.id)
+        .collect();
+    item_stacks(
+        world,
+        world.topo.props().iter().filter(|p| ids.contains(&p.id)),
+        false,
+    )
+}
+
 fn prop_view(world: &World, actor: &str, p: &kernel::topology::Prop) -> Value {
     let verbs: Vec<_> = p
         .verbs
@@ -72,7 +131,7 @@ fn prop_view(world: &World, actor: &str, p: &kernel::topology::Prop) -> Value {
         "name": p.name,
         "portable": p.portable,
         "storage_slots": p.storage_slots,
-        "stored_items": world.container_items(actor, &p.id),
+        "stored_items": stored_view(world, actor, &p.id),
         "readable": p.readable.as_ref().map(kernel::content::Text::metadata),
         "board": p.board,
         "bulletin_board": p.bulletin_board,
@@ -128,12 +187,15 @@ fn people_here(world: &World, actor: &str, locale: &str) -> Vec<Value> {
             }
             let alive = !other.needs.body.dead;
             let awake = world.awake(&id);
-            let carrying: Vec<_> = world
-                .inventory_view(&id)
-                .slots
-                .into_iter()
-                .map(|s| json!({"name": s.name, "items": s.items}))
-                .collect();
+            let carrying = item_stacks(
+                world,
+                world
+                    .topo
+                    .props()
+                    .iter()
+                    .filter(|p| !p.withdrawn && world.inventory().carried_by(&p.id, &id)),
+                false,
+            );
             // 眼下能对他动手的方式：活人能推；身上有东西时，醒着的能抢，睡着、倒下的能偷，死了的能搜身
             let mut force = Vec::new();
             if alive {
@@ -266,7 +328,7 @@ pub fn observe(world: &World, actor: &str, after: u64) -> Result<(Value, u64), A
     let mut value = json!({
         "actor_id": actor,
         "environment": world.weather_context(actor),
-        "inventory": world.inventory_view(actor),
+        "inventory": inventory_view(world, actor),
         "sim_minutes": world.minutes(),
         "clock": world.clock(),
         "revision": a.actions.revision,
@@ -368,7 +430,7 @@ pub fn inspect(world: &World, actor: &str, id: &str) -> Result<Value, AgentError
             "at": world.minutes(),
             "prop_id": prop.id,
             "portable": prop.portable,
-            "stored_items": world.container_items(actor, &prop.id),
+            "stored_items": stored_view(world, actor, &prop.id),
             "location": world.inventory().location(&prop.id),
             "locale": prop.locale,
             "readable": prop.readable.as_ref().map(kernel::content::Text::metadata),

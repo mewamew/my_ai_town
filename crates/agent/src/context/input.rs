@@ -20,23 +20,29 @@ pub struct InputState {
 }
 
 impl InputState {
+    /// 原文只给模型分页回查，按发给模型的样子存（context::clean）。
     pub fn source(&mut self, value: &Value) -> u64 {
+        let mut value = value.clone();
+        super::clean::clean(&mut value);
         // 常见的长地图/人设/工具返回保持同一引用，避免每轮改变稳定前缀。
-        if let Some((id, _)) = self.sources.iter().find(|(_, old)| *old == value) {
+        if let Some((id, _)) = self.sources.iter().find(|(_, old)| **old == value) {
             return *id;
         }
         self.next_source += 1;
-        self.sources.insert(self.next_source, value.clone());
+        self.sources.insert(self.next_source, value);
         self.next_source
     }
 
-    /// 字节限制只作用于模型视图；不会修改或丢弃原文。
+    /// 字节限制只作用于模型视图；不会修改或丢弃原文。按发给模型的样子量长短、截预览：
+    /// 预览是一段 JSON 文字，发出前的清理改不到它里面。
     pub fn bound(&mut self, value: Value, bytes: usize) -> Value {
-        if value.to_string().len() <= bytes {
+        let mut cleaned = value.clone();
+        super::clean::clean(&mut cleaned);
+        if cleaned.to_string().len() <= bytes {
             return value;
         }
-        let source = self.source(&value);
-        let text = value.to_string();
+        let source = self.source(&cleaned);
+        let text = cleaned.to_string();
         let mut preview = String::new();
         // JSON 再次序列化会转义，按最终对象长度校验。
         let mut result =
@@ -99,11 +105,12 @@ fn page_chars() -> usize {
 
 /// 工具的成功/失败标签始终保留，长度限制只处理结果正文。
 pub fn tool_result(state: &mut InputState, mut value: Value) -> Value {
-    if value.to_string().len() > ITEM_BYTES {
+    use super::clean::wire_len;
+    if wire_len(&value) > ITEM_BYTES {
         if let Some(result) = value.get_mut("result") {
             *result = state.bound(result.take(), ITEM_BYTES - 512);
         }
-        if value.to_string().len() > ITEM_BYTES {
+        if wire_len(&value) > ITEM_BYTES {
             let ok = value.get("ok").cloned();
             let details = state.bound(value, ITEM_BYTES - 64);
             return match ok {

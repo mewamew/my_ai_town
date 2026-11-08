@@ -135,6 +135,7 @@ pub fn call(
         index: &mut MemoryIndex::new().unwrap(),
         documents: &mut DocumentsCache::default(),
         request: 1,
+        call_index: 0,
     };
     execute(&mut ctx, &tool_call(name, name, args))
 }

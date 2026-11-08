@@ -16,9 +16,10 @@ const NOTICES_MAX: usize = 6;
 const RECENT_BYTES: usize = 4_000;
 /// 近期经历每条最多这么多字。
 const RECENT_TEXT_CHARS: usize = 200;
-/// 属于本场对话的字段：有变化时放进 chat 里重发，不放在顶层。等人回答的提议没有时为 null，
-/// 交谈变成同行时 kind 跟着变。
+/// 属于本场对话的字段：有变化时放进 chat 里重发，不放在顶层。等人回答的提议没有了写 `NO_PROPOSAL`
+/// （发给模型前 null 字段不写，写 null 就和「没变」分不开了），交谈变成同行时 kind 跟着变。
 const CHAT_FIELDS: [&str; 3] = ["members", "proposal", "kind"];
+const NO_PROPOSAL: &str = "没有";
 /// 对话记录超过这个字节数就从全量重新开始：交谈再长，请求也有上限。
 const TRANSCRIPT_BYTES: u64 = 16_000;
 
@@ -52,6 +53,7 @@ impl ResidentRuntime {
                 messages.extend(s.chat.messages.iter().cloned());
             }
             messages.extend(delta.message.clone());
+            let messages = crate::context::clean::messages(&messages);
             let sent_bytes = wire_bytes(&messages) + tools_json.len() as u64;
             let estimated = estimate_tokens(sent_bytes, ratio);
             if estimated <= budget || (restart && entries_bytes <= ENTRIES_BYTES_MIN) {
@@ -218,7 +220,13 @@ impl TurnState {
                 ),
                 ("people_here", json!(people)),
                 ("members", chat["members"].clone()),
-                ("proposal", chat["proposal"].clone()),
+                (
+                    "proposal",
+                    match &chat["proposal"] {
+                        Value::Null => json!(NO_PROPOSAL),
+                        proposal => proposal.clone(),
+                    },
+                ),
                 ("kind", chat["kind"].clone()),
                 ("goals", json!(goals)),
             ],

@@ -1,5 +1,6 @@
 //! 有界的当前世界视图。集合省略有来源可查；事件积压时只展示最近的，更早的报条数，游标到最新。
-use super::input::InputState;
+//! 长短按发给模型的样子量（context::clean）。
+use super::{clean::wire_len, input::InputState};
 use crate::session::Session;
 use serde_json::{json, Value};
 
@@ -8,7 +9,7 @@ pub(crate) fn field(state: &mut InputState, object: &mut Value, key: &str, bytes
     let Some(value) = object.get_mut(key) else {
         return;
     };
-    if value.to_string().len() <= bytes {
+    if wire_len(value) <= bytes {
         return;
     }
     let source = state.source(value);
@@ -17,7 +18,7 @@ pub(crate) fn field(state: &mut InputState, object: &mut Value, key: &str, bytes
         let keep = items
             .iter()
             .take_while(|item| {
-                size += item.to_string().len() + 1;
+                size += wire_len(item) + 1;
                 size <= bytes
             })
             .count();
@@ -34,7 +35,7 @@ fn visible_props(state: &mut InputState, view: &mut Value, bytes: usize) {
     let Some(full) = view.get("visible_props").and_then(Value::as_array) else {
         return;
     };
-    if view["visible_props"].to_string().len() <= bytes {
+    if wire_len(&view["visible_props"]) <= bytes {
         return;
     }
     let source = state.source(&view["visible_props"]);
@@ -49,7 +50,7 @@ fn visible_props(state: &mut InputState, view: &mut Value, bytes: usize) {
         if let Some(users) = prop.get("in_use") {
             item["in_use"] = users.clone();
         }
-        size += item.to_string().len() + 1;
+        size += wire_len(&item) + 1;
         if size > bytes {
             break;
         }
@@ -65,9 +66,10 @@ fn visible_props(state: &mut InputState, view: &mut Value, bytes: usize) {
 
 pub(crate) fn observation(s: &mut Session, raw: &Value, bytes: usize) -> (Value, u64) {
     let mut view = raw.clone();
-    // 这些集合可按需查询，不能让它们挤掉本人状态与正在进行的互动。
+    // 这些集合可按需查询，不能让它们挤掉本人状态与正在进行的互动。背包不在其中：一堆只列一件，
+    // 最多 8 格，总是放得下；截成开头一段，后面的急救包、水就看不见了（大逃杀第三局）。
     visible_props(&mut s.input, &mut view, bytes / 8);
-    for key in ["people_here", "nearby_chats", "inventory"] {
+    for key in ["people_here", "nearby_chats"] {
         field(&mut s.input, &mut view, key, bytes / 8);
     }
     if let Some(items) = view["interactions"].as_array_mut() {
@@ -150,14 +152,14 @@ fn keep_recent_events(events: &mut Value, bytes: usize) -> Vec<(f64, bool)> {
 
 /// 发给模型前去掉只对程序有用的内容：事件的动作编号和对象列表、被同时刻动作回执或通知
 /// 包含的观察与阅读事件（阅读正文按动作回执的编号查）、天气的修订号和过渡记录、与事件重复的
-/// 身体变化历史；在室内时不带可去的室内地点。时间留一位小数，需求值和路程分钟取整。
-/// 慢变字段按去掉之后的内容判断是否变化。
+/// 身体变化历史、和 clock 重复的分钟数；在室内时不带可去的室内地点。时间留一位小数，需求值和
+/// 路程分钟取整，发出前再统一写成钟点（context::clean）。慢变字段按去掉之后的内容判断是否变化。
 pub(crate) fn slim(observation: &Value) -> Value {
     let mut view = observation.clone();
     if let Some(object) = view.as_object_mut() {
         object.remove("revision");
+        object.remove("sim_minutes");
     }
-    round(&mut view["sim_minutes"], 10.0);
     if let Some(events) = view["events"].as_array_mut() {
         let receipts: Vec<(f64, String)> = events
             .iter()
@@ -245,7 +247,7 @@ pub(crate) fn recent_field(state: &mut InputState, object: &mut Value, key: &str
     let Some(value) = object.get_mut(key) else {
         return;
     };
-    if value.to_string().len() <= bytes {
+    if wire_len(value) <= bytes {
         return;
     }
     let source = state.source(value);
@@ -255,7 +257,7 @@ pub(crate) fn recent_field(state: &mut InputState, object: &mut Value, key: &str
             .iter()
             .rev()
             .take_while(|item| {
-                size += item.to_string().len() + 1;
+                size += wire_len(item) + 1;
                 size <= bytes
             })
             .count()
@@ -267,9 +269,22 @@ pub(crate) fn recent_field(state: &mut InputState, object: &mut Value, key: &str
     }
 }
 
+/// 给模型看的一个目标：建立时刻不写，有更新时刻就够了。
+pub(crate) fn goal_view(goal: &crate::session::Goal) -> Value {
+    let mut view = json!(goal);
+    if let Some(fields) = view.as_object_mut() {
+        fields.remove("created_at");
+    }
+    view
+}
+
 /// 当前目标的身份、条件与承诺保持原文；步骤及结束目标超长时另给来源。
 pub(crate) fn goals(s: &mut Session) -> Value {
-    let full = json!(s.context_goals());
+    let full = json!(s
+        .context_goals()
+        .into_iter()
+        .map(goal_view)
+        .collect::<Vec<_>>());
     if full.to_string().len() <= 8_000 {
         return full;
     }

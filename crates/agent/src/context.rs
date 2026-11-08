@@ -5,6 +5,7 @@ use crate::{
 };
 use std::collections::BTreeSet;
 
+pub(crate) mod clean;
 pub mod input;
 mod summary;
 pub(crate) mod view;

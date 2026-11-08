@@ -155,6 +155,11 @@ impl Interactions {
         self.items.get_mut(id).expect("互动存在")
     }
 
+    /// 这个编号有没有互动用着（不论有没有本人）；agent 起新编号时避开。
+    pub fn contains(&self, id: &str) -> bool {
+        self.items.contains_key(id)
+    }
+
     /// 本人参与的某项互动。
     pub fn of(&self, actor: &str, id: &str) -> Option<&Interaction> {
         self.items.get(id).filter(|i| i.includes(actor))

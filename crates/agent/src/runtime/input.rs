@@ -191,7 +191,7 @@ impl ResidentRuntime {
         {
             s.forget_known_prefix();
         }
-        let messages = compose(system, s, &user.0);
+        let messages = context::clean::messages(&compose(system, s, &user.0));
         let tools_bytes = tools_json.len() as u64;
         let estimated = self.estimate_request(s, prefix_digest, tools_bytes, &messages);
         Ok(Attempt {
@@ -255,6 +255,7 @@ impl ResidentRuntime {
     fn system_message(&self, world: &World, s: &mut Session) -> Result<Message, AgentError> {
         let mut map = observation::static_map(world, &s.actor_id)?;
         view::field(&mut s.input, &mut map, "known_places", 4_000);
+        context::clean::clean(&mut map);
         Ok(Message::text(
             Role::System,
             prompts::system_prompt(
@@ -283,11 +284,20 @@ impl ResidentRuntime {
         }
         if !s.pending.is_empty() {
             // 已报告仍在执行的动作允许接收邀请；重建后仍须知道它尚未完成。
-            let pending: Vec<_> = s.pending.iter().map(|p| match p {
-                crate::session::PendingTool::Actions { call, group_id, .. } => json!({"kind":"actions","call_id":call.id,"group_id":group_id}),
-                crate::session::PendingTool::Interaction { call, interaction_id } => json!({"kind":"interaction","call_id":call.id,"interaction_id":interaction_id}),
-                crate::session::PendingTool::Wait { call, until, .. } => json!({"kind":"wait","call_id":call.id,"until":until}),
-            }).collect();
+            // 调用编号和动作组编号只给程序配对回执，不写进题面。
+            let pending: Vec<_> = s
+                .pending
+                .iter()
+                .map(|p| match p {
+                    crate::session::PendingTool::Actions { .. } => json!({"kind":"actions"}),
+                    crate::session::PendingTool::Interaction { interaction_id, .. } => {
+                        json!({"kind":"interaction","interaction_id":interaction_id})
+                    }
+                    crate::session::PendingTool::Wait { until, .. } => {
+                        json!({"kind":"wait","until":until})
+                    }
+                })
+                .collect();
             body.insert("pending_operations".into(), json!(pending));
         }
         let goals = json!(s.context_goals());

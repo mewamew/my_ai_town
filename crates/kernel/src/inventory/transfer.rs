@@ -74,11 +74,18 @@ fn portions(
         hidden: false,
     };
     def.validate()?;
-    let prefix = format!("{:x}", Sha256::digest(format!("{}/{key}", actor.id)));
+    // 定义编号不进题面，照旧用整段哈希；实例编号村民要拿来用，取短的（见 props::short_hash）
+    let id = |hash: &str, i: u32| format!("portion:{hash}_{i}");
+    let prefix = crate::props::short_hash(&format!("{}/{key}", actor.id), |hash| {
+        (0..take.quantity).any(|i| {
+            let id = id(hash, i);
+            topo.prop(&id).is_some() || props.is_removed(&id)
+        })
+    });
     Ok((0..take.quantity)
         .map(|i| Placement {
             instance: Instance {
-                id: format!("portion:{prefix}_{i}"),
+                id: id(&prefix, i),
                 definition: def.reference(),
                 locale: actor.locus.locale.clone(),
                 name: None,
