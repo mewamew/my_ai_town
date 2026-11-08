@@ -295,9 +295,9 @@ fn tide_hands_the_boat_to_the_last_one_standing_and_keeps_the_fights_in_its_news
     // 甲又刺死丙：只剩甲，船提前开来接走他，这一局结束，读档后结果还在
     stab(&mut w, "stab-c", "c");
     let events = w.step(5.0);
-    assert!(logs(&events).iter().any(
-        |t| t == "【潮水】岛上只剩甲一个人了，船提前开来接走了他。甲是这一局唯一活着离开的人。"
-    ));
+    assert!(logs(&events)
+        .iter()
+        .any(|t| t == "【潮水】岛上只剩甲一个人了，船提前开了过来。甲是这一局唯一活着离开的人。"));
     let v = tide(&w).unwrap();
     assert_eq!((v.phase, v.winner.as_deref()), (TidePhase::Over, Some("a")));
     assert!(fell(&v, "c").is_some());

@@ -682,7 +682,7 @@ impl Tide {
                 object,
                 &id,
                 &format!(
-                    "岛上只剩{name}一个人了，船提前开来接走了他。{name}是这一局唯一活着离开的人。"
+                    "岛上只剩{name}一个人了，船提前开了过来。{name}是这一局唯一活着离开的人。"
                 ),
             );
         } else if alive.is_empty() && !self.players.is_empty() {
