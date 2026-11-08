@@ -3,7 +3,8 @@
 // 分类：想法、台词从名册里新出现的那一条记下；玩法里的发言（议事、狼人频道这类）是带「一段话」
 // 标记（speech）的世界日志，和台词一起算「对话」；重要事件看事件自带的 alert（见 importantEvents.ts）。
 // 收起时最近两条浮在地图左下（旧的一条淡一些）；有重要事件时只停它一条，普通事件挤不掉它，
-// 直到来了新的重要事件或玩家展开、关掉。「全部动态」展开成一块浮板，可以按对话、想法、重要筛选。
+// 直到来了新的重要事件或玩家展开、关掉。「全部动态」展开成一块浮板，可以按对话、想法、重要筛选；
+// 电脑上还能贴左、贴右成一整列（shell/feedDock.ts）。
 // 列表按天分段，一天只写一次「第 N 天」；对话和想法名字单独一行、正文另起，世界里的事一行小字。
 
 import { triggerLabel } from './display'
@@ -13,6 +14,7 @@ import { $, query } from './dom'
 import { iconLabel } from './game/icons'
 import { displayClock, playerText, shortClock } from './format'
 import { detailsOf, importantEvent, importantLine, type ImportantEvent } from './importantEvents'
+import { installFeedDock } from './shell/feedDock'
 
 /** 一段话：谁说的、说了什么；玩法里的发言还有座号和场合 */
 interface Said {
@@ -63,8 +65,8 @@ const MAX_EVENTS = 300
 /** 服务端部分事件文本自带「[D1 07:17]」前缀，与左侧 ev-clock 重复，显示前剥掉 */
 const withoutClock = (text: string) => text.replace(/^\[D\d+\s+\d{1,2}:\d{2}(?::\d{2})?\]\s*/, '')
 
-/** game：游戏界面的展开、收起钮画图标 */
-export function initEvents(game: boolean): EventsHandle {
+/** game：游戏界面的展开、收起钮画图标；dockable：能不能贴边（录像拍摄页不能） */
+export function initEvents(game: boolean, dockable: boolean): EventsHandle {
   const latestBar = $('event-latest')
   const latestText = $('event-latest-text')
   const latestLine = latestText.closest<HTMLElement>('.event-line') ?? latestText
@@ -220,15 +222,18 @@ export function initEvents(game: boolean): EventsHandle {
     add({ clock: at, alert, text: withoutClock(text), say })
   }
 
+  const dock = installFeedDock(dockable)
   function expand() {
     pinned = null
     full.hidden = false
     latestBar.hidden = true
+    dock.opened(true)
     rerender()
   }
   function collapse() {
     full.hidden = true
     latestBar.hidden = false
+    dock.opened(false)
     showLatest()
   }
   if (game) {
@@ -254,6 +259,8 @@ export function initEvents(game: boolean): EventsHandle {
   list.addEventListener('scroll', () => {
     autoPaused = list.scrollTop + list.clientHeight < list.scrollHeight - 8
   })
+  // 上次贴着边开着走的，这次进来还是那一列
+  if (dock.reopen()) expand()
 
   return {
     expanded: () => !full.hidden,

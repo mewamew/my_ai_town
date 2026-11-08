@@ -1,54 +1,68 @@
-/** 信息栏宽度的交互和本机偏好，不读取人物或计划。 */
-export function installPanelWidth(panel: HTMLElement, resizer: HTMLElement, obsMain: HTMLElement) {
-  // ---- 桌面端宽度调整：拖动左边缘，记住本机偏好 ----
-  const DEFAULT_WIDTH = 330
-  const MIN_WIDTH = 280
-  const MAX_WIDTH = 680
-  const MIN_MAP_WIDTH = 480
-  const WIDTH_KEY = 'town-info-panel-width'
+/** 电脑上贴着地图的一栏（右边的角色卡、贴边的动态）怎么拖宽：拖靠地图那条边，双击还原，方向键微调，
+ *  宽度记成本机偏好。最宽能到多少由调用方按「地图至少留 MIN_MAP_WIDTH」算，这里只管交互和记忆。 */
+export const MIN_MAP_WIDTH = 480
+
+export interface ColumnWidthOptions {
+  /** 宽度写成这个元素上的 CSS 变量 */
+  host: HTMLElement
+  cssVar: string
+  resizer: HTMLElement
+  storageKey: string
+  defaultWidth: number
+  min: number
+  max: number
+  /** 此刻地图让得出的宽度，不算 min、max */
+  room: () => number
+  /** 拖的那条边在这一栏的哪一侧：贴右的栏拖左边，贴左的栏拖右边 */
+  edge: () => 'left' | 'right'
+  /** 读屏念的名字，如「村民信息栏」 */
+  label: string
+}
+
+export function installColumnWidth(options: ColumnWidthOptions) {
+  const { host, cssVar, resizer, storageKey, defaultWidth, min, max } = options
   const listeners = new AbortController()
   const { signal } = listeners
   const isDesktop = () => window.matchMedia('(min-width: 1024px)').matches
 
-  let preferredWidth = DEFAULT_WIDTH
+  let preferred = defaultWidth
   try {
-    const saved = Number(localStorage.getItem(WIDTH_KEY))
-    if (Number.isFinite(saved) && saved > 0) preferredWidth = saved
+    const saved = Number(localStorage.getItem(storageKey))
+    if (Number.isFinite(saved) && saved > 0) preferred = saved
   } catch {
     /* 私密窗口等场景拿不到就使用默认值 */
   }
 
-  function widthLimit() {
-    return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, obsMain.clientWidth - MIN_MAP_WIDTH))
-  }
+  const limit = () => Math.min(max, Math.max(min, options.room()))
 
-  function renderWidth(width: number) {
-    const max = widthLimit()
-    const value = Math.round(Math.min(Math.max(width, MIN_WIDTH), max))
-    panel.style.setProperty('--info-panel-width', `${value}px`)
-    resizer.setAttribute('aria-valuemin', String(MIN_WIDTH))
-    resizer.setAttribute('aria-valuemax', String(Math.round(max)))
+  function render(width: number) {
+    const most = limit()
+    const value = Math.round(Math.min(Math.max(width, min), most))
+    host.style.setProperty(cssVar, `${value}px`)
+    resizer.setAttribute('aria-valuemin', String(min))
+    resizer.setAttribute('aria-valuemax', String(Math.round(most)))
     resizer.setAttribute('aria-valuenow', String(value))
-    resizer.setAttribute('aria-valuetext', `村民信息栏宽 ${value} 像素`)
+    resizer.setAttribute('aria-valuetext', `${options.label}宽 ${value} 像素`)
+    rendered = value
     return value
   }
 
-  function rememberWidth(width: number) {
-    preferredWidth = renderWidth(width)
+  function remember(width: number) {
+    preferred = render(width)
     try {
-      localStorage.setItem(WIDTH_KEY, String(preferredWidth))
+      localStorage.setItem(storageKey, String(preferred))
     } catch {
       /* 同上 */
     }
   }
 
-  let renderedWidth = renderWidth(preferredWidth)
-  /** 改人设原文、捏长相时临时拉到最宽：不记成本机偏好，关掉回到原来的宽度 */
-  let wide = false
-  const wanted = () => (wide ? widthLimit() : preferredWidth)
+  let rendered = defaultWidth
+  render(preferred)
+  /** 往外拖（离开地图）为正 */
+  const outward = (dx: number) => (options.edge() === 'left' ? -dx : dx)
   let dragging = false
   let dragStartX = 0
-  let dragStartWidth = renderedWidth
+  let dragStartWidth = rendered
 
   resizer.addEventListener(
     'mousedown',
@@ -57,69 +71,87 @@ export function installPanelWidth(panel: HTMLElement, resizer: HTMLElement, obsM
       e.preventDefault()
       dragging = true
       dragStartX = e.clientX
-      dragStartWidth = panel.getBoundingClientRect().width
+      dragStartWidth = rendered
       resizer.classList.add('drag')
-      document.body.classList.add('resizing-info')
+      document.body.classList.add('resizing-column')
     },
     { signal }
   )
   window.addEventListener(
     'mousemove',
     (e: MouseEvent) => {
-      if (!dragging) return
-      renderedWidth = renderWidth(dragStartWidth + dragStartX - e.clientX)
+      if (dragging) render(dragStartWidth + outward(e.clientX - dragStartX))
     },
     { signal }
   )
-  const finishResize = () => {
+  const finish = () => {
     if (!dragging) return
     dragging = false
     resizer.classList.remove('drag')
-    document.body.classList.remove('resizing-info')
-    rememberWidth(renderedWidth)
+    document.body.classList.remove('resizing-column')
+    remember(rendered)
   }
-  window.addEventListener('mouseup', finishResize, { signal })
-  window.addEventListener('blur', finishResize, { signal })
-  resizer.addEventListener(
-    'dblclick',
-    () => {
-      renderedWidth = DEFAULT_WIDTH
-      rememberWidth(renderedWidth)
-    },
-    { signal }
-  )
+  window.addEventListener('mouseup', finish, { signal })
+  window.addEventListener('blur', finish, { signal })
+  resizer.addEventListener('dblclick', () => remember(defaultWidth), { signal })
   resizer.addEventListener(
     'keydown',
     (e: KeyboardEvent) => {
       if (!isDesktop()) return
       const step = e.shiftKey ? 48 : 16
       let next: number | null = null
-      if (e.key === 'ArrowLeft') next = renderedWidth + step
-      if (e.key === 'ArrowRight') next = renderedWidth - step
-      if (e.key === 'Home') next = MIN_WIDTH
-      if (e.key === 'End') next = widthLimit()
+      if (e.key === 'ArrowLeft') next = rendered + outward(-step)
+      if (e.key === 'ArrowRight') next = rendered + outward(step)
+      if (e.key === 'Home') next = min
+      if (e.key === 'End') next = limit()
       if (next === null) return
       e.preventDefault()
-      renderedWidth = renderWidth(next)
-      rememberWidth(renderedWidth)
-    },
-    { signal }
-  )
-  window.addEventListener(
-    'resize',
-    () => {
-      if (isDesktop()) renderedWidth = renderWidth(wanted())
+      remember(next)
     },
     { signal }
   )
   return {
+    /** 按此刻让得出的宽度重画；给了 width 就画它（不记成偏好），否则画本机偏好 */
+    render: (width = preferred) => render(width),
+    preferred: () => preferred,
     dispose: () => listeners.abort(),
+  }
+}
+
+/** 角色卡的宽度：在右边，拖左边；地图让得出的宽度按 #obs-main 算（贴边的动态已经让出去了）。
+ *  载入时地图页还藏着、量出来是 0，先按窗口算，不然一进来总是最窄 */
+export function installPanelWidth(panel: HTMLElement, resizer: HTMLElement, obsMain: HTMLElement) {
+  const isDesktop = () => window.matchMedia('(min-width: 1024px)').matches
+  const room = () => (obsMain.clientWidth || document.documentElement.clientWidth) - MIN_MAP_WIDTH
+  const width = installColumnWidth({
+    host: panel,
+    cssVar: '--info-panel-width',
+    resizer,
+    storageKey: 'town-info-panel-width',
+    defaultWidth: 330,
+    min: 280,
+    max: 680,
+    room,
+    edge: () => 'left',
+    label: '村民信息栏',
+  })
+  /** 改人设原文、捏长相时临时拉到最宽：不记成本机偏好，关掉回到原来的宽度 */
+  let wide = false
+  const refresh = () => {
+    if (isDesktop()) width.render(wide ? room() : width.preferred())
+  }
+  window.addEventListener('resize', refresh)
+  return {
+    dispose() {
+      window.removeEventListener('resize', refresh)
+      width.dispose()
+    },
     setWide(on: boolean) {
       if (wide === on) return
       wide = on
       // 平板上卡片是盖在地图上的一栏，宽度由样式按这个标记放宽
       panel.toggleAttribute('data-wide', on)
-      if (isDesktop()) renderedWidth = renderWidth(wanted())
+      refresh()
     },
   }
 }

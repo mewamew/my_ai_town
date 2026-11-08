@@ -685,16 +685,14 @@ html[data-offline] :is(.pause-hint:not(.reconnect-hint), .fast-hint) {
     monospace;
 }
 
-/* 右侧只读村民信息：桌面端左边缘可拖动调宽 */
-#info-resizer {
+/* 贴着地图的一栏（角色卡、贴边的动态）靠地图那条边：桌面端拖它调宽（info/width.ts） */
+.column-resizer {
   width: 7px;
-  flex: none;
   cursor: col-resize;
   touch-action: none;
-  position: relative;
   background: transparent;
 }
-#info-resizer::after {
+.column-resizer::after {
   content: '';
   position: absolute;
   top: 0;
@@ -707,20 +705,25 @@ html[data-offline] :is(.pause-hint:not(.reconnect-hint), .fast-hint) {
     left 0.12s,
     background 0.12s;
 }
-#info-resizer:hover::after,
-#info-resizer:focus-visible::after,
-#info-resizer.drag::after {
+.column-resizer:hover::after,
+.column-resizer:focus-visible::after,
+.column-resizer.drag::after {
   left: 2px;
   width: 3px;
   background: var(--accent);
 }
-#info-resizer:focus-visible {
+.column-resizer:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-body.resizing-info {
+body.resizing-column {
   cursor: col-resize;
   user-select: none;
+}
+/* 右侧只读村民信息：左边缘可拖动调宽 */
+#info-resizer {
+  flex: none;
+  position: relative;
 }
 #info-panel {
   width: var(--info-panel-width, 330px);

@@ -42,7 +42,9 @@ export function startGameShell(
   $('app-title').textContent = selectedMap.name
   document.title = `${selectedMap.name} · AI小镇`
   const listeners = new AbortController()
-  const events = initEvents(game)
+  // 重演录像时不连世界，连接换成录像（town-2d 的 replay/）；拍摄页的动态不贴边
+  const replay = !!options.connection
+  const events = initEvents(game, !replay)
   map.onRenderNotice = (text) => events.pushLocal(text)
   const audio = createGameAudio(
     query<HTMLButtonElement>(document, '#music-toggle'),
@@ -103,7 +105,6 @@ export function startGameShell(
   const normalSpeed = options.normalSpeed ?? 1
   // 一句话建的小镇：世界观建议给首次对话框和开局向导，适合住进来的人给向导
   useTownCreation(selectedMap.id, selectedMap.creation)
-  const replay = !!options.connection
   const inputs = { normalSpeed, game, selectedMap, map, events, localeName, topology, replay }
   const panels = createPanels({
     ...inputs,

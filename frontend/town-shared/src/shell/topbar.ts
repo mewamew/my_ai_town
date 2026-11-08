@@ -215,14 +215,14 @@ export function installMapButtons(
 }
 
 /** 动态排在底部那排格子左边：宽度到格子左边为止；地图窄得排不下时抬到格子上面。
- *  手机上那一排不显示，动态照手机的样式浮在底部入口上面 */
+ *  手机上那一排不显示，动态照手机的样式浮在底部入口上面；贴边成一整列时在地图外面，也不用让 */
 function fitEventBar(signal: AbortSignal) {
   const bar = $('event-bar'),
     hotbar = $('map-hotbar'),
     view = $('obs-view')
   const fit = () => {
     const h = hotbar.getBoundingClientRect()
-    if (isCompact() || !h.width) {
+    if (isCompact() || !h.width || view.dataset.feedDock) {
       bar.classList.remove('feed-raised')
       bar.style.removeProperty('--feed-room')
       return

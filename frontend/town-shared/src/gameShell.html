@@ -5,6 +5,7 @@
     <div id="map"></div>
     <div
       id="info-resizer"
+      class="column-resizer"
       role="separator"
       aria-orientation="vertical"
       aria-label="调整村民信息栏宽度"
@@ -15,7 +16,8 @@
     ></div>
     <aside id="info-panel" class="collapsed" hidden></aside>
   </div>
-  <!-- 动态：收起时最近两条浮在地图左下（旧的一条淡一些），「全部动态」展开成一块浮板（events.ts） -->
+  <!-- 动态：收起时最近两条浮在地图左下（旧的一条淡一些），「全部动态」展开成一块浮板（events.ts）；
+       电脑上可以贴左、贴右，成从顶到底的一整列，地图让开（shell/feedDock.ts） -->
   <footer id="event-bar">
     <div id="event-latest">
       <p id="event-prev" hidden></p>
@@ -28,18 +30,36 @@
     </div>
     <div id="event-full" hidden>
       <div id="event-toolbar">
-        <button class="event-filter on" data-f="all">全部</button>
-        <button class="event-filter" data-f="speech">对话</button>
-        <button class="event-filter" data-f="thought">想法</button>
-        <button class="event-filter" data-f="important">重要</button>
-        <label id="event-autoscroll-label">
-          <input type="checkbox" id="event-autoscroll" checked /> 自动滚动
-        </label>
+        <!-- 标题只在贴边时显示；筛选这一组浮着时和别的钮排在一行，贴边时单独一行 -->
+        <b id="event-title">动态</b>
+        <span class="event-filters">
+          <button class="event-filter on" data-f="all">全部</button>
+          <button class="event-filter" data-f="speech">对话</button>
+          <button class="event-filter" data-f="thought">想法</button>
+          <button class="event-filter" data-f="important">重要</button>
+          <label id="event-autoscroll-label">
+            <input type="checkbox" id="event-autoscroll" checked /> 自动滚动
+          </label>
+        </span>
         <span class="spacer" style="flex: 1"></span>
+        <span class="event-dock" role="group" aria-label="动态的摆法">
+          <button id="event-dock-left" type="button" aria-pressed="false">贴左</button>
+          <button id="event-dock-right" type="button" aria-pressed="false">贴右</button>
+        </span>
         <button id="event-collapse">收起</button>
       </div>
       <div id="event-list"></div>
     </div>
+    <div
+      id="event-resizer"
+      class="column-resizer"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="调整动态栏宽度"
+      aria-controls="event-full"
+      title="拖动调整宽度；双击恢复默认宽度"
+      tabindex="0"
+    ></div>
   </footer>
 </div>
 

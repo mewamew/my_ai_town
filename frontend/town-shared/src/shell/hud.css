@@ -640,3 +640,109 @@ html:not([data-layout='compact']) .phone-note,
     box-shadow: none;
   }
 }
+
+/* ---------- 动态贴边（shell/feedDock.ts）：展开的动态贴着窗口左边或右边，成从顶到底的一整列 ----------
+   和角色卡那一栏同一个做法：#obs-main 让出这一列的宽度，地图变窄，地图里的浮层（座位、发言卡、化身面板、
+   玩法的板子）跟着挪，谁也不压谁。宽度 --feed-dock-width 由脚本按本机偏好和地图至少留的宽度算好；
+   收起时整列收掉，回到上面浮在地图左下的两行。工具栏：浮着时排一行；贴边时标题和摆法钮一行，筛选另起一行 */
+.event-filters {
+  display: contents;
+}
+#event-title,
+#event-resizer {
+  display: none;
+}
+.event-dock {
+  display: flex;
+  gap: inherit;
+}
+.event-dock > [aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+@media (max-width: 1023px) {
+  .event-dock {
+    display: none;
+  }
+}
+@media (min-width: 1024px) {
+  #obs-view[data-feed-dock='left'] > #obs-main {
+    margin-left: var(--feed-dock-width);
+  }
+  #obs-view[data-feed-dock='right'] > #obs-main {
+    margin-right: var(--feed-dock-width);
+  }
+  /* 写成和浮板展开那条一样带 :has，才压得过它 */
+  #obs-view[data-feed-dock] > #event-bar:has(> #event-full:not([hidden])) {
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--feed-dock-width);
+    z-index: 8;
+  }
+  #obs-view[data-feed-dock='right'] > #event-bar:has(> #event-full:not([hidden])) {
+    right: 0;
+    left: auto;
+  }
+  #obs-view[data-feed-dock] #event-bar > #event-full:not([hidden]) {
+    inset: 0;
+    width: auto;
+    height: auto;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  /* 拖的那条边骑在栏和地图的分界上，中间那道细线就是分界线 */
+  #obs-view[data-feed-dock] #event-resizer {
+    display: block;
+    position: absolute;
+    top: 0;
+    right: -3px;
+    bottom: 0;
+    z-index: 15;
+  }
+  #obs-view[data-feed-dock='right'] #event-resizer {
+    right: auto;
+    left: -3px;
+  }
+  #obs-view[data-feed-dock] #event-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'title dock close'
+      'filters filters filters';
+    align-items: center;
+    gap: 12px 8px;
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  #obs-view[data-feed-dock] #event-title {
+    display: block;
+    grid-area: title;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  #obs-view[data-feed-dock] .event-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    grid-area: filters;
+  }
+  #obs-view[data-feed-dock] #event-autoscroll-label {
+    margin-left: auto;
+  }
+  #obs-view[data-feed-dock] #event-toolbar > .spacer {
+    display: none;
+  }
+  #obs-view[data-feed-dock] .event-dock {
+    grid-area: dock;
+  }
+  #obs-view[data-feed-dock] #event-collapse {
+    grid-area: close;
+  }
+  #obs-view[data-feed-dock] #event-list {
+    padding: 4px 16px 16px;
+  }
+}

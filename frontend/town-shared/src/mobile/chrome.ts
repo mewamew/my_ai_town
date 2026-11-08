@@ -165,7 +165,8 @@ export function installMobileChrome(d: ChromeDeps) {
   new MutationObserver(() => {
     const full = wantsFull()
     if (wasHidden && !panel.hidden) {
-      d.events.collapse()
+      // 电脑上贴边的动态是地图旁边的一整列，和角色卡并排，不收
+      if (!$('obs-view').dataset.feedDock) d.events.collapse()
       syncDock()
       beforeFull = full ? 'peek' : null
       // 先按默认高度排出头部，下一帧再量露头档
