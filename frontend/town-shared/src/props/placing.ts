@@ -15,6 +15,7 @@ import { slot } from '../design/ui'
 import { newId } from '../ids'
 import { button, el } from './dom'
 import { propPicture } from './picture'
+import { definitionId, latestVersions } from './libraryView'
 import { PURPOSES, usesOf } from './worldView'
 import { blockedText, freeNear, roomText } from './placeGrid'
 import type { Definition, PropCatalog, PropView } from './types'
@@ -65,16 +66,8 @@ type Status =
 
 /** 道具库里每件道具取最新一版；公告要先选公告栏，从「书与公告」贴，不在这里放 */
 function choices(c: PropCatalog) {
-  const latest = new Map<string, Definition>()
-  for (const d of c.definitions) {
-    if (d.readable?.kind === 'bulletin') continue
-    const old = latest.get(d.id)
-    if (!old || d.version > old.version) latest.set(d.id, d)
-  }
-  return [...latest.values()]
+  return latestVersions(c.definitions).filter((d) => d.readable?.kind !== 'bulletin')
 }
-
-const definitionId = (reference: string | null | undefined) => (reference ?? '').split('@')[0]
 
 /** 地点里摆在地图上的东西：撤下的、收进背包和容器的不算 */
 function placedIn(c: PropCatalog, locale: string) {

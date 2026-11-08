@@ -1,4 +1,4 @@
-// 道具页「可复用道具库」视图：定义版本列表，右栏是定义详情与放入当前地图的表单；道具包的导出与读取也在这里。
+// 道具页「可复用道具库」视图：一件道具一行，右栏是定义详情与放入当前地图的表单；道具包的导出与读取也在这里。
 import { newId } from '../ids'
 import { defaultAppearance, savedAppearance, validateAppearance } from './appearances'
 import { actionList, listRow } from './detail'
@@ -8,18 +8,41 @@ import { button, el, field, input, select } from './dom'
 import type { PropsView } from './pageState'
 import type { Definition, PropCatalog } from './types'
 
+/** 「编号@版本」里的编号 */
+export const definitionId = (reference: string | null | undefined) =>
+  (reference ?? '').split('@')[0]
+
+/** 每件道具只留最新一版：「修改」每存一次多一个版本，旧版本留给镇上已经摆着的那几件，玩家不用看见 */
+export function latestVersions(definitions: Definition[]) {
+  const latest = new Map<string, Definition>()
+  for (const d of definitions) {
+    const old = latest.get(d.id)
+    if (!old || d.version > old.version) latest.set(d.id, d)
+  }
+  return [...latest.values()]
+}
+
+/** 镇上用着这件道具（哪一版都算）的东西：摆着的、背包里的、容器里的；撤下的公告不算 */
+function townCopies(c: PropCatalog, id: string) {
+  return c.instances.filter((p) => !p.withdrawn && definitionId(p.definition) === id)
+}
+
 export function renderLibrary(view: PropsView, c: PropCatalog, q: string) {
   const { state, page } = view
-  const items = c.definitions.filter((d) =>
+  const items = latestVersions(c.definitions).filter((d) =>
     `${d.name} ${d.id} ${d.actions.map((a) => a.label).join(' ')}`.toLowerCase().includes(q)
   )
   page.list.append(el('p', `${items.length} 件道具`, 'prop-count'))
-  // 不写版本号：同一件道具改过几次对玩家没有意义，自带的和自己做的分开就够了
+  // 不写版本号：同一件道具改过几次对玩家没有意义，自带的和自己做的分开就够了；镇上有几件写在后面，删之前就看得到
   for (const d of items) {
-    const ref = `${d.id}@${d.version}`
-    listRow(view, d.name, ref, [el('small', d.id.startsWith('core:') ? '自带的' : '自己做的')])
+    const copies = townCopies(c, d.id).length
+    const origin = d.id.startsWith('core:') ? '自带的' : '自己做的'
+    listRow(view, d.name, `${d.id}@${d.version}`, [
+      el('small', copies ? `${origin} · 镇上有 ${copies} 件` : origin),
+    ])
   }
-  const d = items.find((d) => `${d.id}@${d.version}` === state.selected) ?? items[0]
+  // 选中的是旧版本（别的页面刚改过它）时跟到同一件的最新版
+  const d = items.find((d) => d.id === definitionId(state.selected)) ?? items[0]
   if (!d) {
     page.detail.append(el('p', '道具库里没有匹配内容。'))
     return
@@ -39,6 +62,8 @@ function renderDefinition(view: PropsView, c: PropCatalog, d: Definition) {
     el('span', d.portable ? '可以放进背包' : '固定在原地')
   )
   if (d.storage_slots) meta.append(el('span', `能存放 ${d.storage_slots} 格`))
+  const copies = townCopies(c, d.id).length
+  if (copies) meta.append(el('span', `镇上有 ${copies} 件`))
   id.append(el('h2', d.name, 'ui-title pd-name'), meta)
   head.append(slot(propPicture(reference, d.readable ? 'book' : 'bag'), 'md'), id)
   detail.append(head, el('p', d.description || '暂无说明', 'pd-desc'))
