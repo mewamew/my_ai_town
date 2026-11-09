@@ -5,7 +5,9 @@
 // - 房子：内景（大小、门、家具、落脚点）从一份已有地图里按房间编号搬过来，按设计的占地缩放摆上去；
 //   门开在内景门所在的那面墙外。
 // - 户外地点：到达点、道具和落脚点同样按编号从那份地图搬过来，整体平移到新的到达点旁边；新地点在设计里写。
-// - 海岸：陆地底稿和岛内的水写进 layout.island，由前端扭曲、冲刷、挖水（见 frontend 的 map/pixel/island.ts）。
+// - 海岸：陆地底稿和岛内的水写进 layout.island，由前端扭曲、冲刷、挖水（见 frontend 的 map/pixel/island.ts）；
+//   岛内的水用 spring() 包起来的是温泉（青绿的热水、黑石池沿、冒白汽，夜里透光）。
+// - 风格：environment 写地图风格（同建镇参数的 environment.preset，比如 frozen 冰封雪镇），不写是默认风格。
 // 生成后用 scripts/mapgen/document.mjs 的 seal 封摘要，再过 town-map validate。
 
 export const CELL = 24
@@ -26,6 +28,8 @@ export const poly = (pts) => ({ t: 'poly', pts })
 export const band = (pts, width) => ({ t: 'band', pts: smooth(pts), width })
 export const minus = (a, b) => ({ t: 'minus', a, b })
 export const union = (...s) => ({ t: 'union', s })
+/** 岛内的水里，这一片是温泉 */
+export const spring = (shape) => ({ t: 'spring', s: shape })
 
 function inPoly(x, y, pts) {
   let inside = false
@@ -60,6 +64,8 @@ export function contains(s, x, y) {
       return contains(s.a, x, y) && !contains(s.b, x, y)
     case 'union':
       return s.s.some((k) => contains(k, x, y))
+    case 'spring':
+      return contains(s.s, x, y)
   }
   throw Error('不认识的形状 ' + s.t)
 }
@@ -87,6 +93,8 @@ function bbox(s) {
       const b = s.s.map(bbox)
       return [0, 1, 2, 3].map((k) => (k < 2 ? Math.min : Math.max)(...b.map((v) => v[k])))
     }
+    case 'spring':
+      return bbox(s.s)
   }
 }
 /** Catmull-Rom：给的点之间插出平滑曲线，大约每 step 一个点 */
@@ -159,6 +167,7 @@ function cellsOf(shape, taken) {
 /** 陆地底稿、岛内的水换成 layout.island 的写法：多边形照抄，带子写成带宽度的折线 */
 function flatten(shape) {
   if (shape.t === 'union') return shape.s.flatMap(flatten)
+  if (shape.t === 'spring') return flatten(shape.s).map((part) => ({ ...part, kind: 'spring' }))
   if (shape.t === 'poly') return [{ polygon: shape.pts.map(round) }]
   if (shape.t === 'band') return [{ line: shape.pts.map(round), width: shape.width }]
   if (shape.t === 'ellipse')
@@ -184,7 +193,7 @@ const minutesOf = (pts) => Number((length(pts) / UNITS_PER_MINUTE).toFixed(4))
 // ---------- 从已有地图里搬内景 ----------
 
 /** 一间房的内景：大小、门、家具和落脚点（房间坐标），连同到达点、门内外节点和门的通道编号 */
-function roomOf(source, id) {
+export function roomOf(source, id) {
   const space = source.layout.spaces.find((s) => s.id === id)
   if (!space) throw Error(`内景来源里没有房间 ${id}`)
   const place = source.topology.places.find((p) => p.locale === id)
@@ -224,8 +233,22 @@ function contentsOf(source, locale) {
 
 /**
  * source 是搬内景和户外道具的那份地图文档。roads 是「小镇道路」这处地点的编号：路口和房门外都算在它里面。
+ * script 是生成这张图的脚本（记在拓扑的 source 里）；environment 是地图风格（见文件头）；
+ * entry 是新来的人落在哪（{ locale, station }），meals 是三餐，不给都照 source
  */
-export function townMap({ id, name, description, width, height, source, roads }) {
+export function townMap({
+  id,
+  name,
+  description,
+  width,
+  height,
+  source,
+  roads,
+  script = 'scripts/maps/default-town.mjs',
+  environment,
+  entry,
+  meals,
+}) {
   const regions = [],
     buildings = [],
     streets = [],
@@ -246,8 +269,9 @@ export function townMap({ id, name, description, width, height, source, roads })
     /** 一块室外区域，先登记的先占格子。place 给了就是一处地点：type、summary、features 是地点的类型、简介、
      *  看得见的东西；arrival 是到达点（station、node 是它落脚点和节点的编号），onRoad 给了且离路不到这么远时
      *  到达点就落在路上；from 是来源地图里搬道具和落脚点的地点，at 按编号指定其中几件的位置；
-     *  props 是新添的道具 { id, definition, name, at } */
-    region(rid, rname, kind, shape, { decor, facing, place } = {}) {
+     *  props 是新添的道具 { id, definition, name, at }，stations 是新添的落脚点 { id, name, at, activity, pose, role }；
+     *  landmark 指定立什么地标（风格包 plans 里的名字），不给按 kind */
+    region(rid, rname, kind, shape, { decor, facing, landmark, place } = {}) {
       const cells = cellsOf(shape, taken)
       if (!cells.length) throw Error(`区域 ${rid} 一格也没占到`)
       regions.push({
@@ -258,6 +282,7 @@ export function townMap({ id, name, description, width, height, source, roads })
         kind,
         ...(decor ? { decor } : {}),
         ...(facing ? { facing } : {}),
+        ...(landmark ? { landmark } : {}),
       })
       if (place) {
         places.push({ locale: rid, name: rname, ...place })
@@ -339,6 +364,10 @@ export function townMap({ id, name, description, width, height, source, roads })
         height,
         source,
         roads,
+        script,
+        environment,
+        entry,
+        meals,
         island,
         regions,
         buildings,
@@ -627,6 +656,18 @@ function assemble(m) {
         appearance: p.appearance ?? { glyph: 'box', color: '#b79a70' },
       })
     }
+    for (const s of o.stations ?? []) {
+      stations.push({
+        id: s.id,
+        locale: o.locale,
+        name: s.name,
+        kind: 'slot',
+        activity_id: s.activity,
+        pose_family: s.pose,
+        role: s.role,
+      })
+      layoutStations.push({ id: s.id, space: OUTDOOR, x: s.at[0], y: s.at[1] })
+    }
   }
 
   // 路网；落在路上的到达点，标记跟着挪到节点上
@@ -685,7 +726,7 @@ function assemble(m) {
   const dwell = m.places.map((p) => ({ id: p.locale, name: p.name, kind: 'dwell' }))
   const topology = {
     schema_version: 1,
-    source: 'scripts/maps/default-town.mjs',
+    source: m.script,
     notes: '路段分钟数 = 折线长度 / 144（每米 12 个地图单位、每分钟 12 米）；跨区域的路段不切开。',
     locales: [...dwell, ...locales],
     passages,
@@ -700,7 +741,7 @@ function assemble(m) {
       ...(p.residential ? { residential: true } : {}),
     })),
     props,
-    meals: source.topology.meals,
+    meals: m.meals ?? source.topology.meals,
     entry: m.entry ?? source.topology.entry,
   }
   const layout = {
@@ -731,6 +772,7 @@ function assemble(m) {
     origin: 'builtin',
     style_id: 'svg-town-v1',
     style_version: 1,
+    ...(m.environment ? { environment: m.environment } : {}),
     topology,
     layout,
   }

@@ -21,7 +21,7 @@ test('built app creates and runs a map with a read-only resource tree and no pre
   try {
     for (const file of [
       'scripts',
-      'data/maps/2d-town/map.json',
+      'data/maps',
       'data/mapgen',
       'data/scene-assets',
       'data/props',
@@ -105,7 +105,10 @@ test('built app creates and runs a map with a read-only resource tree and no pre
     const opened = await api(`/${saved.id}/open`, {})
     assert(opened.worldId)
     assert.equal(opened.mapHash, draft.version)
-    assert.equal((await fs.readdir(path.join(bundle, 'data/maps'))).join(','), '2d-town')
+    assert.equal(
+      (await fs.readdir(path.join(bundle, 'data/maps'))).sort().join(','),
+      '2d-town,spring-valley'
+    )
     const actual = JSON.parse(await fs.readFile(path.join(data, 'towns', saved.id, 'map.json')))
     assert.deepEqual(actual, draft.document)
     await api(`/${saved.id}/close`, {})

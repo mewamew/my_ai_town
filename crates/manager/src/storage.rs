@@ -4,9 +4,22 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// 应用发布的默认地图。
-pub const BUILTIN_MAP: &str = "data/maps/2d-town/map.json";
-pub const BUILTIN_TOWN: &str = "default-town";
+/// 随应用发的内置小镇：（编号, 应用自带的地图）。第一次运行时放进用户目录，不能删；名称和简介跟随应用版本。
+/// 列表里按这个顺序排在最前。电脑版（scripts/towns/storage.mjs 的 BUILTIN_TOWNS）是同一份名单。
+pub const BUILTIN_TOWNS: [(&str, &str); 2] = [
+    ("default-town", "data/maps/2d-town/map.json"),
+    ("spring-valley", "data/maps/spring-valley/map.json"),
+];
+/// 应用发布的默认地图（世界服务没指定地图时用它）。
+pub const BUILTIN_MAP: &str = BUILTIN_TOWNS[0].1;
+
+/// 内置小镇自带的地图；不是内置小镇时为空。
+fn builtin_map(id: &str) -> Option<&'static str> {
+    BUILTIN_TOWNS
+        .iter()
+        .find(|(town, _)| *town == id)
+        .map(|(_, map)| *map)
+}
 
 pub struct Storage {
     /// 用户数据目录：towns/、config/。
@@ -152,19 +165,17 @@ impl Storage {
         Ok(self.root.join("towns").join(safe_id(id)?))
     }
 
-    /// 第一次运行时把默认地图放进用户目录。
+    /// 第一次运行时（以及应用新带了内置小镇时）把内置地图放进用户目录。
     pub fn init(&self) -> Result<(), ApiError> {
         fs::create_dir_all(self.root.join("towns"))?;
-        if self.town(BUILTIN_TOWN)?.join("map.json").exists() {
-            return Ok(());
+        for (id, map) in BUILTIN_TOWNS {
+            if self.town(id)?.join("map.json").exists() {
+                continue;
+            }
+            let document = read_json(&self.app.join(map))?;
+            self.create(id, &document, &json!({ "origin": "builtin" }), None)?;
         }
-        let document = read_json(&self.app.join(BUILTIN_MAP))?;
-        self.create(
-            BUILTIN_TOWN,
-            &document,
-            &json!({ "origin": "builtin" }),
-            None,
-        )
+        Ok(())
     }
 
     /// 新建一个小镇目录：地图和来源记录先写进临时目录，再整个改名，不会留下半个小镇。
@@ -251,14 +262,13 @@ impl Storage {
     /// 名称、简介和建镇说明。内置小镇的名称与简介跟随应用版本；小镇目录里的地图副本不改，
     /// 它的摘要是存档身份。一句话建的小镇，简介写玩家当时那句话。
     pub fn labels(&self, id: &str, document: &Value) -> (String, String, Value) {
-        let builtin = id == BUILTIN_TOWN;
-        let source = if builtin {
-            read_json(&self.app.join(BUILTIN_MAP)).unwrap_or_else(|_| document.clone())
-        } else {
-            document.clone()
+        let builtin = builtin_map(id);
+        let source = match builtin {
+            Some(map) => read_json(&self.app.join(map)).unwrap_or_else(|_| document.clone()),
+            None => document.clone(),
         };
         let text = |key: &str| source[key].as_str().unwrap_or_default().to_owned();
-        let creation = if builtin {
+        let creation = if builtin.is_some() {
             Value::Null
         } else {
             self.creation(id)
@@ -280,9 +290,9 @@ impl Storage {
             .unwrap_or_else(|| id.to_owned())
     }
 
-    /// 内置小镇：随应用发的 default-town，和预制玩法的 prefab-<编号>（第一次选中时生成，只能重新开始）
+    /// 内置小镇：随应用发的（BUILTIN_TOWNS），和预制玩法的 prefab-<编号>（第一次选中时生成，只能重新开始）
     pub fn can_delete(&self, id: &str) -> bool {
-        id != BUILTIN_TOWN && !id.starts_with("prefab-")
+        builtin_map(id).is_none() && !id.starts_with("prefab-")
     }
 
     /// reset：重新开始预制小镇，允许删掉内置的 prefab-<编号>
@@ -375,11 +385,17 @@ impl Storage {
             }
         }
         towns.sort_by(|a, b| {
-            // 自带的小镇、预制小镇，再是玩家建的
-            let rank = |t: &Value| match t["id"].as_str() {
-                Some(BUILTIN_TOWN) => 0,
-                Some(id) if id.starts_with("prefab-") => 1,
-                _ => 2,
+            // 自带的小镇（按名单）、预制小镇，再是玩家建的
+            let rank = |t: &Value| {
+                let id = t["id"].as_str().unwrap_or_default();
+                BUILTIN_TOWNS
+                    .iter()
+                    .position(|(town, _)| *town == id)
+                    .unwrap_or(if id.starts_with("prefab-") {
+                        BUILTIN_TOWNS.len()
+                    } else {
+                        BUILTIN_TOWNS.len() + 1
+                    })
             };
             rank(a)
                 .cmp(&rank(b))

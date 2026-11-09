@@ -7,7 +7,11 @@ use host::application::{
 use kernel::avatar::WalkMap;
 use serde_json::{json, Value};
 
-const TOWN_2D: &str = "data/maps/2d-town/map.json";
+/// 随应用发的内置地图（管理服务的 BUILTIN_TOWNS）
+const PUBLISHED_MAPS: [&str; 2] = [
+    "data/maps/2d-town/map.json",
+    "data/maps/spring-valley/map.json",
+];
 const LIBRARY: &str = "config/resident-library";
 
 fn published(relative: &str) -> String {
@@ -34,27 +38,26 @@ fn walk_map(path: &str) -> (Value, WalkMap) {
 
 #[test]
 fn published_maps_props_and_library_load_in_the_host() {
-    // 二维地图：每个房间一对进出口，门两侧都有不被家具挡住的落脚点。
-    let (doc, map) = walk_map(TOWN_2D);
-    assert_eq!(
-        map.portals.len(),
-        doc["layout"]["spaces"].as_array().unwrap().len() * 2
-    );
-    for p in &map.portals {
-        assert!(
-            map.safe_near(&p.from, &map.obstacles).is_some(),
-            "{} 外侧",
-            p.id
+    for path in PUBLISHED_MAPS {
+        // 二维地图：每个房间一对进出口，门两侧都有不被家具挡住的落脚点。
+        let (doc, map) = walk_map(path);
+        assert_eq!(
+            map.portals.len(),
+            doc["layout"]["spaces"].as_array().unwrap().len() * 2
         );
-        assert!(
-            map.safe_near(&p.to, &map.obstacles).is_some(),
-            "{} 内侧",
-            p.id
-        );
-    }
-    // HD-2D 地图都能用正式道具库与村民库启动 host，村民库里的第一份模板可以加入。
-    {
-        let path = TOWN_2D;
+        for p in &map.portals {
+            assert!(
+                map.safe_near(&p.from, &map.obstacles).is_some(),
+                "{path} {} 外侧",
+                p.id
+            );
+            assert!(
+                map.safe_near(&p.to, &map.obstacles).is_some(),
+                "{path} {} 内侧",
+                p.id
+            );
+        }
+        // HD-2D 地图都能用正式道具库与村民库启动 host，村民库里的第一份模板可以加入。
         let mut town = Town::empty();
         town.write(
             "config/application.json",

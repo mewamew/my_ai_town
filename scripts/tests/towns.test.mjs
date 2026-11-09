@@ -6,6 +6,7 @@ import path from 'node:path'
 import { createManager } from '../town-manager.mjs'
 import { worldQuery } from '../towns/hosts.mjs'
 import { seal } from '../mapgen/document.mjs'
+import { BUILTIN_TOWNS } from '../towns/storage.mjs'
 import { root as source } from './support.mjs'
 const spec = {
   name: '隔离地图',
@@ -49,7 +50,11 @@ test('preview/save/open/reopen/reset/isolation work with actual hosts and persis
       if (!r.ok) throw Error(data.error)
       return data
     }
-    assert.equal((await api('')).towns.length, 1)
+    // 随应用发的内置小镇第一次运行就都在，排在最前；旧 3D 存档不进列表
+    assert.deepEqual(
+      (await api('')).towns.map((t) => [t.id, t.deletable]),
+      BUILTIN_TOWNS.map(({ id }) => [id, false])
+    )
     assert.deepEqual((await api('')).towns[0].views, ['2d'])
     for (const [route, body] of [
       ['/old-3d-town/map', undefined],
@@ -208,7 +213,7 @@ test('preview/save/open/reopen/reset/isolation work with actual hosts and persis
       assert.equal(child.exitCode, 0, '关闭小镇必须让 host 保存后正常退出')
     m = await createManager({ root, port: 0, mockLlm: true })
     base = `http://127.0.0.1:${m.server.address().port}/api/towns`
-    assert.equal((await api('')).towns.length, 2)
+    assert.equal((await api('')).towns.length, BUILTIN_TOWNS.length + 1)
     let restored = await api(`/${a.id}/open`, {})
     assert.equal(restored.worldId, a.worldId)
     assert.equal(
@@ -270,7 +275,7 @@ test('preview/save/open/reopen/reset/isolation work with actual hosts and persis
     await m.stop()
     m = await createManager({ root, port: 0, mockLlm: true })
     base = `http://127.0.0.1:${m.server.address().port}/api/towns`
-    assert.equal((await api('')).towns.length, 1)
+    assert.equal((await api('')).towns.length, BUILTIN_TOWNS.length)
     assert.equal(await fs.readFile(path.join(retired, 'map.json'), 'utf8'), oldMap)
     assert.equal(await fs.readFile(path.join(retired, 'world.json'), 'utf8'), oldSave)
   } finally {
@@ -346,8 +351,13 @@ test('only one town runs at a time: entering another town closes the open one, t
     )
     assert.equal(saved.ok, true)
     await api(`/${town.id}/open`, {})
+    // 只看这两个小镇（别的内置小镇一直没开）
     const running = async () =>
-      Object.fromEntries((await api('')).towns.map((t) => [t.id, t.running]))
+      Object.fromEntries(
+        (await api('')).towns
+          .filter((t) => t.id === 'default-town' || t.id === town.id)
+          .map((t) => [t.id, t.running])
+      )
     assert.deepEqual(await running(), { 'default-town': false, [town.id]: true })
     // 被挤掉的页面断线后自动重开：不抢回来（不然两个页面来回互挤），告诉它是另一个页面进了别的小镇
     await assert.rejects(api('/default-town/open', { automatic: true }), /另一个页面打开了/)

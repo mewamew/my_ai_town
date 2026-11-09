@@ -40,13 +40,12 @@ impl Manager {
         let (app, web) = (dir.join("app"), dir.join("web"));
         let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         fs::create_dir_all(app.join("config")).unwrap();
-        fs::create_dir_all(app.join("data/maps/2d-town")).unwrap();
         fs::create_dir_all(web.join("assets")).unwrap();
-        fs::copy(
-            repo.join("data/maps/2d-town/map.json"),
-            app.join("data/maps/2d-town/map.json"),
-        )
-        .unwrap();
+        // 应用自带的内置地图
+        for (_, map) in manager::storage::BUILTIN_TOWNS {
+            fs::create_dir_all(app.join(map).parent().unwrap()).unwrap();
+            fs::copy(repo.join(map), app.join(map)).unwrap();
+        }
         // 道具库和场景包用仓库里的（绝对路径）；模型服务和密钥只在临时目录里，读不到仓库的密钥
         let data = |p: &str| repo.join(p).canonicalize().unwrap();
         let mut config = serde_json::json!({
@@ -145,7 +144,10 @@ fn town_api_needs_session_and_static_files_stay_in_web_dir() {
     assert!(response.contains("HttpOnly; SameSite=Strict"), "{response}");
     let (status, response) = manager.get("/api/towns", &cookie);
     assert_eq!(status, 200);
-    assert!(response.contains("default-town"), "{response}");
+    // 随应用发的内置小镇第一次运行就都在
+    for (id, _) in manager::storage::BUILTIN_TOWNS {
+        assert!(response.contains(id), "{response}");
+    }
 
     // 写操作还要应用自己的请求头：别的网页带不上，就发不出跨站请求
     let post = format!(

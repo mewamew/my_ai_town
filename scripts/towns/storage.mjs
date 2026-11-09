@@ -4,7 +4,15 @@ import os from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { checkIdentity } from '../mapgen/document.mjs'
 export const readJson = async (p) => JSON.parse(await fs.readFile(p, 'utf8'))
-const BUILTIN_MAP = 'data/maps/2d-town/map.json'
+/**
+ * 随应用发的内置小镇：固定编号和应用自带的地图，第一次运行时放进用户目录，不能删；名称和简介跟随应用版本。
+ * 列表里按这个顺序排在最前。手机上的管理服务（crates/manager/src/storage.rs）是同一份名单
+ */
+export const BUILTIN_TOWNS = [
+  { id: 'default-town', map: 'data/maps/2d-town/map.json' },
+  { id: 'spring-valley', map: 'data/maps/spring-valley/map.json' },
+]
+const builtinMap = (id) => BUILTIN_TOWNS.find((town) => town.id === id)?.map
 // 旧 3D 地图仍留在用户目录；列表隐藏，直接打开也拒绝，避免误当 HD-2D 运行。
 export function supportsHd2d(document) {
   return (
@@ -82,8 +90,11 @@ export function safeId(id) {
   if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,90}$/.test(id)) throw Error('小镇编号无效')
   return id
 }
-// 列表顺序：自带的小镇、预制小镇，再是玩家建的
-const builtinRank = (id) => (id === 'default-town' ? 2 : id.startsWith('prefab-') ? 1 : 0)
+// 列表顺序：自带的小镇（按名单）、预制小镇，再是玩家建的
+const builtinRank = (id) => {
+  const k = BUILTIN_TOWNS.findIndex((town) => town.id === id)
+  return k >= 0 ? BUILTIN_TOWNS.length + 1 - k : id.startsWith('prefab-') ? 1 : 0
+}
 export class Storage {
   constructor(root, source) {
     this.root = root
@@ -94,13 +105,14 @@ export class Storage {
   }
   async init() {
     await fs.mkdir(path.join(this.root, 'towns'), { recursive: true })
-    const file = path.join(this.town('default-town'), 'map.json')
-    try {
-      await fs.access(file)
-    } catch {
-      const doc = await readJson(path.join(this.source, BUILTIN_MAP))
-      checkIdentity(doc)
-      await this.create('default-town', doc, { origin: 'builtin' })
+    for (const { id, map } of BUILTIN_TOWNS) {
+      try {
+        await fs.access(path.join(this.town(id), 'map.json'))
+      } catch {
+        const doc = await readJson(path.join(this.source, map))
+        checkIdentity(doc)
+        await this.create(id, doc, { origin: 'builtin' })
+      }
     }
   }
   // 目录已存在时：同一张地图视为同一次保存的重试；地图不同或无法读取都报错。
@@ -134,10 +146,10 @@ export class Storage {
       throw e
     }
   }
-  // 内置小镇：随应用发的 default-town，和预制玩法的 prefab-<编号>（第一次选中时生成，只能重新开始）
+  // 内置小镇：随应用发的（BUILTIN_TOWNS），和预制玩法的 prefab-<编号>（第一次选中时生成，只能重新开始）
   canDelete(id) {
     safeId(id)
-    return id !== 'default-town' && !id.startsWith('prefab-')
+    return !builtinMap(id) && !id.startsWith('prefab-')
   }
   /** reset：重新开始预制小镇，允许删掉内置的 prefab-<编号> */
   async remove(id, reset = false) {
@@ -166,8 +178,9 @@ export class Storage {
   // 内置小镇的名称和简介跟随应用发布的版本。小镇目录里的地图副本不改：它的摘要是存档的身份。
   // 一句话建的小镇，简介写玩家当时那句话。
   async labels(id, document) {
-    if (id === 'default-town') {
-      const { name, description } = await readJson(path.join(this.source, BUILTIN_MAP))
+    const shipped = builtinMap(id)
+    if (shipped) {
+      const { name, description } = await readJson(path.join(this.source, shipped))
       return { name, description, creation: null }
     }
     const creation = await this.creation(id)
