@@ -12,7 +12,7 @@ import { fbm, hash } from './noise'
 // 3. 啃断后留在海里的小块陆地和近岸随机撒的几处，画成礁石。
 // 镇上的东西四周始终留一圈陆地。港口和海塔朝海的一侧把海岸收到旁边。
 // 地图画好了海岸（Atlas.island）时，第 1 步的凸包换成画好的陆地，冲刷的参数也照它给的；
-// 冲刷完再挖出岛内的河、湖、港湾（inland），边保持原样，不跟着海岸扭。
+// 冲刷完再挖出岛内的河、湖、港湾（inland），边保持原样，不跟着海岸扭；其中标成温泉的另记一份（spring）。
 // 港口的木码头朝南临水的一面往下画出木墙和桩（quay），再从岸线往水里伸出栈桥：
 // 这里只定位置和尺寸，桥是立体场景搭的（hd2d/pier.ts），桥下仍是水。
 
@@ -21,10 +21,11 @@ import { fbm, hash } from './noise'
 const SHAPE = { coast: 34, bay: 26, warp: 60, erosion: 80, rim: 6 }
 type Shape = typeof SHAPE
 
-/** 画好的海岸铺到地面像素上：land 是陆地底稿，water 是岛内的水 */
+/** 画好的海岸铺到地面像素上：land 是陆地底稿，water 是岛内的水，spring 是其中的温泉 */
 export interface Design {
   land: Uint8Array
   water: Uint8Array
+  spring: Uint8Array
   shape: Shape
 }
 /** 港口、海塔朝海一侧离海岸的距离（像素） */
@@ -88,6 +89,8 @@ export interface Island {
   sea: Uint8Array
   /** 画好的海岸里挖出来的岛内水面（已并进 water）：河、湖、港湾不起浪，岸边不铺沙 */
   inland: Uint8Array
+  /** 岛内水面里的温泉（inland 的一部分） */
+  spring: Uint8Array
   /** 栈桥（含尽头平台）在水面上的投影，桥下仍是水 */
   piers: Uint8Array
   /** 码头朝南临水那一面往下画的木墙：1、2 是两行墙板，3 是露出水面的桩；不算水 */
@@ -212,17 +215,21 @@ function fillLine(mask: Uint8Array, pts: [number, number][], width: number, w: n
 export function designOf(design: IslandDesign | undefined, w: number, h: number) {
   if (!design?.land.length) return undefined
   const land = new Uint8Array(w * h),
-    water = new Uint8Array(w * h)
+    water = new Uint8Array(w * h),
+    spring = new Uint8Array(w * h)
   for (const pts of design.land) fillPolygon(land, pts, w, h)
-  for (const part of design.water)
-    if ('polygon' in part) fillPolygon(water, part.polygon, w, h)
-    else fillLine(water, part.line, part.width, w, h)
+  for (const part of design.water) {
+    const into = part.kind === 'spring' ? [water, spring] : [water]
+    for (const mask of into)
+      if ('polygon' in part) fillPolygon(mask, part.polygon, w, h)
+      else fillLine(mask, part.line, part.width, w, h)
+  }
   const shape = { ...SHAPE }
   for (const key of Object.keys(shape) as (keyof Shape)[]) {
     const v = design[key]
     if (typeof v === 'number' && Number.isFinite(v)) shape[key] = v
   }
-  return { land, water, shape } satisfies Design
+  return { land, water, spring, shape } satisfies Design
 }
 
 /** 从画布边缘灌水，连不到外海的海面改回陆地，免得镇子中间冒出一小块海 */
@@ -697,5 +704,16 @@ export function island(
   const { piers, docks } = piersOf(sea, water, deck, rocks, anchors, pw, ph, seed)
   const quay = quayOf(sea, water, deck, piers, pw, ph)
   for (let i = 0; i < pw * ph; i++) if (!water[i]) inland[i] = 0
-  return { sea, inland, piers, quay, rocks, docks, toSea: toSeaDistance(sea, water, pw, ph) }
+  const spring = new Uint8Array(pw * ph)
+  if (design) for (let i = 0; i < pw * ph; i++) spring[i] = inland[i] && design.spring[i] ? 1 : 0
+  return {
+    sea,
+    inland,
+    spring,
+    piers,
+    quay,
+    rocks,
+    docks,
+    toSea: toSeaDistance(sea, water, pw, ph),
+  }
 }

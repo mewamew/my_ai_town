@@ -70,6 +70,7 @@ import { landmarkSprites } from './landmarks'
 import { coastTexture, outerMaterial, surfOnLand } from './sea'
 import { Horizon } from './horizon'
 import { ChimneySmoke } from './smoke'
+import { SpringSteam, springShore } from './steam'
 import { interior, interiorTop, keepInside } from './interior'
 import type { Partition } from './partition'
 import { PROP_BASE, PropStandees, type PropPlacement } from './props'
@@ -358,6 +359,8 @@ export class HdScene {
   private readonly beams: THREE.Mesh[] = []
   private readonly flares: { beam: THREE.Object3D; sprite: THREE.Sprite }[] = []
   private readonly smoke = new ChimneySmoke()
+  /** 温泉冒的白汽；没有温泉的地图没有 */
+  private readonly steam?: SpringSteam
   /** 逐帧动画的地标（喷泉）：图集横排，按时间挪贴图的横向偏移 */
   private readonly flipbooks: { maps: THREE.Texture[]; frames: number; fps: number }[] = []
   /** 自己发一点光的地标（喷泉的水），亮度随昼夜变 */
@@ -366,6 +369,8 @@ export class HdScene {
   private readonly seaTime: { value: number }
   /** 海面闪光的多少：晴天白天多，夜里和阴天少 */
   private readonly seaSparkle: { value: number }
+  /** 温泉透出来的光（见 sea.ts） */
+  private readonly springGlow: { value: number }
   /** 海面的日光路径（见 sea.ts） */
   private readonly seaPath: ReturnType<typeof outerMaterial>['sunPath']
   /** 焦点跟着的人（选中的村民或玩家操控的人）；在交谈时清晰带收窄 */
@@ -474,8 +479,22 @@ export class HdScene {
     // 光照图先建好：后面建的地面、墙和立牌的材质都要接上它
     this.lightmap = new LightMap(ground.width, ground.height, this.houses)
     const sea = this.addGround(ground)
+    if (ground.spring.some(Boolean)) {
+      const quality = effectiveQuality()
+      const density = quality === 'low' ? 0.35 : quality === 'mid' ? 0.6 : 1
+      this.steam = new SpringSteam(ground.spring, ground.width, ground.height, seed, density)
+      this.lightmap.shade(this.steam.mesh.material as THREE.Material, 'standee')
+      this.steam.mesh.layers.set(REFLECTION_SKIP)
+      this.scene.add(this.steam.mesh)
+      this.upright.push((t) => this.steam!.setTilt(t))
+      // 池水的青光照到池边的雪上
+      const teal = new THREE.Color('#2fb8c0').convertSRGBToLinear().multiplyScalar(0.55)
+      for (const [x, y] of springShore(ground.spring, ground.width, ground.height))
+        this.lightSources.push({ kind: 'lamp', x, y, reach: 26 * PIXEL, color: teal, on: 0.02 })
+    }
     this.seaTime = sea.time
     this.seaSparkle = sea.sparkle
+    this.springGlow = sea.springGlow
     this.seaPath = sea.sunPath
     const glowMap = new THREE.CanvasTexture(glowCanvas())
     glowMap.colorSpace = THREE.SRGBColorSpace
@@ -698,6 +717,7 @@ export class HdScene {
       for (const b of this.beams) b.rotation.y -= dt * 0.9
       this.flare()
       this.smoke.step(t / 1000)
+      this.steam?.step(t / 1000)
       for (const b of this.flipbooks)
         for (const m of b.maps) m.offset.x = (Math.floor((t / 1000) * b.fps) % b.frames) / b.frames
       changed = true
@@ -1141,7 +1161,7 @@ export class HdScene {
     ground.position.set(-MARGIN + w / 2, 0, -MARGIN + h / 2)
     ground.receiveShadow = true
     const coast = coastTexture(terrain.depth, terrain.shore, terrain.calm, pw, ph, wet)
-    const { material, time, sparkle, sunPath } = outerMaterial(
+    const { material, time, sparkle, sunPath, springGlow } = outerMaterial(
       coast,
       this.horizon.haze,
       this.theme,
@@ -1165,7 +1185,7 @@ export class HdScene {
     ground.layers.set(REFLECTION_SKIP)
     sea.layers.set(REFLECTION_SKIP)
     this.flat.add(ground, sea)
-    return { time, sparkle, sunPath }
+    return { time, sparkle, sunPath, springGlow }
   }
 
   /** on：这栋房子的窗和灯在亮灯程度超过它时亮 */
@@ -1483,6 +1503,7 @@ export class HdScene {
       open: Uint8Array
       wet: Uint8Array
       depth: Uint8Array
+      shore: Uint8Array
       docks: Dock[]
     },
     seed: number
@@ -1543,13 +1564,19 @@ export class HdScene {
 
   /** 散落物：野地上的轮胎、雪人，外圈（干海床、冰原）上的沉船、冰钓小屋。放在空地上，占的地方从空地里去掉 */
   private addScatter(
-    terrain: { width: number; height: number; wet: Uint8Array; depth: Uint8Array },
+    terrain: {
+      width: number
+      height: number
+      wet: Uint8Array
+      depth: Uint8Array
+      shore: Uint8Array
+    },
     open: Uint8Array,
     seed: number
   ) {
     const scatter = this.theme.landmarks.scatter
     if (!scatter) return
-    const { width: pw, height: ph, wet, depth } = terrain
+    const { width: pw, height: ph, wet, depth, shore } = terrain
     const random = rng(seed + 31)
     const STEP = 12
     for (let gy = 0; gy < ph; gy += STEP)
@@ -1562,7 +1589,7 @@ export class HdScene {
         const where =
           open[i] === OPEN.wild
             ? 'land'
-            : this.theme.outer !== 'sea' && wet[i] && depth[i] > 5 && depth[i] < 30
+            : this.theme.outer !== 'sea' && shore[i] === 1 && depth[i] > 5 && depth[i] < 30
               ? 'outer'
               : null
         if (!where || chance > scatter[where]) continue
@@ -2048,6 +2075,12 @@ export class HdScene {
     for (const m of this.moonlit) m.emissiveIntensity = night * ROOF_NIGHT_GLOW
     for (const m of this.selfLit) m.emissiveIntensity = lerp(0.3, 0.55, Math.max(night, twilight))
     this.seaSparkle.value = lerp(0.3, 1, day) * (1 - cloud * 0.9)
+    // 温泉白天只是微微透亮，天越黑越显出青光；白汽被池水从底下映成青色
+    this.springGlow.value = lerp(0.12, 1, Math.max(night, twilight * 0.8))
+    this.steam?.glow.value
+      .set('#2a9aa6')
+      .convertSRGBToLinear()
+      .multiplyScalar(0.35 * Math.max(night, twilight * 0.6))
     for (const b of this.beams) (b.material as THREE.MeshBasicMaterial).opacity = this.lit * 0.45
     this.flare()
     this.horizon.setAurora(night * L.aurora)

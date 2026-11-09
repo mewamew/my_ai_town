@@ -32,8 +32,13 @@ export interface LandmarkSprite {
 
 /** 一种风格的户外立牌：各类地点放什么、栈桥边停什么船、桥上堆什么、野地和外圈散落什么 */
 export interface LandmarkSet {
-  /** 一种户外地点在自己的区域里放哪些立牌：[贴图或逐帧动画, 相对区域中心的偏移（地图像素）] */
-  plans: Record<string, (seed: number) => [HTMLCanvasElement | Flipbook, number, number][]>
+  /** 一种户外地点在自己的区域里放哪些立牌：[贴图或逐帧动画, 相对区域中心的偏移（地图像素）, 能不能立在水上]。
+   *  按区域的 kind 挑，区域指定了 landmark 就按它挑。落到水上的一般拉回岸上，第四项为 true 的照立
+   *  （冰钓小屋立在冻住的海上） */
+  plans: Record<
+    string,
+    (seed: number) => [HTMLCanvasElement | Flipbook, number, number, boolean?][]
+  >
   /** 栈桥边的船：kind 0、1 是大船，2 是小舢板；view 是镜头看见侧面还是船尾，moor 是怎么系的。
    *  没有这种船时给 null */
   boat: (
@@ -454,17 +459,17 @@ export function landmarkSprites(
       x1: Math.max(...xs) + r.cell_size,
       y1: Math.max(...ys) + r.cell_size,
     }
-    // 林子、行道树、草坪这些只管样子的区域不摆这类地点自带的凉亭、花拱门
-    const plan = r.decor ? undefined : set.plans[r.kind]
+    // 林子、行道树、草坪这些只管样子的区域不摆这类地点自带的凉亭、花拱门；指定了地标的照它摆
+    const plan = r.landmark ? set.plans[r.landmark] : r.decor ? undefined : set.plans[r.kind]
     if (!plan) continue
     const cx = (box.x0 + box.x1) / 2,
       cy = (box.y0 + box.y1) / 2
     const arts = plan(seed + placed)
     placed += arts.length
-    for (const [art, dx, dy] of arts) {
+    for (const [art, dx, dy, afloat] of arts) {
       // 落到水上的（港口的地标偏得远）往中心拉回陆上
       let k = 1
-      while (k > 0 && water(cx + dx * PIXEL * k, cy + dy * PIXEL * k)) k -= 0.1
+      while (!afloat && k > 0 && water(cx + dx * PIXEL * k, cy + dy * PIXEL * k)) k -= 0.1
       out.push({
         x: cx + dx * PIXEL * Math.max(0, k),
         y: cy + dy * PIXEL * Math.max(0, k),

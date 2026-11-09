@@ -3,9 +3,11 @@ import type { Appearance } from './props/types'
 // 地图文档：atlas 提供绘图几何；topology 提供地点名称与物品所属地点；spatial 是三维数据。
 // 类型放在共用层，加载逻辑在 town-2d 的 assets 模块。
 
-/** 岛内的一片水：多边形，或者带宽度的折线（河）；都是地图坐标 */
-export type IslandWater =
+/** 岛内的一片水：多边形，或者带宽度的折线（河）；都是地图坐标。kind 为 spring 的是温泉：
+ *  青绿的热水，池边一圈压雪的黑石头，水面冒白汽，夜里透出青光 */
+export type IslandWater = (
   { polygon: [number, number][] } | { line: [number, number][]; width: number }
+) & { kind?: 'spring' }
 
 /**
  * 画好的海岸（手绘的内置地图才有）：陆地底稿交给引擎扭曲、冲刷出小湾和礁石，岛内的河、湖、港湾等冲刷完
@@ -41,6 +43,9 @@ export interface Atlas {
     decor?: 'woods' | 'allee' | 'lawn'
     /** 港口朝海的方向（横竖之一）；不给时从镇子中心指向港口算 */
     facing?: [number, number]
+    /** 这处户外地点立什么地标：风格包 landmarks.plans 里的名字（如冰雪的 icefishing 冰钓场、sledding 雪橇坡），
+     *  给了就不按 kind 挑，有 decor 也照立；风格包里没有这一种就不立 */
+    landmark?: string
   }[]
   nodes: { id: string; kind: string; space: string; x: number; y: number }[]
   edges: {
@@ -104,6 +109,8 @@ export interface MapDocument {
   generation?: {
     spec?: { environment?: { preset?: string }; settlement?: 'town' | 'wild' | 'ring' }
   }
+  /** 手绘的内置地图没有建镇参数，风格写在这里，取值同 generation.spec.environment */
+  environment?: { preset?: string }
 
   schema_version: number
   id: string

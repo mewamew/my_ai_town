@@ -165,8 +165,24 @@ function parkPond(r: Region, random: () => number, near: Obstacles) {
   return undefined
 }
 
-/** 水面：镇子四面环海；港口的水放在朝镇外、也就是朝海的那一侧，公园里挖池塘 */
+/** 水面：镇子四面环海；港口的水放在朝镇外、也就是朝海的那一侧，公园里挖池塘。
+ *  圈着温泉的公园、指定了地标的公园（雪橇坡这类）不挖 */
 function planWater(atlas: Atlas, near: Obstacles) {
+  const springs = (atlas.island?.water ?? [])
+    .filter((w) => w.kind === 'spring')
+    .flatMap((w) => ('polygon' in w ? w.polygon : w.line))
+  const hasSpring = (r: Region) => {
+    const cs = r.cell_size
+    const xs = r.cells.map(([c]) => c * cs),
+      ys = r.cells.map(([, rr]) => rr * cs)
+    const [x0, x1, y0, y1] = [
+      Math.min(...xs),
+      Math.max(...xs) + cs,
+      Math.min(...ys),
+      Math.max(...ys) + cs,
+    ]
+    return springs.some(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1)
+  }
   let tx = 0,
     ty = 0,
     tn = 0
@@ -186,7 +202,12 @@ function planWater(atlas: Atlas, near: Obstacles) {
       const facing = r.facing ?? harborFacing(r, center)
       harbors.set(r.id, facing)
       cells = harborWater(r, facing, near)
-    } else if (r.kind === 'park' && (!r.decor || r.decor === 'lawn'))
+    } else if (
+      r.kind === 'park' &&
+      (!r.decor || r.decor === 'lawn') &&
+      !r.landmark &&
+      !hasSpring(r)
+    )
       cells = parkPond(r, rng(hashString(r.id) ^ 0x51ab3c), near)
     if (cells) water.set(r.id, cells)
   }

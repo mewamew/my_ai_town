@@ -289,6 +289,24 @@ export const FROZEN_LANDMARKS: LandmarkSet = {
       [fishRack(seed), -24, -8],
       [snowCap(stall(seed + 3), seed), 22, -6],
     ],
+    // 冰钓场（手绘地图的区域指定）：岸边柴垛和雪橇，往外的海冰上几间冰钓小屋、几个冰窟窿
+    icefishing: (seed) => [
+      [woodstack(), -34, -6],
+      [sled(), 14, 6],
+      [iceHut(seed), -40, 34, true],
+      [iceHut(seed + 1), 30, 46, true],
+      [fishingHole(seed), -6, 42, true],
+      [fishingHole(seed + 2), 58, 66, true],
+      [fishingHole(seed + 3), -54, 70, true],
+    ],
+    // 雪橇坡：停着几架雪橇，堆着两个雪人
+    sledding: (seed) => [
+      [sled(), -24, 2],
+      [sled(), 22, 12],
+      [snowman(seed), -4, -14],
+      [snowman(seed + 1), 38, -20],
+      [sled(), -46, -22],
+    ],
   },
   scatter: {
     land: 0.05,

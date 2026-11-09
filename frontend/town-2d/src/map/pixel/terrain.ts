@@ -55,7 +55,8 @@ export const TERRAIN_SEED = 20260923
  * wet 标出外圈和水面像素（废土里外圈是干海床，也算在内），open 标出能种树的空地，
  * path 标出土路（2 是路中间的实土），立体场景在上面积水坑；depth 是水面离岸、陆地离水的像素数；
  * shore 标出海边的地物，立体场景按它画浪（见 shoreOf）；calm 是码头一带水面的平静程度（0～255，见 calmOf）；
- * docks 是栈桥（地图坐标），立体场景按它搭桥，船停在旁边；bridges 是路过岛内水面的桥（见 bridges.ts）
+ * docks 是栈桥（地图坐标），立体场景按它搭桥，船停在旁边；bridges 是路过岛内水面的桥（见 bridges.ts）；
+ * spring 标出温泉的水面，立体场景在上面冒白汽、夜里发光
  */
 export interface Ground {
   atlas: Atlas
@@ -73,6 +74,7 @@ export interface Ground {
   calm: Uint8Array
   docks: Dock[]
   bridges: Bridge[]
+  spring: Uint8Array
 }
 
 export function groundOf(atlas: Atlas, theme: MapTheme, seed = TERRAIN_SEED): Ground {
@@ -100,6 +102,7 @@ export function groundOf(atlas: Atlas, theme: MapTheme, seed = TERRAIN_SEED): Gr
     built,
     deck,
     ...coast,
+    ...springRim(coast.spring, wet, pw, ph),
     shoreWidth: shoreWidths(coast, wet, built, pw, ph, seed),
   }
   // 湾里的水浅：海面离岸的像素数按周围海的多少缩放，湾里的浅水带更宽，外海更快变深
@@ -110,6 +113,9 @@ export function groundOf(atlas: Atlas, theme: MapTheme, seed = TERRAIN_SEED): Gr
       if (sea[i] && depth[i] < 30)
         depth[i] = Math.min(40, Math.round(depth[i] * (0.35 + seaAround(x, y) * 0.9)))
     }
+  // 温泉四周不种树、不长草丛：池边留一片干净的雪地
+  if (layers.clear.some(Boolean))
+    decor.vegetation = decor.vegetation.filter((v) => !layers.clear[toPx(v.y) * pw + toPx(v.x)])
   const calm = calmOf(layers, theme.outer === 'sea')
   const base = new Uint32Array(pw * ph)
   paintBase(layers, base)
@@ -142,6 +148,7 @@ export function groundOf(atlas: Atlas, theme: MapTheme, seed = TERRAIN_SEED): Gr
     calm,
     docks,
     bridges,
+    spring: coast.spring,
   }
 }
 
@@ -274,6 +281,10 @@ interface Layers {
   sea: Uint8Array
   /** 画好的海岸里的岛内水面（河、湖、港湾）：和池塘一样不起浪 */
   inland: Uint8Array
+  /** 其中的温泉，和温泉池边一圈压雪的黑石头（离水 1～RIM 像素），池子四周不种树的一圈（见 springRim） */
+  spring: Uint8Array
+  rim: Uint8Array
+  clear: Uint8Array
   piers: Uint8Array
   /** 港口的木码头、码头朝南那一面的木墙（见 island.ts 的 Island.quay） */
   deck: Uint8Array
@@ -365,6 +376,7 @@ function coastOf(
   const {
     sea,
     inland,
+    spring,
     piers,
     quay,
     rocks,
@@ -392,7 +404,66 @@ function coastOf(
       ((x1 - x0) * (y1 - y0))
     )
   }
-  return { sea, inland, piers, quay, rocks, docks, depth, seaAround }
+  return { sea, inland, spring, piers, quay, rocks, docks, depth, seaAround }
+}
+
+/** 温泉池沿有几圈像素宽（两层石头） */
+const RIM = 6
+
+/** 温泉四周不种树：池边 CLEAR 像素内，池子南边（镜头这一侧）再多留 CLEAR_SOUTH 像素，
+ *  不然树立起来挡住池子 */
+const CLEAR = 9
+const CLEAR_SOUTH = 26
+
+/** 温泉池边的陆地：离温泉水 1～RIM 像素的记下离水几像素，铺黑石头（见 springStone）；
+ *  clear 标出池子四周不种树的一圈（见 CLEAR） */
+function springRim(spring: Uint8Array, wet: Uint8Array, pw: number, ph: number) {
+  const rim = new Uint8Array(pw * ph),
+    clear = new Uint8Array(pw * ph)
+  if (!spring.some(Boolean)) return { rim, clear }
+  const to = distance(spring, pw, ph)
+  for (let i = 0; i < pw * ph; i++) {
+    if (!wet[i] && to[i] <= RIM + 0.4) rim[i] = Math.max(1, Math.round(to[i]))
+    if (to[i] <= CLEAR) clear[i] = 1
+  }
+  // 往南：每一列从上往下数离上一个温泉像素多远，再左右放宽几格
+  const south = new Uint8Array(pw * ph)
+  for (let x = 0; x < pw; x++) {
+    let last = -1e9
+    for (let y = 0; y < ph; y++) {
+      const i = y * pw + x
+      if (spring[i]) last = y
+      if (y - last <= CLEAR_SOUTH) south[i] = 1
+    }
+  }
+  for (let y = 0; y < ph; y++)
+    for (let x = 4; x < pw - 4; x++)
+      for (let dx = -4; dx <= 4; dx++)
+        if (south[y * pw + x + dx]) {
+          clear[y * pw + x] = 1
+          break
+        }
+  return { rim, clear }
+}
+
+/** 温泉池沿：一圈压雪的黑石头。石头 4×3 像素一块，一行行错开半块：顶上一行压着雪，
+ *  中间一行左亮右暗，底下一行压暗；块之间露出雪。贴水的一圈被热气熏着不积雪、缝是黑的，
+ *  最外一圈石头稀稀落落，空处是雪 */
+function springStone(L: Layers, i: number, x: number, y: number) {
+  const r = L.rim[i]
+  const row = Math.floor(y / 3)
+  const sx = x + (row % 2) * 2
+  const col = Math.floor(sx / 4),
+    lx = sx % 4,
+    ly = y % 3
+  const id = hash(col, row, L.seed + 71)
+  if (r >= RIM - 1 && id < 0.5) return u(r >= RIM ? SNOW : SNOW_SHADE)
+  if (lx === 3) return u(r <= 2 ? '#1d2127' : ly === 0 ? SNOW : SNOW_SHADE)
+  const dark = id < 0.4
+  if (ly === 0)
+    return r > 2 && hash(col, row, L.seed + 72) < 0.6 ? u(SNOW) : u(dark ? '#4c535d' : '#5d6570')
+  if (ly === 1) return u(lx === 0 ? (dark ? '#464c56' : '#5b636f') : dark ? '#353a42' : '#454c56')
+  return u(dark ? '#23272d' : '#2e3339')
 }
 
 /** 沙滩宽窄看地形：数一数周围 21×21 里有多少海，海少说明是凹进去的湾，浪小、沙子堆得宽；
@@ -509,6 +580,10 @@ function paintBase(L: Layers, px: Uint32Array) {
         px[i] = stone(L, i, x, y)
         continue
       }
+      if (L.rim[i]) {
+        px[i] = springStone(L, i, x, y)
+        continue
+      }
       const shore = shoreKind(L, i)
       if (shore && shore < 4) {
         px[i] = shoreColor(L, i, x, y, shore)
@@ -584,7 +659,7 @@ function paintShoreline(L: Layers, px: Uint32Array) {
       const n = wet[i - 1] + wet[i + 1] + wet[i - pw] + wet[i + pw]
       if (wet[i]) {
         if (n < 4) px[i] = u(G.outerEdge)
-      } else if (n > 0 && !deck[i] && !quay[i] && !rocks[i] && !beach(L, i))
+      } else if (n > 0 && !deck[i] && !quay[i] && !rocks[i] && !L.rim[i] && !beach(L, i))
         px[i] = mix(px[i], SHADOW, 0.35)
     }
 }
@@ -614,9 +689,10 @@ function calmOf(L: Layers, deepen: boolean) {
 }
 
 /** 海边的地物：1 是和外海连着的水（港口的水也算，池塘和岛内的河湖不算），2 是外海边的沙滩，
- *  3 是外海边的岩石岸和礁石。立体场景只在外海上起浪，浪冲上沙滩、拍在岩石上 */
+ *  3 是外海边的岩石岸和礁石，4 是温泉的水。立体场景只在外海上起浪，浪冲上沙滩、拍在岩石上；
+ *  温泉另画（见 sea.ts） */
 function shoreOf(L: Layers) {
-  const { pw, ph, wet, rocks, inland } = L
+  const { pw, ph, wet, rocks, inland, spring } = L
   const out = new Uint8Array(pw * ph)
   // 从地图四边的水往里灌，灌得到的就是外海；岛内的水和外海连着也不灌进去
   const stack: number[] = []
@@ -636,7 +712,10 @@ function shoreOf(L: Layers) {
     if (i < pw * (ph - 1)) push(i + pw)
   }
   for (let i = 0; i < pw * ph; i++) {
-    if (wet[i]) continue
+    if (wet[i]) {
+      if (spring[i]) out[i] = 4
+      continue
+    }
     const kind = shoreKind(L, i)
     if (rocks[i] || kind === 1) out[i] = 3
     else if (kind === 2 || kind === 3) out[i] = 2
@@ -650,7 +729,8 @@ function openGround(atlas: Atlas, L: Layers) {
   const open = new Uint8Array(pw * ph)
   for (let i = 0; i < pw * ph; i++) {
     const kind = L.kindAt(i)
-    if (wet[i] || path[i] || quay[i] || rocks[i] || beach(L, i) || PAVED.has(kind)) continue
+    if (wet[i] || path[i] || quay[i] || rocks[i] || L.clear[i] || beach(L, i) || PAVED.has(kind))
+      continue
     open[i] = (L.decorAt(i) === 'lawn' ? OPEN.lawn : OPEN_KINDS[kind]) ?? OPEN.town
   }
   for (const s of atlas.spaces) {

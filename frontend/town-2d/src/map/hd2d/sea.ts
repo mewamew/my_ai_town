@@ -17,6 +17,8 @@ import { REFLECTION_SAMPLE, type Reflection } from './reflection'
 // 越往北越融进海雾，直到海平线。全部按地图像素格取整，时间按每秒 8 步走，保持像素风。
 // 废土里同一块平面画成干海床：离旧海岸越远越平、越白；成片龟裂、盐壳、旧水位线，零星碎贝壳。
 // 冰雪里画成冰原：近岸冻得厚、发白，越远越蓝；近岸一圈碎浮冰，成片积雪、风吹雪纹、断续的冰堆，冰面偶尔一点反光。
+// 温泉（岛内标成温泉的水，哪种风格都一样）：青绿的热水，池心深、池边浅，乳白的矿物纹慢慢转，
+// 水面贴着一层慢慢飘的白汽，贴池沿的一圈压着石头的影子；入夜透出青光（自发光）。立起来的白汽见 steam.ts。
 
 /** 一道浪从外海推到岸上要多久（秒）；近岸浪线的疏密 */
 const SURF_PERIOD = 3.4
@@ -56,8 +58,11 @@ uniform vec2 uPathFrom;
 uniform vec2 uPathTo;
 uniform vec3 uSunGlint;
 uniform float uPathFade;
+uniform float uSpringGlow;
 // uTrail、uTrailOrigin、uTrailSize（踩踏图）由天气着色声明：海面也接了 weather.shade
 varying vec2 vSeaPos;
+// 温泉的自发光，在各段着色里算，最后加到自发光上
+vec3 springLight = vec3(0.0);
 ${hashNoise('sea')}
 ${REFLECTION_SAMPLE}
 // 倒影：浪把它横向切成一段段，偏移按地图像素取整；越平静越清楚
@@ -116,6 +121,30 @@ vec3 seaCoast(vec2 cell) {
   vec4 c = texture2D(uDepth, st);
   return vec3(c.r * 255.0, floor(c.g * 255.0 + 0.5), c.b);
 }
+`
+
+/** 温泉：离岸贴图里岸边地物为 4 的水（见 terrain.ts 的 shoreOf）。三种外圈的着色最后都接这一段 */
+const SPRING = /* glsl */ `
+  if (coast.y == 4.0) {
+    float st = floor(uSeaTime * 8.0) / 8.0;
+    float hot = smoothstep(1.5, 14.0, d);
+    vec3 w = mix(seaHex(vec3(118.0, 210.0, 200.0)), seaHex(vec3(24.0, 124.0, 150.0)), hot);
+    // 乳白的矿物纹慢慢转；一道道细亮纹顺着水面晃
+    float swirl = seaNoise(cell / 12.0 + vec2(st * 0.12, -st * 0.08));
+    w = mix(w, seaHex(vec3(160.0, 226.0, 216.0)), 0.32 * smoothstep(0.58, 0.86, swirl));
+    if (seaNoise(cell / vec2(7.0, 3.0) + vec2(st * 0.35, 0.0)) > 0.83 && d > 2.5)
+      w = mix(w, seaHex(vec3(214.0, 246.0, 238.0)), 0.3);
+    // 贴着池沿的一圈：石头的影子，水浅处透出深色的池底
+    if (d < 1.5) w = mix(w, seaHex(vec3(26.0, 62.0, 72.0)), 0.6);
+    else if (d < 2.5) w = mix(w, seaHex(vec3(36.0, 92.0, 104.0)), 0.3);
+    // 贴着水面的一层白汽：横着拉长的淡痕，慢慢往东飘
+    float veil = seaNoise(cell / vec2(22.0, 5.0) + vec2(st * 0.3, -st * 0.06)) * 0.7
+      + seaNoise(cell / vec2(7.0, 3.0) + vec2(-st * 0.4, st * 0.1)) * 0.3;
+    w = mix(w, seaHex(vec3(234.0, 243.0, 245.0)), 0.24 * smoothstep(0.55, 0.85, veil));
+    if (seaHash(cell + vec2(seaTick(3.0) * 11.0, 5.0)) > 0.9965) w = mix(w, vec3(1.0), 0.7);
+    c = w;
+    springLight = seaHex(vec3(40.0, 168.0, 178.0)) * uSpringGlow * mix(0.35, 1.0, hot) * (1.0 - 0.5 * smoothstep(0.46, 0.86, veil));
+  }
 `
 
 /** 海面着色器里留给玩法的位置：算完离岸像素数 d 和是不是外海 open 之后，玩法可以在这里改它们
@@ -264,12 +293,14 @@ const COLOR = /* glsl */ `
     float glint = seaHash(floor(cell / vec2(3.0, 1.0)) + seaTick(4.0) * 5.0);
     if (glint > 1.0 - band * 0.14 * uSunPath * max(detail, 0.35)) c = mix(c, uSunGlint, 0.8);
   }
+  ${SPRING}
   diffuseColor.rgb = c;
 `
 
 const SEABED = /* glsl */ `
   vec2 cell = floor(vSeaPos / uPixel);
-  float d = seaCoast(cell).x;
+  vec3 coast = seaCoast(cell);
+  float d = coast.x;
   float deep = clamp((d - 8.0) / 16.0, 0.0, 1.0);
   float blotch = seaNoise(cell / 140.0) * 0.7 + seaNoise(cell / 50.0 + 7.0) * 0.3;
   float band = log2(d + 0.5) + seaHash(cell) * 0.8 - 0.2 + deep * (blotch - 0.5) * 1.4;
@@ -295,12 +326,14 @@ const SEABED = /* glsl */ `
   if (d < 22.0 && mod(floor(d), 6.0) == 0.0 && seaHash(floor(cell / 3.0)) > 0.35) c = mix(c, uSalt, 0.3);
   if (cracked) c *= 0.7;
   if (seaHash(cell + 11.0) > 0.994) c = uSalt * 1.08;
+  ${SPRING}
   diffuseColor.rgb = c;
 `
 
 const ICE = /* glsl */ `
   vec2 cell = floor(vSeaPos / uPixel);
-  float d = seaCoast(cell).x;
+  vec3 coast = seaCoast(cell);
+  float d = coast.x;
   float deep = clamp((d - 4.0) / 20.0, 0.0, 1.0);
   float band = log2(d + 0.5) + seaHash(cell) * 0.8 - 0.2 + (seaNoise(cell / 60.0) - 0.5) * 1.2 * deep;
   band = clamp(band, 0.0, 5.0);
@@ -336,6 +369,7 @@ const ICE = /* glsl */ `
   }
   // 冰面反光：稀疏的亮点，隔一会儿换一处
   if (seaHash(cell + vec2(seaTick(3.0) * 7.0, 1.0)) > 0.9985) c = vec3(1.0);
+  ${SPRING}
   diffuseColor.rgb = c;
 `
 
@@ -374,6 +408,8 @@ export function outerMaterial(
   const { width: pw, height: ph } = coast.image
   const time = { value: 0 }
   const sparkle = { value: 1 }
+  /** 温泉透出来的光：白天淡，入夜亮（场景按昼夜设） */
+  const springGlow = { value: 0 }
   /** 日光路径：强弱（0 没有）、从哪（画面下方）朝哪（太阳落向海平线的那一点）、闪光的颜色（线性） */
   const sunPath = {
     uSunPath: { value: 0 },
@@ -411,6 +447,7 @@ export function outerMaterial(
       uGlint: { value: raw(surface?.glint ?? '#000000') },
       uSand: { value: raw(theme.ground.sand[0]) },
       uSparkle: sparkle,
+      uSpringGlow: springGlow,
       ...sunPath,
       ...reflection,
       ...trail,
@@ -422,10 +459,17 @@ export function outerMaterial(
         '#include <begin_vertex>\n  vSeaPos = (modelMatrix * vec4(transformed, 1.0)).xz;'
       )
     const body = theme.outer === 'seabed' ? SEABED : theme.outer === 'ice' ? ICE : COLOR
-    shader.fragmentShader = HEADER + shader.fragmentShader.replace('#include <map_fragment>', body)
+    shader.fragmentShader =
+      HEADER +
+      shader.fragmentShader
+        .replace('#include <map_fragment>', body)
+        .replace(
+          '#include <emissivemap_fragment>',
+          '#include <emissivemap_fragment>\n  totalEmissiveRadiance += springLight;'
+        )
     addHaze(shader, haze)
   }
-  return { material, time, sparkle, sunPath }
+  return { material, time, sparkle, sunPath, springGlow }
 }
 
 /** 浪冲上沙滩：沙滩上的地面材质补一段着色。浪打到岸上那一刻和海面的浪线对得上（共用 surfPhase）：
