@@ -82,8 +82,8 @@ export const PRESETS: ProviderPreset[] = [
     name: '小米 MiMo',
     baseUrl: 'https://api.xiaomimimo.com/v1',
     needsKey: true,
-    models: ['mimo-v2.5-pro', 'mimo-v2.5'],
-    defaultModel: 'mimo-v2.5-pro',
+    models: ['mimo-v2.6-pro', 'mimo-v2.6-pro-ultraspeed', 'mimo-v2.6-flash'],
+    defaultModel: 'mimo-v2.6-pro',
   },
   {
     id: '302-ai',
