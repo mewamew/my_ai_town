@@ -117,6 +117,33 @@ const SHAPES: Record<string, () => Cells> = {
         '................',
       ])
     ),
+  // 小雨：白云下稀稀的三滴；大雨：灰云，雨点又密又斜（中雨是上面的 rain）
+  drizzle: () =>
+    stack(
+      outline(parse(cloudRows(2, 'w', 'm'))),
+      parse([
+        ...Array<string>(10).fill('................'),
+        '....U......U....',
+        '................',
+        '.......U........',
+        '................',
+        '................',
+        '................',
+      ])
+    ),
+  downpour: () =>
+    stack(
+      outline(parse(cloudRows(2, 'm', 'M'))),
+      parse([
+        ...Array<string>(10).fill('................'),
+        '..U..U..U..U..U.',
+        '.U..U..U..U..U..',
+        'U..U..U..U..U...',
+        '..U..U..U..U..U.',
+        '.U..U..U..U..U..',
+        '................',
+      ])
+    ),
   storm: () =>
     stack(
       outline(parse(cloudRows(2, 'm', 'M'))),

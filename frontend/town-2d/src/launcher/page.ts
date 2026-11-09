@@ -15,11 +15,19 @@ import { api } from './api'
 import { warmSelectedGame } from '../startupWarmup'
 import { MUSIC_TRACKS } from 'town-shared/audio/catalog'
 import { createMusicController } from 'town-shared/audio/music'
-import { titleChoice } from 'town-shared/audio/scene'
+import {
+  chooseMusic,
+  musicWorldOf,
+  rosterMood,
+  titleChoice,
+  type MusicWorld,
+} from 'town-shared/audio/scene'
 import { installPlatform, isCompact, isTouch, onBack, systemBars } from 'town-shared/platform'
 import { installSelects } from 'town-shared/design/select'
 import { installFavicon, logoUrl } from 'town-shared/brand/brand'
 import { installHomeSettings } from './settings'
+import { clockText, createSceneryBar } from './scenery'
+import { themeOf, type MapTheme } from '../map/themes'
 // 小镇选择页：一句话说清这是什么游戏、小镇列表（写着玩到第几天、住了几个人）、静态预览、进入或继续玩。
 // 预览不启动世界。
 installPlatform()
@@ -42,23 +50,121 @@ const enter = query<HTMLButtonElement>(document, '#enter-game')
 const retry = query<HTMLButtonElement>(document, '#preview-retry')
 const scenic = query<HTMLButtonElement>(document, '#preview-scenic')
 const launcher = query<HTMLElement>(document, '.map-launcher')
+const hideUi = query<HTMLButtonElement>(document, '#scenic-hide')
+const showUi = query<HTMLButtonElement>(document, '#scenic-show')
+const sceneryHost = $('scenery-bar')
 let scenicScrollY = 0
-/** 只展开现有静态预览，不连接世界，也不改变存档的时钟或天气。 */
+/** 赏景过一次以后，换上来的预览都照景色条上的时刻和天气画（返回选镇也不跳回傍晚） */
+let sceneryUsed = false
+/** 展开现有的静态预览，底部景色条换时刻和天气。只换画面：不连接世界，不改存档的时钟或天气。 */
 function setScenic(enabled: boolean) {
   if (enabled === launcher.classList.contains('is-scenic')) return
   if (enabled) scenicScrollY = window.scrollY
+  else setBare(false)
   launcher.classList.toggle('is-scenic', enabled)
   scenic.setAttribute('aria-pressed', String(enabled))
   scenic.textContent = enabled ? '返回选镇' : '赏景'
-  scenic.title = enabled ? '返回选择小镇（Esc）' : '展开地图，欣赏小镇景色'
+  scenic.title = enabled ? '返回选择小镇（Esc）' : '展开地图，换时间和天气看小镇的景色'
+  hideUi.hidden = !enabled
+  sceneryHost.hidden = !enabled
+  scenery.setActive(enabled)
   window.scrollTo(0, enabled ? 0 : scenicScrollY)
   scenic.focus({ preventScroll: true })
+  if (enabled) {
+    sceneryUsed = true
+    const shown = shownPreview()
+    if (shown) {
+      scenery.setTheme(shown.theme.light)
+      shown.map.setScenery?.(scenery.value.minutes, scenery.value.weather)
+    }
+    sceneryMusic(0)
+  } else {
+    clearTimeout(musicTimer)
+    launcherMusic.setChoice(titleChoice(MUSIC_TRACKS), true)
+  }
 }
 scenic.onclick = () => setScenic(!launcher.classList.contains('is-scenic'))
+const scenery = createSceneryBar(sceneryHost, {
+  change(value) {
+    shownPreview()?.map.setScenery?.(value.minutes, value.weather)
+    if (!scenery.playing) sceneryMusic()
+  },
+  playing(on) {
+    if (!on) sceneryMusic()
+  },
+})
+let musicTimer: ReturnType<typeof setTimeout> | undefined
+/** 赏景时音乐跟着景色挑（夜里夜曲、下雨雨天的曲子）。拖动、点选停下一会儿再换，拖过几个时段不连着换曲；
+ *  播放一天时不换，不然十几秒换一首 */
+function sceneryMusic(delay = 700) {
+  clearTimeout(musicTimer)
+  musicTimer = setTimeout(() => {
+    const shown = shownPreview()
+    if (!shown || !launcher.classList.contains('is-scenic') || scenery.playing) return
+    const { minutes, weather } = scenery.value
+    const choice = chooseMusic(
+      {
+        clock: clockText(minutes),
+        weather,
+        world: shown.world,
+        storyMusic: false,
+        mood: rosterMood([]),
+        once: new Set(),
+      },
+      MUSIC_TRACKS
+    )
+    launcherMusic.setChoice(choice, true)
+  }, delay)
+}
+let idleTimer: ReturnType<typeof setTimeout> | undefined
+/** 收起界面：只剩风景。左上角的「显示界面」鼠标停一会儿就淡掉，动一下、点一下画面又浮出来 */
+function setBare(bare: boolean) {
+  if (bare === launcher.classList.contains('is-bare')) return
+  launcher.classList.toggle('is-bare', bare)
+  showUi.hidden = !bare
+  clearTimeout(idleTimer)
+  if (bare) {
+    // 焦点不留在藏起来的按钮上
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    wake()
+  } else {
+    showUi.classList.remove('is-idle')
+    hideUi.focus({ preventScroll: true })
+  }
+}
+function wake() {
+  if (!launcher.classList.contains('is-bare')) return
+  showUi.classList.remove('is-idle')
+  clearTimeout(idleTimer)
+  idleTimer = setTimeout(() => showUi.classList.add('is-idle'), 2500)
+}
+hideUi.onclick = () => setBare(true)
+showUi.onclick = () => setBare(false)
+const stage = query<HTMLElement>(document, '.launcher-stage')
+stage.addEventListener('pointermove', wake)
+stage.addEventListener('pointerdown', wake)
 document.addEventListener('keydown', (event) => {
-  if (event.key !== 'Escape' || !launcher.classList.contains('is-scenic')) return
-  event.preventDefault()
-  setScenic(false)
+  if (!launcher.classList.contains('is-scenic')) return
+  // Esc 先把收起的界面放出来，再按一次返回选镇
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    if (launcher.classList.contains('is-bare')) setBare(false)
+    else setScenic(false)
+    return
+  }
+  const target = event.target instanceof Element ? event.target : null
+  if (
+    event.key.toLowerCase() === 'h' &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !target?.closest('input, textarea, select, [contenteditable]')
+  ) {
+    event.preventDefault()
+    setBare(!launcher.classList.contains('is-bare'))
+    return
+  }
+  wake()
 })
 const launcherMusic = createMusicController(
   query<HTMLButtonElement>(document, '#launcher-music-toggle'),
@@ -73,7 +179,8 @@ let selected: MapEntry | undefined,
   request = 0,
   maps: MapEntry[] = []
 
-type Preview = { host: HTMLElement; map: GameMap }
+/** theme 给景色条画天色轨道，world 给赏景挑曲子 */
+type Preview = { host: HTMLElement; map: GameMap; theme: MapTheme; world: MusicWorld }
 // 桌面保留最近两张预览，避免来回切换时重新生成地面和 WebGL 场景；触屏设备只保留一张，控制显存。
 const previews = new Map<string, Preview>()
 let pendingPreview: Preview | undefined
@@ -92,6 +199,8 @@ function dropPreview(key: string) {
   preview.map.dispose()
   preview.host.remove()
 }
+/** 正露在外面的那张预览 */
+const shownPreview = () => [...previews.values()].find((preview) => !preview.host.hidden)
 function showPreview(key: string) {
   for (const [id, preview] of previews) preview.host.hidden = id !== key
   const preview = previews.get(key)
@@ -103,6 +212,7 @@ function showPreview(key: string) {
 function finishPreview(map: MapEntry) {
   $('preview-state').hidden = true
   scenic.disabled = false
+  if (sceneryUsed) shownPreview()?.map.setScenery?.(scenery.value.minutes, scenery.value.weather)
   if (fitNext === map.id) {
     fitNext = ''
     $('map-preview')
@@ -157,6 +267,8 @@ async function select(map: MapEntry) {
   try {
     const mapDocument = await loadDocument(map.id, map.mapHash)
     if (current !== request) return
+    const theme = themeOf(mapDocument)
+    const world = musicWorldOf(theme.id, mapDocument.generation?.spec?.settlement)
     // 先让加载提示有机会显示，再在主线程计算地面和创建场景。
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
     if (current !== request) return
@@ -177,7 +289,7 @@ async function select(map: MapEntry) {
       host.remove()
       return
     }
-    const pending = (pendingPreview = { host, map: rendered })
+    const pending = (pendingPreview = { host, map: rendered, theme, world })
     // 立体场景建好再拿掉「正在加载预览…」：之前只有底色和放大的地名
     await rendered.ready
     if (current !== request) {
@@ -187,7 +299,7 @@ async function select(map: MapEntry) {
     pendingPreview = undefined
     // 没有摘要时不能判断内容是否变化，只在本次选中期间保留。
     const cacheKey = key || `${map.id}:request:${current}`
-    previews.set(cacheKey, { host, map: rendered })
+    previews.set(cacheKey, pending)
     finishPreview(map)
   } catch (error) {
     if (current === request) {
@@ -489,6 +601,10 @@ initCreator(
 )
 // 安卓返回键：先收起「更多操作」，其余交给应用壳（再按一次退出）
 onBack(() => {
+  if (launcher.classList.contains('is-bare')) {
+    setBare(false)
+    return true
+  }
   if (launcher.classList.contains('is-scenic')) {
     setScenic(false)
     return true

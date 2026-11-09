@@ -88,11 +88,17 @@ body:has(.map-launcher) {
   border-radius: 10px;
   background: var(--ui-panel);
 }
-.preview-scenic {
+/* 预览左上角：「赏景」（赏景时是「返回选镇」）和赏景时的「收起界面」 */
+.scenic-actions {
   position: absolute;
   top: max(16px, env(safe-area-inset-top));
   left: calc(var(--panel-width) + var(--gap) * 3);
   z-index: 6;
+  display: flex;
+  gap: 8px;
+}
+.scenic-actions button,
+.scenic-show {
   min-height: 42px;
   padding: 0 16px;
   border: 1px solid var(--ui-line-strong);
@@ -441,7 +447,7 @@ body:has(.map-launcher) {
   .preview-retry {
     left: 50%;
   }
-  .preview-scenic {
+  .scenic-actions {
     left: max(16px, env(safe-area-inset-left));
   }
   .launcher-panel-footer {
@@ -512,6 +518,188 @@ body:has(.map-launcher.is-scenic) {
 .map-launcher.is-scenic .preview-state {
   inset: 0;
 }
-.map-launcher.is-scenic .preview-scenic {
+.map-launcher.is-scenic .scenic-actions {
   left: max(16px, env(safe-area-inset-left));
+}
+
+/* 景色条（launcher/scenery.ts）：赏景时贴在底部正中。电脑上一行：播放、天色轨道、时刻、七种天气；
+   窄了分两行，天气单独一行 */
+.scenery-bar {
+  position: absolute;
+  left: 50%;
+  bottom: max(24px, calc(env(safe-area-inset-bottom) + 12px));
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  /* left: 50% 只给它半个屏幕排版，轨道会被挤短：按内容宽，最多到两边各留 16px */
+  width: max-content;
+  max-width: calc(100% - 32px);
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 12px;
+  background: var(--ui-panel);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.2);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.scenery-bar .pixel-icon {
+  display: block;
+  image-rendering: pixelated;
+}
+.scenery-bar button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+}
+/* 停着时绿底白三角，播放时白底两道，和游戏里的开始、暂停一样 */
+.scenery-bar .scenery-play {
+  background: var(--ui-accent-fill);
+}
+.scenery-bar .scenery-play:hover {
+  background: var(--ui-accent-hover);
+}
+.scenery-bar .scenery-play.is-playing {
+  background: var(--ui-ink);
+}
+.scenery-track {
+  position: relative;
+  /* 里面全是绝对定位的，要写明宽度：只写 flex-basis 时按内容宽算出来是最小宽 */
+  flex: 0 1 auto;
+  width: 440px;
+  min-width: 200px;
+  height: 46px;
+  border-radius: 6px;
+  cursor: pointer;
+  touch-action: none;
+}
+.scenery-track:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+/* 天色：上半是天顶的颜色，下半是天边的 */
+.scenery-band {
+  position: absolute;
+  top: 12px;
+  left: 0;
+  width: 100%;
+  height: 12px;
+  border-radius: 6px;
+  outline: 1px solid rgb(236 238 233 / 0.12);
+  outline-offset: -1px;
+}
+.scenery-thumb {
+  position: absolute;
+  top: 2px;
+  margin-left: -16px;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.55));
+  pointer-events: none;
+}
+.scenery-tick {
+  position: absolute;
+  top: 31px;
+  transform: translateX(-50%);
+  color: var(--ui-ink-muted);
+  font-size: 11px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.scenery-readout {
+  display: grid;
+  flex: none;
+  gap: 3px;
+  width: 96px;
+  line-height: 1.2;
+}
+.scenery-readout b {
+  font-size: 19px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.scenery-readout small {
+  color: var(--ui-ink-soft);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.scenery-separator {
+  flex: none;
+  width: 1px;
+  height: 32px;
+  background: var(--ui-line-strong);
+}
+.scenery-weather {
+  display: flex;
+  gap: 4px;
+}
+.scenery-weather button:hover {
+  background: var(--ui-fill-strong);
+}
+.scenery-weather button[aria-pressed='true'] {
+  border-color: var(--ui-accent);
+  background: rgb(95 174 140 / 0.2);
+}
+@media (max-width: 859px) {
+  .scenery-bar {
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(12px, calc(env(safe-area-inset-bottom) + 8px));
+    left: max(12px, env(safe-area-inset-left));
+    width: auto;
+    max-width: none;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 10px 12px;
+    transform: none;
+  }
+  .scenery-track {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+  }
+  .scenery-readout {
+    width: 76px;
+  }
+  .scenery-readout b {
+    font-size: 17px;
+  }
+  .scenery-separator {
+    display: none;
+  }
+  .scenery-weather {
+    flex-basis: 100%;
+    justify-content: space-between;
+  }
+}
+[data-input='touch'] .scenery-bar button {
+  width: 44px;
+  height: 44px;
+}
+
+/* 收起界面：只剩风景。左上角留「显示界面」，鼠标停一会儿就淡掉，动一下、点一下画面又浮出来 */
+.map-launcher.is-bare .scenic-actions,
+.map-launcher.is-bare .scenery-bar,
+.map-launcher.is-bare .map-preview .map-zoom {
+  display: none;
+}
+.scenic-show {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top));
+  left: max(16px, env(safe-area-inset-left));
+  z-index: 6;
+  transition: opacity 0.6s;
+}
+.scenic-show.is-idle {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scenic-show {
+    transition: none;
+  }
 }

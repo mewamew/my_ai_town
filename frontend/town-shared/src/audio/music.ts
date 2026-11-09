@@ -144,8 +144,9 @@ export function createMusicController(
     }
   }
 
-  /** 选曲换了一格：立刻换、等这首放完，还是不用动 */
-  const setChoice = (next: MusicChoice) => {
+  /** 选曲换了一格：立刻换、等这首放完，还是不用动。now：换了一格就淡过去，不等这首放完
+   *  （选镇页赏景：景色是玩家自己换的，变平静也马上跟上） */
+  const setChoice = (next: MusicChoice, now = false) => {
     choice = next
     if (!enabled || blocked || document.hidden) return
     if (starting) {
@@ -159,7 +160,12 @@ export function createMusicController(
       return
     }
     const left = current.audio.duration - current.audio.currentTime
-    if (switchNow(next, current.choice, Number.isFinite(left) ? left : Infinity)) void start(true)
+    if (
+      now
+        ? next.cell !== current.choice.cell
+        : switchNow(next, current.choice, Number.isFinite(left) ? left : Infinity)
+    )
+      void start(true)
   }
 
   const stopStings = () => {

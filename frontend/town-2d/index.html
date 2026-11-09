@@ -11,15 +11,28 @@
         <div id="map-preview" class="map-preview" role="region" aria-label="地图预览"></div>
         <div id="preview-state" class="preview-state" role="status">正在加载预览…</div>
         <button id="preview-retry" class="preview-retry" hidden>重试预览</button>
-        <button
-          id="preview-scenic"
-          class="preview-scenic"
-          type="button"
-          aria-pressed="false"
-          disabled
-        >
-          赏景
+        <div class="scenic-actions">
+          <button
+            id="preview-scenic"
+            class="preview-scenic"
+            type="button"
+            aria-pressed="false"
+            disabled
+          >
+            赏景
+          </button>
+          <button id="scenic-hide" type="button" title="只留风景（H）" hidden>收起界面</button>
+        </div>
+        <button id="scenic-show" class="scenic-show" type="button" title="显示界面（H）" hidden>
+          显示界面
         </button>
+        <div
+          id="scenery-bar"
+          class="scenery-bar"
+          role="group"
+          aria-label="赏景的时刻和天气"
+          hidden
+        ></div>
       </div>
 
       <aside class="launcher-panel">
