@@ -6,9 +6,10 @@ use std::path::{Path, PathBuf};
 
 /// 随应用发的内置小镇：（编号, 应用自带的地图）。第一次运行时放进用户目录，不能删；名称和简介跟随应用版本。
 /// 列表里按这个顺序排在最前。电脑版（scripts/towns/storage.mjs 的 BUILTIN_TOWNS）是同一份名单。
-pub const BUILTIN_TOWNS: [(&str, &str); 2] = [
+pub const BUILTIN_TOWNS: [(&str, &str); 3] = [
     ("default-town", "data/maps/2d-town/map.json"),
     ("spring-valley", "data/maps/spring-valley/map.json"),
+    ("broken-towers", "data/maps/broken-towers/map.json"),
 ];
 /// 应用发布的默认地图（世界服务没指定地图时用它）。
 pub const BUILTIN_MAP: &str = BUILTIN_TOWNS[0].1;

@@ -15,8 +15,10 @@ import {
   blob,
   ellipse,
   minus,
+  own,
   poly,
   rect,
+  room,
   roomOf,
   smooth,
   spring,
@@ -462,35 +464,6 @@ town.region('outdoor_road_01', '小镇道路', 'road', dry(townArea), {
 })
 
 // ---- 房子：门开在南墙（灯塔开在北面，朝着岸上的小路） ----
-/** 自己写的内景：房间坐标里的大小、门（南墙正中往里一点）、家具和落脚点 */
-function room(width, height, props, stations = []) {
-  return {
-    bounds: { x: 0, y: 0, width, height },
-    door: [width / 2, height - 48],
-    props: props.map(([id, definition, name, x, y]) => ({
-      id,
-      definition,
-      name,
-      mark: { id, x, y, name, appearance: { glyph: 'box', color: '#b79a70' } },
-    })),
-    stations: stations.map(([id, name, activity, pose, role, x, y]) => ({
-      id,
-      name,
-      kind: 'slot',
-      activity_id: activity,
-      pose_family: pose,
-      role,
-      mark: { id, x, y },
-    })),
-  }
-}
-// 内景里的道具和落脚点要带上所在的地点
-const own = (r, locale) => ({
-  ...r,
-  props: r.props.map((p) => ({ ...p, locale })),
-  stations: r.stations.map((s) => ({ ...s, locale })),
-})
-
 // 温泉旅馆：前台、大堂茶席和座位，三张客床
 // prettier-ignore
 const inn = room(1152, 704, [

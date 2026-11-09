@@ -107,7 +107,7 @@ test('built app creates and runs a map with a read-only resource tree and no pre
     assert.equal(opened.mapHash, draft.version)
     assert.equal(
       (await fs.readdir(path.join(bundle, 'data/maps'))).sort().join(','),
-      '2d-town,spring-valley'
+      '2d-town,broken-towers,spring-valley'
     )
     const actual = JSON.parse(await fs.readFile(path.join(data, 'towns', saved.id, 'map.json')))
     assert.deepEqual(actual, draft.document)

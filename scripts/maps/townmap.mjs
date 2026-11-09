@@ -7,7 +7,10 @@
 // - 户外地点：到达点、道具和落脚点同样按编号从那份地图搬过来，整体平移到新的到达点旁边；新地点在设计里写。
 // - 海岸：陆地底稿和岛内的水写进 layout.island，由前端扭曲、冲刷、挖水（见 frontend 的 map/pixel/island.ts）；
 //   岛内的水用 spring() 包起来的是温泉（青绿的热水、黑石池沿、冒白汽，夜里透光）。
-// - 风格：environment 写地图风格（同建镇参数的 environment.preset，比如 frozen 冰封雪镇），不写是默认风格。
+// - 风格：environment 写地图风格（同建镇参数的 environment.preset，比如 frozen 冰封雪镇），不写是默认风格；
+//   worldview 是随地图带的世界观，第一次进镇时开局向导默认用它。
+// - 只看不进的楼（ruin）、按坐标立的立牌（standee）、盘旋的鸟群（flock）写进 layout 的 ruins、standees、flocks，
+//   只给画面看，不进拓扑（见 town-shared 的 mapDocument.ts）。
 // 生成后用 scripts/mapgen/document.mjs 的 seal 封摘要，再过 town-map validate。
 
 export const CELL = 24
@@ -186,6 +189,37 @@ function flatten(shape) {
   throw Error('海岸只认多边形、椭圆、矩形和带子：' + shape.t)
 }
 const round = ([x, y]) => [Math.round(x), Math.round(y)]
+/** 带子（沿折线、宽 width）的外轮廓：两侧按相邻两段的平均法线往外推半宽，两头各补半圈 */
+function bandOutline(line, width) {
+  const half = width / 2
+  const normal = (i) => {
+    const [ax, ay] = line[Math.max(0, i - 1)],
+      [bx, by] = line[Math.min(line.length - 1, i + 1)]
+    const len = Math.hypot(bx - ax, by - ay) || 1
+    return [-(by - ay) / len, (bx - ax) / len]
+  }
+  const side = (sign) =>
+    line.map(([x, y], i) => [x + normal(i)[0] * half * sign, y + normal(i)[1] * half * sign])
+  const cap = ([x, y], [nx, ny]) =>
+    [1, 2, 3].map((k) => {
+      const a = (k / 4) * Math.PI
+      // 从 +法线转到 -法线，经过路头外侧
+      const [tx, ty] = [ny, -nx]
+      return [
+        x + (nx * Math.cos(a) + tx * Math.sin(a)) * half,
+        y + (ny * Math.cos(a) + ty * Math.sin(a)) * half,
+      ]
+    })
+  const last = line.length - 1
+  const [ex, ey] = normal(last),
+    [sx, sy] = normal(0)
+  return [
+    ...side(1),
+    ...cap(line[last], [ex, ey]),
+    ...side(-1).reverse(),
+    ...cap(line[0], [-sx, -sy]),
+  ].map(round)
+}
 const length = (pts) =>
   pts.reduce((s, p, i) => (i ? s + Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) : 0), 0)
 const minutesOf = (pts) => Number((length(pts) / UNITS_PER_MINUTE).toFixed(4))
@@ -215,6 +249,36 @@ export function roomOf(source, id) {
   }
 }
 
+/** 自己写的内景：房间坐标里的大小、门（南墙正中往里一点）、家具 [编号, 定义, 名字, x, y] 和
+ *  落脚点 [编号, 名字, 活动, 姿势, 角色, x, y] */
+export function room(width, height, props, stations = []) {
+  return {
+    bounds: { x: 0, y: 0, width, height },
+    door: [width / 2, height - 48],
+    props: props.map(([id, definition, name, x, y]) => ({
+      id,
+      definition,
+      name,
+      mark: { id, x, y, name, appearance: { glyph: 'box', color: '#b79a70' } },
+    })),
+    stations: stations.map(([id, name, activity, pose, role, x, y]) => ({
+      id,
+      name,
+      kind: 'slot',
+      activity_id: activity,
+      pose_family: pose,
+      role,
+      mark: { id, x, y },
+    })),
+  }
+}
+/** 自己写的内景里的道具和落脚点要带上所在的地点 */
+export const own = (r, locale) => ({
+  ...r,
+  props: r.props.map((p) => ({ ...p, locale })),
+  stations: r.stations.map((s) => ({ ...s, locale })),
+})
+
 /** 一处地点的道具和落脚点（不含到达点），原样带着编号、名字和标记 */
 function contentsOf(source, locale) {
   const T = source.topology,
@@ -233,7 +297,7 @@ function contentsOf(source, locale) {
 
 /**
  * source 是搬内景和户外道具的那份地图文档。roads 是「小镇道路」这处地点的编号：路口和房门外都算在它里面。
- * script 是生成这张图的脚本（记在拓扑的 source 里）；environment 是地图风格（见文件头）；
+ * script 是生成这张图的脚本（记在拓扑的 source 里）；environment 是地图风格、worldview 是随图带的世界观（见文件头）；
  * entry 是新来的人落在哪（{ locale, station }），meals 是三餐，不给都照 source
  */
 export function townMap({
@@ -246,6 +310,7 @@ export function townMap({
   roads,
   script = 'scripts/maps/default-town.mjs',
   environment,
+  worldview,
   entry,
   meals,
 }) {
@@ -253,14 +318,39 @@ export function townMap({
     buildings = [],
     streets = [],
     places = [],
-    outdoor = []
+    outdoor = [],
+    ruins = [],
+    standees = [],
+    flocks = []
   const taken = new Set()
   let island = null
   const api = {
+    /** 只看不进的楼：占地矩形 [x, y, w, h]，墙高 height（贴图像素），look 同房子（屋顶色、屋面、墙面、屋顶形状） */
+    ruin(rid, [x, y, w, h], height, look) {
+      ruins.push({ id: rid, x, y, w, h, height, ...(look ? { look } : {}) })
+      return api
+    },
+    /** 按坐标立的立牌：kind 是风格包 plans 里的名字；flip 左右翻，on 是蹲到哪栋房子或楼的墙顶上 */
+    standee(kind, [x, y], { flip, on } = {}) {
+      standees.push({
+        kind,
+        x: Math.round(x),
+        y: Math.round(y),
+        ...(flip ? { flip: true } : {}),
+        ...(on ? { on } : {}),
+      })
+      return api
+    },
+    /** 在 (x, y) 上空、离地 height（地图单位）盘旋的 count 只鸟 */
+    flock([x, y], height, count) {
+      flocks.push({ x, y, height, count })
+      return api
+    },
     /** 陆地底稿和岛内的水，冲刷参数见前端的 IslandDesign */
     island(land, water, shape = {}) {
       island = {
-        land: flatten(land).map((p) => p.polygon),
+        // 陆地只认多边形：带子（伸进海里的旧堤）换成它的外轮廓
+        land: flatten(land).map((p) => p.polygon ?? bandOutline(p.line, p.width)),
         water: flatten(water),
         ...shape,
       }
@@ -268,7 +358,8 @@ export function townMap({
     },
     /** 一块室外区域，先登记的先占格子。place 给了就是一处地点：type、summary、features 是地点的类型、简介、
      *  看得见的东西；arrival 是到达点（station、node 是它落脚点和节点的编号），onRoad 给了且离路不到这么远时
-     *  到达点就落在路上；from 是来源地图里搬道具和落脚点的地点，at 按编号指定其中几件的位置；
+     *  到达点就落在路上；from 是来源地图里搬道具和落脚点的地点，at 按编号指定其中几件的位置，
+     *  rename 为 true 时道具名字里原来的地名换成新地名；
      *  props 是新添的道具 { id, definition, name, at }，stations 是新添的落脚点 { id, name, at, activity, pose, role }；
      *  landmark 指定立什么地标（风格包 plans 里的名字），不给按 kind */
     region(rid, rname, kind, shape, { decor, facing, landmark, place } = {}) {
@@ -366,6 +457,7 @@ export function townMap({
         roads,
         script,
         environment,
+        worldview,
         entry,
         meals,
         island,
@@ -374,6 +466,9 @@ export function townMap({
         streets,
         places,
         outdoor,
+        ruins,
+        standees,
+        flocks,
       })
     },
   }
@@ -631,11 +726,18 @@ function assemble(m) {
           Math.round(y - oldArrival.y + o.arrival[1]),
         ]
       }
+      // rename：搬过来的道具名字带着原来的地名（「中心广场公告栏」），换成新地名
+      const renamed = (named) =>
+        o.rename && named.name !== undefined
+          ? { ...named, name: named.name.replaceAll(oldPlace.name, placeName.get(o.locale)) }
+          : named
       for (const p of old.props) {
         const { mark, ...prop } = p
         const [x, y] = shift([mark.x, mark.y], p.id)
-        props.push({ ...prop, locale: o.locale })
-        layoutProps.push({ ...mark, x, y, place_name: placeName.get(o.locale), space: OUTDOOR })
+        props.push(renamed({ ...prop, locale: o.locale }))
+        layoutProps.push(
+          renamed({ ...mark, x, y, place_name: placeName.get(o.locale), space: OUTDOOR })
+        )
       }
       for (const s of old.stations) {
         const { mark, ...station } = s
@@ -763,6 +865,9 @@ function assemble(m) {
     })),
     stations: layoutStations,
     props: layoutProps,
+    ...(m.ruins.length ? { ruins: m.ruins } : {}),
+    ...(m.standees.length ? { standees: m.standees } : {}),
+    ...(m.flocks.length ? { flocks: m.flocks } : {}),
   }
   return {
     schema_version: 1,
@@ -773,6 +878,7 @@ function assemble(m) {
     style_id: 'svg-town-v1',
     style_version: 1,
     ...(m.environment ? { environment: m.environment } : {}),
+    ...(m.worldview ? { worldview: m.worldview } : {}),
     topology,
     layout,
   }

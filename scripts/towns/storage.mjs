@@ -11,6 +11,7 @@ export const readJson = async (p) => JSON.parse(await fs.readFile(p, 'utf8'))
 export const BUILTIN_TOWNS = [
   { id: 'default-town', map: 'data/maps/2d-town/map.json' },
   { id: 'spring-valley', map: 'data/maps/spring-valley/map.json' },
+  { id: 'broken-towers', map: 'data/maps/broken-towers/map.json' },
 ]
 const builtinMap = (id) => BUILTIN_TOWNS.find((town) => town.id === id)?.map
 // 旧 3D 地图仍留在用户目录；列表隐藏，直接打开也拒绝，避免误当 HD-2D 运行。
