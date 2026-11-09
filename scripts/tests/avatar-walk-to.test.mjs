@@ -26,9 +26,9 @@ test('实际地图上能绕开碎掉的可走面，并穿门进屋', () => {
   )
   const started = Date.now()
   const routes = new WalkRoutes(map.layout, map.topology, 12, false)
-  const garden = { space: 'town_outdoor', position: [3396 / 12, 2772 / 12] }
-  const plaza = { space: 'town_outdoor', position: [3250 / 12, 2050 / 12] }
-  const harbor = { space: 'town_outdoor', position: [5766 / 12, 3114 / 12] }
+  const garden = { space: 'town_outdoor', position: [3170 / 12, 4160 / 12] }
+  const plaza = { space: 'town_outdoor', position: [3800 / 12, 2790 / 12] }
+  const harbor = { space: 'town_outdoor', position: [5480 / 12, 4560 / 12] }
   const cafe = { space: 'indoor_flower_cafe', position: [432 / 12, 912 / 12] }
 
   const toPlaza = routes.find(garden, plaza)
