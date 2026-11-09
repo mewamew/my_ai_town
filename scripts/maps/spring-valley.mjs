@@ -368,7 +368,7 @@ town.region('outdoor_ice_fishing_01', '冰钓场', 'area', ellipse(6800, 4700, 3
 })
 // 雪橇坡：东北林子前的一片坡地，雪橇、雪人
 town.region('outdoor_sled_slope_01', '雪橇坡', 'park', blob(7050, 2350, 420, 400, 51, 0.12), {
-  decor: 'lawn',
+  decor: 'clearing',
   landmark: 'sledding',
   place: {
     type: PUBLIC,

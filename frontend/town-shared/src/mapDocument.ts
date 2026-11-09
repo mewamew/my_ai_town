@@ -38,9 +38,10 @@ export interface Atlas {
     cell_size: number
     cells: [number, number][]
     label_anchor?: [number, number]
-    /** 只管样子的区域：woods 成片的林子、allee 一排排的树（行道树、河边柳）、lawn 草坪公园（树稀、少灌木）。
+    /** 只管样子的区域：woods 成片的林子、allee 一排排的树（行道树、河边柳）、lawn 草坪公园（树稀、少灌木）、
+     *  clearing 空地（不种树，只零星几丛草，雪橇坡这类）。
      *  有 decor 的区域不摆这类地点自带的标志物（凉亭、花拱门）；没有名字的区域不标名字 */
-    decor?: 'woods' | 'allee' | 'lawn'
+    decor?: 'woods' | 'allee' | 'lawn' | 'clearing'
     /** 港口朝海的方向（横竖之一）；不给时从镇子中心指向港口算 */
     facing?: [number, number]
     /** 这处户外地点立什么地标：风格包 landmarks.plans 里的名字（如冰雪的 icefishing 冰钓场、sledding 雪橇坡），

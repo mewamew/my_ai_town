@@ -12132,7 +12132,7 @@
           [292, 115]
         ],
         "kind": "park",
-        "decor": "lawn",
+        "decor": "clearing",
         "landmark": "sledding"
       },
       {
@@ -58406,5 +58406,5 @@
       }
     ]
   },
-  "content_hash": "d657cb06d416d8992df888a3cb855873efc53717abcf88b7e56cc5ca086181e2"
+  "content_hash": "87634ad83859dc1ff720e8c924a8a13c88706fbc8eb22aadc596978165f67ca8"
 }

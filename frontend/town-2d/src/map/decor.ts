@@ -215,12 +215,14 @@ function planWater(atlas: Atlas, near: Obstacles) {
 }
 
 /** 各种区域里撒东西的比例：里面的树、灌木、草，边上的花丛或灌木（edge）和草（edgeGrass），
- *  边上种灌木还是花（edgeBush）。行道树种得密，连成一排；草坪公园树稀、几乎不长灌木，边上种花 */
+ *  边上种灌木还是花（edgeBush）。行道树种得密，连成一排；草坪公园树稀、几乎不长灌木，边上种花；
+ *  空地不种树，只零星几丛草 */
 const PLANTING = {
   garden: { tree: 0.07, bush: 0.1, grass: 0.22, edge: 0.16, edgeGrass: 0.2, edgeBush: false },
   park: { tree: 0.13, bush: 0.1, grass: 0.22, edge: 0.12, edgeGrass: 0.2, edgeBush: true },
   allee: { tree: 0.45, bush: 0.1, grass: 0.22, edge: 0.12, edgeGrass: 0.2, edgeBush: true },
   lawn: { tree: 0.035, bush: 0.015, grass: 0.065, edge: 0.07, edgeGrass: 0.06, edgeBush: false },
+  clearing: { tree: 0, bush: 0, grass: 0.03, edge: 0.03, edgeGrass: 0.04, edgeBush: false },
 }
 
 /** 一个公园或花园里的植被：里面撒树、灌木和草，边上是花丛（花园、草坪）或灌木（公园、林子） */
@@ -231,7 +233,7 @@ function regionVegetation(r: Region, water: Map<string, Cell[]>, { nearRoad, nea
   const set = new Set(r.cells.map(([c, rr]) => keyOf(c, rr)))
   const waterCells = new Set((water.get(r.id) ?? []).map(([c, rr]) => keyOf(c, rr)))
   const P =
-    r.decor === 'allee' || r.decor === 'lawn'
+    r.decor === 'allee' || r.decor === 'lawn' || r.decor === 'clearing'
       ? PLANTING[r.decor]
       : r.kind === 'park'
         ? PLANTING.park

@@ -731,7 +731,10 @@ function openGround(atlas: Atlas, L: Layers) {
     const kind = L.kindAt(i)
     if (wet[i] || path[i] || quay[i] || rocks[i] || L.clear[i] || beach(L, i) || PAVED.has(kind))
       continue
-    open[i] = (L.decorAt(i) === 'lawn' ? OPEN.lawn : OPEN_KINDS[kind]) ?? OPEN.town
+    const decor = L.decorAt(i)
+    open[i] =
+      (decor === 'clearing' ? OPEN.none : decor === 'lawn' ? OPEN.lawn : OPEN_KINDS[kind]) ??
+      OPEN.town
   }
   for (const s of atlas.spaces) {
     if (s.id === OUTDOOR_SPACE) continue
