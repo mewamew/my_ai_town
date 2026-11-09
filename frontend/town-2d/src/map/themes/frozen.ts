@@ -23,6 +23,8 @@ const home: BuildingStyle = {
   roofing: 'snow',
   icicles: true,
   chimney: 'always',
+  // 冬天家家生着炉子：有烟囱的都冒烟
+  smoke: true,
   windows: 'frost',
   door: 'single',
 }
@@ -186,7 +188,8 @@ export const frozen: MapTheme = {
   ground: {
     grass: ['#b4c2d0', '#c6d2de', '#d6e0e9', '#e4ebf1', '#f1f5f8'],
     park: ['#aebed0', '#bccadb', '#cad6e4', '#dae4ee', '#eaf0f6'],
-    dirt: ['#9ea2a8', '#acb0b6', '#babec4', '#c8ccd2'],
+    // 扫过雪的路面：暖灰，和冷白的雪地拉开，镇子的骨架一眼看得见
+    dirt: ['#8e8a85', '#9a9690', '#a6a29b', '#b2aea7'],
     pebble: [SNOW_GREY, '#7e7a78'],
     plaza: ['#8a8e96', '#969aa2', '#80848c', '#a0a4ac'],
     plazaLine: '#e6edf2',

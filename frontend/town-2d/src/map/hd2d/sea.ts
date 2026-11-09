@@ -306,11 +306,12 @@ const ICE = /* glsl */ `
   band = clamp(band, 0.0, 5.0);
   vec3 c = band < 1.0 ? uBand[0] : band < 2.0 ? uBand[1] : band < 3.0 ? uBand[2]
     : band < 4.0 ? uBand[3] : band < 5.0 ? uBand[4] : uBand[5];
-  // 积雪：大片横向拉长的白，边缘柔和，不碎成小块
-  float snow = seaNoise(cell / vec2(110.0, 60.0) + 3.0) * 0.85 + seaNoise(cell / 34.0 + 9.0) * 0.15;
-  if (snow > 0.64) c = mix(c, uSalt, snow > 0.68 ? 0.7 : 0.35);
-  // 风吹雪纹：顺着东西向的细长淡痕，只在没有积雪的冰面上
-  if (snow <= 0.64 && seaNoise(vec2(cell.x / 45.0, cell.y / 1.8) + 50.0) > 0.78) c = mix(c, uSalt, 0.22);
+  // 积雪：一片片横向拉长的小雪斑，稀稀落落，冰面大半露着
+  float snow = seaNoise(cell / vec2(46.0, 21.0) + 3.0) * 0.8 + seaNoise(cell / 14.0 + 9.0) * 0.2;
+  if (snow > 0.72) c = mix(c, uSalt, snow > 0.76 ? 0.6 : 0.3);
+  // 风吹雪纹：顺着东西向的细长淡痕，一道道断断续续，铺在没有积雪的冰面上
+  float streak = seaNoise(vec2(cell.x / 60.0, cell.y / 1.6) + 50.0);
+  if (snow <= 0.72 && streak > 0.72) c = mix(c, uSalt, streak > 0.8 ? 0.34 : 0.18);
   // 近岸碎浮冰：离岸越近冰块越小，块与块之间露出深色水缝，往外合成整片冰
   if (d > 1.5 && d < 30.0) {
     float near = 1.0 - (d - 1.5) / 28.5;
@@ -326,10 +327,12 @@ const ICE = /* glsl */ `
     c = block > 0.55 ? mix(c, uSalt, 0.85) : block > 0.2 ? c * 0.82 : c;
   }
   if (d < 1.5) c = uSalt;
-  // 冰面也映一点岸上的灯和房子，比水淡
+  // 冰面只映岸上的灯：比冰面亮得多的倒影才映出来。房子、树的倒影在毛玻璃似的冰上只剩一块块
+  // 半透明的长方形（月影村冰面上那几块就是它），不映
   if (uReflAmount > 0.0) {
     vec4 r = reflectionAt(vec3(vSeaPos.x, 0.0, vSeaPos.y), vec2(0.0));
-    c = mix(c, r.rgb, uReflAmount * 0.35 * r.a);
+    float lr = dot(r.rgb, vec3(0.3, 0.59, 0.11)), lc = dot(c, vec3(0.3, 0.59, 0.11));
+    c = mix(c, r.rgb, uReflAmount * 0.35 * r.a * smoothstep(1.2, 2.2, lr / max(lc, 0.03)));
   }
   // 冰面反光：稀疏的亮点，隔一会儿换一处
   if (seaHash(cell + vec2(seaTick(3.0) * 7.0, 1.0)) > 0.9985) c = vec3(1.0);

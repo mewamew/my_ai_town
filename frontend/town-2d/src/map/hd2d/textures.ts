@@ -7,13 +7,13 @@ import { ICE, LAMP_GLOW, SNOW, SNOW_GREY, SNOW_SHADE } from '../palette'
 
 // 立体场景用到的像素贴图，全部在画布上逐像素画出。
 
-/** 墙面的中间一档颜色：拱顶两头、掀开屋顶后的外墙用它；集装箱和刷漆木板按房子编号挑漆色 */
+/** 墙面的中间一档颜色：拱顶两头、掀开屋顶后的外墙用它；集装箱按房子编号挑漆色，刷漆木板用房子的漆色 */
 export function wallBase(house: House) {
   const { style, seed, walls } = house
   return style === 'container'
     ? walls.containers[seed % walls.containers.length][1]
     : style === 'painted'
-      ? walls.paints[seed % walls.paints.length][1]
+      ? house.paint[1]
       : house.wallShades[1]
 }
 /** 墙面夜里的微光是窗户亮度的几分之一 */
@@ -86,7 +86,7 @@ function wallColor(house: House, i: number, j: number) {
     }
     case 'painted': {
       // 竖木板，四格一条板缝，每块板漆色略有深浅
-      const paint = W.paints[seed % W.paints.length]
+      const paint = house.paint
       if (i % 4 === 3) return mixHex(paint[1], '#000000', 0.3)
       return paint[Math.floor(hash(i >> 2, Math.floor(j / 11), seed) * 3)]
     }

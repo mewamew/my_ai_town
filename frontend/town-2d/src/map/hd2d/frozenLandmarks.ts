@@ -9,6 +9,7 @@ import {
   roseArch,
   stall,
   temple,
+  type Flipbook,
   type LandmarkSet,
 } from './landmarks'
 import { snowCap, sprite, stone } from './sprite'
@@ -217,6 +218,39 @@ function woodstack() {
   })
 }
 
+/** 雪灯：雪堆成的小灯笼，正面掏一个小窗，里面点着蜡烛；夜里窗口透出暖光（自发光图） */
+function snowLantern(seed: number): Flipbook {
+  const W = 10,
+    H = 13
+  const body = (
+    px: (x: number, y: number, c: string) => void,
+    rect: (x: number, y: number, w: number, h: number, c: string) => void
+  ) => {
+    // 顶上一个小雪球，下面一个圆鼓鼓的灯身，底座压着雪
+    for (let y = 0; y < 3; y++)
+      for (let x = 3; x < 7; x++)
+        if (!((y === 0 || y === 2) && (x === 3 || x === 6))) px(x, y, x > 4 ? SNOW_SHADE : SNOW)
+    for (let y = 3; y < 11; y++) {
+      const half = y < 5 ? 4 : y < 9 ? 5 : 4
+      for (let x = 5 - half; x < 5 + half; x++) px(x, y, x >= 6 ? SNOW_SHADE : SNOW)
+    }
+    rect(0, 11, W, 2, SNOW)
+    rect(1, 12, W - 2, 1, SNOW_SHADE)
+  }
+  const flame = hash(seed, 2, 31) < 0.5 ? '#ffcf6a' : '#ffb85a'
+  const canvas = sprite(W, H, ({ px, rect }) => {
+    body(px, rect)
+    // 掏出来的小窗：深色的洞，里面一点烛光
+    rect(3, 5, 4, 4, '#5a4a40')
+    rect(4, 6, 2, 3, flame)
+  })
+  const glow = sprite(W, H, ({ rect }) => {
+    rect(3, 5, 4, 4, '#a0602a')
+    rect(4, 6, 2, 3, '#ffd88a')
+  })
+  return { canvas, glow, frames: 1, fps: 1 }
+}
+
 /** 露出雪面的一块大石头 */
 function snowRock(seed: number) {
   return sprite(12, 8, ({ px }) => {
@@ -239,10 +273,15 @@ export const FROZEN_LANDMARKS: LandmarkSet = {
     fountain: () => [[frozenFountain(), 0, -4]],
     temple: (seed) => [[snowCap(temple(), seed), 0, -6]],
     court: (seed) => [[snowCap(court(), seed), 0, -8]],
+    // 市集：三个压雪的棚子，摊前一排雪灯
     market: (seed) => [
       [snowCap(stall(seed), seed), -30, -10],
       [snowCap(stall(seed + 1), seed + 1), 0, -14],
       [snowCap(stall(seed + 2), seed + 2), 30, -10],
+      [snowLantern(seed), -38, 8],
+      [snowLantern(seed + 1), -13, 6],
+      [snowLantern(seed + 2), 13, 6],
+      [snowLantern(seed + 3), 38, 8],
     ],
     garden: (seed) => [[snowCap(roseArch(true), seed), 0, -8]],
     park: (seed) => [[snowCap(gazebo(), seed), 0, -6]],

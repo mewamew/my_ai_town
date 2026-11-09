@@ -65,8 +65,15 @@ export interface Atlas {
     door_outside?: [number, number]
     door_inside_local?: [number, number]
     /** 指定这栋房子的样子（手绘的内置地图按街区配色）：屋顶三色（亮、中、暗）、屋面、墙面、屋顶形状，
+     *  刷漆木板墙（wall 为 painted）的漆色三档（中、暗、亮，同 walls.ts 的 paints），
      *  取值同 town-2d 的 map/buildings.ts；不给的照风格包按编号挑 */
-    look?: { roof?: [string, string, string]; roofing?: string; wall?: string; shape?: string }
+    look?: {
+      roof?: [string, string, string]
+      roofing?: string
+      wall?: string
+      shape?: string
+      paint?: [string, string, string]
+    }
   }[]
   stations: { id: string; space: string; x: number; y: number }[]
   props: {

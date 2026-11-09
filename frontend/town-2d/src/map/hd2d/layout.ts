@@ -81,6 +81,8 @@ export interface House {
   walls: WallColors
   /** 这栋房子墙面材质的三档底色：住宅在风格包的颜色上按编号微调 */
   wallShades: readonly [string, string, string]
+  /** 刷漆木板墙的漆色（中、暗、亮）：地图指定了用指定的，不然按街区挑（见 paintOf） */
+  paint: readonly [string, string, string]
   /** 屋顶三色（亮、中、暗） */
   roof: readonly string[]
   roofing: Roofing
@@ -191,6 +193,19 @@ function roofShape(
   return shape
 }
 
+/** 刷漆木板墙按街区挑漆色：地图按 DISTRICT 见方分成一块块街区，每块从风格包的漆色里挑两种，
+ *  街区里的房子按编号在这两种里挑，一片人家颜色成片，不再家家随机 */
+const DISTRICT = 1600
+function paintOf(walls: WallColors, x: number, y: number, seed: number, wanted?: string[]) {
+  if (wanted?.length === 3) return wanted as [string, string, string]
+  const { paints } = walls
+  const dx = Math.floor(x / DISTRICT),
+    dy = Math.floor(y / DISTRICT)
+  const a = Math.floor(hash(dx, dy, 23) * paints.length)
+  const b = (a + 1 + Math.floor(hash(dx, dy, 24) * (paints.length - 1))) % paints.length
+  return paints[hash(seed, 25, 7) < 0.5 ? a : b]
+}
+
 /** 房间的外观：功能从名字判断，这种功能长什么样按风格包；住宅没指定屋顶色时按编号挑一种，
  *  屋顶形状、窗型、门漆也按编号挑。地图给了 look（手绘的内置地图按街区配色）就照它的屋顶色、屋面、
  *  墙面和屋顶形状，屋顶和住宅的墙色照样按编号微调明暗 */
@@ -234,6 +249,7 @@ export function houseOf(s: Space, theme: MapTheme): House {
     style,
     walls: theme.walls,
     wallShades: homeRoof ? nudge(shades, seed, 11, 0.05, WALL_TINTS) : shades,
+    paint: paintOf(theme.walls, x + w / 2, y + h / 2, seed, s.look?.paint),
     roof: roofColors
       ? nudge(roofColors, seed, 13, 0.09, ROOF_TINTS)
       : (look.roof ?? nudge(homeRoof!.colors, seed, 13, 0.09, ROOF_TINTS)),
