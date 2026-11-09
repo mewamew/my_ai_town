@@ -34,7 +34,8 @@ import {
 } from 'town-shared/models/builtin'
 import { createBuiltinRows } from 'town-shared/models/builtinRows'
 import { onBack } from 'town-shared/platform'
-import { BUILTIN, PRESETS } from 'town-shared/providers'
+import { BUILTIN, PRESETS, quickModelNames } from 'town-shared/providers'
+import type { ModelChoice } from 'town-shared/protocol'
 import { settingRow } from 'town-shared/settings/controls'
 import { createDisplayPage } from 'town-shared/settings/display'
 import { createSoundPage } from 'town-shared/settings/sound'
@@ -164,11 +165,7 @@ export function installHomeSettings(deps: { music: { enabled(): boolean; toggle(
     el('h2', '模型服务'),
     el('p', '村民靠它思考。密钥只保存在这台设备上，所有小镇共用。', 'hint'),
     modelRows,
-    el(
-      'p',
-      '火山方舟、Ollama、自定义地址这些要填模型名的服务，进入小镇后在「设定 · 模型服务」里配置。',
-      'hs-note'
-    ),
+    el('p', 'Ollama、自定义地址等服务，进入小镇后在「设定 · 模型服务」里配置。', 'hs-note'),
     status
   )
   const toolRows = el('div', '', 'set-rows')
@@ -236,28 +233,29 @@ export function installHomeSettings(deps: { music: { enabled(): boolean; toggle(
     }
     const choose = el('select')
     choose.setAttribute('aria-label', '建镇用的模型')
+    const choices: ModelChoice[] = []
     for (const p of usable) {
-      const model =
-        config?.active?.provider === p.id
-          ? config.active.model
-          : (PRESETS.find((x) => x.id === p.id)?.defaultModel ?? '')
-      choose.append(new Option(`${p.name} · ${model}`, p.id))
+      const current = config?.active?.provider === p.id ? config.active.model : undefined
+      for (const model of quickModelNames(p.id, current)) {
+        const selected = config?.active?.provider === p.id && config.active.model === model
+        choose.append(new Option(`${p.name} · ${model}`, String(choices.length), false, selected))
+        choices.push({ provider: p.id, model })
+      }
     }
-    choose.value = config?.active?.provider ?? ''
-    choose.onchange = () => void saveTool(choose.value)
+    choose.onchange = () => {
+      const choice = choices[Number(choose.value)]
+      if (choice) void saveTool(choice)
+    }
     toolRows.replaceChildren(settingRow('一句话建镇时理解你的描述', '只在建镇时调用一次', choose))
   }
 
-  async function saveTool(provider: string) {
+  async function saveTool(choice: ModelChoice) {
     const config = transport.config()
     if (!config) return
-    const preset = PRESETS.find((p) => p.id === provider)
-    const model =
-      config.active?.provider === provider ? config.active.model : (preset?.defaultModel ?? '')
     status.textContent = '保存中…'
     try {
       await transport.save({
-        active: { provider, model },
+        active: choice,
         providers: config.providers.map(({ id, name, base_url }) => ({ id, name, base_url })),
         keys: [],
       })

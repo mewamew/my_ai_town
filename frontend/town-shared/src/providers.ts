@@ -9,6 +9,8 @@ export interface ProviderPreset {
   needsKey: boolean
   models: string[]
   defaultModel: string
+  /** 聚合平台要在快捷选择里同时列出的模型；普通服务只列当前或默认模型。 */
+  quickModels?: string[]
 }
 
 export const PRESETS: ProviderPreset[] = [
@@ -58,8 +60,9 @@ export const PRESETS: ProviderPreset[] = [
     name: '火山方舟',
     baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     needsKey: true,
-    models: [],
-    defaultModel: '',
+    models: ['doubao-seed-2-1-turbo-260628', 'glm-5-3-flash-260828'],
+    defaultModel: 'doubao-seed-2-1-turbo-260628',
+    quickModels: ['doubao-seed-2-1-turbo-260628', 'glm-5-3-flash-260828'],
   },
   {
     id: 'alibaba-bailian',
@@ -136,6 +139,14 @@ export const PRESETS: ProviderPreset[] = [
     defaultModel: '小镇村民',
   },
 ]
+
+/** 首页和请村民时共用候选，保留玩家手填的当前模型。 */
+export function quickModelNames(provider: string, current?: string): string[] {
+  const preset = PRESETS.find((p) => p.id === provider)
+  return [
+    ...new Set([current, ...(preset?.quickModels ?? [current ?? preset?.defaultModel])]),
+  ].filter((model): model is string => !!model)
+}
 
 /** 内置模型：不用地址和密钥，只给村民过日子用，不写人设、不建镇 */
 export const BUILTIN = 'builtin'

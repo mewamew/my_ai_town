@@ -4,7 +4,7 @@
 import type { Receipt, SaveCommand } from '../connection'
 import { newId } from '../ids'
 import type { ClientMsg, ModelChoice, ServerMsg } from '../protocol'
-import { PRESETS } from '../providers'
+import { PRESETS, quickModelNames } from '../providers'
 import type { ShellPanel } from '../shell/panel'
 import {
   connectModel,
@@ -91,7 +91,7 @@ export function createModelSession(deps: {
 
   const providerName = (id: string) =>
     config?.providers.find((p) => p.id === id)?.name || PRESETS.find((p) => p.id === id)?.name || id
-  /** 能用的模型：设定里选的那个排第一，其余每个能用的服务各出它的默认模型 */
+  /** 当前模型排第一，聚合平台同时列出预置的快捷候选。 */
   function options(): ModelOption[] {
     if (!config) return []
     const list: ModelOption[] = []
@@ -100,9 +100,11 @@ export function createModelSession(deps: {
     if (active && usable.some((p) => p.id === active.provider))
       list.push({ ...active, name: providerName(active.provider) })
     for (const p of usable) {
-      const model = PRESETS.find((x) => x.id === p.id)?.defaultModel
-      if (model && !list.some((o) => o.provider === p.id))
-        list.push({ provider: p.id, model, name: providerName(p.id) })
+      const current = active?.provider === p.id ? active.model : undefined
+      for (const model of quickModelNames(p.id, current)) {
+        if (!list.some((o) => o.provider === p.id && o.model === model))
+          list.push({ provider: p.id, model, name: providerName(p.id) })
+      }
     }
     return list
   }
