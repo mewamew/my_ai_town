@@ -183,24 +183,39 @@ function planWater(atlas: Atlas, near: Obstacles) {
     if (!r.cells.length) continue
     let cells: Cell[] | undefined
     if (r.kind === 'harbor') {
-      const facing = harborFacing(r, center)
+      const facing = r.facing ?? harborFacing(r, center)
       harbors.set(r.id, facing)
       cells = harborWater(r, facing, near)
-    } else if (r.kind === 'park') cells = parkPond(r, rng(hashString(r.id) ^ 0x51ab3c), near)
+    } else if (r.kind === 'park' && (!r.decor || r.decor === 'lawn'))
+      cells = parkPond(r, rng(hashString(r.id) ^ 0x51ab3c), near)
     if (cells) water.set(r.id, cells)
   }
   return { water, harbors }
 }
 
-/** 一个公园或花园里的植被：里面撒树、灌木和草，边上是花丛（花园）或灌木（公园） */
+/** 各种区域里撒东西的比例：里面的树、灌木、草，边上的花丛或灌木（edge）和草（edgeGrass），
+ *  边上种灌木还是花（edgeBush）。行道树种得密，连成一排；草坪公园树稀、几乎不长灌木，边上种花 */
+const PLANTING = {
+  garden: { tree: 0.07, bush: 0.1, grass: 0.22, edge: 0.16, edgeGrass: 0.2, edgeBush: false },
+  park: { tree: 0.13, bush: 0.1, grass: 0.22, edge: 0.12, edgeGrass: 0.2, edgeBush: true },
+  allee: { tree: 0.45, bush: 0.1, grass: 0.22, edge: 0.12, edgeGrass: 0.2, edgeBush: true },
+  lawn: { tree: 0.035, bush: 0.015, grass: 0.065, edge: 0.07, edgeGrass: 0.06, edgeBush: false },
+}
+
+/** 一个公园或花园里的植被：里面撒树、灌木和草，边上是花丛（花园、草坪）或灌木（公园、林子） */
 function regionVegetation(r: Region, water: Map<string, Cell[]>, { nearRoad, nearPoi }: Obstacles) {
   const vegetation: DecorVeg[] = []
   const random = rng(hashString(r.id) ^ 0x9e3779b9)
   const cs = r.cell_size
   const set = new Set(r.cells.map(([c, rr]) => keyOf(c, rr)))
   const waterCells = new Set((water.get(r.id) ?? []).map(([c, rr]) => keyOf(c, rr)))
-  const isPark = r.kind === 'park'
-  const treeP = isPark ? 0.13 : 0.07
+  const P =
+    r.decor === 'allee' || r.decor === 'lawn'
+      ? PLANTING[r.decor]
+      : r.kind === 'park'
+        ? PLANTING.park
+        : PLANTING.garden
+  const treeP = P.tree
   for (const [c, rr] of r.cells) {
     if (waterCells.has(keyOf(c, rr))) continue
     const cx = c * cs + cs / 2 + (random() - 0.5) * cs * 0.7
@@ -223,17 +238,17 @@ function regionVegetation(r: Region, water: Map<string, Cell[]>, { nearRoad, nea
       if (roll < treeP) {
         if (nearPoi(cx, cy, 85) || nearRoad(cx, cy, 55)) continue
         plant(`tree${Math.floor(random() * 3)}` as DecorVeg['kind'], 0.85, 0.6)
-      } else if (roll < treeP + 0.1) {
+      } else if (roll < treeP + P.bush) {
         if (nearPoi(cx, cy, 45)) continue
         plant('bush', 0.8, 0.5)
-      } else if (roll < treeP + 0.32) plant('grass', 0.9, 0.5)
+      } else if (roll < treeP + P.bush + P.grass) plant('grass', 0.9, 0.5)
     } else {
-      // 边缘：花丛（花园）/ 灌木（公园）
-      const p = isPark ? 0.12 : 0.16
+      // 边缘：花丛（花园、草坪）/ 灌木（公园、林子、行道树）
+      const p = P.edge
       if (roll < p) {
         if (nearPoi(cx, cy, 40) || nearRoad(cx, cy, 30)) continue
-        plant(isPark ? 'bush' : 'flowers', 0.75, 0.45)
-      } else if (roll < p + 0.2) plant('grass', 0.9, 0.4)
+        plant(P.edgeBush ? 'bush' : 'flowers', 0.75, 0.45)
+      } else if (roll < p + P.edgeGrass) plant('grass', 0.9, 0.4)
     }
   }
   return vegetation

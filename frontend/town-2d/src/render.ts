@@ -660,8 +660,9 @@ export class TownMap {
         height: height * 1.2,
       }
     } else {
+      // 没有名字的铺装（河堤）不是地点，镜头不对着它
       const plazas = atlas.regions.filter(
-        (region) => region.kind === 'plaza' && region.cells.length
+        (region) => region.kind === 'plaza' && region.name && region.cells.length
       )
       const plaza = plazas.sort(
         (a, b) => b.cells.length * b.cell_size ** 2 - a.cells.length * a.cell_size ** 2

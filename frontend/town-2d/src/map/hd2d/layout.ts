@@ -3,6 +3,10 @@ import { PIXEL, roomRect } from '../grid'
 import { hash, hashString, mixHex } from '../pixel/noise'
 import {
   buildingKind,
+  oneOf,
+  ROOF_SHAPES,
+  ROOFINGS,
+  WALL_STYLES,
   type BuildingKind,
   type BuildingStyle,
   type RoofShape,
@@ -173,25 +177,33 @@ function nudge(
   ) as [string, string, string]
 }
 
-/** 屋顶形状：风格给了几种就按编号挑；十字脊和老虎窗只放在横长的房子上，不够横长就退成四坡或山墙朝街 */
-function roofShape(look: BuildingStyle, seed: number, w: number, h: number): RoofShape {
-  const shape = look.roofs ? choose(look.roofs, seed, 3) : 'gable'
+/** 屋顶形状：地图指定了就用它，不然风格给了几种就按编号挑；十字脊和老虎窗只放在横长的房子上，
+ *  不够横长就退成四坡或山墙朝街 */
+function roofShape(
+  look: BuildingStyle,
+  seed: number,
+  w: number,
+  h: number,
+  wanted?: RoofShape
+): RoofShape {
+  const shape = wanted ?? (look.roofs ? choose(look.roofs, seed, 3) : 'gable')
   if ((shape === 'cross' || shape === 'dormer') && w < h * 1.15) return w < h ? 'front' : 'hip'
   return shape
 }
 
 /** 房间的外观：功能从名字判断，这种功能长什么样按风格包；住宅没指定屋顶色时按编号挑一种，
- *  屋顶形状、窗型、门漆也按编号挑 */
+ *  屋顶形状、窗型、门漆也按编号挑。地图给了 look（手绘的内置地图按街区配色）就照它的屋顶色、屋面、
+ *  墙面和屋顶形状，屋顶和住宅的墙色照样按编号微调明暗 */
 export function houseOf(s: Space, theme: MapTheme): House {
   const { x, y, w, h } = roomRect(s)
   const seed = hashString(s.id)
   const kind = buildingKind(s)
   const look = theme.buildings[kind]
-  const style = look.walls[seed % look.walls.length]
+  const style = oneOf(WALL_STYLES, s.look?.wall) ?? look.walls[seed % look.walls.length]
   const wallTexels = look.height + Math.floor(hash(seed, 1, 2) * 5)
   // 有多种形状可挑时坡度也错开，相邻房子的屋脊高低不齐
   const vary = look.roofs && look.roofs.length > 1 ? 0.9 + hash(seed, 4, 7) * 0.4 : 1
-  let shape = roofShape(look, seed, w, h)
+  let shape = roofShape(look, seed, w, h, oneOf(ROOF_SHAPES, s.look?.shape))
   const alongX = shape === 'front' ? false : shape === 'gable' || shape === 'hip' ? w >= h : true
   // 默认俯角下屋脊在屏幕上高出墙顶的像素数，取屋脊两侧进深的一部分并设上限
   const depth = (alongX ? h : w) / PIXEL
@@ -204,6 +216,7 @@ export function houseOf(s: Space, theme: MapTheme): House {
   }
   // 没指定屋顶色的是住宅：配色按编号挑，屋顶和墙的颜色再按编号微调
   const homeRoof = look.roof ? undefined : theme.homeRoofs[seed % theme.homeRoofs.length]
+  const roofColors = s.look?.roof?.length === 3 ? s.look.roof : undefined
   const shades = theme.walls.shades[style]
   return {
     id: s.id,
@@ -221,8 +234,14 @@ export function houseOf(s: Space, theme: MapTheme): House {
     style,
     walls: theme.walls,
     wallShades: homeRoof ? nudge(shades, seed, 11, 0.05, WALL_TINTS) : shades,
-    roof: look.roof ?? nudge(homeRoof!.colors, seed, 13, 0.09, ROOF_TINTS),
-    roofing: homeRoof?.roofing ?? look.roofing ?? 'tile',
+    roof: roofColors
+      ? nudge(roofColors, seed, 13, 0.09, ROOF_TINTS)
+      : (look.roof ?? nudge(homeRoof!.colors, seed, 13, 0.09, ROOF_TINTS)),
+    roofing:
+      oneOf(ROOFINGS, s.look?.roofing) ??
+      (roofColors ? undefined : homeRoof?.roofing) ??
+      look.roofing ??
+      'tile',
     windows: typeof look.windows === 'string' ? look.windows : choose(look.windows, seed, 5),
     doorPaint: look.doorPaints && choose(look.doorPaints, seed, 6),
     interior: theme.interiors.walls[kind],

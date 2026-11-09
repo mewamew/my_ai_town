@@ -454,7 +454,8 @@ export function landmarkSprites(
       x1: Math.max(...xs) + r.cell_size,
       y1: Math.max(...ys) + r.cell_size,
     }
-    const plan = set.plans[r.kind]
+    // 林子、行道树、草坪这些只管样子的区域不摆这类地点自带的凉亭、花拱门
+    const plan = r.decor ? undefined : set.plans[r.kind]
     if (!plan) continue
     const cx = (box.x0 + box.x1) / 2,
       cy = (box.y0 + box.y1) / 2

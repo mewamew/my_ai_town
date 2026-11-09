@@ -3,8 +3,32 @@ import type { Appearance } from './props/types'
 // 地图文档：atlas 提供绘图几何；topology 提供地点名称与物品所属地点；spatial 是三维数据。
 // 类型放在共用层，加载逻辑在 town-2d 的 assets 模块。
 
+/** 岛内的一片水：多边形，或者带宽度的折线（河）；都是地图坐标 */
+export type IslandWater =
+  { polygon: [number, number][] } | { line: [number, number][]; width: number }
+
+/**
+ * 画好的海岸（手绘的内置地图才有）：陆地底稿交给引擎扭曲、冲刷出小湾和礁石，岛内的河、湖、港湾等冲刷完
+ * 再挖出来，边保持原样，水面平静不起浪。没有它时海岸照镇上东西的凸包往外推（见 map/pixel/island.ts）。
+ * 冲刷参数按地面像素和轮数算，不给照引擎的默认：coast 海岸离底稿多远，bay 海岸进出的幅度，
+ * warp 扭曲的幅度，erosion 冲刷几轮，rim 镇上东西四周至少留多宽的陆地。
+ * 注意任何区域格子都会把陆地钉住，湾里不要放区域；外海的小岛上要有区域（比如林子），不然会被当成礁石
+ */
+export interface IslandDesign {
+  /** 陆地底稿：几块多边形，合起来是岛和外海的小岛 */
+  land: [number, number][][]
+  water: IslandWater[]
+  coast?: number
+  bay?: number
+  warp?: number
+  erosion?: number
+  rim?: number
+}
+
 export interface Atlas {
   canvas: { width: number; height: number }
+  /** 画好的海岸，见 IslandDesign；没有就按镇子的轮廓自动生成 */
+  island?: IslandDesign
   regions: {
     id: string
     name: string
@@ -12,6 +36,11 @@ export interface Atlas {
     cell_size: number
     cells: [number, number][]
     label_anchor?: [number, number]
+    /** 只管样子的区域：woods 成片的林子、allee 一排排的树（行道树、河边柳）、lawn 草坪公园（树稀、少灌木）。
+     *  有 decor 的区域不摆这类地点自带的标志物（凉亭、花拱门）；没有名字的区域不标名字 */
+    decor?: 'woods' | 'allee' | 'lawn'
+    /** 港口朝海的方向（横竖之一）；不给时从镇子中心指向港口算 */
+    facing?: [number, number]
   }[]
   nodes: { id: string; kind: string; space: string; x: number; y: number }[]
   edges: {
@@ -23,6 +52,8 @@ export interface Atlas {
     polyline: [number, number][]
     /** 缺省时后端按 18 个单位算 */
     width?: number
+    /** 路跨过岛内的水时搭什么桥：stone 石拱桥，wood 木板桥（不给时的样子） */
+    bridge?: 'stone' | 'wood'
   }[]
   spaces: {
     id: string
@@ -33,6 +64,9 @@ export interface Atlas {
     unfold: { scale: number; offset_x: number; offset_y: number }
     door_outside?: [number, number]
     door_inside_local?: [number, number]
+    /** 指定这栋房子的样子（手绘的内置地图按街区配色）：屋顶三色（亮、中、暗）、屋面、墙面、屋顶形状，
+     *  取值同 town-2d 的 map/buildings.ts；不给的照风格包按编号挑 */
+    look?: { roof?: [string, string, string]; roofing?: string; wall?: string; shape?: string }
   }[]
   stations: { id: string; space: string; x: number; y: number }[]
   props: {

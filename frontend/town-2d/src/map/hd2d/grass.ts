@@ -89,6 +89,7 @@ export function tuftsOf(
   const { width: pw, height: ph, open } = ground
   const chance: Record<number, (x: number, y: number) => number> = {
     [OPEN.park]: () => 0.16,
+    [OPEN.lawn]: () => 0.06,
     [OPEN.garden]: () => 0.12,
     [OPEN.town]: () => 0.015,
     [OPEN.wild]: (x, y) => 0.12 * Math.max(0, fbm(x * 0.9, y * 0.9, seed + 140) * 2.4 - 0.85),

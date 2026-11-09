@@ -9,6 +9,8 @@ import { WALL_CAP } from '../palette'
 import { OPEN, paintGround, treeShape, type Ground } from '../pixel/terrain'
 import type { Dock } from '../pixel/island'
 import { pier, PIER_DECK, pierLampCanvas } from './pier'
+import { bridge } from './bridge'
+import { liftOf, onBridge, type Bridge } from '../pixel/bridges'
 import { fbm, hash, rng } from '../pixel/noise'
 import { Motes } from './motes'
 import { Villagers, type LiveMotion, type VillagerPlacement } from './villagers'
@@ -295,6 +297,8 @@ export class HdScene {
   private tilt: Tilt = tiltOf(this.pitchDegrees, this.yawDegrees)
   /** 地面、水面和房子 */
   private readonly flat = new THREE.Group()
+  /** 路过河的桥（见 pixel/bridges.ts）：人走上去抬高、不留脚印 */
+  private bridges: Bridge[] = []
   /** 立牌和挂在立牌上的光：俯角变了按这些函数重新摆 */
   private readonly upright: ((tilt: Tilt) => void)[] = []
   private readonly center: [number, number]
@@ -477,6 +481,7 @@ export class HdScene {
     glowMap.colorSpace = THREE.SRGBColorSpace
     this.addHouses(atlas, glowMap)
     this.addPiers(ground, glowMap, seed)
+    this.addBridges(ground, seed)
     // 地标立牌和散落物先占地，剩下的空地再撒树、放微粒
     const open = this.placeStandees(atlas, ground, seed)
     for (const look of this.looks) look.addToScene?.(this.scene, landmarkSpot(atlas))
@@ -1669,6 +1674,7 @@ export class HdScene {
     }
     const density: Record<number, (x: number, y: number) => number> = {
       [OPEN.park]: () => 0.5,
+      [OPEN.lawn]: () => 0.07,
       [OPEN.garden]: () => 0.05,
       [OPEN.town]: () => 0.02,
       [OPEN.wild]: (x, y) => 0.26 * Math.max(0, fbm(x * 0.6, y * 0.6, seed + 90) * 2.6 - 1.05),
@@ -1688,6 +1694,24 @@ export class HdScene {
         add(fromPx(x), fromPx(y), r, Math.floor(random() * 3), bush, 1.3)
         this.contacts.push({ x: fromPx(x), y: fromPx(y), r: r * 1.1, strength: bush ? 0.28 : 0.38 })
       }
+  }
+
+  /** 路过河的桥（见 bridge.ts）：桥身接上天气和灯光；人走上桥按桥面抬高 */
+  private addBridges(ground: Ground, seed: number) {
+    if (!ground.bridges.length) return
+    this.bridges = ground.bridges
+    this.villagers.lift = liftOf(ground.bridges)
+    ground.bridges.forEach((b, k) => {
+      const own = Math.floor(hash(Math.round(b.a[0]), Math.round(b.a[1]), seed + k) * 1e6)
+      const built = bridge(b, this.theme.ground, own)
+      this.weather.shade(built.top, { snow: 1, wet: 0.5 })
+      this.weather.shade(built.sides, { snow: 0, wet: 0.5 })
+      this.weather.shade(built.parts, { snow: 1, wet: 0.5 })
+      this.lightmap.shade(built.top, 'ground')
+      this.lightmap.shade(built.sides, 'wall')
+      this.lightmap.shade(built.parts, 'wall')
+      this.flat.add(built.group)
+    })
   }
 
   /** 港口的栈桥（见 pier.ts）：桥身接上天气和灯光；尽头平台立一盏灯，入夜和路灯一起亮 */
@@ -1764,6 +1788,7 @@ export class HdScene {
           if (
             inRoom(px, py, 40) ||
             wet[i] ||
+            onBridge(this.bridges, px, py) ||
             spots.some((p) => Math.hypot(p[0] - px, p[1] - py) < gap * 0.85)
           )
             continue
@@ -2099,7 +2124,9 @@ export class HdScene {
   /** 新踩下的脚印；落在水里的是涟漪 */
   private footprints() {
     const { wet, width, height } = this.groundWet
-    return this.villagers.takeFootprints().map(([x, y]) => {
+    // 桥上走过不在地面和桥下的水里留印子
+    const prints = this.villagers.takeFootprints().filter(([x, y]) => !onBridge(this.bridges, x, y))
+    return prints.map(([x, y]) => {
       const px = toPx(x),
         py = toPx(y)
       const water = px >= 0 && py >= 0 && px < width && py < height && wet[py * width + px] === 1

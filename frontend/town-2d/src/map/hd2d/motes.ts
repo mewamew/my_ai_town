@@ -89,7 +89,11 @@ export class Motes {
       green: number[] = []
     for (let i = 0; i < pw * ph; i += 17) {
       if (open[i]) land.push(i)
-      if (motes.fireflies && (open[i] === OPEN.park || open[i] === OPEN.garden)) green.push(i)
+      if (
+        motes.fireflies &&
+        (open[i] === OPEN.park || open[i] === OPEN.lawn || open[i] === OPEN.garden)
+      )
+        green.push(i)
     }
     const count = DUST + (green.length ? FIREFLIES : 0)
     const pos = new Float32Array(count * 3),

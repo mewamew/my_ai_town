@@ -28,7 +28,7 @@ const POST_GAP = 8
 const topAt = (u: number) => (u >= RAMP ? PIER_DECK : ROOT + ((PIER_DECK - ROOT) * u) / RAMP)
 
 /** 一点点攒起来的几何：四边形按给的法线自动定绕向，分材质记成几组 */
-class Mesher {
+export class Mesher {
   private pos: number[] = []
   private nor: number[] = []
   private uv: number[] = []
@@ -115,7 +115,7 @@ function deckCanvas(d: Dock, G: GroundPalette, gaps: number, seed: number) {
 }
 
 /** 托梁的侧面：一像素一列横着重复，上半亮下半暗，每隔 POST_GAP 一颗螺栓 */
-function sideCanvas(G: GroundPalette) {
+export function sideCanvas(G: GroundPalette) {
   const canvas = document.createElement('canvas')
   canvas.width = POST_GAP
   canvas.height = 2

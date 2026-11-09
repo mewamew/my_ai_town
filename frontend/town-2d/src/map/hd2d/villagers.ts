@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { PIXEL } from '../grid'
 import { hashString } from '../pixel/noise'
-import type { Tilt } from './layout'
+import { riseOf, type Tilt } from './layout'
 import { pixelFilter, stand, standee } from './standee'
 import { contactTexture } from './ao'
 import { REFLECTION_SKIP } from './reflection'
@@ -178,6 +178,8 @@ const CONTACT_W = VILLAGER_HALF * 2.4
 
 export class Villagers {
   private readonly all = new Map<string, Villager>()
+  /** 地图上一点要把人抬多高（走在桥上时是桥面的高度，见 pixel/bridges.ts），场景建好桥后填上 */
+  lift: (x: number, y: number) => number = () => 0
   private readonly contactGeometry = new THREE.PlaneGeometry(CONTACT_W, CONTACT_W * 0.7).rotateX(
     -Math.PI / 2
   )
@@ -529,9 +531,11 @@ export class Villagers {
     const v = this.all.get(id)
     if (!v) return
     const end = v.path[v.path.length - 1]
+    // 站在桥上抬高了的，名字和心声泡也跟着往画面上方挪（离镜头远的方向）
+    const up = PIXEL - riseOf(this.lift(v.at[0] + v.offset[0], v.at[1] + v.offset[1]), this.tilt)
     return [
-      v.at[0] - end.x + v.offset[0] + PIXEL * this.tilt.yawSin,
-      v.at[1] - end.y + v.offset[1] + PIXEL * this.tilt.yawCos,
+      v.at[0] - end.x + v.offset[0] + up * this.tilt.yawSin,
+      v.at[1] - end.y + v.offset[1] + up * this.tilt.yawCos,
     ]
   }
 
@@ -894,9 +898,11 @@ export class Villagers {
 
   private moveTo(v: Villager, x: number, y: number) {
     v.at = [x, y]
-    // 往镜头方向挪一个像素，站在同一处的道具前面
+    // 往镜头方向挪一个像素，站在同一处的道具前面；在桥上就站到桥面上
+    const up = this.lift(x + v.offset[0], y + v.offset[1])
     stand(v.mesh, x + v.offset[0], y + v.offset[1], this.tilt, PIXEL)
-    v.contact.position.set(x + v.offset[0], 0.35, y + v.offset[1])
+    v.mesh.position.y += up
+    v.contact.position.set(x + v.offset[0], 0.35 + up, y + v.offset[1])
   }
 
   private face(v: Villager) {

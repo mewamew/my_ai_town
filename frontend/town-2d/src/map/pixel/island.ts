@@ -1,6 +1,6 @@
-import type { Atlas } from 'town-shared/mapDocument'
+import type { Atlas, IslandDesign } from 'town-shared/mapDocument'
 import { buildingKind } from '../buildings'
-import { PIXEL, roomRect, toPx } from '../grid'
+import { MARGIN, PIXEL, roomRect, toPx } from '../grid'
 import { fbm, hash } from './noise'
 
 // 2D 小镇是四面环海的孤岛。海岸分三步算出来，全部按地面画布的像素算，一个像素 = PIXEL 个世界单位：
@@ -11,17 +11,22 @@ import { fbm, hash } from './noise'
 //    啃完再把孤立的尖角和一格的缺口抹平；
 // 3. 啃断后留在海里的小块陆地和近岸随机撒的几处，画成礁石。
 // 镇上的东西四周始终留一圈陆地。港口和海塔朝海的一侧把海岸收到旁边。
+// 地图画好了海岸（Atlas.island）时，第 1 步的凸包换成画好的陆地，冲刷的参数也照它给的；
+// 冲刷完再挖出岛内的河、湖、港湾（inland），边保持原样，不跟着海岸扭。
 // 港口的木码头朝南临水的一面往下画出木墙和桩（quay），再从岸线往水里伸出栈桥：
 // 这里只定位置和尺寸，桥是立体场景搭的（hd2d/pier.ts），桥下仍是水。
 
-/** 海岸离凸包的平均距离，大弯的深浅，扭曲的幅度（像素） */
-const COAST = 34
-const BAY = 26
-const WARP = 60
-/** 冲刷的轮数 */
-const EROSION = 80
-/** 镇上东西四周至少留这么宽的陆地 */
-const RIM = 6
+/** 海岸的样子：coast 海岸离凸包的平均距离，bay 大弯的深浅，warp 扭曲的幅度（像素）；
+ *  erosion 冲刷的轮数；rim 镇上东西四周至少留这么宽的陆地。地图画好了海岸时按它给的改 */
+const SHAPE = { coast: 34, bay: 26, warp: 60, erosion: 80, rim: 6 }
+type Shape = typeof SHAPE
+
+/** 画好的海岸铺到地面像素上：land 是陆地底稿，water 是岛内的水 */
+export interface Design {
+  land: Uint8Array
+  water: Uint8Array
+  shape: Shape
+}
 /** 港口、海塔朝海一侧离海岸的距离（像素） */
 const NEAR = { harbor: 1, lighthouse: 3 }
 /** 算水深时最多数到这么多像素，再远都算深海 */
@@ -81,6 +86,8 @@ export const QUAY = { face: 3, post: 8 }
 export interface Island {
   /** 海面像素（不含港口和公园里原有的水） */
   sea: Uint8Array
+  /** 画好的海岸里挖出来的岛内水面（已并进 water）：河、湖、港湾不起浪，岸边不铺沙 */
+  inland: Uint8Array
   /** 栈桥（含尽头平台）在水面上的投影，桥下仍是水 */
   piers: Uint8Array
   /** 码头朝南临水那一面往下画的木墙：1、2 是两行墙板，3 是露出水面的桩；不算水 */
@@ -155,6 +162,67 @@ function hullMask(content: Uint8Array, w: number, h: number) {
     for (let x = lo; x <= hi; x++) mask[y * w + x] = 1
   }
   return mask
+}
+
+/** 多边形按行扫描填进 mask（奇偶规则）；地图坐标，按像素中心判断 */
+function fillPolygon(mask: Uint8Array, pts: [number, number][], w: number, h: number) {
+  if (pts.length < 3) return
+  for (let y = 0; y < h; y++) {
+    const my = y * PIXEL - MARGIN + PIXEL / 2
+    const xs: number[] = []
+    for (let k = 0; k < pts.length; k++) {
+      const [x0, y0] = pts[k],
+        [x1, y1] = pts[(k + 1) % pts.length]
+      if (y0 > my === y1 > my) continue
+      xs.push(x0 + ((my - y0) * (x1 - x0)) / (y1 - y0))
+    }
+    xs.sort((a, b) => a - b)
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      const lo = Math.max(0, Math.ceil((xs[k] + MARGIN) / PIXEL - 0.5)),
+        hi = Math.min(w - 1, Math.floor((xs[k + 1] + MARGIN) / PIXEL - 0.5))
+      for (let x = lo; x <= hi; x++) mask[y * w + x] = 1
+    }
+  }
+}
+
+/** 带宽度的折线（河）填进 mask：离折线不到半宽的像素 */
+function fillLine(mask: Uint8Array, pts: [number, number][], width: number, w: number, h: number) {
+  const half = width / 2
+  for (let k = 0; k + 1 < pts.length; k++) {
+    const [ax, ay] = pts[k],
+      [bx, by] = pts[k + 1]
+    const dx = bx - ax,
+      dy = by - ay,
+      len2 = dx * dx + dy * dy
+    const x0 = Math.max(0, toPx(Math.min(ax, bx) - half) - 1),
+      x1 = Math.min(w - 1, toPx(Math.max(ax, bx) + half) + 1)
+    const y0 = Math.max(0, toPx(Math.min(ay, by) - half) - 1),
+      y1 = Math.min(h - 1, toPx(Math.max(ay, by) + half) + 1)
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++) {
+        const px = x * PIXEL - MARGIN + PIXEL / 2,
+          py = y * PIXEL - MARGIN + PIXEL / 2
+        const t = len2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0
+        if (Math.hypot(px - ax - t * dx, py - ay - t * dy) <= half) mask[y * w + x] = 1
+      }
+  }
+}
+
+/** 画好的海岸铺到 w×h 的地面像素上；地图没画海岸时没有 */
+export function designOf(design: IslandDesign | undefined, w: number, h: number) {
+  if (!design?.land.length) return undefined
+  const land = new Uint8Array(w * h),
+    water = new Uint8Array(w * h)
+  for (const pts of design.land) fillPolygon(land, pts, w, h)
+  for (const part of design.water)
+    if ('polygon' in part) fillPolygon(water, part.polygon, w, h)
+    else fillLine(water, part.line, part.width, w, h)
+  const shape = { ...SHAPE }
+  for (const key of Object.keys(shape) as (keyof Shape)[]) {
+    const v = design[key]
+    if (typeof v === 'number' && Number.isFinite(v)) shape[key] = v
+  }
+  return { land, water, shape } satisfies Design
 }
 
 /** 从画布边缘灌水，连不到外海的海面改回陆地，免得镇子中间冒出一小块海 */
@@ -232,15 +300,17 @@ function anchorsOf(
   return anchors
 }
 
-/** 1. 初始轮廓：凸包外一段距离是海，坐标先按大尺度噪声扭一扭；band 是之后会被冲刷的一带 */
+/** 1. 初始轮廓：凸包（画好了海岸时是画好的陆地）外一段距离是海，坐标先按大尺度噪声扭一扭；
+ *  band 是之后会被冲刷的一带 */
 function initialCoast(
-  content: Uint8Array,
+  hull: Uint8Array,
+  shape: Shape,
   locked: (i: number) => unknown,
   pw: number,
   ph: number,
   seed: number
 ) {
-  const hull = hullMask(content, pw, ph)
+  const { coast: COAST, bay: BAY, warp: WARP, erosion: EROSION } = shape
   const outside = new Uint8Array(pw * ph)
   for (let i = 0; i < pw * ph; i++) outside[i] = hull[i] ? 0 : 1
   const toHull = distance(hull, pw, ph),
@@ -265,7 +335,14 @@ function initialCoast(
 }
 
 /** 2. 冲刷：只看当前的岸线像素，每轮啃掉一些，被啃处的邻居变成新的岸线；啃完抹平尖角和缺口 */
-function erode(sea: Uint8Array, band: number[], pw: number, ph: number, seed: number) {
+function erode(
+  sea: Uint8Array,
+  band: number[],
+  rounds: number,
+  pw: number,
+  ph: number,
+  seed: number
+) {
   const inBand = new Uint8Array(pw * ph)
   const hard = new Float32Array(pw * ph)
   for (const i of band) {
@@ -280,7 +357,7 @@ function erode(sea: Uint8Array, band: number[], pw: number, ph: number, seed: nu
     inBand[i] && !sea[i] && (sea[i - 1] || sea[i + 1] || sea[i - pw] || sea[i + pw])
   let shoreline = band.filter(onShore)
   const listed = new Uint8Array(pw * ph)
-  for (let round = 0; round < EROSION; round++) {
+  for (let round = 0; round < rounds; round++) {
     const bite: number[] = []
     const keep: number[] = []
     for (const i of shoreline) {
@@ -578,8 +655,9 @@ function toSeaDistance(sea: Uint8Array, water: Uint8Array, pw: number, ph: numbe
 }
 
 /**
- * content 标出镇上的东西（不含原有水面），water 标出港口和公园里原有的水（码头的木墙会从里面划掉），
- * deck 标出港口的木码头，facing 是各港口朝海的方向（见 decor.ts）。
+ * content 标出镇上的东西（不含原有水面），water 标出港口和公园里原有的水（码头的木墙会从里面划掉，
+ * 画好的海岸里的岛内水面会并进来），deck 标出港口的木码头，facing 是各港口朝海的方向（见 decor.ts），
+ * design 是地图画好的海岸（见 designOf）。
  */
 export function island(
   atlas: Atlas,
@@ -588,22 +666,36 @@ export function island(
     water: Uint8Array
     deck: Uint8Array
     facing: Map<string, [number, number]>
+    design?: Design
   },
   pw: number,
   ph: number,
   seed: number
 ): Island {
-  const { content, water, deck, facing } = land
+  const { content, water, deck, facing, design } = land
+  const shape = design?.shape ?? SHAPE
   const anchors = anchorsOf(atlas, content, facing, pw, ph)
   const fromContent = distance(content, pw, ph)
-  const locked = (i: number) => content[i] || water[i] || fromContent[i] <= RIM
-  const { sea, band } = initialCoast(content, locked, pw, ph, seed)
-  erode(sea, band, pw, ph, seed)
-  pullCoast(sea, anchors, fromContent, locked, pw, ph)
+  const locked = (i: number) => content[i] || water[i] || fromContent[i] <= shape.rim
+  const hull = design?.land ?? hullMask(content, pw, ph)
+  const { sea, band } = initialCoast(hull, shape, locked, pw, ph, seed)
+  erode(sea, band, shape.erosion, pw, ph, seed)
+  // 画好的海岸里港口本来就摆在水边，不再往它朝海的一侧挖海（会从区域之间的缝里挖出一道水汊）；海塔照旧
+  const pulls = design ? anchors.filter((a) => a.near !== NEAR.harbor) : anchors
+  pullCoast(sea, pulls, fromContent, locked, pw, ph)
   keepOpenSea(sea, pw, ph)
+  // 岛内的水在海岸定下来以后才挖：边不跟着扭，也不会被当成镇子中间的一小块海填掉
+  const inland = new Uint8Array(pw * ph)
+  if (design)
+    for (let i = 0; i < pw * ph; i++)
+      if (design.water[i] && !sea[i]) {
+        inland[i] = 1
+        water[i] = 1
+      }
   dryHarbors(sea, water, deck, pw, ph)
   const rocks = rocksOf(sea, content, band, anchors, pw, ph, seed)
   const { piers, docks } = piersOf(sea, water, deck, rocks, anchors, pw, ph, seed)
   const quay = quayOf(sea, water, deck, piers, pw, ph)
-  return { sea, piers, quay, rocks, docks, toSea: toSeaDistance(sea, water, pw, ph) }
+  for (let i = 0; i < pw * ph; i++) if (!water[i]) inland[i] = 0
+  return { sea, inland, piers, quay, rocks, docks, toSea: toSeaDistance(sea, water, pw, ph) }
 }

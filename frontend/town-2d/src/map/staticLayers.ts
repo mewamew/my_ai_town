@@ -189,7 +189,8 @@ function drawRegions(atlas: Atlas, localeAnchor: Anchors, surfaces: Map<string, 
     surfaces.set(r.id, shape)
     const label = r.label_anchor ?? regionLabelAnchor(r.cells, cs)
     localeAnchor.set(r.id, label)
-    if (!unlabeledRegions.has(r.kind)) {
+    // 没有名字的区域（林子、河堤、公园里的旋转木马）只管样子，不标名字
+    if (!unlabeledRegions.has(r.kind) && r.name) {
       const title =
         atlas.spaces.length === 0 && atlas.regions.length === 1
           ? [atlas.canvas.width / 2, Math.min(...r.cells.map((c) => c[1])) * cs - 60]
