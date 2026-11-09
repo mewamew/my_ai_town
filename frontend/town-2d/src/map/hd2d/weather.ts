@@ -12,11 +12,14 @@ import { hashNoise } from './glsl'
 import { REFLECTION_SKIP, wetReflection, type Reflection } from './reflection'
 
 // 立体场景里的天气：雨丝、落地水花、雪花、落叶是场景里的粒子；地面变湿、积水、积雪、云影和树随风摆
-// 是给地面、屋顶、树的材质补的一段着色器。天气强度几秒内平滑过渡；湿度和积雪按游戏时间累积和消退。
+// 是给地面、屋顶、树的材质补的一段着色器。天气强度几秒内平滑过渡；湿度和积雪按游戏时间累积和消退
+// （选镇页赏景时没有世界时钟，改按真实秒数跟上天气，见 followScenery）。
 // 尊重天气设置：关掉特效只留光照和湿度积雪，画质低只留雨雪，减少动画时不落雨雪不摇树，闪光开了才打闪电。
 
 /** 天气切换时各项强度每秒追上的比例，约 4 秒完成 */
 const BLEND = 0.8
+/** 赏景时地面湿度、积雪每秒追上的比例：比雨雪慢一点，约 6 秒到位 */
+const GROUND_BLEND = 0.55
 /** 湿透和变干、积雪和融化各需要的游戏分钟 */
 const WET_MINUTES = 20
 const DRY_MINUTES = 150
@@ -263,6 +266,8 @@ export class Weather3D {
   private minutes: number | null = null
   private wet = 0
   private snowCover = 0
+  /** 赏景：湿度和积雪不看游戏时钟，每帧按真实秒数往当前天气走 */
+  private scenery = false
   private nextFlash = 0
   private flashAt = -1
   /** 闪电的亮度，0..1，由场景加到日光上 */
@@ -384,13 +389,19 @@ export class Weather3D {
     this.started = true
   }
 
+  /** 选镇页赏景：时刻和天气是玩家拖着选的，没有经过的游戏时间可以累积。之后湿度和积雪在 step 里
+   *  按真实秒数跟上天气（下雪 6 秒左右积满，放晴慢慢化），setClock 不再累积 */
+  followScenery() {
+    this.scenery = true
+  }
+
   /** 按游戏时间累积湿度和积雪；第一次拿到时钟时按当前天气直接给定 */
   setClock(minutes: number) {
     const t = WEATHER_LEVELS[this.kind]
     if (this.minutes === null) {
       this.wet = t.rain > 0 ? 1 : 0
       this.snowCover = t.snow > 0 ? 1 : 0
-    } else {
+    } else if (!this.scenery) {
       const d = Math.max(0, Math.min(60, minutes - this.minutes))
       this.wet =
         t.rain > 0
@@ -627,6 +638,8 @@ export class Weather3D {
       if (Math.abs(target[key] - this.now[key]) < 0.002) this.now[key] = target[key]
       if ((key === 'cloud' || key === 'overcast') && this.now[key] !== before) lightChanged = true
     }
+    // 积雪、湿度也进打光（调色压蓝、草被埋、雾和彩虹），变了要重算
+    if (this.scenery && this.settleGround(dt, target)) lightChanged = true
     const effects = this.prefs.effects
     const moving = !this.prefs.reduceMotion && !this.reduceMotion.matches
     const counts = COUNTS[this.prefs.quality]
@@ -662,6 +675,24 @@ export class Weather3D {
     const changed = state !== this.lastState
     this.lastState = state
     return { light, changed }
+  }
+
+  /** 赏景时地面跟上天气：雨雪下起来一会儿（粒子到了三成）才开始湿、开始积，停了马上开始干、开始化。
+   *  返回这一帧变了没有 */
+  private settleGround(dt: number, target: WeatherLevels) {
+    const k = Math.min(1, dt * GROUND_BLEND)
+    const chase = (value: number, goal: number) => {
+      const next = value + (goal - value) * k
+      return Math.abs(goal - next) < 0.002 ? goal : next
+    }
+    const toward = (value: number, falling: number, aim: number) =>
+      aim === 0 ? chase(value, 0) : falling >= aim * 0.3 ? chase(value, 1) : value
+    const wet = toward(this.wet, this.now.rain, target.rain)
+    const snow = toward(this.snowCover, this.now.snow, target.snow)
+    const changed = wet !== this.wet || snow !== this.snowCover
+    this.wet = wet
+    this.snowCover = snow
+    return changed
   }
 
   /** 着色器和粒子用到的量，逐帧比较它判断画面有没有变 */

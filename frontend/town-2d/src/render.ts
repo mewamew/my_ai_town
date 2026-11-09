@@ -51,6 +51,7 @@ import { LEGACY_UNITS_PER_METRE, OUTDOOR_SPACE, roomRect } from './map/grid'
 import { village, type MapTheme } from './map/themes'
 import { el } from 'town-shared/svg'
 import type { DepthBlur, Quality } from 'town-shared/quality'
+import type { WeatherKind } from 'town-shared/weather/types'
 // 地图装配：静态图层、人物/气泡、镜头各自拥有状态；公共观察接口保持不变。
 
 /** 跟随中一帧里人挪了这么远（地图单位）算瞬移（进门出门、换地点，立牌也是直接放过去）：镜头慢慢挪过去 */
@@ -587,7 +588,8 @@ export class TownMap {
         this.ground = undefined
         this.svg.classList.add('hd2d')
         this.applyMarkerScale()
-        if (this.clock) this.hd.setClock(...this.clock)
+        if (this.scenery) this.hd.setScenery(...this.scenery)
+        else if (this.clock) this.hd.setClock(...this.clock)
         this.rooms.attach(this.svg, this.hd.houses)
         this.hd.onRoomsClosed = (ids) => {
           if (this.rooms.closed(ids)) this.refreshRooms()
@@ -696,6 +698,7 @@ export class TownMap {
     this.weather = new WeatherLayer(this.svg, atlas)
     this.svg.insertBefore(this.weather.layer, this.residents.layer)
     if (this.lastRoster) this.weather.handleMsg(this.lastRoster)
+    if (this.scenery) this.weather.setScenery(...this.scenery)
   }
   /** 地面随俯角倾斜：地图视口纵向压扁，立着的文字按比例拉回，房间名跟着屋顶高度走 */
   private applyTilt() {
@@ -733,6 +736,15 @@ export class TownMap {
       ])
   }
   private clock?: [number, string | undefined]
+  /** 选镇页赏景时玩家选的时刻和天气（见 setScenery）；有它时不看名册的时钟 */
+  private scenery?: [number, WeatherKind]
+
+  /** 选镇页赏景：画面换成这个时刻和天气，世界本身不变（预览本来就不连世界） */
+  setScenery(minutes: number, weather: WeatherKind) {
+    this.scenery = [minutes, weather]
+    this.hd?.setScenery(minutes, weather)
+    this.weather?.setScenery(minutes, weather)
+  }
 
   /** 立体场景跟上房子的开合（见 RoomCovers）、村民和道具立牌；fresh 表示刚来了一份名册 */
   private refreshRooms(fresh = false) {
@@ -1353,7 +1365,7 @@ export class TownMap {
         DEV_CLOCK?.minutes ?? msg.sim_minutes,
         DEV_CLOCK?.weather ?? msg.environment?.kind,
       ]
-      this.hd?.setClock(...this.clock)
+      if (!this.scenery) this.hd?.setClock(...this.clock)
       if (this.metre) this.hd?.setGameMode(msg.game_mode ?? null, this.metre)
     }
     if (msg.type === 'population') {

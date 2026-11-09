@@ -21,6 +21,7 @@ import { villagerLight } from './villagerLight'
 import { VILLAGER_HALF, VILLAGER_HEIGHT, VILLAGER_SCALE } from './villagerSprite'
 import { Weather3D } from './weather'
 import { gameModeLooks, type GameModeLook } from './gameModes'
+import { daylight } from './daylight'
 import { DOORS } from '../buildings'
 import type { WeatherKind } from 'town-shared/weather/types'
 import type { GameModeView } from 'town-shared/protocol'
@@ -2014,6 +2015,13 @@ export class HdScene {
     this.applyLight(false)
   }
 
+  /** 赏景（选镇页的预览，没有世界）：玩家拖到的时刻和点的天气。从此地面湿度、积雪不按游戏分钟累积，
+   *  换了天气几秒内跟上（见 Weather3D.followScenery） */
+  setScenery(minutes: number, weather: WeatherKind) {
+    this.weather.followScenery()
+    this.setClock(minutes, weather)
+  }
+
   /** 屋里的立牌收到墙内侧，见 keepInside */
   private inside(x: number, y: number, half: number) {
     for (const house of this.houses)
@@ -2142,16 +2150,12 @@ export class HdScene {
   /** 按太阳高度分四段：白天、金色时刻、蓝调时刻（日落后天没黑透、环境光发蓝、灯已亮）、夜，
    *  颜色在风格包的四组之间插值；cloud 压低日照和饱和度。now 为 false 时等下一个节拍再画（名册、天气这类环境变化） */
   private applyLight(now = true) {
-    const e = Math.sin(((this.hour - 6) / 12) * Math.PI)
+    const { e, day, night, twilight, golden: clearGolden } = daylight(this.hour)
     const elev = (e * Math.PI) / 3,
       az = ((this.hour - 12) / 12) * Math.PI
-    const day = smooth(-0.02, 0.25, e),
-      night = 1 - smooth(-0.32, -0.12, e)
     const { cloud, overcast, flash } = this.weather
-    // 蓝调：日落后到天黑前约四十分钟（e 从 0 降到 -0.25），日出前对称一段
-    const twilight = smooth(-0.3, -0.08, e) * (1 - smooth(-0.04, 0.1, e)) * (1 - night)
     this.day = day
-    const golden = Math.max(0, 1 - Math.abs(e - 0.1) / 0.25) * day * (1 - cloud)
+    const golden = clearGolden * (1 - cloud)
     // 亮灯：日落前一刻钟开始，到蓝调过半全亮；天亮前按同样的顺序熄
     this.lit = 1 - smooth(-0.16, 0.06, e)
     this.lightmap.setLit(this.lit)

@@ -6,6 +6,7 @@ import { WEATHER_LEVELS } from './map/weatherLevels'
 import {
   readWeatherPreferences,
   weatherPreferencesEvent,
+  type WeatherKind,
   type WeatherPreferences,
   type WeatherView,
 } from 'town-shared/weather/types'
@@ -30,6 +31,8 @@ export class WeatherLayer {
   private abort = new AbortController()
   private observer: MutationObserver
   private view?: WeatherView
+  /** 选镇页赏景：没有世界，天气是玩家点的（见 setScenery） */
+  private scenery?: WeatherKind
   private minutes = 0
   private speed = 0
   private frame = 0
@@ -106,6 +109,12 @@ export class WeatherLayer {
     this.speed = speed
     this.refresh()
   }
+  /** 赏景：画这个时刻和天气，雨雪照常落、几秒内过渡 */
+  setScenery(minutes: number, kind: WeatherKind) {
+    this.scenery = kind
+    this.minutes = minutes
+    this.refresh()
+  }
   reset() {
     this.view = undefined
     this.speed = 0
@@ -117,10 +126,15 @@ export class WeatherLayer {
     this.refresh()
   }
   private get animated() {
-    return this.speed > 0 && !this.prefs.reduceMotion && !this.media.matches && !document.hidden
+    return (
+      (this.speed > 0 || !!this.scenery) &&
+      !this.prefs.reduceMotion &&
+      !this.media.matches &&
+      !document.hidden
+    )
   }
   private refresh(snap = false) {
-    const kind = this.view?.kind
+    const kind = this.view?.kind ?? this.scenery
     const level = kind ? WEATHER_LEVELS[kind] : undefined
     const hour = (((this.minutes % 1440) + 1440) % 1440) / 60
     const night =
@@ -134,7 +148,7 @@ export class WeatherLayer {
     // 云把夜色再压暗一点，最阴的雷暴加深 0.09
     const cloud = (level?.cloud ?? 0) * 0.1
     this.target =
-      this.prefs.effects && this.view
+      this.prefs.effects && kind
         ? [level?.rain ?? 0, level?.snow ?? 0, Math.min(0.27, night + cloud)]
         : [0, 0, 0]
     if (snap || !this.animated) {
@@ -186,7 +200,7 @@ export class WeatherLayer {
     // 默认无雷光；显式启用且允许动画时，每 13 秒一次缓慢、低亮度变化。
     const phase = this.elapsed % 13
     const glow =
-      this.view?.kind === 'thunderstorm' &&
+      (this.view?.kind ?? this.scenery) === 'thunderstorm' &&
       this.prefs.flash &&
       this.prefs.effects &&
       this.animated &&

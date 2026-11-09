@@ -3,6 +3,7 @@ import type { PlaceGrid, RosterMember, ServerMsg } from './protocol'
 import type { PropCatalog, PropView } from './props/types'
 import type { Insets } from './mapView'
 import type { DepthBlur, Quality } from './quality'
+import type { WeatherKind } from './weather/types'
 export type ResidentEntry = { locale: string; member: RosterMember }
 /** 居民在屏幕上的范围（CSS 像素）：脚底点的 x 与 y、头顶的 y、身体半宽 */
 export interface ScreenBox {
@@ -88,6 +89,9 @@ export interface DirectorCamera {
 export interface GameMap {
   /** 地图会画天气：外壳才显示天气控件 */
   readonly weatherSupported?: boolean
+  /** 选镇页赏景（不连世界的预览）：画面换成这个时刻（游戏分钟）和天气。只换画面，
+   *  地面湿度、积雪几秒内跟上天气，不按游戏分钟累积 */
+  setScenery?(minutes: number, weather: WeatherKind): void
   readonly avatarSupported?: boolean
   /** 化身可挑的几套外观；有就在进入对话框里挑外观，没有就挑颜色 */
   avatarLooks?(): AvatarLook[]
