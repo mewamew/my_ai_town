@@ -1,7 +1,6 @@
 import { hash, mixHex, noise } from '../pixel/noise'
 import {
   carousel,
-  court,
   dockGoods,
   ferrisWheel,
   gazebo,
@@ -272,7 +271,6 @@ export const FROZEN_LANDMARKS: LandmarkSet = {
     obelisk: (seed) => [[snowCap(obelisk(), seed), 0, -6]],
     fountain: () => [[frozenFountain(), 0, -4]],
     temple: (seed) => [[snowCap(temple(), seed), 0, -6]],
-    court: (seed) => [[snowCap(court(), seed), 0, -8]],
     // 市集：三个压雪的棚子，摊前一排雪灯
     market: (seed) => [
       [snowCap(stall(seed), seed), -30, -10],

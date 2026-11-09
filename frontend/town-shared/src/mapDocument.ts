@@ -38,12 +38,13 @@ export interface Atlas {
     cell_size: number
     cells: [number, number][]
     label_anchor?: [number, number]
-    /** 只管样子的区域：woods 成片的林子、allee 一排排的树（行道树、河边柳）、lawn 草坪公园（树稀、少灌木）、
+    /** 只管样子的区域：woods 成片的林子、allee 一排排的树（行道树、河边柳）、lawn 草坪公园（树稀、少灌木；
+     *  风格包给了修剪条纹色的画成修剪过的草坪，中间开阔、树只种在北沿）、
      *  clearing 空地（不种树，只零星几丛草，雪橇坡这类）、asphalt 裂开积沙的旧沥青路面、
      *  rubble 碎水泥块撒了一地的废墟地（这两种都不长树）。
      *  有 decor 的区域不摆这类地点自带的标志物（凉亭、花拱门）；没有名字的区域不标名字 */
     decor?: 'woods' | 'allee' | 'lawn' | 'clearing' | 'asphalt' | 'rubble'
-    /** 港口朝海的方向（横竖之一）；不给时从镇子中心指向港口算 */
+    /** 港口朝海的方向（横竖之一）；不给时从镇子中心指向港口算。看台（court）敞开的一面朝哪，不给朝南 */
     facing?: [number, number]
     /** 这处户外地点立什么地标：风格包 landmarks.plans 里的名字（如冰雪的 icefishing 冰钓场、sledding 雪橇坡），
      *  给了就不按 kind 挑，有 decor 也照立；风格包里没有这一种就不立 */
@@ -106,8 +107,18 @@ export interface Atlas {
   }[]
   /** 按坐标立的立牌，不占区域格子，可以立在干海床、冰面上（骨架、火盆、霓虹招牌、广告牌）：
    *  kind 是风格包 landmarks.plans 里的名字（风格包里没有这一种就不立），x、y 是立牌底边中点；
-   *  flip 左右翻过来；on 是一栋房子或 ruins 里一栋楼的编号，立牌蹲到它的墙顶上（楼顶的秃鹫） */
-  standees?: { kind: string; x: number; y: number; flip?: boolean; on?: string }[]
+   *  flip 左右翻过来；on 是一栋房子或 ruins 里一栋楼的编号，立牌蹲到它的墙顶上（楼顶的秃鹫）。
+   *  kind 为 court 的是立体的看台（见 town-2d 的 map/pixel/stands.ts）：x、y 是舞台中心，size 是外半径
+   *  （地图单位，不给 160），facing 是敞开的一面朝哪（不给朝南，正对缺省镜头） */
+  standees?: {
+    kind: string
+    x: number
+    y: number
+    flip?: boolean
+    on?: string
+    size?: number
+    facing?: [number, number]
+  }[]
   /** 在一处上空盘旋的鸟群（废土是秃鹫）：中心 x、y，离地高度（地图单位），几只。
    *  不给时风格包要秃鹫的，自己在干海床的骨头、沉船上空摆几群 */
   flocks?: { x: number; y: number; height: number; count: number }[]

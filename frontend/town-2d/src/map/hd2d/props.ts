@@ -31,6 +31,8 @@ export class PropStandees {
   private readonly all = new Map<string, Standing>()
   private readonly textures = new Map<string, THREE.Texture>()
   private readonly loader = new THREE.TextureLoader()
+  /** 道具立在地图上一点要抬多高（看台的台阶上） */
+  lift: (x: number, y: number) => number = () => 0
 
   /** prepare：每个新立牌的材质过一遍（接光照图） */
   constructor(
@@ -83,6 +85,7 @@ export class PropStandees {
 
   private place({ mesh, placement: p }: Standing) {
     stand(mesh, p.x, p.y, this.tilt, p.size * PROP_BASE)
+    mesh.position.y += this.lift(p.x, p.y)
   }
 
   private remove(id: string) {

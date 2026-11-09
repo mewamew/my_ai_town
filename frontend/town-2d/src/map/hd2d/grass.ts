@@ -63,12 +63,14 @@ function tuftAtlas(theme: MapTheme) {
   })
 }
 
-/** 立起来的位置：规划里的草和花一簇散成几簇，野地、公园、花园再按噪声撒 */
+/** 立起来的位置：规划里的草和花一簇散成几簇，野地、公园、花园再按噪声撒；
+ *  mown 时草坪是修剪过的，几乎不长草丛 */
 export function tuftsOf(
   decor: DecorPlan,
   ground: { width: number; height: number; open: Uint8Array },
   seed: number,
-  density: number
+  density: number,
+  mown = false
 ) {
   const random = rng(seed + 77)
   const tufts: Tuft[] = []
@@ -88,8 +90,9 @@ export function tuftsOf(
   }
   const { width: pw, height: ph, open } = ground
   const chance: Record<number, (x: number, y: number) => number> = {
-    [OPEN.park]: () => 0.16,
-    [OPEN.lawn]: () => 0.06,
+    [OPEN.park]: () => 0.1,
+    [OPEN.lawn]: () => (mown ? 0.006 : 0.06),
+    [OPEN.verge]: () => 0.02,
     [OPEN.garden]: () => 0.12,
     [OPEN.town]: () => 0.015,
     [OPEN.wild]: (x, y) => 0.12 * Math.max(0, fbm(x * 0.9, y * 0.9, seed + 140) * 2.4 - 0.85),

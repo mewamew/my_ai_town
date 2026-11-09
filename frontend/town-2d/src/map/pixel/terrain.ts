@@ -79,8 +79,11 @@ export interface Ground {
   spring: Uint8Array
 }
 
+/** 这个风格的草坪公园是修剪过的：画修剪条纹、中间不种树、几乎不长草丛（风格包给了条纹色） */
+export const mownLawn = (theme: MapTheme) => theme.ground.lawnStripe !== undefined
+
 export function groundOf(atlas: Atlas, theme: MapTheme, seed = TERRAIN_SEED): Ground {
-  const decor = planDecor(atlas)
+  const decor = planDecor(atlas, mownLawn(theme))
   const pw = Math.ceil((atlas.canvas.width + 2 * MARGIN) / PIXEL)
   const ph = Math.ceil((atlas.canvas.height + 2 * MARGIN) / PIXEL)
   const { region, wet } = rasterRegions(atlas, decor, pw, ph, seed)
@@ -604,9 +607,11 @@ function paintBase(L: Layers, px: Uint32Array) {
     }
 }
 
-/** 一个像素按什么画地面：区域的 decor 是沥青、碎石的照它画，不然按区域的种类 */
+/** 一个像素按什么画地面：区域的 decor 是沥青、碎石的照它画，修剪过的草坪（风格包给了条纹色）画成草坪，
+ *  不然按区域的种类 */
 function groundKind(L: Layers, i: number) {
   const decor = L.decorAt(i)
+  if (decor === 'lawn' && mownLawn(L.theme)) return 'lawn'
   return decor && DECOR_GROUNDS.has(decor) ? decor : L.kindAt(i)
 }
 
@@ -745,6 +750,17 @@ function openGround(atlas: Atlas, L: Layers) {
           ? OPEN.lawn
           : OPEN_KINDS[kind]) ?? OPEN.town
   }
+  // 公园、林子里的路：南边一条只长草，不让树冠把路挡住（草坪本来就不撒树）
+  const from = Math.round(VERGE.from / PIXEL),
+    to = Math.round(VERGE.to / PIXEL)
+  for (let y = 0; y < ph; y++)
+    for (let x = 0; x < pw; x++) {
+      if (path[y * pw + x] !== 2) continue
+      for (let dy = from; dy <= to && y + dy < ph; dy++) {
+        const j = (y + dy) * pw + x
+        if (open[j] === OPEN.park) open[j] = OPEN.verge
+      }
+    }
   for (const r of footprints(atlas)) {
     const x0 = toPx(r.x) - 6,
       y0 = toPx(r.y) - 6
@@ -764,8 +780,11 @@ function footprints(atlas: Atlas) {
   ]
 }
 
-/** 空地分类：none 不能种东西（水、路、铺装、房屋四周），其余按所在区域；lawn 是草坪公园，树和草都稀 */
-export const OPEN = { none: 0, wild: 1, park: 2, garden: 3, town: 4, lawn: 5 } as const
+/** 空地分类：none 不能种东西（水、路、铺装、房屋四周），其余按所在区域；lawn 是草坪公园，树和草都稀；
+ *  verge 是公园、林子里路南边的一条：镜头在南边，这里的树冠会把路挡住，只长草不种树 */
+export const OPEN = { none: 0, wild: 1, park: 2, garden: 3, town: 4, lawn: 5, verge: 6 } as const
+/** 路南边多远（地图单位）以内算 verge：树干比这近的树冠压在路北边，比这远的够不着路 */
+export const VERGE = { from: 40, to: 170 } as const
 const OPEN_KINDS: Record<string, number> = { '': OPEN.wild, park: OPEN.park, garden: OPEN.garden }
 
 /** 沿路段折线画出土路：中间 2 是实土，两边 1 是和草地交错的边 */
@@ -907,6 +926,12 @@ function grassColor(s: Spot, park: boolean, paintAbove: (c: number) => void) {
   return u(pick(pal, g * 1.15 - 0.05, x, y, 1.2))
 }
 
+/** 修剪过的草坪：比野地的草匀、亮一点，斜着一道深一道浅的修剪条纹，没有草丛尖和野花 */
+function lawnColor({ x, y, G, g }: Spot) {
+  const c = u(pick(G.park, g * 0.6 + 0.3, x, y, 1.2))
+  return Math.floor((x + 2 * y) / 22) % 2 ? mix(c, u(G.lawnStripe!), 0.3) : c
+}
+
 function groundColor(
   kind: string,
   x: number,
@@ -956,6 +981,8 @@ function groundColor(
       return asphaltColor(spot)
     case 'rubble':
       return rubbleColor(spot, paintAbove)
+    case 'lawn':
+      return lawnColor(spot)
     default:
       return grassColor(spot, kind === 'park', paintAbove)
   }

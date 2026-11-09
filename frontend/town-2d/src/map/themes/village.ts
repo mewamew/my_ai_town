@@ -214,6 +214,7 @@ export const village: MapTheme = {
     tuft: '#a7bb78',
     shoreWeed: '#9aa66a',
     flowers: ['#d98a94', '#e8c35e', '#efe9dc', '#b890c8', '#e39a5a'],
+    lawnStripe: '#a6c46a',
   },
   outer: 'sea',
   flora: {

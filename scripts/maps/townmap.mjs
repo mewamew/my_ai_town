@@ -330,14 +330,17 @@ export function townMap({
       ruins.push({ id: rid, x, y, w, h, height, ...(look ? { look } : {}) })
       return api
     },
-    /** 按坐标立的立牌：kind 是风格包 plans 里的名字；flip 左右翻，on 是蹲到哪栋房子或楼的墙顶上 */
-    standee(kind, [x, y], { flip, on } = {}) {
+    /** 按坐标立的立牌：kind 是风格包 plans 里的名字；flip 左右翻，on 是蹲到哪栋房子或楼的墙顶上；
+     *  court 是立体的看台：size 是外半径，facing 是敞开的一面朝哪（不给朝南） */
+    standee(kind, [x, y], { flip, on, size, facing } = {}) {
       standees.push({
         kind,
         x: Math.round(x),
         y: Math.round(y),
         ...(flip ? { flip: true } : {}),
         ...(on ? { on } : {}),
+        ...(size ? { size } : {}),
+        ...(facing ? { facing } : {}),
       })
       return api
     },
@@ -361,8 +364,9 @@ export function townMap({
      *  到达点就落在路上；from 是来源地图里搬道具和落脚点的地点，at 按编号指定其中几件的位置，
      *  rename 为 true 时道具名字里原来的地名换成新地名；
      *  props 是新添的道具 { id, definition, name, at }，stations 是新添的落脚点 { id, name, at, activity, pose, role }；
-     *  landmark 指定立什么地标（风格包 plans 里的名字），不给按 kind */
-    region(rid, rname, kind, shape, { decor, facing, landmark, place } = {}) {
+     *  landmark 指定立什么地标（风格包 plans 里的名字），不给按 kind；label 是地名标在哪（地图坐标），
+     *  不给标在离区域边最远的格子上 */
+    region(rid, rname, kind, shape, { decor, facing, landmark, label, place } = {}) {
       const cells = cellsOf(shape, taken)
       if (!cells.length) throw Error(`区域 ${rid} 一格也没占到`)
       regions.push({
@@ -371,6 +375,7 @@ export function townMap({
         cell_size: CELL,
         cells,
         kind,
+        ...(label ? { label_anchor: round(label) } : {}),
         ...(decor ? { decor } : {}),
         ...(facing ? { facing } : {}),
         ...(landmark ? { landmark } : {}),

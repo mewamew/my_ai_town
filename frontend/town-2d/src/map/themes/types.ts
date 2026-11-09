@@ -55,6 +55,8 @@ export interface GroundPalette {
   flowers: readonly string[]
   /** 地面裂缝的颜色；不给就没有裂缝 */
   cracks?: string
+  /** 草坪公园（decor 为 lawn）修剪出的条纹：隔一道掺一点这个颜色；不给就和公园的草一样画 */
+  lawnStripe?: string
 }
 
 /** 住宅屋顶的一种配色（亮、中、暗）；roofing 不给就用住宅风格的屋面 */

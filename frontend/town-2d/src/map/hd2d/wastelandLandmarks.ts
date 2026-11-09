@@ -1,7 +1,6 @@
 import { hash, mixHex, noise, rng } from '../pixel/noise'
 import {
   carousel,
-  court,
   dockGoods,
   ferrisWheel,
   gazebo,
@@ -758,7 +757,6 @@ export const WASTELAND_LANDMARKS: LandmarkSet = {
     obelisk: (seed) => [[wear(obelisk(), seed), 0, -6]],
     fountain: () => [[dryFountain(), 0, -4]],
     temple: (seed) => [[wear(temple(), seed), 0, -6]],
-    court: (seed) => [[wear(court(), seed), 0, -8]],
     // 市集两头各一只油桶火盆，夜里照亮摊子
     market: (seed) => [
       [junkStall(seed), -30, -10],

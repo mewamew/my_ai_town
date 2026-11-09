@@ -6,11 +6,13 @@ import type { Atlas } from 'town-shared/mapDocument'
 import type { DecorPlan } from '../decor'
 import { fromPx, MARGIN, OUTDOOR_SPACE, PIXEL, pxIndex, roomPoint, toPx } from '../grid'
 import { WALL_CAP } from '../palette'
-import { OPEN, paintGround, treeShape, type Ground } from '../pixel/terrain'
+import { mownLawn, OPEN, paintGround, treeShape, type Ground } from '../pixel/terrain'
 import type { Dock } from '../pixel/island'
 import { pier, PIER_DECK, pierLampCanvas } from './pier'
 import { bridge } from './bridge'
 import { liftOf, onBridge, type Bridge } from '../pixel/bridges'
+import { standGap, standLift, standsOf, type Stand } from '../pixel/stands'
+import { buildStand } from './stand'
 import { fbm, hash, rng } from '../pixel/noise'
 import { Motes } from './motes'
 import { Villagers, type LiveMotion, type VillagerPlacement } from './villagers'
@@ -121,6 +123,8 @@ const MAX_CAMERA_DISTANCE = 600 * PIXEL
 const TILT_SHIFT_VIEW_HEIGHT = 2000
 /** 路灯在地上照出的光圈半径、门灯和窗光往外投多远（地图单位） */
 const LAMP_REACH = 64 * PIXEL
+/** 地标立牌身前多少像素不种树（树冠会挡住它），约 200 个地图单位 */
+const FRONT_CLEAR = 34
 const DOOR_REACH = 16 * PIXEL
 const WINDOW_REACH = 22 * PIXEL
 /** 屋顶从盖严到全掀开（或反过来）按像素格溶解的时长（毫秒） */
@@ -317,6 +321,8 @@ export class HdScene {
   private readonly flat = new THREE.Group()
   /** 路过河的桥（见 pixel/bridges.ts）：人走上去抬高、不留脚印 */
   private bridges: Bridge[] = []
+  /** 看台（见 pixel/stands.ts）：人和道具站上台阶按那一级抬高，树、灯、草丛让开 */
+  private stands: Stand[] = []
   /** 立牌和挂在立牌上的光：俯角变了按这些函数重新摆 */
   private readonly upright: ((tilt: Tilt) => void)[] = []
   private readonly center: [number, number]
@@ -522,6 +528,7 @@ export class HdScene {
     this.addRuins()
     this.addPiers(ground, glowMap, seed)
     this.addBridges(ground, seed)
+    this.addStands(atlas, seed)
     // 地标立牌和散落物先占地，剩下的空地再撒树、放微粒
     const open = this.placeStandees(atlas, ground, seed)
     for (const look of this.looks) look.addToScene?.(this.scene, landmarkSpot(atlas))
@@ -538,7 +545,11 @@ export class HdScene {
     this.waterGrid = waterGridOf(ground, theme.outer !== 'seabed')
     // 草丛：冰雪里大多埋在雪下，废土里稀疏一些
     const grassDensity = theme.outer === 'ice' ? 0.35 : theme.outer === 'seabed' ? 0.6 : 1
-    this.grass = new Grass(tuftsOf(decor, clear, seed, grassDensity), theme, this.tilt)
+    this.grass = new Grass(
+      tuftsOf(decor, clear, seed, grassDensity, mownLawn(theme)),
+      theme,
+      this.tilt
+    )
     Object.assign(this.grass.uniforms, this.weather.windUniforms, this.trail.uniforms)
     this.lightmap.shade(this.grass.surface, 'standee')
     for (const look of this.looks) look.shadeStanding(this.grass.surface, 'thing')
@@ -1550,9 +1561,31 @@ export class HdScene {
     seed: number
   ) {
     const open = terrain.open.slice()
+    this.clearStands(open, terrain.width, terrain.height)
     this.addLandmarks(atlas, terrain.docks, open, terrain.width, seed)
     this.addScatter(terrain, open, seed)
     return open
+  }
+
+  /** 看台上和看台跟前不种树、不长草：台阶连同前面一片（镜头在南边，前面的树会挡住台阶） */
+  private clearStands(open: Uint8Array, pw: number, ph: number) {
+    const MARGIN_PX = 3,
+      FRONT = 120
+    for (const s of this.stands) {
+      const x0 = Math.max(0, toPx(s.x - s.r - FRONT)),
+        x1 = Math.min(pw - 1, toPx(s.x + s.r + FRONT))
+      const y0 = Math.max(0, toPx(s.y - s.r - FRONT)),
+        y1 = Math.min(ph - 1, toPx(s.y + s.r + FRONT))
+      for (let py = y0; py <= y1; py++)
+        for (let px = x0; px <= x1; px++) {
+          const x = fromPx(px) + PIXEL / 2,
+            y = fromPx(py) + PIXEL / 2
+          const near = standGap([s], x, y) < MARGIN_PX * PIXEL
+          // 镜头那一侧（朝南）再空出一片，树冠不压到台阶上
+          const front = Math.abs(x - s.x) < s.r && y > s.y && y - s.y < s.r + FRONT
+          if (near || front) open[py * pw + px] = OPEN.none
+        }
+    }
   }
 
   /** 户外地点的标志物立牌和地图按坐标立的立牌；立牌占的地方从空地里去掉。
@@ -1626,6 +1659,13 @@ export class HdScene {
         for (let dx = -clear; dx <= clear; dx++) {
           const i = pxIndex(sx + dx * PIXEL, sy + dy * PIXEL, pw)
           if (i >= 0 && i < open.length) open[i] = OPEN.none
+        }
+      // 身前（镜头那一侧）一片只长草不种树，树冠挡不住它；矮的小摆设空得少一些
+      const front = Math.min(FRONT_CLEAR, Math.ceil(s.canvas.height * 1.2))
+      for (let dy = 5; dy <= front; dy++)
+        for (let dx = -clear; dx <= clear; dx++) {
+          const i = pxIndex(sx + dx * PIXEL, sy + dy * PIXEL, pw)
+          if (i >= 0 && i < open.length && open[i] !== OPEN.none) open[i] = OPEN.verge
         }
     }
   }
@@ -1717,7 +1757,8 @@ export class HdScene {
     return sprite
   }
 
-  /** 地图规划的树，加上按演示页规则撒在空地上的树：公园最密，镇外草地按噪声成片 */
+  /** 地图规划的树，加上按演示页规则撒在空地上的树：公园最密，镇外草地按噪声成片；
+   *  修剪过的草坪上不撒（树由地图规划种在北沿，见 decor.ts） */
   private addTrees(
     decor: DecorPlan,
     terrain: { width: number; height: number; open: Uint8Array },
@@ -1757,6 +1798,7 @@ export class HdScene {
       this.contacts.push({ x: v.x, y: v.y, r: r * 0.85, strength: bush ? 0.28 : 0.38 })
     }
     const { width: pw, height: ph, open } = terrain
+    const mown = mownLawn(this.theme)
     const random = rng(seed + 12)
     const placed: [number, number, number][] = []
     const free = (x: number, y: number, r: number) => {
@@ -1770,7 +1812,7 @@ export class HdScene {
     }
     const density: Record<number, (x: number, y: number) => number> = {
       [OPEN.park]: () => 0.5,
-      [OPEN.lawn]: () => 0.07,
+      [OPEN.lawn]: () => (mown ? 0 : 0.07),
       [OPEN.garden]: () => 0.05,
       [OPEN.town]: () => 0.02,
       [OPEN.wild]: (x, y) => 0.26 * Math.max(0, fbm(x * 0.6, y * 0.6, seed + 90) * 2.6 - 1.05),
@@ -1808,6 +1850,27 @@ export class HdScene {
       this.lightmap.shade(built.parts, 'wall')
       this.flat.add(built.group)
     })
+  }
+
+  /** 看台（见 stand.ts）：台阶接上天气和灯光；人和道具站上台阶、舞台按那里的高度抬起来，桥上照旧 */
+  private addStands(atlas: Atlas, seed: number) {
+    this.stands = standsOf(atlas)
+    if (!this.stands.length) return
+    const worn = this.theme.ground.cracks !== undefined
+    this.stands.forEach((s, k) => {
+      const own = Math.floor(hash(Math.round(s.x), Math.round(s.y), seed + k) * 1e6)
+      const built = buildStand(s, this.theme.ground, own, worn)
+      this.weather.shade(built.top, { snow: 1, wet: 0.5 })
+      this.weather.shade(built.sides, { snow: 0, wet: 0.5 })
+      this.lightmap.shade(built.top, 'ground')
+      this.lightmap.shade(built.sides, 'wall')
+      this.flat.add(built.group)
+    })
+    const onBridges = liftOf(this.bridges),
+      onStands = standLift(this.stands)
+    const lift = (x: number, y: number) => onBridges(x, y) || onStands(x, y)
+    this.villagers.lift = lift
+    this.props.lift = lift
   }
 
   /** 港口的栈桥（见 pier.ts）：桥身接上天气和灯光；尽头平台立一盏灯，入夜和路灯一起亮 */
@@ -1885,6 +1948,7 @@ export class HdScene {
             inRoom(px, py, 40) ||
             wet[i] ||
             onBridge(this.bridges, px, py) ||
+            standGap(this.stands, px, py) < 30 ||
             spots.some((p) => Math.hypot(p[0] - px, p[1] - py) < gap * 0.85)
           )
             continue

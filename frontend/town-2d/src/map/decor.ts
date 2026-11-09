@@ -1,6 +1,7 @@
 import type { Atlas } from 'town-shared/mapDocument'
 import { OUTDOOR_SPACE } from './grid'
 import { hashString, rng } from './pixel/noise'
+import { standGap, standsOf } from './pixel/stands'
 // 表现层装饰：植被散布与水面，从图集几何确定性派生（种子按区域 ID），
 // 不进地图文件，新老地图与生成器产物自动生效。树会同时注册为寻路障碍（render.ts），
 // 与 spatial.vegetation 在三维地图里的角色一致。
@@ -65,10 +66,21 @@ type Near = (x: number, y: number, dist: number) => boolean
 interface Obstacles {
   nearRoad: Near
   nearPoi: Near
+  /** 离看台（见 pixel/stands.ts）多近 */
+  nearStand: Near
+  /** 种在这里的树会不会挡住地图按坐标立的立牌（凉亭这类）：立牌左右一段、身后一点到身前一大片 */
+  hidesStandee: (x: number, y: number) => boolean
 }
 type Region = Atlas['regions'][number]
 type Cell = [number, number]
 const keyOf = (c: number, rr: number) => `${c},${rr}`
+/** 上下左右四个相邻格 */
+const SIDES: readonly Cell[] = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+]
 const cellsOf = (keys: Iterable<string>) => [...keys].map((k) => k.split(',').map(Number) as Cell)
 
 /** 离道路、室外落脚点和道具多近：水面和植被都要避开它们 */
@@ -91,7 +103,12 @@ function obstaclesOf(atlas: Atlas): Obstacles {
   const nearPoi = (x: number, y: number, dist: number) =>
     stations.some((s) => Math.hypot(s.x - x, s.y - y) < dist) ||
     props.some((p) => Math.hypot(p.x - x, p.y - y) < dist)
-  return { nearRoad, nearPoi }
+  const stands = standsOf(atlas)
+  const nearStand = (x: number, y: number, dist: number) => standGap(stands, x, y) < dist
+  const standees = (atlas.standees ?? []).filter((s) => s.kind !== 'court' && !s.on)
+  const hidesStandee = (x: number, y: number) =>
+    standees.some((s) => Math.abs(x - s.x) < 150 && y > s.y - 80 && y < s.y + 220)
+  return { nearRoad, nearPoi, nearStand, hidesStandee }
 }
 
 /** 港口朝哪边：从镇子中心指向港口中心，取横竖里更接近的那个方向（单位向量）。
@@ -153,7 +170,7 @@ function parkPond(r: Region, random: () => number, near: Obstacles) {
         }
         const cx = c * cs + cs / 2
         const cy = rr * cs + cs / 2
-        if (near.nearPoi(cx, cy, 80) || near.nearRoad(cx, cy, 44)) {
+        if (near.nearPoi(cx, cy, 80) || near.nearRoad(cx, cy, 44) || near.nearStand(cx, cy, 60)) {
           ok = false
           break
         }
@@ -166,7 +183,7 @@ function parkPond(r: Region, random: () => number, near: Obstacles) {
 }
 
 /** 水面：镇子四面环海；港口的水放在朝镇外、也就是朝海的那一侧，公园里挖池塘。
- *  圈着温泉的公园、指定了地标的公园（雪橇坡这类）不挖 */
+ *  圈着温泉的公园、指定了地标的公园（雪橇坡这类）、林子和草坪这些只管样子的公园不挖 */
 function planWater(atlas: Atlas, near: Obstacles) {
   const springs = (atlas.island?.water ?? [])
     .filter((w) => w.kind === 'spring')
@@ -202,12 +219,7 @@ function planWater(atlas: Atlas, near: Obstacles) {
       const facing = r.facing ?? harborFacing(r, center)
       harbors.set(r.id, facing)
       cells = harborWater(r, facing, near)
-    } else if (
-      r.kind === 'park' &&
-      (!r.decor || r.decor === 'lawn') &&
-      !r.landmark &&
-      !hasSpring(r)
-    )
+    } else if (r.kind === 'park' && !r.decor && !r.landmark && !hasSpring(r))
       cells = parkPond(r, rng(hashString(r.id) ^ 0x51ab3c), near)
     if (cells) water.set(r.id, cells)
   }
@@ -216,34 +228,82 @@ function planWater(atlas: Atlas, near: Obstacles) {
 
 /** 各种区域里撒东西的比例：里面的树、灌木、草，边上的花丛或灌木（edge）和草（edgeGrass），
  *  边上种灌木还是花（edgeBush）。行道树种得密，连成一排；草坪公园树稀、几乎不长灌木，边上种花；
+ *  修剪过的草坪（mown，风格包给了条纹色）中间只零星几丛草，树种在北沿（见 lawnRim）；
  *  空地不种树，只零星几丛草 */
 const PLANTING = {
   garden: { tree: 0.07, bush: 0.1, grass: 0.22, edge: 0.16, edgeGrass: 0.2, edgeBush: false },
   park: { tree: 0.13, bush: 0.1, grass: 0.22, edge: 0.12, edgeGrass: 0.2, edgeBush: true },
   allee: { tree: 0.45, bush: 0.1, grass: 0.22, edge: 0.12, edgeGrass: 0.2, edgeBush: true },
   lawn: { tree: 0.035, bush: 0.015, grass: 0.065, edge: 0.07, edgeGrass: 0.06, edgeBush: false },
+  mown: { tree: 0.12, bush: 0.02, grass: 0.012, edge: 0.1, edgeGrass: 0.03, edgeBush: false },
   clearing: { tree: 0, bush: 0, grass: 0.03, edge: 0.03, edgeGrass: 0.04, edgeBush: false },
+}
+/** 草坪的树种在离边几格以内，南边还得留着这么多格草坪 */
+const LAWN_RIM = 3
+const LAWN_OPEN_SOUTH = 8
+/** 树干在路南边这几处（地图单位）的，树冠会压到路上（同 terrain.ts 的 VERGE） */
+const VERGE_PROBES = [70, 115, 150]
+
+/** 草坪上能种树的格子：北沿和东西两边靠北的一条（离边 LAWN_RIM 格以内、南边还有一大片草坪）。
+ *  镜头在南边，种在南沿的树会挡住整片草坪 */
+function lawnRim(r: Region, set: Set<string>) {
+  const depth = new Map<string, number>()
+  const queue = r.cells.filter(([c, rr]) =>
+    SIDES.some(([dc, dr]) => !set.has(keyOf(c + dc, rr + dr)))
+  )
+  for (const [c, rr] of queue) depth.set(keyOf(c, rr), 0)
+  for (let i = 0; i < queue.length; i++) {
+    const [c, rr] = queue[i]
+    for (const [dc, dr] of SIDES) {
+      const k = keyOf(c + dc, rr + dr)
+      if (set.has(k) && !depth.has(k)) {
+        depth.set(k, depth.get(keyOf(c, rr))! + 1)
+        queue.push([c + dc, rr + dr])
+      }
+    }
+  }
+  const rim = new Set<string>()
+  for (const [c, rr] of r.cells) {
+    let south = 0
+    while (south < LAWN_OPEN_SOUTH && set.has(keyOf(c, rr + south + 1))) south++
+    if (depth.get(keyOf(c, rr))! <= LAWN_RIM && south >= LAWN_OPEN_SOUTH) rim.add(keyOf(c, rr))
+  }
+  return rim
 }
 
 /** 一个公园或花园里的植被：里面撒树、灌木和草，边上是花丛（花园、草坪）或灌木（公园、林子） */
-function regionVegetation(r: Region, water: Map<string, Cell[]>, { nearRoad, nearPoi }: Obstacles) {
+function regionVegetation(
+  r: Region,
+  water: Map<string, Cell[]>,
+  { nearRoad, nearPoi, nearStand, hidesStandee }: Obstacles,
+  mown: boolean
+) {
   const vegetation: DecorVeg[] = []
   const random = rng(hashString(r.id) ^ 0x9e3779b9)
   const cs = r.cell_size
   const set = new Set(r.cells.map(([c, rr]) => keyOf(c, rr)))
   const waterCells = new Set((water.get(r.id) ?? []).map(([c, rr]) => keyOf(c, rr)))
   const P =
-    r.decor === 'allee' || r.decor === 'lawn' || r.decor === 'clearing'
-      ? PLANTING[r.decor]
-      : r.kind === 'park'
-        ? PLANTING.park
-        : PLANTING.garden
+    r.decor === 'lawn' && mown
+      ? PLANTING.mown
+      : r.decor === 'allee' || r.decor === 'lawn' || r.decor === 'clearing'
+        ? PLANTING[r.decor]
+        : r.kind === 'park'
+          ? PLANTING.park
+          : PLANTING.garden
   const treeP = P.tree
+  const rim = r.decor === 'lawn' && mown ? lawnRim(r, set) : undefined
+  // 公园、林子、修剪过的草坪里的树和灌木不种在路南边那一条（会把路挡住，同 terrain.ts 的 verge），不挡立牌
+  const verge = r.kind === 'park' && (r.decor !== 'lawn' || mown)
+  const blocks = (x: number, y: number) =>
+    hidesStandee(x, y) || (verge && VERGE_PROBES.some((d) => nearRoad(x, y - d, 32)))
   for (const [c, rr] of r.cells) {
     if (waterCells.has(keyOf(c, rr))) continue
     const cx = c * cs + cs / 2 + (random() - 0.5) * cs * 0.7
     const cy = rr * cs + cs / 2 + (random() - 0.5) * cs * 0.7
     const roll = random()
+    // 看台上和看台跟前（镜头那一侧）空着
+    if (nearStand(cx, cy, 24) || nearStand(cx, cy - 110, 0)) continue
     const inner = [-1, 0, 1].every((dc) =>
       [-1, 0, 1].every(
         (dr) => set.has(keyOf(c + dc, rr + dr)) && !waterCells.has(keyOf(c + dc, rr + dr))
@@ -258,18 +318,20 @@ function regionVegetation(r: Region, water: Map<string, Cell[]>, { nearRoad, nea
         flip: random() < 0.5,
       })
     if (inner) {
+      // 草坪中间不种树和灌木，只零星几丛草
+      const wooded = !rim || rim.has(keyOf(c, rr))
       if (roll < treeP) {
-        if (nearPoi(cx, cy, 85) || nearRoad(cx, cy, 55)) continue
+        if (!wooded || nearPoi(cx, cy, 85) || nearRoad(cx, cy, 55) || blocks(cx, cy)) continue
         plant(`tree${Math.floor(random() * 3)}` as DecorVeg['kind'], 0.85, 0.6)
       } else if (roll < treeP + P.bush) {
-        if (nearPoi(cx, cy, 45)) continue
+        if (!wooded || nearPoi(cx, cy, 45) || blocks(cx, cy)) continue
         plant('bush', 0.8, 0.5)
       } else if (roll < treeP + P.bush + P.grass) plant('grass', 0.9, 0.5)
     } else {
       // 边缘：花丛（花园、草坪）/ 灌木（公园、林子、行道树）
       const p = P.edge
       if (roll < p) {
-        if (nearPoi(cx, cy, 40) || nearRoad(cx, cy, 30)) continue
+        if (nearPoi(cx, cy, 40) || nearRoad(cx, cy, 30) || (P.edgeBush && blocks(cx, cy))) continue
         plant(P.edgeBush ? 'bush' : 'flowers', 0.75, 0.45)
       } else if (roll < p + P.edgeGrass) plant('grass', 0.9, 0.4)
     }
@@ -277,7 +339,8 @@ function regionVegetation(r: Region, water: Map<string, Cell[]>, { nearRoad, nea
   return vegetation
 }
 
-export function planDecor(atlas: Atlas): DecorPlan {
+/** mown：草坪公园是修剪过的（风格包给了草坪条纹色），中间不种树 */
+export function planDecor(atlas: Atlas, mown = false): DecorPlan {
   const near = obstaclesOf(atlas)
   const { water, harbors } = planWater(atlas, near)
   // 沥青路面、碎石废墟地不长东西
@@ -286,7 +349,7 @@ export function planDecor(atlas: Atlas): DecorPlan {
       (r) =>
         (r.kind === 'park' || r.kind === 'garden') && r.decor !== 'asphalt' && r.decor !== 'rubble'
     )
-    .flatMap((r) => regionVegetation(r, water, near))
+    .flatMap((r) => regionVegetation(r, water, near, mown))
   vegetation.sort((a, b) => a.y - b.y)
   return { vegetation, water, harbors }
 }
