@@ -90,7 +90,9 @@ const neck = poly(
     [6010, 4880], [6250, 4880], [6280, 5250], [6330, 5800], [5950, 5800], [5990, 5250],
   ])
 )
-const water = union(lake, river, basin, neck)
+// 东林公园林间草地上的小池塘，凉亭立在北岸
+const pond = blob(7130, 3790, 230, 130, 13, 0.12)
+const water = union(lake, river, basin, neck, pond)
 town.island(union(poly(coast), ...islets), water, {
   coast: 1,
   bay: 12,
@@ -225,28 +227,59 @@ town.region('outdoor_river_park_01', '河岸公园', 'park', dry(ellipse(1650, 1
     },
   },
 })
-town.region('seaside_stand', '', 'court', circle(1700, 5060, 120))
 town.region('pocket_carousel', '', 'carousel', circle(1500, 3300, 110))
-town.region('outdoor_seaside_park_01', '海滨公园', 'park', ellipse(1700, 4800, 820, 420), {
-  decor: 'lawn',
-  place: {
-    type: '公共地点',
-    summary: '西南海边的一大片草坪，环形步道绕一圈，朝海有一座露天看台，傍晚常有人坐着看海。',
-    features: ['草坪', '环形步道', '朝海看台'],
-    arrival: [1050, 4800],
-    onRoad: 40,
-    station: 'place_arrival_seaside_park',
-    node: 'arrival_seaside_park',
-    props: [
-      {
-        id: 'seaside_stand_seat__rest',
-        definition: 'core:seat@2',
-        name: '海滨公园看台座位',
-        at: [1480, 4990],
-      },
-    ],
-  },
+// 海滨公园：一大片草坪，北边两丛树框住；看台坐在南边伸进海里的岬角上、朝海敞开，
+// 步道绕草坪一圈，南边那半圈贴着海走、从看台前面过
+const STAND = { at: [1800, 5320], size: 300 }
+// 贴着海的那半圈步道铺石板
+// prettier-ignore
+const SEA_FRONT = [[1040, 4800], [1180, 5080], [1420, 5330], [1800, 5520], [2160, 5370], [2330, 5080], [2350, 4800]]
+town.region('seaside_promenade', '', 'plaza', band(SEA_FRONT.slice(1, -1), 110))
+town.region('seaside_grove_west', '', 'park', blob(1130, 4560, 260, 170, 31, 0.2), {
+  decor: 'woods',
 })
+town.region('seaside_grove_east', '', 'park', blob(2280, 4520, 240, 160, 32, 0.2), {
+  decor: 'woods',
+})
+town.region(
+  'outdoor_seaside_park_01',
+  '海滨公园',
+  'park',
+  union(ellipse(1700, 4800, 820, 420), circle(...STAND.at, STAND.size)),
+  {
+    decor: 'lawn',
+    label: [1640, 4700],
+    place: {
+      type: '公共地点',
+      summary:
+        '西南海边的一大片草坪，环形步道绕一圈、南边贴着海走；岬角上一座朝海的石砌看台，几级台阶围着小舞台，傍晚常有人坐着看海。',
+      features: ['草坪', '环形步道', '朝海看台', '小舞台'],
+      arrival: [1050, 4800],
+      onRoad: 40,
+      station: 'place_arrival_seaside_park',
+      node: 'arrival_seaside_park',
+      props: [
+        {
+          id: 'seaside_stand_seat__rest',
+          definition: 'core:seat@2',
+          name: '海滨公园看台座位',
+          at: [1800, 5160],
+        },
+      ],
+    },
+  }
+)
+town.standee('court', STAND.at, { size: STAND.size })
+// 只给画面看的小摆设：步道边朝海的长椅、两个入口的花箱、岬角上朝海的望远镜、两边小沙滩上的遮阳伞
+// prettier-ignore
+const SEASIDE_PIECES = {
+  bench: [[1235, 5090], [1420, 5250], [2210, 5235], [2300, 5000], [1480, 4505], [1930, 4495]],
+  planter: [[960, 4740], [1110, 4890], [2420, 4740], [2290, 4880]],
+  telescope: [[1880, 5585]],
+  parasol: [[1190, 5360], [2470, 5262], [2600, 5290]],
+}
+for (const [kind, spots] of Object.entries(SEASIDE_PIECES))
+  for (const at of spots) town.standee(kind, at)
 town.region('outdoor_pocket_park_01', '街心绿地', 'park', rect(820, 3150, 1450, 330), {
   decor: 'lawn',
   place: {
@@ -267,12 +300,16 @@ town.region('outdoor_pocket_park_01', '街心绿地', 'park', rect(820, 3150, 14
     ],
   },
 })
-town.region('outdoor_east_park_01', '东林公园', 'park', dry(ellipse(7050, 3700, 600, 820)), {
+// 东林公园：过下游的小木桥进林子，环路绕着林子中间一片草地，草地上一口小池塘，凉亭立在北岸
+town.region('outdoor_east_park_01', '东林公园', 'park', dry(blob(7110, 3800, 430, 350, 33, 0.12)), {
+  decor: 'lawn',
+  label: [6850, 3540],
   place: {
     type: '公共地点',
-    summary: '过下游的小木桥就是东边的林子，林间一条环路，林子中间有座凉亭。',
-    features: ['树林', '林间环路', '凉亭', '长椅'],
-    arrival: [6620, 3700],
+    summary:
+      '过下游的小木桥就是东边的林子，林间一条环路，林子中间一片草地，草地上有口小池塘，凉亭立在池塘北岸。',
+    features: ['树林', '林间环路', '林间草地', '池塘', '凉亭', '长椅'],
+    arrival: [6780, 3700],
     onRoad: 40,
     station: 'place_arrival_east_park',
     node: 'arrival_east_park',
@@ -281,11 +318,23 @@ town.region('outdoor_east_park_01', '东林公园', 'park', dry(ellipse(7050, 37
         id: 'east_park_bench__rest',
         definition: 'core:seat@2',
         name: '东林公园长椅',
-        at: [6960, 3800],
+        at: [6880, 3820],
       },
     ],
   },
 })
+town.region('woods_east_park', '', 'park', dry(ellipse(7080, 3700, 640, 840)), { decor: 'woods' })
+town.standee('park', [7130, 3672])
+// 池边的芦苇和石头、木桥头的指路牌、草地边的长椅
+// prettier-ignore
+const EAST_PARK_PIECES = {
+  reeds: [[6905, 3820], [7355, 3760], [7020, 3930], [7250, 3925]],
+  rock: [[6950, 3895], [7330, 3850], [6930, 3720]],
+  signpost: [[6615, 3500]],
+  bench: [[7345, 3640], [6900, 3690]],
+}
+for (const [kind, spots] of Object.entries(EAST_PARK_PIECES))
+  for (const at of spots) town.standee(kind, at)
 // 林子：北岸背后三团、东北长岬、东边、东南角、河口东岸；小岛上也长树
 const woods = [
   ['woods_north_1', blob(3150, 700, 650, 260, 21, 0.2)],
@@ -497,11 +546,14 @@ const ROADS = [
   ['lake_loop', arc(1650, 1450, 760, 500, 50, 350, 34), 50, { curve: false }],
   ['lake_north', [[2300, 1360], [2450, 1400]], 50, { curve: false }],
   ['lake_south', [[2138, 1833], [2300, 1950], [2450, 1990]], 50],
-  ['sea_loop', arc(1700, 4800, 650, 280, 0, 360, 36), 50, { curve: false }],
-  ['sea_in', [[800, 4500], [1050, 4800]], 50, { curve: false }],
-  ['east_loop', arc(7050, 3700, 430, 600, 0, 360, 40), 50, { curve: false }],
-  ['east_north', [[6700, 2850], [7050, 3100]], 56],
-  ['east_south', [[6560, 3550], [6950, 4250], [6890, 4650], [6960, 4900], [7200, 4910]], 50],
+  // 海滨公园：北半圈沿着草坪北沿，南半圈贴着海、从看台前面过
+  ['sea_north', [[1040, 4800], [1180, 4560], [1500, 4440], [1900, 4430], [2230, 4560], [2350, 4800]], 50],
+  ['sea_front', SEA_FRONT, 56],
+  ['sea_in', [[800, 4500], [1040, 4800]], 50, { curve: false }],
+  // 东林环线绕着林间草地；北边接河湾东岸，南边下到林间小屋
+  ['east_loop', arc(7110, 3720, 580, 570, 0, 360, 44), 50, { curve: false }],
+  ['east_north', [[6700, 2850], [6950, 3000], [7110, 3150]], 56],
+  ['east_south', [[7110, 4290], [6960, 4470], [6880, 4700], [6950, 4900], [7200, 4910]], 50],
   ['pocket_path', [[650, 3300], [900, 3320], [1300, 3440], [1700, 3440], [2200, 3300]], 46],
 ]
 for (const [id, pts, width, options] of ROADS) town.road(id, pts, width, options)
