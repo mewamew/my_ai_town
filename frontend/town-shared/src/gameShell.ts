@@ -29,11 +29,13 @@ export function startGameShell(
   map: GameMap,
   topology: Topology,
   decorate: () => void,
-  /** musicWorld：地图风格定下放哪个世界的曲子，没有按海岸小镇；connection：重演录像时换掉 WebSocket */
+  /** musicWorld：地图风格定下放哪个世界的曲子，没有按海岸小镇；connection：重演录像时换掉 WebSocket；
+   *  worldview：地图自带的世界观（内置地图才有），没有建镇建议时开局向导默认用它 */
   options: {
     normalSpeed?: number
     musicWorld?: MusicWorld
     connection?: (events: ConnectionEvents) => GameConnection
+    worldview?: string
   } = {}
 ) {
   // 界面类型只在这里定一次，作为参数交给各面板
@@ -103,8 +105,8 @@ export function startGameShell(
         }
       )
   const normalSpeed = options.normalSpeed ?? 1
-  // 一句话建的小镇：世界观建议给首次对话框和开局向导，适合住进来的人给向导
-  useTownCreation(selectedMap.id, selectedMap.creation)
+  // 一句话建的小镇：世界观建议给首次对话框和开局向导，适合住进来的人给向导；内置地图自带的世界观同样用
+  useTownCreation(selectedMap.id, selectedMap.creation, options.worldview)
   const inputs = { normalSpeed, game, selectedMap, map, events, localeName, topology, replay }
   const panels = createPanels({
     ...inputs,

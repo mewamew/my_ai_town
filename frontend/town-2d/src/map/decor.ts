@@ -280,8 +280,12 @@ function regionVegetation(r: Region, water: Map<string, Cell[]>, { nearRoad, nea
 export function planDecor(atlas: Atlas): DecorPlan {
   const near = obstaclesOf(atlas)
   const { water, harbors } = planWater(atlas, near)
+  // 沥青路面、碎石废墟地不长东西
   const vegetation = atlas.regions
-    .filter((r) => r.kind === 'park' || r.kind === 'garden')
+    .filter(
+      (r) =>
+        (r.kind === 'park' || r.kind === 'garden') && r.decor !== 'asphalt' && r.decor !== 'rubble'
+    )
     .flatMap((r) => regionVegetation(r, water, near))
   vegetation.sort((a, b) => a.y - b.y)
   return { vegetation, water, harbors }

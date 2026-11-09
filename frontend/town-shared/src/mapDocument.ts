@@ -39,9 +39,10 @@ export interface Atlas {
     cells: [number, number][]
     label_anchor?: [number, number]
     /** 只管样子的区域：woods 成片的林子、allee 一排排的树（行道树、河边柳）、lawn 草坪公园（树稀、少灌木）、
-     *  clearing 空地（不种树，只零星几丛草，雪橇坡这类）。
+     *  clearing 空地（不种树，只零星几丛草，雪橇坡这类）、asphalt 裂开积沙的旧沥青路面、
+     *  rubble 碎水泥块撒了一地的废墟地（这两种都不长树）。
      *  有 decor 的区域不摆这类地点自带的标志物（凉亭、花拱门）；没有名字的区域不标名字 */
-    decor?: 'woods' | 'allee' | 'lawn' | 'clearing'
+    decor?: 'woods' | 'allee' | 'lawn' | 'clearing' | 'asphalt' | 'rubble'
     /** 港口朝海的方向（横竖之一）；不给时从镇子中心指向港口算 */
     facing?: [number, number]
     /** 这处户外地点立什么地标：风格包 landmarks.plans 里的名字（如冰雪的 icefishing 冰钓场、sledding 雪橇坡），
@@ -91,6 +92,25 @@ export interface Atlas {
     y: number
     appearance?: Appearance
   }[]
+  /** 只看不进的楼（废墟里的断楼）：画成立体的楼壳，没有门和室内，不是地点，点不中，村民也不进去。
+   *  x、y、w、h 是占地（地图坐标），height 是墙高（贴图像素，普通房子二三十），一层一排窗；
+   *  look 同 spaces 的 look（屋顶三色、屋面、墙面、屋顶形状），不给照风格包的高楼 */
+  ruins?: {
+    id: string
+    x: number
+    y: number
+    w: number
+    h: number
+    height: number
+    look?: { roof?: [string, string, string]; roofing?: string; wall?: string; shape?: string }
+  }[]
+  /** 按坐标立的立牌，不占区域格子，可以立在干海床、冰面上（骨架、火盆、霓虹招牌、广告牌）：
+   *  kind 是风格包 landmarks.plans 里的名字（风格包里没有这一种就不立），x、y 是立牌底边中点；
+   *  flip 左右翻过来；on 是一栋房子或 ruins 里一栋楼的编号，立牌蹲到它的墙顶上（楼顶的秃鹫） */
+  standees?: { kind: string; x: number; y: number; flip?: boolean; on?: string }[]
+  /** 在一处上空盘旋的鸟群（废土是秃鹫）：中心 x、y，离地高度（地图单位），几只。
+   *  不给时风格包要秃鹫的，自己在干海床的骨头、沉船上空摆几群 */
+  flocks?: { x: number; y: number; height: number; count: number }[]
 }
 
 export interface Topology {
@@ -112,6 +132,8 @@ export interface MapDocument {
   }
   /** 手绘的内置地图没有建镇参数，风格写在这里，取值同 generation.spec.environment */
   environment?: { preset?: string }
+  /** 随地图带的世界观：第一次进这个小镇时开局向导、首次对话框默认用它（一句话建镇的建议优先） */
+  worldview?: string
 
   schema_version: number
   id: string

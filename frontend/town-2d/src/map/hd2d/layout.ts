@@ -268,6 +268,37 @@ export function houseOf(s: Space, theme: MapTheme): House {
   }
 }
 
+/** 只看不进的楼（地图的 ruins，废墟里的断楼）：照风格包的高楼（hotel）画，墙高按地图给，一层一排窗，
+ *  屋顶压得几乎是平的，不带烟囱、雨棚、旗子和招牌；地图给了 look 就照它的屋顶色、屋面、墙面 */
+export function ruinOf(r: NonNullable<Atlas['ruins']>[number], theme: MapTheme): House {
+  const space: Space = {
+    id: r.id,
+    name: '',
+    kind: 'hotel',
+    bounds: { x: 0, y: 0, width: r.w, height: r.h },
+    unfold: { scale: 1, offset_x: r.x, offset_y: r.y },
+    ...(r.look ? { look: r.look } : {}),
+  }
+  const look: BuildingStyle = {
+    ...theme.buildings.hotel,
+    walls: ['concrete'],
+    height: r.height,
+    rise: 0.04,
+    roofs: undefined,
+    chimney: 'never',
+    smoke: false,
+    windows: 'tower',
+    awning: undefined,
+    sign: undefined,
+    lanterns: false,
+    flag: false,
+    vault: false,
+    tower: false,
+    columns: false,
+  }
+  return houseOf(space, { ...theme, buildings: { ...theme.buildings, hotel: look } })
+}
+
 /** 高 height 的一点在屏幕上高出它脚下多少，折成地图纵深：屏幕上高出 H·cos，压扁的地图纵深要再除以 sin */
 export const riseOf = (height: number, tilt: Tilt) => (height * tilt.cos) / tilt.sin
 

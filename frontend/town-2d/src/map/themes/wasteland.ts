@@ -4,9 +4,10 @@ import { INTERIORS } from './interiors'
 import type { MapTheme } from './types'
 import { WALL_COLORS } from './walls'
 
-// 末日废土：海退干了，小镇还是原来那座孤岛，四周是龟裂、泛白的旧海床。
+// 末日废土：海退干了，小镇还是原来那座孤岛，四周是龟裂、泛白的旧海床，躺着骨头，秃鹫在上头打转。
 // 港口的栈桥伸到干地上，尽头搁浅着锈船；海塔断了顶，上面烧着一盆火。
-// 地面是干裂的土和缺块的水泥，房子是铁皮、集装箱和补丁水泥，屋顶是生锈的波纹铁皮。
+// 地面是锈红的干土和缺块的水泥，房子是铁皮、集装箱和补丁水泥，屋顶是生锈的波纹铁皮。
+// 岛是暖的锈红土，海床泛白偏冷，一眼分开；雾薄、暗部偏青。路灯稀，夜里亮的是火盆和霓虹。
 
 /** 铁皮屋顶的几种锈色：亮、中、暗 */
 const RUST: readonly (readonly [string, string, string])[] = [
@@ -194,9 +195,9 @@ const buildings: Record<BuildingKind, BuildingStyle> = {
 export const wasteland: MapTheme = {
   id: 'wasteland',
   ground: {
-    grass: ['#8a6d4c', '#977a56', '#a38661', '#ae916b', '#b99c75'],
+    grass: ['#8a5c3e', '#966748', '#a27252', '#ac7c5b', '#b78765'],
     park: ['#6e6446', '#7a6f4c', '#867a53', '#928559', '#9d9060'],
-    dirt: ['#a58a68', '#b09574', '#bb9f7e', '#c5a987'],
+    dirt: ['#a8835e', '#b28d68', '#bc9772', '#c6a17c'],
     pebble: ['#cdbb9a', '#6e5c44'],
     plaza: ['#8e8a80', '#9a958a', '#858177', '#a39e92'],
     plazaLine: '#6e6a62',
@@ -210,10 +211,10 @@ export const wasteland: MapTheme = {
     market: ['#a08a6a', '#94805f', '#7e6a50', '#5d4a38'],
     gardenSoil: '#6a5238',
     gardenLeaf: ['#6e6a40', '#86804a'],
-    // 旧海岸往外：先是深色的泥坡，越远越平、越白，是盐碱地
-    outer: ['#6e5a46', '#7e6850', '#93805e', '#a8966f', '#b8a680', '#c4b48e'],
-    outerEdge: '#56442f',
-    outerSpot: '#d8cdb5',
+    // 旧海岸往外：先是深色的泥坡，越远越平、越白，是泛白偏冷的盐碱地
+    outer: ['#6a5846', '#8e8270', '#aaa192', '#bcb5a7', '#c9c3b6', '#d3cec2'],
+    outerEdge: '#4a3a2a',
+    outerSpot: '#e8e4da',
     sand: ['#c9b48a', '#bfa97e', '#b39d72'],
     wetSand: '#8e7a5c',
     wetSandDither: '#9a8566',
@@ -264,21 +265,23 @@ export const wasteland: MapTheme = {
       blue: [0.84, 0.87, 1.12],
       night: [0.88, 0.9, 1.08],
     },
-    saturation: 0.98,
-    fog: 1.4,
+    saturation: 1.04,
+    fog: 0.85,
     lamp: '#ff9a50',
     aurora: 0,
-    look: { lift: 0.025, warm: 0.07, teal: 0.02, greens: 0.06, contrast: 0.1 },
+    look: { lift: 0.02, warm: 0.08, teal: 0.07, greens: 0.04, contrast: 0.17 },
   },
   motes: {
     dust: [0.95, 0.82, 0.62],
-    strength: 0.75,
+    strength: 0.5,
     night: 0,
     drift: 16,
     lift: 10,
     fireflies: false,
   },
   lamp: 'scrap',
+  lampGap: 140,
   flag: { colors: ['#8a3a2a', '#b8b0a0'], torn: true },
   lighthouse: 'ruined',
+  vultures: true,
 }

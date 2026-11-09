@@ -24,6 +24,7 @@ export async function startGame(
   const shell = startGameShell(selectedMap, map, data.topology, data.decorate, {
     musicWorld: musicWorldOf(data.theme.id, doc.generation?.spec?.settlement),
     connection: replay?.connection,
+    worldview: doc.worldview,
   })
   window.addEventListener(
     'pagehide',

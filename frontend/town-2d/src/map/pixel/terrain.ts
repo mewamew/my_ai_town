@@ -22,8 +22,10 @@ import type { GroundPalette, MapTheme } from '../themes/types'
 // 地面按地面画布的像素算：地面、区域材质、水、海岸，再画上植被和房间。
 // 画布一个像素 = PIXEL 个地图单位，镜头只按整数倍放大它。
 
-/** 自带铺装的区域，路面不再盖一层土 */
-const PAVED = new Set(['plaza', 'market', 'gate', 'harbor'])
+/** 自带铺装的区域，路面不再盖一层土（沥青是区域的 decor，见 groundKind） */
+const PAVED = new Set(['plaza', 'market', 'gate', 'harbor', 'asphalt'])
+/** 区域的 decor 换掉地面画法的几种：旧沥青路面、碎石废墟地；都不长树 */
+const DECOR_GROUNDS = new Set(['asphalt', 'rubble'])
 
 const packed = new Map<string, number>()
 function u(hex: string) {
@@ -196,6 +198,7 @@ export function paintGround(ground: Ground, flat: boolean): HTMLCanvasElement {
     }
   }
   for (const s of atlas.spaces) if (s.id !== OUTDOOR_SPACE) room(s, theme, seed, put, darken)
+  for (const r of atlas.ruins ?? []) ruinTop(r, put, darken)
   if (flat) {
     for (const d of ground.docks) flatPier(d, G, put)
     for (const b of ground.bridges) flatBridge(b, G, pw, ph, put)
@@ -351,13 +354,10 @@ function landMasks(
     content[i] = !wet[i] && (region[i] >= 0 || path[i] > 0) ? 1 : 0
     built[i] = content[i] && (path[i] > 0 || kindAt(i) !== 'road') ? 1 : 0
   }
-  for (const s of atlas.spaces) {
-    if (s.id === OUTDOOR_SPACE) continue
-    const r = roomRect(s)
+  for (const r of footprints(atlas))
     for (let y = toPx(r.y); y < toPx(r.y1); y++)
       for (let x = toPx(r.x); x < toPx(r.x1); x++)
         if (x >= 0 && y >= 0 && x < pw && y < ph) content[y * pw + x] = built[y * pw + x] = 1
-  }
   return { content, built }
 }
 
@@ -589,7 +589,7 @@ function paintBase(L: Layers, px: Uint32Array) {
         px[i] = shoreColor(L, i, x, y, shore)
         continue
       }
-      const kind = L.kindAt(i)
+      const kind = groundKind(L, i)
       const trodden = !PAVED.has(kind) && (path[i] === 2 || (path[i] === 1 && bayer(x, y) < 0.5))
       px[i] = groundColor(trodden ? 'path' : kind, x, y, seed, G, (c) => {
         if (y > 0) px[i - pw] = c
@@ -602,6 +602,12 @@ function paintBase(L: Layers, px: Uint32Array) {
         else if (hash(x, y, seed + 16) < 0.05) px[i] = u(G.shoreWeed)
       }
     }
+}
+
+/** 一个像素按什么画地面：区域的 decor 是沥青、碎石的照它画，不然按区域的种类 */
+function groundKind(L: Layers, i: number) {
+  const decor = L.decorAt(i)
+  return decor && DECOR_GROUNDS.has(decor) ? decor : L.kindAt(i)
 }
 
 /** 码头朝南临水那一面（row 是 Island.quay 的 1～3）：两行横着的墙板，越往下越暗；
@@ -733,12 +739,13 @@ function openGround(atlas: Atlas, L: Layers) {
       continue
     const decor = L.decorAt(i)
     open[i] =
-      (decor === 'clearing' ? OPEN.none : decor === 'lawn' ? OPEN.lawn : OPEN_KINDS[kind]) ??
-      OPEN.town
+      (decor === 'clearing' || (decor && DECOR_GROUNDS.has(decor))
+        ? OPEN.none
+        : decor === 'lawn'
+          ? OPEN.lawn
+          : OPEN_KINDS[kind]) ?? OPEN.town
   }
-  for (const s of atlas.spaces) {
-    if (s.id === OUTDOOR_SPACE) continue
-    const r = roomRect(s)
+  for (const r of footprints(atlas)) {
     const x0 = toPx(r.x) - 6,
       y0 = toPx(r.y) - 6
     const x1 = toPx(r.x1) + 6,
@@ -747,6 +754,14 @@ function openGround(atlas: Atlas, L: Layers) {
       for (let x = Math.max(0, x0); x < Math.min(pw, x1); x++) open[y * pw + x] = OPEN.none
   }
   return open
+}
+
+/** 房子和只看不进的楼（Atlas 的 ruins）的占地，地图坐标 */
+function footprints(atlas: Atlas) {
+  return [
+    ...atlas.spaces.filter((s) => s.id !== OUTDOOR_SPACE).map((s) => roomRect(s)),
+    ...(atlas.ruins ?? []).map((r) => ({ x: r.x, y: r.y, x1: r.x + r.w, y1: r.y + r.h })),
+  ]
 }
 
 /** 空地分类：none 不能种东西（水、路、铺装、房屋四周），其余按所在区域；lawn 是草坪公园，树和草都稀 */
@@ -862,6 +877,22 @@ function gardenColor({ x, y, seed, G, g }: Spot) {
   return u(pick(G.grass, g * 1.1 - 0.02, x, y, 1.2))
 }
 
+/** 旧沥青路面：深灰底，成片龟裂成黑缝，风刮来的沙在上面积成一摊摊 */
+function asphaltColor({ x, y, seed, cracked }: Spot) {
+  if (cracked(7)) return u('#2a2826')
+  const n = noise(x / 5, y / 5, seed + 4)
+  if (noise(x / 16, y / 16, seed + 9) > 0.66) return u(n > 0.5 ? '#9a8668' : '#8a785c')
+  return u(n > 0.66 ? '#57534e' : n > 0.33 ? '#4c4844' : '#43403c')
+}
+
+/** 碎石废墟地：野地上撒满碎水泥块，大块的亮、碎屑发暗 */
+function rubbleColor(s: Spot, paintAbove: (c: number) => void) {
+  const { x, y, seed } = s
+  if (hash(x, y, seed + 41) < 0.1) return u('#8a8478')
+  if (hash(x >> 1, y >> 1, seed + 43) < 0.06) return u('#6e6a62')
+  return grassColor(s, false, paintAbove)
+}
+
 /** 野地和公园的草：零星的草丛尖和小花，废土里成片龟裂 */
 function grassColor(s: Spot, park: boolean, paintAbove: (c: number) => void) {
   const { x, y, seed, G, g } = s
@@ -921,6 +952,10 @@ function groundColor(
       return harborColor(spot)
     case 'garden':
       return gardenColor(spot)
+    case 'asphalt':
+      return asphaltColor(spot)
+    case 'rubble':
+      return rubbleColor(spot, paintAbove)
     default:
       return grassColor(spot, kind === 'park', paintAbove)
   }
@@ -1079,6 +1114,22 @@ function floorColor(type: string, lx: number, ly: number, seed: number): string 
       if (lx % 5 === 0 || ly % 5 === 0) return '#a8735a'
       return (((lx / 5) | 0) + ((ly / 5) | 0)) & 1 ? '#c98f6a' : '#bf8561'
   }
+}
+
+/** 只看不进的楼（Atlas 的 ruins）在平面图上：一块灰水泥楼顶，四边一圈深色女儿墙，东边、南边压一道影子 */
+function ruinTop(r: NonNullable<Atlas['ruins']>[number], put: Put, darken: Darken) {
+  const x = toPx(r.x),
+    y = toPx(r.y)
+  const w = toPx(r.x + r.w) - x,
+    h = toPx(r.y + r.h) - y
+  for (let yy = y + 3; yy < y + h + 6; yy++)
+    for (let xx = x + 3; xx < x + w + 6; xx++)
+      if ((xx >= x + w || yy >= y + h) && bayer(xx, yy) < 0.85) darken(xx, yy, 0.45)
+  for (let yy = y; yy < y + h; yy++)
+    for (let xx = x; xx < x + w; xx++) {
+      const edge = xx === x || yy === y || xx === x + w - 1 || yy === y + h - 1
+      put(xx, yy, u(edge ? '#5e5a54' : hash(xx >> 2, yy >> 2, 7) < 0.15 ? '#77736b' : '#8a867e'))
+    }
 }
 
 /** 房间：投影、地板、墙（顶边露出立面）、朝最近墙边开门 */

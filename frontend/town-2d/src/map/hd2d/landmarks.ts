@@ -10,6 +10,15 @@ import { sprite, stone } from './sprite'
 // 以及市场的摊位、港口栈桥边的船、花园的花拱门、公园的凉亭。都是竖在地上的像素立牌，
 // 和树、路灯一样按俯角转向镜头；光从左上来，左边亮右边暗。一个贴图像素对应一个地图像素。
 
+/** 立牌照亮脚下一圈地面（火盆、霓虹招牌）：颜色、照多远（地图单位）、亮度倍数，
+ *  on 是天黑到什么程度亮起来（0～1，同路灯） */
+export interface StandeeLight {
+  color: string
+  reach: number
+  power?: number
+  on?: number
+}
+
 /** 逐帧动画的立牌：canvas 是横排 frames 帧的图集，每秒 fps 帧循环播放 */
 export interface Flipbook {
   canvas: HTMLCanvasElement
@@ -17,6 +26,7 @@ export interface Flipbook {
   glow?: HTMLCanvasElement
   frames: number
   fps: number
+  light?: StandeeLight
 }
 
 export interface LandmarkSprite {
@@ -28,6 +38,9 @@ export interface LandmarkSprite {
   frames?: number
   fps?: number
   glow?: HTMLCanvasElement
+  light?: StandeeLight
+  /** 蹲到这栋房子（或只看不进的楼）的墙顶上 */
+  on?: string
 }
 
 /** 一种风格的户外立牌：各类地点放什么、栈桥边停什么船、桥上堆什么、野地和外圈散落什么 */
@@ -429,6 +442,52 @@ function mooredBoats(
     av = side ? -24 : -26
   if (roll(3) < 0.8 && clear(au - 18, au + 18, av - 4, av + 4))
     add(au, av, set.boat(own + 13, view, 1 - kind, { mirror: dock.dx > 0, tied: false }))
+  return out
+}
+
+/** 左右翻过来的立牌：逐帧动画每一帧各自翻，帧的顺序不变 */
+function mirrored(art: HTMLCanvasElement | Flipbook): HTMLCanvasElement | Flipbook {
+  const flip = (c: HTMLCanvasElement, frames: number) => {
+    const out = document.createElement('canvas')
+    out.width = c.width
+    out.height = c.height
+    const ctx = out.getContext('2d')!
+    const fw = c.width / frames
+    for (let f = 0; f < frames; f++) {
+      ctx.save()
+      ctx.translate((f + 1) * fw, 0)
+      ctx.scale(-1, 1)
+      ctx.drawImage(c, f * fw, 0, fw, c.height, 0, 0, fw, c.height)
+      ctx.restore()
+    }
+    return out
+  }
+  if (art instanceof HTMLCanvasElement) return flip(art, 1)
+  return {
+    ...art,
+    canvas: flip(art.canvas, art.frames),
+    glow: art.glow && flip(art.glow, art.frames),
+  }
+}
+
+/** 地图按坐标立的立牌（Atlas 的 standees）：照风格包 plans 里的名字画，不占区域格子，
+ *  落在水上（干海床、冰面）也照立。种子按立牌的位置取，挪动一件不影响别的 */
+export function mapStandees(atlas: Atlas, seed: number, set: LandmarkSet): LandmarkSprite[] {
+  const out: LandmarkSprite[] = []
+  for (const s of atlas.standees ?? []) {
+    const plan = set.plans[s.kind]
+    if (!plan) continue
+    const own = Math.floor(hash(Math.round(s.x), Math.round(s.y), seed + 41) * 1e6)
+    for (const [art, dx, dy] of plan(own)) {
+      const drawn = s.flip ? mirrored(art) : art
+      out.push({
+        x: s.x + (s.flip ? -dx : dx) * PIXEL,
+        y: s.y + dy * PIXEL,
+        ...(drawn instanceof HTMLCanvasElement ? { canvas: drawn } : drawn),
+        ...(s.on ? { on: s.on } : {}),
+      })
+    }
+  }
   return out
 }
 

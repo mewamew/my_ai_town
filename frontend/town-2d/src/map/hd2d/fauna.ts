@@ -9,7 +9,8 @@ import { sprite } from './sprite'
 import { standee, texture } from './standee'
 
 // 环境里的小动静：白天鸟群从镇子一头飞到另一头、影子扫过屋顶，港口上空、灯塔顶上几只海鸥盘旋，花丛边有蝴蝶，
-// 傍晚镇中心上空几只蝙蝠，近岸偶尔一条鱼跃出水面（落水处在踩踏图上起一圈涟漪），夜里烟囱口零星飘出火星。
+// 傍晚镇中心上空几只蝙蝠，近岸偶尔一条鱼跃出水面（落水处在踩踏图上起一圈涟漪），夜里烟囱口零星飘出火星；
+// 废土的干海床、断楼上空几群秃鹫慢慢绕大圈，偶尔扇一下翅膀。
 // 纯装饰：按地图种子和时间确定性地动，不能点、不进协议，和世界里发生的事无关。减少动画时全部隐去。
 
 /** 两帧扇翅的像素图（横排两帧） */
@@ -46,6 +47,28 @@ const BAT = flapper(
   ],
   { b: '#2a2133' }
 )
+/** 秃鹫：张开的宽翅膀，翼尖的飞羽分叉，白领子、粉灰的秃头；两帧是平翼滑翔和翅膀往下压 */
+const VULTURE = flapper(
+  [
+    [
+      'kk.............kk',
+      '.kkk.........kkk.',
+      '..kkkkkwhwkkkkk..',
+      '...ppppkkkkpppp..',
+      '......kkkkk......',
+      '.......k.k.......',
+    ],
+    [
+      '.................',
+      'k...............k',
+      'kk.............kk',
+      '.kkkkkkwhwkkkkkk.',
+      '...ppppkkkkpppp..',
+      '......kkkkk......',
+    ],
+  ],
+  { k: '#2a2220', p: '#7a6a5e', h: '#c9998a', w: '#e6dccc' }
+)
 const FISH = sprite(6, 3, (p) => {
   p.rect(1, 1, 4, 1, '#b8c8d8')
   p.px(0, 0, '#8aa0b8')
@@ -81,6 +104,8 @@ export interface FaunaWorld {
   /** 烟囱口（世界坐标），夜里飘火星 */
   chimneys: [number, number, number][]
   center: [number, number]
+  /** 盘旋的秃鹫：每群绕着 (x, y) 上空、离地 height（地图单位）飞，count 只 */
+  flocks: { x: number; y: number; height: number; count: number }[]
 }
 
 export interface FaunaLight {
@@ -102,6 +127,13 @@ export class Fauna {
   })[] = []
   private readonly butterflies: (Flyer & { at: [number, number]; phase: number })[] = []
   private readonly bats: (Flyer & { phase: number })[] = []
+  private readonly vultures: (Flyer & {
+    at: [number, number]
+    phase: number
+    radius: number
+    height: number
+    speed: number
+  })[] = []
   private readonly fish: Flyer
   private readonly embers: THREE.Points
   private tilt: Tilt
@@ -161,6 +193,17 @@ export class Fauna {
     for (let i = 0; i < 5; i++) this.bats.push({ ...make(BAT, 2), phase: random() * 10 })
     this.fish = make(FISH, 1)
     this.fish.mesh.visible = false
+    // 秃鹫：一群里的几只圈子大小、高低、快慢各不一样，一半顺时针一半逆时针
+    for (const f of world.flocks)
+      for (let i = 0; i < f.count; i++)
+        this.vultures.push({
+          ...make(VULTURE, 2),
+          at: [f.x, f.y],
+          phase: random() * Math.PI * 2,
+          radius: (34 + random() * 46) * PIXEL,
+          height: f.height + random() * 18 * PIXEL,
+          speed: (0.08 + random() * 0.06) * (i % 2 ? -1 : 1),
+        })
     // 火星：每根烟囱几颗，在着色器里按时间往上飘、一闪一闪
     const n = world.chimneys.length * 4
     const pos = new Float32Array(n * 3),
@@ -221,7 +264,14 @@ void main() { gl_FragColor = vec4(vec3(1.0, 0.55, 0.2) * vAlpha * amount * 1.8, 
   }
 
   private flyers(): Flyer[] {
-    return [...this.birds, ...this.gulls, ...this.butterflies, ...this.bats, this.fish]
+    return [
+      ...this.birds,
+      ...this.gulls,
+      ...this.butterflies,
+      ...this.bats,
+      ...this.vultures,
+      this.fish,
+    ]
   }
 
   /** 摆到 seconds 这一刻；减少动画时整组隐去 */
@@ -268,6 +318,18 @@ void main() { gl_FragColor = vec4(vec3(1.0, 0.55, 0.2) * vAlpha * amount * 1.8, 
         g.height + Math.sin(a * 2) * 4 * PIXEL
       )
       g.map.offset.x = Math.sin(seconds * 9 + g.phase * 5) > 0.6 ? 0.5 : 0
+    }
+    // 秃鹫：白天到傍晚绕着自己那一处慢慢转大圈，高低微微起伏，偶尔扇一下翅膀
+    for (const v of this.vultures) {
+      v.mesh.visible = (day > 0.2 || twilight > 0.3) && rain < 0.4
+      const a = seconds * v.speed + v.phase
+      place(
+        v,
+        v.at[0] + Math.cos(a) * v.radius,
+        v.at[1] + Math.sin(a) * v.radius * 0.7,
+        v.height + Math.sin(a * 1.7) * 3 * PIXEL
+      )
+      v.map.offset.x = Math.sin(seconds * 1.9 + v.phase * 7) > 0.9 ? 0.5 : 0
     }
     // 蝴蝶：晴天围着自己的花丛打转
     for (const b of this.butterflies) {

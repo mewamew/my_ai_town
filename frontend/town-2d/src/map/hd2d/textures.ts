@@ -228,6 +228,8 @@ interface WindowPen {
   x: Ctx
   ex: Ctx
   house: House
+  /** 墙长、墙高（贴图像素） */
+  len: number
   hgt: number
   mid: number
   glass(i: number, j: number, w: number, h: number): void
@@ -356,6 +358,34 @@ function boardedWindows(p: WindowPen) {
   })
 }
 
+/** 高楼的窗：每层一道楼板线、一排窗。有的窗炸成黑洞（底下挂着碎块），有的砌死了，
+ *  其余是脏玻璃，窗下淌着锈水；夜里零星几扇还亮着。门那一层避开门，往上整排都是窗 */
+function towerWindows(p: WindowPen) {
+  const { x, ex, house, len, hgt } = p
+  const seed = house.seed
+  let floor = 0
+  for (let wy = hgt - 14; wy >= 4; wy -= 9, floor++) {
+    rect(x, 0, wy - 2, len, 1, '#6a6660')
+    const draw = (i: number, y: number) => {
+      const h = hash(i, y, seed + 7)
+      if (h < 0.17) {
+        rect(x, i - 1, y - 1, 6, 7, '#171513')
+        if (hash(i, y, seed + 2) < 0.5) rect(x, i - 1, y + 6, 6, 2, '#3a3632')
+        return
+      }
+      if (h < 0.24) return
+      rect(x, i - 1, y - 1, 6, 7, '#55524c')
+      rect(x, i, y, 4, 5, h < 0.55 ? '#1d2730' : '#283642')
+      rect(x, i, y, 2, 1, '#4d6272')
+      if (hash(i, y, seed + 9) < 0.06) rect(ex, i, y, 4, 5, LIT)
+      if (hash(i, y, seed + 13) < 0.2)
+        rect(x, i + 1, y + 5, 2, 2 + Math.floor(hash(i, y, seed) * 4), '#7a5a3a')
+    }
+    if (floor === 0) p.row(4, 7, wy, draw)
+    else for (let i = 5; i + 8 < len; i += 7) draw(i, wy)
+  }
+}
+
 /** 不带百叶的双扇窗：白窗框，中间一道竖棂、上面一道横棂 */
 function casementWindows(p: WindowPen) {
   const { x, ex } = p
@@ -400,6 +430,7 @@ const WINDOWS: Record<WindowKind, (p: WindowPen) => void> = {
   high: (p) => p.row(4, 12, 4, (i, wy) => p.glass(i, wy, 4, 3)),
   frost: frostWindows,
   boarded: boardedWindows,
+  tower: towerWindows,
 }
 
 /** 窗：按功能挑样式，沿墙等距排开，避开门 */
@@ -416,6 +447,7 @@ function windows(
     x,
     ex,
     house,
+    len,
     hgt,
     mid,
     glass(i, j, w, h) {

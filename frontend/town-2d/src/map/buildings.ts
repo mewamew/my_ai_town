@@ -39,7 +39,7 @@ export const oneOf = <T extends string>(list: readonly T[], value: string | unde
   list.find((item) => item === value)
 
 /** boarded：一部分窗钉了木板，其余是带铁栏的脏玻璃；frost：白窗框，窗台上积雪，窗角结霜；
- *  casement：不带百叶的双扇窗 */
+ *  casement：不带百叶的双扇窗；tower：高楼一层一排窗，有的炸成黑洞、有的砌死，零星几扇夜里还亮 */
 export type WindowKind =
   | 'shutter'
   | 'casement'
@@ -52,6 +52,7 @@ export type WindowKind =
   | 'rows'
   | 'boarded'
   | 'frost'
+  | 'tower'
 
 const BUILDING_KINDS = [
   'home',
