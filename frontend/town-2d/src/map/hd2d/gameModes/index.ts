@@ -1,13 +1,15 @@
 import type * as THREE from 'three'
 import type { GameModeView } from 'town-shared/protocol'
 import type { MapTheme } from '../../themes/types'
+import type { Badge } from '../villagerSigns'
 import { SwordholderLook } from './swordholder'
 import { TideLook } from './tide'
 import { WerewolfLook } from './werewolf'
 
 // 玩法的画面：场景在固定的几处把材质交给玩法（地面、海面、立在地上的东西、村民），
 // 名册来了把玩法此刻的状态交给它；要在地图上画自己界面的玩法，场景建好时给它一层；
-// 要在场景里放自己东西的玩法（天上的水滴……），场景建好时给它场景，每拍让它推进自己的动画。
+// 要在场景里放自己东西的玩法（天上的水滴……），场景建好时给它场景，每拍让它推进自己的动画；
+// 要给人做记号的玩法（拿着信号弹的人）给出头顶的标记。
 // 每个玩法的着色和界面都先装好，没开它时它什么也不画。
 // 加一个玩法：在这个目录写一个文件实现 GameModeLook，再登记到下面的 gameModeLooks。
 
@@ -31,6 +33,9 @@ export interface GameModeLook {
   ): void
   /** 每拍推进放在场景里的东西（t 是秒）；返回 true 时这一拍要重画 */
   step?(t: number): boolean
+  /** 给哪些村民头顶挂常驻的小标记（大逃杀里拿着信号弹的人）：村民编号 → 标记，画法见 villagerSigns.ts。
+   *  每次 apply 之后读一遍 */
+  badges?(): ReadonlyMap<string, Badge>
 }
 
 /** 所有玩法的画面，场景建好时装上 */

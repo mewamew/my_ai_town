@@ -47,6 +47,7 @@ export type Tint = 'pale' | 'fever' | 'poison' | 'dead' | 'incap'
  *  lie 是整个人躺下；sparks 是冒出来的小东西（贴图上的格子，画面坐标，左上为原点），最后画。
  *  tint 是身上的颜色，wet 是淋湿的档（衣服压深、头发多一道湿亮），snow 是头顶、帽檐、伞面积雪的档，
  *  bandage 是头上缠绷带；sign 是头顶的符号（画面坐标的左下角，alpha 按有序抖动淡出）；
+ *  badge 是玩法挂在头顶的常驻标记（画面坐标的左下角）；
  *  outline 是外面一圈描边：悬停白边、选中金边（不受夜色压暗） */
 export interface Frame {
   view: View
@@ -70,6 +71,7 @@ export interface Frame {
   snow: 0 | 1 | 2 | 3
   bandage: boolean
   sign?: { name: Sign; x: number; y: number; alpha: number }
+  badge?: { name: string; rows: readonly string[]; x: number; y: number }
   outline?: 'hover' | 'pick'
 }
 
@@ -79,7 +81,8 @@ export function frameKey(f: Frame) {
   const toes = f.stance.toes?.map((t) => t.join('.')).join('/') ?? ''
   const sparks = f.sparks?.map((s) => s.join('')).join(',') ?? ''
   const sign = f.sign ? `${f.sign.name}${f.sign.x}.${f.sign.y}.${f.sign.alpha.toFixed(2)}` : ''
-  return `${f.view}${+f.flip}${f.turn ? f.turn.view + +f.turn.mirror : ''}|${legs}|${toes}|${f.stance.arm}|${f.bodyDy}${f.headDy}${f.headDx}|${f.sway}${f.bounce}|${f.eyes}${f.gaze}${f.mouth}${f.blush}|${f.props?.key ?? ''}|${+f.lie}|${sparks}|${f.tint ?? ''}${f.wet}${f.snow}${+f.bandage}|${sign}|${f.outline ?? ''}`
+  const badge = f.badge ? `${f.badge.name}${f.badge.x}.${f.badge.y}` : ''
+  return `${f.view}${+f.flip}${f.turn ? f.turn.view + +f.turn.mirror : ''}|${legs}|${toes}|${f.stance.arm}|${f.bodyDy}${f.headDy}${f.headDx}|${f.sway}${f.bounce}|${f.eyes}${f.gaze}${f.mouth}${f.blush}|${f.props?.key ?? ''}|${+f.lie}|${sparks}|${f.tint ?? ''}${f.wet}${f.snow}${+f.bandage}|${sign}|${badge}|${f.outline ?? ''}`
 }
 
 /** 道具、天气、表情用到的颜色位（村民的调色板里没有的）：木头、饭菜、火苗、水、蓝、紫、雪 */
@@ -335,13 +338,20 @@ export class VillagerRig {
         scrCh.set(ch.subarray(row, row + RIG_W), row)
       }
     }
-    // 冒出来的小东西、头顶的符号：画面坐标，单算一种材质（平的，不鼓）
+    // 冒出来的小东西、头顶的标记和符号：画面坐标，单算一种材质（平的，不鼓）
     const dot = (x: number, y: number, c: string) => {
       if (x < 0 || y < 0 || x >= RIG_W || y >= RIG_H) return
       scr[y * RIG_W + x] = this.lut[code(c)]
       scrCh[y * RIG_W + x] = LOOSE
     }
     for (const [x, y, c] of f.sparks ?? []) dot(x, y, c)
+    if (f.badge) {
+      const { rows, x: bx, y: by } = f.badge
+      rows.forEach((row, j) => {
+        for (let i = 0; i < row.length; i++)
+          if (row[i] !== '.') dot(bx + i, by - rows.length + 1 + j, row[i])
+      })
+    }
     if (f.sign) {
       const { name, x: sx, y: sy, alpha } = f.sign
       const rows = SIGNS[name]

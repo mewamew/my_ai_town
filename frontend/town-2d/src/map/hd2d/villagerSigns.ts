@@ -19,6 +19,13 @@ export const SIGNS: Record<Sign, readonly string[]> = {
   growl: ['.K...K.', 'KiK.KiK', 'i.KiK.i', '...K...'],
 }
 
+/** 玩法给某人头顶挂的常驻标记（大逃杀里拿着信号弹的人）：挂在头的左上角，和右上角冒的符号错开；
+ *  躺着时挂在身子上方。rows 的写法同上面的符号，最高 8 行；name 用来比对要不要重画 */
+export interface Badge {
+  name: string
+  rows: readonly string[]
+}
+
 /** 一个冒出来的符号：从 at 到 until（毫秒） */
 export interface Shown {
   sign: Sign

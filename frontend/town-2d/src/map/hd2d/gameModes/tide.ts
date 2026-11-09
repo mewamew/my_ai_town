@@ -1,13 +1,21 @@
 import * as THREE from 'three'
 import { el } from 'town-shared/dom'
 import { residentPortrait } from 'town-shared/portraits'
-import type { GameModeView, TideCircle, TideNews, TidePlayer, TideView } from 'town-shared/protocol'
+import type {
+  GameModeView,
+  TideCircle,
+  TideFlare,
+  TideNews,
+  TidePlayer,
+  TideView,
+} from 'town-shared/protocol'
 import { PIXEL } from '../../grid'
 import type { MapTheme } from '../../themes/types'
 import { SEA_DEPTH_HOOK } from '../sea'
+import type { Badge } from '../villagerSigns'
 import { VILLAGER_SCALE } from '../villagerSprite'
 import type { GameModeLook } from '.'
-import { tideIcon } from './tideIcons'
+import { FLARE_BADGE, tideIcon } from './tideIcons'
 import './tide.css'
 
 // 潮水圈：圈外的岛沉到水下。
@@ -19,7 +27,8 @@ import './tide.css'
 // 全部按地面像素格取整，保持像素风。圆心和半径是行走地图上的米，乘每米的地图单位换成场景坐标。
 // 外圈不是海的地图（干海床、冰原）上，圈外露出的是外圈本来的样子，水深不重算。
 // 界面（上帝视角）：顶上一排选手头像和还剩几个人，倒下的变灰；右边一列战报（谁对谁动了手、谁倒下了、
-// 木箱、船），新的在上；分出结果时正中打出谁活着离开。选手、战报、输赢都由内核的潮水插件给。
+// 木箱、信号弹、船），新的在上；分出结果时正中打出谁活着离开。选手、战报、输赢都由内核的潮水插件给。
+// 有船票的局（船只认信号弹）：头像一排右边写着信号弹在谁身上，拿着的人头像一圈红边、头顶挂一枚小信号弹。
 
 /** 海面上，圈外原来的地每离水边一个像素，水深算几个像素：小于 1 时新水边的浅水带比天然海岸宽一些 */
 const SLOPE = 0.5
@@ -30,6 +39,20 @@ const SINK_RATE = 0.6
 const WADE_TEXELS = 11
 /** 战报列几条 */
 const NEWS_SHOWN = 5
+
+/** 信号弹在哪，写在人数条右边：「秦烈」「铁皮匣里」「「椰林」的地上」 */
+function flareWhere(flare: TideFlare, players: TidePlayer[]) {
+  switch (flare.at) {
+    case 'held':
+      return players.find((p) => p.id === flare.id)?.name ?? '谁身上'
+    case 'case':
+      return '铁皮匣里'
+    case 'left':
+      return flare.place
+    case 'gone':
+      return '船边'
+  }
+}
 
 /** 世界分钟写成「第 3 天 14:20」 */
 function clock(at: number) {
@@ -233,7 +256,9 @@ export class TideLook implements GameModeLook {
     if (!root) return
     const v = this.view
     const players = v?.players ?? []
-    const key = v ? JSON.stringify([players, v.news ?? [], v.winner ?? '', v.phase === 'over']) : ''
+    const key = v
+      ? JSON.stringify([players, v.news ?? [], v.winner ?? '', v.phase === 'over', v.flare ?? ''])
+      : ''
     if (key === this.drawn) return
     this.drawn = key
     root.hidden = !v || players.length === 0
@@ -245,22 +270,40 @@ export class TideLook implements GameModeLook {
     if (v.phase === 'over') root.append(this.ending(v, players))
   }
 
-  /** 顶上：还剩几个人，一排头像，倒下的变灰，上了船的亮金边 */
+  /** 顶上：还剩几个人，一排头像，倒下的变灰，上了船的亮金边；有船票的局右边写着信号弹在谁身上，
+   *  拿着的人一圈红边 */
   private lineup(v: TideView, players: TidePlayer[]) {
     const box = el('div', '', 'tide-lineup')
     const left = players.filter((p) => !p.fell && p.id !== v.winner).length
     box.append(el('b', v.phase === 'over' ? '结束' : `剩 ${left} 人`))
     const faces = el('div', '', 'tide-faces')
+    const flare = v.phase === 'over' ? undefined : v.flare
     for (const p of players) {
       const face = residentPortrait(p.id, p.name)
       face.classList.add('tide-face')
       if (p.fell) face.classList.add('out')
       if (p.id === v.winner) face.classList.add('won')
+      if (flare?.at === 'held' && flare.id === p.id) face.classList.add('flare')
       face.title = p.fell ? `${p.name}：${p.fell}` : p.name
       faces.append(face)
     }
     box.append(faces)
+    if (flare && flare.at !== 'gone') {
+      const where = flareWhere(flare, players)
+      const chip = el('span', '', 'tide-flare')
+      chip.title = `信号弹在${where}`
+      chip.append(tideIcon('flare', 1), el('span', where))
+      box.append(chip)
+    }
     return box
+  }
+
+  /** 拿着信号弹的人头顶挂一枚小信号弹；倒下了也挂着，等人来搜 */
+  badges() {
+    const out = new Map<string, Badge>()
+    const flare = this.view?.flare
+    if (flare?.at === 'held' && this.view?.phase !== 'over') out.set(flare.id, FLARE_BADGE)
+    return out
   }
 
   /** 右边：最近几条战报，新的在上 */

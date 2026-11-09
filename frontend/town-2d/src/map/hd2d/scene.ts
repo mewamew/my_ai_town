@@ -12,6 +12,7 @@ import { pier, PIER_DECK, pierLampCanvas } from './pier'
 import { fbm, hash, rng } from '../pixel/noise'
 import { Motes } from './motes'
 import { Villagers, type LiveMotion, type VillagerPlacement } from './villagers'
+import type { Badge } from './villagerSigns'
 import { villagerLight } from './villagerLight'
 import { VILLAGER_HALF, VILLAGER_HEIGHT, VILLAGER_SCALE } from './villagerSprite'
 import { Weather3D } from './weather'
@@ -1807,6 +1808,9 @@ export class HdScene {
     if (key === this.gameModeKey) return
     this.gameModeKey = key
     for (const look of this.looks) look.apply(view, metre)
+    const badges = new Map<string, Badge>()
+    for (const look of this.looks) look.badges?.().forEach((badge, id) => badges.set(id, badge))
+    this.villagers.setBadges(badges)
     this.ambient = true
   }
   private gameModeKey = ''

@@ -6,15 +6,18 @@
 //! 不按地点。水淹到正在睡觉、躲雨、歇着的人，就把他泡醒：打断手上的事，告诉他往哪边走能回到圈里。
 //!
 //! 输赢：打开时在岛上的人是这一局的选手，开局每人口袋里一张纸条写明规则和每一圈的钟点。最后一圈公布时，
-//! 终点一带离终点最近的空位停一条船，只坐得下一个人，谁先登上去（道具动作「登船」，离开这个世界）谁赢；
-//! 拖到这一圈涨完没人登船，船带走离它最近的那个人。在那之前只剩一个人活着，船就提前来接。一个人也没剩下
-//! 就没有赢家。
+//! 终点一带离终点最近的空位停一条船，只坐得下一个人，船上的人只认信号弹：随身带着信号弹的人才登得上
+//! （道具动作「登船」，带着信号弹开始、做完时打出去，离开这个世界），登上去的人赢；拖到这一圈涨完没人登船，
+//! 船带走离它最近的那个人。在那之前只剩一个人活着，船就提前来接，不用信号弹。一个人也没剩下就没有赢家。
+//! 信号弹全岛只有一枚，第 1 圈公布时装在一只铁皮匣里冲上岸，撬开的人拿到；之后偷、抢、搜身、赠予都能换手。
+//! 第五局谁先登上船谁赢，船来以前动手没好处，冲突全挤在船来后的 58 分钟里；有了船票，拿着信号弹的人从
+//! 第 2 天起就是靶子。它在谁身上每次结算看一眼，换了人就公告全岛、记进战报，题面那一栏一直写着。
 //! 第 1 到第 3 圈公布时，潮水往新圈里冲上来一只木箱：一把菜刀、一个急救包、一包压缩饼干各一箱；
 //! 菜刀在前两箱里，其余顺序按种子定。每一圈公布时的公告和题面都写着还剩谁。
-//! 有人对人动手、有人倒下、箱子和船都记进战报，名册里给画面看。
+//! 有人对人动手、有人倒下、箱子、信号弹和船都记进战报，名册里给画面看。
 //!
-//! 圈、时间表、公告进度、选手、战报和输赢随快照保存；旧存档没有时间表，照当时每天一圈接着涨。
-//! 行走地图不存档，读档后按存下的圈接着涨。
+//! 圈、时间表、公告进度、选手、战报、信号弹和输赢随快照保存；旧存档没有时间表，照当时每天一圈接着涨；
+//! 打开时没有船票的旧存档不冲铁皮匣，船照旧谁先登上谁走。行走地图不存档，读档后按存下的圈接着涨。
 use super::Rules;
 use crate::actor::Actor;
 use crate::avatar::WalkMap;
@@ -23,8 +26,8 @@ use crate::physiology::{body_spot, condition_damage, note, Rates, Trace, DAMAGE,
 use crate::props::{Completion, Definition, Instance, Need, Placement};
 use crate::{World, DAY};
 use protocol::{
-    BodyConditionKind, EventInfo, FactKind, GameModeContext, GameModeView, PlaceNear, TideCircle,
-    TideContext, TideNews, TideNewsKind, TidePhase, TidePlayer, TideView,
+    BodyConditionKind, EventInfo, FactKind, GameModeContext, GameModeView, ItemLocation, PlaceNear,
+    TideCircle, TideContext, TideFlare, TideNews, TideNewsKind, TidePhase, TidePlayer, TideView,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -80,10 +83,22 @@ const FIRST_AID: &str = r#"{"id":"tide:first-aid","version":1,"name":"急救包"
 const BISCUITS: &str = r#"{"id":"tide:biscuits","version":2,"name":"压缩饼干","description":"油纸包着的压缩饼干，一块顶一顿，能带在身上，自己吃或者喂给身边的人。","portable":true,"stack_limit":5,
  "actions":[{"id":"eat","label":"吃压缩饼干","duration_minutes":5,"completion":"activity","consumes_item":true,"recipient":true,
   "on_complete":[{"kind":"restore","need":"fullness","amount":35.0}]}]}"#;
-/// 船沿用道具库里救援小船的图：画面按编号后半段找图。
+/// 船沿用道具库里救援小船的图：画面按编号后半段找图。第 1 版谁先登上去带谁走，给没有船票的旧存档。
 const BOAT: &str = r#"{"id":"tide:island-rescue-boat","version":1,"name":"来接人的船","description":"最后一天靠岸的小船，只坐得下一个人。谁先登上去，船就带谁走。",
  "actions":[{"id":"board","label":"登船","duration_minutes":10,"completion":"activity",
   "on_complete":[{"kind":"depart","text":"登上了船，离开了荒岛"}]}]}"#;
+/// 第 2 版只认信号弹：本体的物品前提开始、进行中、做完时都查，登船那 10 分钟里信号弹被拿走就登不上，
+/// 做完时打出去（用掉）。
+const TICKET_BOAT: &str = r#"{"id":"tide:island-rescue-boat","version":2,"name":"来接人的船","description":"最后一天靠岸的小船，只坐得下一个人。船上的人只认信号弹：随身带着信号弹、在船边打出去的人才登得上。",
+ "actions":[{"id":"board","label":"登船","duration_minutes":10,"completion":"activity",
+  "requires":[{"item":"tide:flare","name":"信号弹","count":1,"consume":true}],
+  "on_complete":[{"kind":"depart","text":"在船边打出信号弹，登上了船，离开了荒岛"}]}]}"#;
+/// 信号弹：船只认它，全岛只有一枚。自己没有动作，只能带着、给人、被人拿走。
+const FLARE: &str = r#"{"id":"tide:flare","version":1,"name":"信号弹","description":"一枚手持信号弹，全岛只有这一枚。船上的人只认它：随身带着、在船边打出去的人才登得上船。","portable":true,"actions":[]}"#;
+const FLARE_ID: &str = "tide:flare";
+/// 第几圈公布时冲上来装信号弹的铁皮匣：第 1 圈（第 2 天 06:00）来，拿着的人要熬两夜，换手的机会最多。
+const FLARE_RING: u32 = 1;
+const FLARE_CASE_ID: &str = "tide-flare-case";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tide {
@@ -117,6 +132,13 @@ pub struct Tide {
     /// 船停在岛上了（最后一天天亮放下，有人上船后撤走）。
     #[serde(default)]
     pub boat: bool,
+    /// 这一局有船票：第 1 圈冲上来装信号弹的铁皮匣，船只认信号弹。打开时就定了，纸条上写着；
+    /// 旧存档没有，照旧谁先登上谁走。
+    #[serde(default)]
+    pub ticket: bool,
+    /// 信号弹在哪：铁皮匣冲上岸以后才有，船只认信号弹也从这时起。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flare: Option<TideFlare>,
 }
 
 /// 此刻的水边、下一圈、阶段和第几圈。
@@ -278,6 +300,40 @@ fn cause(a: &Actor, wading: bool) -> String {
         .map_or_else(|| "倒下了".into(), |(_, label)| label.into())
 }
 
+/// 信号弹此刻在哪：找世界里那枚信号弹在谁身上、放在哪儿；找不到时，铁皮匣还没撬开就还在匣子里，
+/// 不然就是打出去了。
+fn locate_flare(world: &World, was: &TideFlare) -> TideFlare {
+    let found = world.topo.props().iter().find(|p| {
+        !p.withdrawn
+            && p.definition
+                .as_deref()
+                .and_then(|d| d.split('@').next())
+                .is_some_and(|id| id == FLARE_ID)
+    });
+    let Some(p) = found else {
+        return if *was == TideFlare::Case {
+            TideFlare::Case
+        } else {
+            TideFlare::Gone
+        };
+    };
+    match world.inventory().location(&p.id) {
+        Some(ItemLocation::Carried { actor }) => TideFlare::Held { id: actor.clone() },
+        Some(ItemLocation::Stored { container }) => TideFlare::Left {
+            place: world.topo.prop(container).map_or_else(
+                || "哪儿".into(),
+                |c| format!("「{}」的{}里", world.topo.locale_name(&c.locale), c.name),
+            ),
+        },
+        Some(ItemLocation::Ground { locale, .. }) => TideFlare::Left {
+            place: format!("「{}」的地上", world.topo.locale_name(locale)),
+        },
+        None => TideFlare::Left {
+            place: format!("「{}」的地上", world.topo.locale_name(&p.locale)),
+        },
+    }
+}
+
 impl Tide {
     /// 按这座岛生成一组圈，此刻在岛上的人是选手。要有带地形的行走地图（HD-2D 地图都有）。
     pub(super) fn open(world: &World, seed: u32) -> Result<Self> {
@@ -391,6 +447,8 @@ impl Tide {
             winner: None,
             over: false,
             boat: false,
+            ticket: true,
+            flare: None,
         };
         state.told = state.passed(now);
         Some(state)
@@ -449,6 +507,7 @@ impl Tide {
             players: self.players.clone(),
             news: self.news.clone(),
             winner: self.winner.clone(),
+            flare: self.flare.clone(),
         }
     }
 
@@ -529,6 +588,9 @@ impl Tide {
         let [_, from, to] = self.times(k);
         let (from, to) = (hhmm(from), hhmm(to));
         match (node % 3, last) {
+            (0, true) if self.flare.is_some() => format!(
+                "【潮水】最后一圈已公布：今天 {from} 开始涨，{to} 前水会漫过全岛。船停在「{place}」一带的最高处，只坐得下一个人，只认信号弹：随身带着信号弹的人才登得上；{to} 还没人登船，船带走离它最近的那个人。"
+            ),
             (0, true) => format!(
                 "【潮水】最后一圈已公布：今天 {from} 开始涨，{to} 前水会漫过全岛。船停在「{place}」一带的最高处，只坐得下一个人，谁先登上去就带谁走；{to} 还没人登船，船带走离它最近的那个人。"
             ),
@@ -563,18 +625,71 @@ impl Tide {
                 }
             })
             .collect();
+        let boat = if self.ticket {
+            format!(
+                "最后一圈公布时会来一条船，只坐得下一个人。船上的人只认信号弹：随身带着信号弹、在船边打出去的人才登得上。信号弹全岛只有一枚，装在一只铁皮匣里，第 {FLARE_RING} 圈公布时（{}）随潮水冲上岸。在船来之前岛上只剩一个人，船就提前来接，不用信号弹。",
+                day_clock(self.times(FLARE_RING)[0])
+            )
+        } else {
+            "最后一圈公布时会来一条船，只坐得下一个人，谁先登上去就带谁走。在那之前岛上只剩一个人，船就提前来接。".into()
+        };
         format!(
-            "【纸条】每个人醒来时，口袋里都有一张同样的纸条：「潮水一共收 {total} 圈，圈外的地会被淹：{}。最后一圈公布时会来一条船，只坐得下一个人，谁先登上去就带谁走。在那之前岛上只剩一个人，船就提前来接。」",
+            "【纸条】每个人醒来时，口袋里都有一张同样的纸条：「潮水一共收 {total} 圈，圈外的地会被淹：{}。{boat}」",
             rings.join("；")
         )
     }
 
     /// 给每位选手的模型一直看着的目标，船哪天几点来照时间表写。
     fn goal(&self) -> String {
+        let boat = if self.ticket {
+            "船上的人只认信号弹，随身带着信号弹的人才登得上"
+        } else {
+            "谁先登上去就带谁走"
+        };
         format!(
-            "只有一个人能活着离开：{} 最后一圈公布时会来一条船，只坐得下一个人，谁先登上去就带谁走；在那之前岛上只剩你一个，船就提前来接你。",
+            "只有一个人能活着离开：{} 最后一圈公布时会来一条船，只坐得下一个人，{boat}；在那之前岛上只剩你一个，船就提前来接你。",
             day_clock(self.times(self.total())[0])
         )
+    }
+
+    /// 信号弹在哪，写给模型看；这一局没有船票、分出结果后为 None。拿着的人此刻在哪也写上：
+    /// 模型要知道去哪儿找才会去偷、去抢。
+    fn flare_line(&self, world: &World, actor: &str) -> Option<String> {
+        if !self.ticket || self.over {
+            return None;
+        }
+        let line = match self.flare.as_ref() {
+            None => format!(
+                "信号弹还没冲上岸：{}第 {FLARE_RING} 圈公布时，装在一只铁皮匣里随潮水冲上来。",
+                from_now(self.times(FLARE_RING)[0], world.minutes())
+            ),
+            Some(TideFlare::Case) => match world.topo.prop(FLARE_CASE_ID) {
+                Some(p) => format!(
+                    "信号弹还装在铁皮匣里，铁皮匣搁在「{}」一带，还没人撬开。",
+                    world.topo.locale_name(&p.locale)
+                ),
+                None => "信号弹还装在铁皮匣里，还没人撬开。".into(),
+            },
+            Some(TideFlare::Held { id }) if id == actor => {
+                "信号弹在你身上：船来时只有你登得上去，岛上的人都知道它在你这儿。".into()
+            }
+            Some(TideFlare::Held { id }) => match world.actor(id) {
+                Some(a) if a.needs.body.dead => format!(
+                    "信号弹还在{0}身上，{0}已经倒在了「{1}」。",
+                    a.name,
+                    world.topo.locale_name(&a.locus.locale)
+                ),
+                Some(a) if a.present() => format!(
+                    "信号弹在{0}身上，{0}此刻在「{1}」。",
+                    a.name,
+                    world.topo.locale_name(&a.locus.locale)
+                ),
+                _ => "信号弹被带离了这座岛。".into(),
+            },
+            Some(TideFlare::Left { place }) => format!("信号弹不在谁身上，放在{place}。"),
+            Some(TideFlare::Gone) => return None,
+        };
+        Some(line)
     }
 
     /// 这个人和水边、下一圈、船的关系，写给模型看；没有可说的时为 None。
@@ -755,6 +870,89 @@ impl Tide {
         Some(format!("【潮水】潮水冲上来一只木箱，搁在「{place}」一带。"))
     }
 
+    /// 第 1 圈公布时和木箱一起冲上来的铁皮匣：撬开一次，信号弹进撬开的人的背包。编号后半段 flare-case，
+    /// 画面按它找图。这一局没有船票、已经冲上来过、放不下时为 None。
+    fn wash_up_flare(&mut self, world: &mut World, k: u32) -> Option<String> {
+        if !self.ticket || k != FLARE_RING || self.flare.is_some() {
+            return None;
+        }
+        let case = definition(
+            &serde_json::json!({
+                "id": "tide:flare-case",
+                "version": 1,
+                "name": "铁皮匣",
+                "description": format!("第 {k} 圈公布时潮水冲上岸的铁皮匣，焊得很严，撬开要一刻钟。里面装着船只认的那枚信号弹。"),
+                "actions": [{
+                    "id": "open", "label": "撬开铁皮匣", "duration_minutes": 15.0, "completion": "activity",
+                    "during": [{"kind": "labor"}],
+                    "supply": {"initial": 1, "cost": 1},
+                    "on_complete": [{"kind": "give_item", "item": definition(FLARE), "count": 1}]
+                }]
+            })
+            .to_string(),
+        );
+        let place = Self::drop_near(world, FLARE_CASE_ID, case, self.rings[k as usize].center)?;
+        self.flare = Some(TideFlare::Case);
+        Some(format!(
+            "【潮水】潮水还冲上来一只铁皮匣，搁在「{place}」一带：信号弹就装在里面。"
+        ))
+    }
+
+    /// 看一眼信号弹在哪：换了人、放下了就公告全岛、记进战报；打出去了不用说，上船的公告会说。
+    /// 公告只说从谁到谁，怎么拿到的旁边的人看得见，战报里那一下动手也写着。
+    fn track_flare(&mut self, world: &mut World, object: &str) {
+        let Some(was) = self.flare.clone() else {
+            return;
+        };
+        let at = locate_flare(world, &was);
+        if at == was {
+            return;
+        }
+        self.flare = Some(at.clone());
+        let line = match (&was, &at) {
+            (_, TideFlare::Case | TideFlare::Gone) => return,
+            (TideFlare::Case, TideFlare::Held { id }) => {
+                format!("{}撬开了铁皮匣，拿到了信号弹。", Self::who(world, id))
+            }
+            (from, to) => format!(
+                "信号弹从{}到了{}。",
+                Self::spot_of(world, from),
+                Self::spot_of(world, to)
+            ),
+        };
+        // 抢走、偷走、搜身拿走的那一下战报里已经有了：把它记成信号弹的事，不再重复一条；
+        // 送的、撬开的、放下的另记一条
+        let now = world.minutes();
+        let took = self.news.iter_mut().rev().find(|n| {
+            n.kind == TideNewsKind::Clash
+                && n.at >= now - CHECK_SLICE - 1e-6
+                && n.text.contains("信号弹")
+                && (n.text.contains("抢走了") || n.text.contains("拿走了"))
+        });
+        match took {
+            Some(n) => n.kind = TideNewsKind::Flare,
+            None => self.say(now, TideNewsKind::Flare, line.clone()),
+        }
+        Self::announce(world, object, &format!("【潮水】{line}"));
+    }
+
+    /// 信号弹在哪，写成一句话里的一段：「骆川身上」「「椰林」的地上」「铁皮匣里」。
+    fn spot_of(world: &World, at: &TideFlare) -> String {
+        match at {
+            TideFlare::Case => "铁皮匣里".into(),
+            TideFlare::Held { id } => format!("{}身上", Self::who(world, id)),
+            TideFlare::Left { place } => place.clone(),
+            TideFlare::Gone => "船边".into(),
+        }
+    }
+
+    /// 世界里这个人的名字（化身、不在选手名单里的人也算）。
+    fn who(world: &World, id: &str) -> String {
+        world
+            .actor(id)
+            .map_or_else(|| id.to_string(), |a| a.name.clone())
+    }
+
     /// 有人上了船：他赢了，船撤走，这一局结束。`what` 是一整句经过（不带【潮水】）。
     fn sail(&mut self, world: &mut World, object: &str, id: &str, what: &str) {
         let now = world.minutes();
@@ -808,11 +1006,16 @@ impl Tide {
         }
         if let Some(id) = boarded {
             let name = self.name_of(&id);
+            let how = if self.flare.is_some() {
+                "在船边打出信号弹，登上了船"
+            } else {
+                "登上了船"
+            };
             self.sail(
                 world,
                 object,
                 &id,
-                &format!("{name}登上了船，是这一局唯一活着离开的人。"),
+                &format!("{name}{how}，是这一局唯一活着离开的人。"),
             );
             return;
         }
@@ -907,7 +1110,13 @@ impl Rules for Tide {
             let last = k == self.total();
             if node % 3 == 0 && last {
                 let goal = self.rings[k as usize].center;
-                self.boat = Self::drop_near(world, BOAT_ID, definition(BOAT), goal).is_some();
+                // 信号弹冲上来过，船就只认它；没有（旧存档、铁皮匣放不下）照旧谁先登上谁走
+                let boat = definition(if self.flare.is_some() {
+                    TICKET_BOAT
+                } else {
+                    BOAT
+                });
+                self.boat = Self::drop_near(world, BOAT_ID, boat, goal).is_some();
                 if self.boat {
                     self.say(
                         now,
@@ -919,6 +1128,11 @@ impl Rules for Tide {
                 if let Some(line) = self.wash_up_crate(world, k) {
                     self.say(now, TideNewsKind::Crate, line.replace("【潮水】", ""));
                     text = format!("{text}{}", line.replace("【潮水】", ""));
+                }
+                if let Some(line) = self.wash_up_flare(world, k) {
+                    let line = line.replace("【潮水】", "");
+                    self.say(now, TideNewsKind::Flare, line.clone());
+                    text = format!("{text}{line}");
                 }
             }
             // 公布新一圈时提一句还剩谁：第二局 834 条心声里只有 4 条想到「只活一个」
@@ -976,6 +1190,10 @@ impl Rules for Tide {
             world.notify(&id, text);
         }
         self.check_players(world, &object);
+        // 先记谁倒下了，再说信号弹从他身上到了谁身上
+        if !self.over {
+            self.track_flare(world, &object);
+        }
     }
 
     /// 站在圈外的水里额外消耗精力、很快湿透。不看天气开关，只看人在不在圈外。
@@ -1061,6 +1279,7 @@ impl Rules for Tide {
             goal,
             notice,
             standing: self.standing(world, a),
+            flare: self.flare_line(world, actor),
         }))
     }
 

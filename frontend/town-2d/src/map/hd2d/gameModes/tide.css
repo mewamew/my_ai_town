@@ -1,5 +1,6 @@
 /* 潮水圈的界面层（gameModes/tide.ts）：浮在地图上，白底、浅色细边、柔和投影，不接点击。
-   顶上正中一排选手头像，右边菜单钮下面一列战报，分出结果时正中一张卡。 */
+   顶上正中一排选手头像（有船票的局右边写着信号弹在谁身上），右边菜单钮下面一列战报，
+   分出结果时正中一张卡。 */
 .tide-hud {
   position: absolute;
   inset: 0;
@@ -66,6 +67,27 @@
 }
 .tide-face.won {
   box-shadow: 0 0 0 2px #e0b54a;
+}
+/* 拿着信号弹的人：一圈信号弹的红 */
+.tide-face.flare {
+  box-shadow: 0 0 0 2px #d8402f;
+}
+/* 头像右边：信号弹在谁身上 */
+.tide-flare {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 10px;
+  border-left: 1px solid rgb(31 36 33 / 0.12);
+  font-size: 13px;
+  font-weight: 600;
+  color: #b8321f;
+}
+/* 放在地上时写的是地名，太长就截断 */
+.tide-flare span {
+  max-width: 9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---------- 右边：战报 ---------- */
@@ -141,4 +163,11 @@
 [data-layout='compact'] .tide-face {
   width: 22px;
   height: 22px;
+}
+[data-layout='compact'] .tide-flare {
+  padding-left: 6px;
+  font-size: 12px;
+}
+[data-layout='compact'] .tide-flare span {
+  max-width: 5em;
 }

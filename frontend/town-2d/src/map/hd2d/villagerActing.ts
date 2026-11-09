@@ -14,7 +14,7 @@ import {
   type Tint,
 } from './villagerRig'
 import { BEAT_MS, lantern, posed, scarf, umbrella, type PoseKind, type Posed } from './villagerPose'
-import { SIGNS, signMotion, type Shown } from './villagerSigns'
+import { SIGNS, signMotion, type Badge, type Shown } from './villagerSigns'
 import type { Quirk } from './villagerCues'
 
 // 村民此刻在演什么：呼吸、眨眼、看哪儿、走到哪一步、起步停步和转身，做事的姿势，说话的口型和比划，
@@ -194,6 +194,8 @@ export interface Moment {
   wear?: Wear
   /** 头顶的符号 */
   sign?: Shown
+  /** 玩法挂在头顶的常驻标记 */
+  badge?: Badge
   /** 刚复活的时刻：先坐起来再站起来，身边往上飘羽毛 */
   revived?: number
   /** 站着没事做时的个性小动作和开始的时刻 */
@@ -667,6 +669,16 @@ export class Acting {
       const width = SIGNS[m.sign.sign][0].length
       sign = { name: m.sign.sign, x: Math.min(RIG_W - width, 27), y: headTop + 5 + dy, alpha }
     }
+    // 玩法的标记挂在头的左上角，和右上角的符号对称；躺着（睡着、死了）时贴在身子正上方，
+    // 压住躺着的头顶一格，名字在它上面
+    let badge: Frame['badge']
+    if (m.badge) {
+      const width = m.badge.rows[0].length
+      badge =
+        posedNow?.lie || still
+          ? { ...m.badge, x: (RIG_W - width) >> 1, y: LIE_Y + 3 }
+          : { ...m.badge, x: Math.max(0, PAD_X + OX + 4 - width), y: headTop + 5 }
+    }
     const tint: Tint | undefined = body?.dead
       ? 'dead'
       : body?.down
@@ -707,6 +719,7 @@ export class Acting {
       snow: wear?.snow ?? 0,
       bandage: !!body?.injury && !body.dead,
       sign,
+      badge,
       outline: m.pick,
     }
   }

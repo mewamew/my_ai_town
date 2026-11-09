@@ -602,12 +602,22 @@ pub fn server_samples() -> Vec<ServerMsg> {
                         fell: Some("被阿树杀死（胸口一处刀伤）".into()),
                     },
                 ],
-                news: vec![TideNews {
-                    at: 431.0,
-                    kind: TideNewsKind::Clash,
-                    text: "阿树持刀袭击小禾，健康 −100，小禾倒下了".into(),
-                }],
+                news: vec![
+                    TideNews {
+                        at: 431.0,
+                        kind: TideNewsKind::Clash,
+                        text: "阿树持刀袭击小禾，健康 −100，小禾倒下了".into(),
+                    },
+                    TideNews {
+                        at: 432.0,
+                        kind: TideNewsKind::Flare,
+                        text: "信号弹从小禾身上到了阿树身上。".into(),
+                    },
+                ],
                 winner: None,
+                flare: Some(TideFlare::Held {
+                    id: "resident_ashu".into(),
+                }),
             })),
             sim_minutes: 432.5,
             clock: "D1 07:12".into(),

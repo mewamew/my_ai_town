@@ -655,7 +655,7 @@ export interface TideCircle {
 }
 export type TidePhase = 'waiting' | 'announced' | 'rising' | 'holding' | 'closed' | 'over'
 /** 潮水圈：此刻的水边（圈外的地被水盖住）、已公布还没涨到的下一圈、第几圈，
- * 这一局的选手、最近的战报和上了船的人 */
+ * 这一局的选手、最近的战报、上了船的人和信号弹在哪 */
 export interface TideView {
   edge: TideCircle
   next?: TideCircle
@@ -665,14 +665,19 @@ export interface TideView {
   players?: TidePlayer[]
   news?: TideNews[]
   winner?: string
+  /** 这一局没有船票、铁皮匣还没冲上岸时没有 */
+  flare?: TideFlare
 }
+/** 信号弹在哪（船只认它，全岛一枚）：还装在铁皮匣里、在谁身上（倒下了也算）、放在了哪儿、打出去了 */
+export type TideFlare =
+  { at: 'case' } | { at: 'held'; id: string } | { at: 'left'; place: string } | { at: 'gone' }
 /** 一位选手；倒下了就写怎么倒下的 */
 export interface TidePlayer {
   id: string
   name: string
   fell?: string
 }
-export type TideNewsKind = 'clash' | 'fell' | 'crate' | 'boat'
+export type TideNewsKind = 'clash' | 'fell' | 'crate' | 'boat' | 'flare'
 /** 战报里的一条：世界分钟、哪一类、一句话 */
 export interface TideNews {
   at: number

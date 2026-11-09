@@ -9,7 +9,9 @@ pub use swordholder::{
     SwordholderBallot, SwordholderContext, SwordholderDecision, SwordholderEnding, SwordholderLine,
     SwordholderPhase, SwordholderRole, SwordholderSeat, SwordholderView,
 };
-pub use tide::{TideCircle, TideContext, TideNews, TideNewsKind, TidePhase, TidePlayer, TideView};
+pub use tide::{
+    TideCircle, TideContext, TideFlare, TideNews, TideNewsKind, TidePhase, TidePlayer, TideView,
+};
 pub use werewolf::{
     WerewolfBallot, WerewolfCheck, WerewolfContext, WerewolfLine, WerewolfNight, WerewolfOut,
     WerewolfPhase, WerewolfRole, WerewolfSeat, WerewolfSide, WerewolfView,

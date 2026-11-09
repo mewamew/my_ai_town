@@ -19,7 +19,7 @@ import {
   type Cue,
   type Quirk,
 } from './villagerCues'
-import { CYCLE, SIGN_RANK, type Shown, type Sign } from './villagerSigns'
+import { CYCLE, SIGN_RANK, type Badge, type Shown, type Sign } from './villagerSigns'
 import { poseOf } from './villagerPose'
 
 // 村民立牌：位置跟着名册走。名册每拍（100 毫秒）来一次，立牌比最新一份晚一到两拍，在相邻两份
@@ -210,6 +210,11 @@ export class Villagers {
   private motion: LiveMotion | null = null
   setLiveMotion(motion: LiveMotion | null) {
     this.motion = motion
+  }
+  /** 玩法挂在头顶的常驻标记：村民编号 → 标记（大逃杀里拿着信号弹的人） */
+  private badges: ReadonlyMap<string, Badge> = new Map()
+  setBadges(badges: ReadonlyMap<string, Badge>) {
+    this.badges = badges
   }
 
   /** prepare：每个新立牌的材质过一遍（接光照图） */
@@ -682,6 +687,7 @@ export class Villagers {
       body: bodyOf(v.cue),
       wear: this.wearOf(v),
       sign: this.signNow(v, now),
+      badge: this.badges.get(v.id),
       revived: v.revived,
     }
     // 没伞淋雨的人小跑：脚步比走过的路快；走得慢的人步子慢
@@ -691,7 +697,8 @@ export class Villagers {
     m.close = this.texelPx >= 3
     m.pick = v.id === this.picked ? 'pick' : v.id === this.hovered ? 'hover' : undefined
     const f = v.acting.frame(m)
-    v.crown = (f.props?.key.includes('umbrella') ? 10 : f.sign ? 3 : 0) * PIXEL * VILLAGER_SCALE
+    v.crown =
+      (f.props?.key.includes('umbrella') ? 10 : f.sign || f.badge ? 3 : 0) * PIXEL * VILLAGER_SCALE
     const key = frameKey(f)
     if (key === v.drawn) return
     v.drawn = key

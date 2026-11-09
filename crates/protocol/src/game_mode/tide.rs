@@ -47,6 +47,23 @@ pub struct TideView {
     /// 上了船、活着离开的那个人的编号
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub winner: Option<String>,
+    /// 信号弹在哪（船只认它）；这一局没有船票、铁皮匣还没冲上岸时没有
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flare: Option<TideFlare>,
+}
+
+/// 信号弹在哪：全岛只有一枚，第 1 圈公布时装在铁皮匣里冲上岸，船只认它。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "at", rename_all = "snake_case")]
+pub enum TideFlare {
+    /// 还装在铁皮匣里，没人撬开
+    Case,
+    /// 在这个人身上；倒下了也还在他身上，等人来搜
+    Held { id: String },
+    /// 不在谁身上：放在了哪儿（「椰林」的地上、「储物箱」里）
+    Left { place: String },
+    /// 打出去了（登船时用掉），或者找不到了
+    Gone,
 }
 
 /// 一位选手：倒下了就写怎么倒下的（「被骆川杀死」「病死」……）。
@@ -77,6 +94,8 @@ pub enum TideNewsKind {
     Crate,
     /// 船来了、有人上了船
     Boat,
+    /// 信号弹：铁皮匣冲上岸、信号弹换了人
+    Flare,
 }
 
 /// 给模型看的潮水情况：这一局怎么才算活下来，一句公告，加上自己离水边多远、在不在圈里。
@@ -87,4 +106,7 @@ pub struct TideContext {
     pub notice: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub standing: Option<String>,
+    /// 信号弹在谁身上（船只认它）；这一局没有船票时没有
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flare: Option<String>,
 }

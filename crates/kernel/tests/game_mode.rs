@@ -8,8 +8,8 @@ use kernel::{
 use protocol::{
     FactKind, GameModeAction, GameModeChoice, GameModeContext, GameModeView, GroupStatus,
     PhysiologySwitches, SwordholderEnding, SwordholderPhase, SwordholderRole, SwordholderView,
-    TideCircle, TideNewsKind, TidePhase, TideView, WerewolfOut, WerewolfPhase, WerewolfRole,
-    WerewolfSide, WerewolfView,
+    TideCircle, TideFlare, TideNewsKind, TidePhase, TideView, WerewolfOut, WerewolfPhase,
+    WerewolfRole, WerewolfSide, WerewolfView,
 };
 use serde_json::json;
 use std::{collections::BTreeMap, sync::Arc};
@@ -438,6 +438,149 @@ fn tide_hands_the_boat_to_the_last_one_standing_and_keeps_the_fights_in_its_news
     assert!(fell(&v, "c").is_some());
     assert!(!w.actor("a").unwrap().present());
     assert_eq!(w.game_mode_tempo(), 1.0);
+    let mut restored = island_with(&people);
+    restored.restore_snapshot(w.snapshot()).unwrap();
+    assert_eq!(tide(&restored), tide(&w));
+}
+
+/// 船只认信号弹：第 1 圈冲上来的铁皮匣撬开就拿到，换了人公告全岛、记进战报，题面写着在谁身上；
+/// 没带的人登不了船，登船途中被人抢就登不成，拿着的人登上去赢、信号弹打出去用掉。
+#[test]
+fn tide_boat_takes_only_whoever_carries_the_flare() {
+    let people = [
+        ("a", "甲", "loc_a"),
+        ("b", "乙", "loc_a"),
+        ("c", "丙", "loc_a"),
+    ];
+    let mut w = island_with(&people);
+    let rest = |w: &mut World| {
+        for id in ["a", "b", "c"] {
+            w.adjust_body(
+                id,
+                NeedValues {
+                    fullness: None,
+                    energy: Some(90.0),
+                    water: None,
+                    health: None,
+                },
+            )
+            .unwrap();
+        }
+    };
+    let flare_line = |w: &World, id: &str| {
+        let Some(GameModeContext::Tide(context)) = w.game_mode_context(id) else {
+            panic!("开着潮水圈时模型该看到潮水这一栏");
+        };
+        context.flare.unwrap_or_default()
+    };
+    w.set_game_mode(Some(&GameModeChoice::Tide { seed: Some(7) }))
+        .unwrap();
+    let events = w.step(1.0);
+    assert!(logs(&events)
+        .iter()
+        .any(|t| t.starts_with("【纸条】") && t.contains("船上的人只认信号弹")));
+
+    // 第 2 天 06:00 第 1 圈公布，铁皮匣跟着木箱冲上来；甲撬开拿到信号弹，全岛都知道
+    let events = w.step(DAY + 6.0 * HOUR + 1.0 - w.minutes());
+    assert!(logs(&events)
+        .iter()
+        .any(|t| t.contains("潮水还冲上来一只铁皮匣")));
+    assert_eq!(tide(&w).unwrap().flare, Some(TideFlare::Case));
+    rest(&mut w);
+    common::run(
+        &mut w,
+        "a",
+        "open",
+        json!({"prop_id":"tide-flare-case","intent":{"verb":"撬开铁皮匣"}}),
+    )
+    .unwrap();
+    common::finish(&mut w, "a", "open");
+    let events = w.step(5.0);
+    assert!(logs(&events)
+        .iter()
+        .any(|t| t == "【潮水】甲撬开了铁皮匣，拿到了信号弹。"));
+    let v = tide(&w).unwrap();
+    assert_eq!(v.flare, Some(TideFlare::Held { id: "a".into() }));
+    assert!(v
+        .news
+        .iter()
+        .any(|n| n.kind == TideNewsKind::Flare && n.text == "甲撬开了铁皮匣，拿到了信号弹。"));
+    assert!(flare_line(&w, "a").starts_with("信号弹在你身上"));
+    assert_eq!(flare_line(&w, "b"), "信号弹在甲身上，甲此刻在「甲地」。");
+
+    // 第 4 天 12:00 船来了。丙没带信号弹，登不了船
+    w.step(3.0 * DAY + 12.0 * HOUR + 1.0 - w.minutes());
+    rest(&mut w);
+    let board = |w: &mut World, who: &str, key: &str| {
+        common::run(
+            w,
+            who,
+            key,
+            json!({"prop_id":"tide-boat","intent":{"verb":"登船"}}),
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+    };
+    let refused = board(&mut w, "c", "board-c").unwrap_err();
+    assert!(refused.contains("需要随身带着信号弹×1"), "{refused}");
+
+    // 甲在登船，乙当面抢他的信号弹：不管抢没抢到，甲的登船都被打断；乙抢到为止
+    board(&mut w, "a", "board-a").unwrap();
+    w.step(1.0);
+    let flare = w
+        .topo
+        .props()
+        .iter()
+        .find(|p| p.definition.as_deref() == Some("tide:flare@1"))
+        .unwrap()
+        .id
+        .clone();
+    for i in 0..12 {
+        let key = format!("rob-{i}");
+        common::run(
+            &mut w,
+            "b",
+            &key,
+            json!({"intent":{"verb":"抢"},"recipient":"a","prop_id":flare}),
+        )
+        .unwrap();
+        common::finish(&mut w, "b", &key);
+        if w.inventory().carried_by(&flare, "b") {
+            break;
+        }
+    }
+    assert_eq!(
+        w.action_group("a", "board-a").unwrap().status,
+        GroupStatus::Interrupted
+    );
+    assert!(w.inventory().carried_by(&flare, "b"), "乙该抢到了信号弹");
+    let events = w.step(5.0);
+    assert!(logs(&events)
+        .iter()
+        .any(|t| t == "【潮水】信号弹从甲身上到了乙身上。"));
+    // 战报里那一下抢记成信号弹的事，不重复记换手
+    let news = tide(&w).unwrap().news;
+    assert!(news
+        .iter()
+        .any(|n| n.kind == TideNewsKind::Flare && n.text == "乙从甲手里抢走了信号弹"));
+    assert!(!news.iter().any(|n| n.text.starts_with("信号弹从甲身上")));
+    let refused = board(&mut w, "a", "board-a2").unwrap_err();
+    assert!(refused.contains("需要随身带着信号弹×1"), "{refused}");
+
+    // 乙登上去：赢了，信号弹打了出去
+    board(&mut w, "b", "board-b").unwrap();
+    common::finish(&mut w, "b", "board-b");
+    let events = w.step(5.0);
+    assert!(logs(&events)
+        .iter()
+        .any(|t| t == "【潮水】乙在船边打出信号弹，登上了船，是这一局唯一活着离开的人。"));
+    let v = tide(&w).unwrap();
+    assert_eq!((v.phase, v.winner.as_deref()), (TidePhase::Over, Some("b")));
+    assert!(w
+        .topo
+        .props()
+        .iter()
+        .all(|p| p.withdrawn || p.definition.as_deref() != Some("tide:flare@1")));
     let mut restored = island_with(&people);
     restored.restore_snapshot(w.snapshot()).unwrap();
     assert_eq!(tide(&restored), tide(&w));
