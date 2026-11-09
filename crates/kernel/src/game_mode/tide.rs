@@ -19,7 +19,7 @@ use super::Rules;
 use crate::actor::Actor;
 use crate::avatar::WalkMap;
 use crate::error::{KernelError, Result};
-use crate::physiology::{body_spot, note, Rates, Trace};
+use crate::physiology::{body_spot, condition_damage, note, Rates, Trace, DAMAGE, EXPOSURE_NEEDS};
 use crate::props::{Completion, Definition, Instance, Need, Placement};
 use crate::{World, DAY};
 use protocol::{
@@ -224,33 +224,58 @@ fn crate_of(k: u32, content: &str, count: u32) -> Definition {
     )
 }
 
-/// 死因，写给战报和名册：被谁杀的，或者病、饿、渴、累。
+/// 死因，写给战报和名册：被谁杀的，或者病、伤、毒、累、渴、饿里此刻掉血最快的那一项（一样快时按这个先后）。
+/// 第五局阿布饿得每分钟掉 0.08 点健康，病和累各 0.06，按「带着病就写病死」写成了病死，看不出他把最后一份
+/// 干粮喂给了别人、自己饿死。
 fn cause(a: &Actor, wading: bool) -> String {
     let n = &a.needs;
     if let Some(k) = &n.body.killed {
         return format!("被{}杀死（{}）", k.by.name, k.wound);
     }
     let c = n.death_cause(None);
-    let has = |k: BodyConditionKind| c.conditions.contains(&k);
-    if has(BodyConditionKind::Illness) {
-        "病死".into()
-    } else if has(BodyConditionKind::Injury) {
-        "伤重不治".into()
-    } else if has(BodyConditionKind::Poison) {
-        "中毒身亡".into()
-    } else if c.shortages.contains(&Need::Energy) {
-        if wading {
-            "泡在潮水里耗尽了力气".into()
-        } else {
-            "累垮了".into()
-        }
-    } else if c.shortages.contains(&Need::Water) {
-        "渴死".into()
-    } else if c.shortages.contains(&Need::Fullness) {
-        "饿死".into()
+    let conditions = [
+        (BodyConditionKind::Illness, "病死"),
+        (BodyConditionKind::Injury, "伤重不治"),
+        (BodyConditionKind::Poison, "中毒身亡"),
+    ]
+    .into_iter()
+    .filter(|(kind, _)| c.conditions.contains(kind))
+    .map(|(kind, label)| {
+        let severity: f64 = n
+            .body
+            .conditions
+            .iter()
+            .filter(|x| x.kind == kind)
+            .map(|x| x.severity)
+            .sum();
+        (condition_damage(kind) * severity, label)
+    });
+    let tired = if wading {
+        "泡在潮水里耗尽了力气"
     } else {
-        "倒下了".into()
-    }
+        "累垮了"
+    };
+    let shortages = [
+        (Need::Energy, tired),
+        (Need::Water, "渴死"),
+        (Need::Fullness, "饿死"),
+    ]
+    .into_iter()
+    .filter(|(need, _)| c.shortages.contains(need))
+    .filter_map(|(need, label)| {
+        let i = EXPOSURE_NEEDS.iter().position(|x| *x == need)?;
+        Some((DAMAGE[i], label))
+    });
+    conditions
+        .chain(shortages)
+        .fold(
+            None,
+            |best: Option<(f64, &str)>, (rate, label)| match best {
+                Some((top, _)) if top >= rate - 1e-9 => best,
+                _ => Some((rate, label)),
+            },
+        )
+        .map_or_else(|| "倒下了".into(), |(_, label)| label.into())
 }
 
 impl Tide {

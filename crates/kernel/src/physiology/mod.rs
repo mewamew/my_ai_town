@@ -28,6 +28,15 @@ pub const WET_LIMIT: f64 = 90.0;
 /// 不淋雨雪时每分钟变干多少。
 const DRY_RATE: f64 = 1.0;
 
+/// 身体状况每分钟扣多少健康（轻重为 1 时；实际再乘轻重）。
+pub(crate) fn condition_damage(kind: C) -> f64 {
+    match kind {
+        C::Injury => 0.03,
+        C::Illness => 0.02,
+        C::Poison => 0.12,
+    }
+}
+
 /// 世界开关里该项是否开启。
 pub(crate) fn enabled(s: PhysiologySwitches, need: Need) -> bool {
     match need {
@@ -214,11 +223,7 @@ impl Needs {
 
     fn condition_rates(&self, r: &mut Rates, trace: &mut Trace<'_>) {
         for c in &self.body.conditions {
-            let damage = match c.kind {
-                C::Injury => 0.03,
-                C::Illness => 0.02,
-                C::Poison => 0.12,
-            } * c.severity;
+            let damage = condition_damage(c.kind) * c.severity;
             r.values[Need::Health] -= damage;
             if c.kind == C::Illness {
                 r.values[Need::Energy] -= 0.02 * c.severity;
