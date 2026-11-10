@@ -49,11 +49,11 @@ node scripts/android/build.mjs --debug  # 调试包；页面可在 chrome://insp
 
 ```sh
 node scripts/macos/build.mjs                             # 签名的 DMG：target/macos/ai-town-<版本>.dmg
-node scripts/macos/build.mjs --notary-profile <档案名>   # 同时公证，别的 Mac 打开不会被拦
+AI_TOWN_APPLE_ID=<Apple ID> AI_TOWN_APPLE_PASSWORD=<App 专用密码> node scripts/macos/build.mjs   # 签名并公证
 node scripts/macos/build.mjs --no-sign                   # 不签名，只在本机试
 ```
 
-公证凭据存一次即可（会要求输入 Apple ID 的 App 专用密码）：`xcrun notarytool store-credentials <档案名> --apple-id <Apple ID> --team-id <Team ID>`。
+设了 `AI_TOWN_APPLE_ID` 与 `AI_TOWN_APPLE_PASSWORD` 时，脚本每次打包前先把凭据存进钥匙串档案 `ai-town-notary`（Team ID 取自签名证书），再提交公证；档案名可用 `--notary-profile` 或 `AI_TOWN_NOTARY_PROFILE` 改。App 专用密码在 appleid.apple.com 的「登录与安全」里生成。
 
 ## Windows 版
 

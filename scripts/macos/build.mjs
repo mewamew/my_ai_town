@@ -3,7 +3,8 @@
 // 用 scripts/builtin-model/build.mjs 编过内置模型的推理程序时一起打进包；模型文件不进包，用到时下载。
 // 用法：node scripts/macos/build.mjs [--skip-web] [--skip-rust] [--no-sign] [--notary-profile <档案名>]
 // 产物：target/macos/AI小镇.app 与 target/macos/ai-town-<版本>.dmg（只支持 Apple 芯片）。
-// 有多张 Developer ID 证书时用 AI_TOWN_SIGN_IDENTITY 指定；公证档案也可以用 AI_TOWN_NOTARY_PROFILE 给。
+// 有多张 Developer ID 证书时用 AI_TOWN_SIGN_IDENTITY 指定。公证：设好 AI_TOWN_APPLE_ID 与 AI_TOWN_APPLE_PASSWORD（App 专用密码）
+// 即可，每次打包前脚本自己存进钥匙串档案 ai-town-notary（可用 --notary-profile 或 AI_TOWN_NOTARY_PROFILE 改名），Team ID 取自签名证书。
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -185,6 +186,47 @@ function makeDmg(app, version, identity) {
   return dmg
 }
 
+/** 没指定档案名时，公证凭据存进这个钥匙串档案 */
+const NOTARY_PROFILE = 'ai-town-notary'
+
+/**
+ * 公证用的钥匙串档案。设了 AI_TOWN_APPLE_ID 与 AI_TOWN_APPLE_PASSWORD（App 专用密码）就每次先存进钥匙串，
+ * notarytool 会先向 Apple 验证，不通过就停下；Team ID 取自签名证书名。没设就用已存好的档案，没有则不公证。
+ * 密码只出现在这条命令的参数里：失败时不把命令行带进报错，免得密码进日志。
+ */
+function notaryProfile(identity) {
+  const named = option('--notary-profile') ?? process.env.AI_TOWN_NOTARY_PROFILE
+  const appleId = process.env.AI_TOWN_APPLE_ID
+  const password = process.env.AI_TOWN_APPLE_PASSWORD
+  if (!appleId || !password) return named ?? null
+  const profile = named ?? NOTARY_PROFILE
+  const team = identity.name.match(/\(([A-Z0-9]{10})\)$/)?.[1]
+  if (!team) throw Error(`签名证书名里找不到 Team ID：${identity.name}`)
+  try {
+    execFileSync(
+      'xcrun',
+      [
+        'notarytool',
+        'store-credentials',
+        profile,
+        '--apple-id',
+        appleId,
+        '--team-id',
+        team,
+        '--password',
+        password,
+      ],
+      { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] }
+    )
+  } catch {
+    throw Error(
+      '存公证凭据失败：请检查 AI_TOWN_APPLE_ID 与 AI_TOWN_APPLE_PASSWORD（要用 App 专用密码，不是 Apple ID 登录密码）'
+    )
+  }
+  console.log(`公证凭据已存入钥匙串档案 ${profile}（Team ID ${team}）`)
+  return profile
+}
+
 /** 公证整个 DMG（连同里面的应用），通过后把票据钉进 DMG，离线也能验证 */
 function notarize(dmg, profile) {
   console.log('正在提交公证，通常要几分钟…')
@@ -218,10 +260,11 @@ function main() {
   const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version
   // 版本号按分钟递增，与安卓的 versionCode 同一个算法
   const build = Math.floor(Date.now() / 60000) - 29_000_000
-  // 先确认证书，免得构建完才发现签不了
+  // 先确认证书和公证凭据，免得构建完才发现签不了、公证不了
   const identity = args.includes('--no-sign') ? null : signIdentity()
-  const profile = option('--notary-profile') ?? process.env.AI_TOWN_NOTARY_PROFILE
-  if (profile && !identity) throw Error('公证需要 Developer ID 签名，不能和 --no-sign 一起用')
+  if (!identity && (option('--notary-profile') ?? process.env.AI_TOWN_NOTARY_PROFILE))
+    throw Error('公证需要 Developer ID 签名，不能和 --no-sign 一起用')
+  const profile = identity ? notaryProfile(identity) : null
   if (identity) console.log(`签名证书：${identity.name}`)
   if (!args.includes('--skip-web')) run('corepack', ['pnpm', 'build'])
   if (!args.includes('--skip-rust')) buildRust()
@@ -238,7 +281,7 @@ function main() {
   if (!identity) console.log('没有签名：只能在这台 Mac 上打开')
   else if (!profile)
     console.log(
-      '已签名，没有公证：别的 Mac 第一次打开会被系统拦下。存好公证凭据后加 --notary-profile <档案名> 再打一次'
+      '已签名，没有公证：别的 Mac 第一次打开会被系统拦下。设好 AI_TOWN_APPLE_ID 与 AI_TOWN_APPLE_PASSWORD 后再打一次'
     )
 }
 
