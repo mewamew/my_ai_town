@@ -5,9 +5,10 @@ import { hashString, mixHex } from '../pixel/noise'
 import { AVATAR_COLORS, avatarLook, avatarLookKey } from './avatarLooks'
 import { CLOTH_CREAM, CLOTH_WHITE } from '../palette'
 import { PIXEL } from '../grid'
+import { deepOf, refineVillager } from './villagerRefine'
 
 // 像素村民：Q 版画法。
-// 人物占 21×29 格：头 0～16 行，身子 17～25 行，腿 26～27 行是两个 2×2 黑块。
+// 人物占 21×29 格：头 0～16 行，身子 17～25 行，腿 26～27 行是两个 2×2 的块（上一行裤子色，下一行鞋）。
 // 一帧 25×34，人物放在 (2, 6)：头顶留 6 行给发髻、帽子和大葱头这种往上竖的头发，两边留给辫子。
 // 朝向分下、右、上、左；场景里每人一块小画布，按此刻的姿势和表情现画（见 villagerRig.ts）。
 // 描边 K 直接画在格子里，色块平涂。正面、背面只写左半边 11 列（第 10 列是中线）再镜像；
@@ -2206,7 +2207,8 @@ export function palette(look: Look): Record<string, string> {
 // ---- 分层合成 ----
 // 一帧由一笔笔格子叠成，分腿、身子、头三组，每一笔记下属于哪一层、哪一组，颜色按调色板、渐变发和花纹
 // 当场定好。动画按组挪（呼吸时头沉一格，走路时身子起伏、头晚一拍，转身时头先转），垂下来的头发和辫子
-// 按离发根远近有一个软度，随风和走路摆（见 villagerRig.ts）。头像和捏人界面也走这里，画出来和以前一样。
+// 按离发根远近有一个软度，随风和走路摆（见 villagerRig.ts）。头像和捏人界面也走这里，叠好之后和立牌一样
+// 过一遍精修（villagerRefine.ts）。
 
 /** 一笔属于哪一层，按画的先后排 */
 export type Layer =
@@ -2238,7 +2240,8 @@ export interface Stroke {
   flex: number
 }
 
-/** 腿和手臂怎么摆。腿是 2 格宽的黑块 [x, 顶行, 行数]（人物坐标），toes 是另加的单格（侧面迈步时后脚的脚尖）；
+/** 腿和手臂怎么摆。腿是 2 格宽的一块 [x, 顶行, 行数]（人物坐标），上面是裤子的颜色、最下面一行是鞋；
+ *  toes 是另加的单格（侧面迈步时后脚的脚尖）；
  *  arm 是侧面的手臂：0 垂下、1 往前、2 往后，null 不画（两手在胸前拿着东西） */
 export interface Stance {
   legs: readonly (readonly [number, number, number])[]
@@ -2323,10 +2326,12 @@ export function sketch(
   const apply = (patch: Patch | undefined, layer: Layer, group: Stroke['group'], dy = 0) => {
     for (const [x, y, ch] of patch ?? []) put(x, y + dy, ch, layer, group)
   }
+  // 腿：上面是裤子的颜色，最下面一行是鞋（和立牌一样，见 villagerRig.ts）
   for (const [x, top, n] of stance.legs)
     for (let y = top; y < top + n; y++) {
-      put(x, y, 'K', 'legs', 0)
-      put(x + 1, y, 'K', 'legs', 0)
+      const ch = y === top + n - 1 ? 'K' : 'q'
+      put(x, y, ch, 'legs', 0)
+      put(x + 1, y, ch, 'legs', 0)
     }
   for (const [x, y] of stance.toes ?? []) put(x, y, 'K', 'legs', 0)
   const held = look.held ? HELD[look.held] : undefined
@@ -2392,7 +2397,8 @@ function paintStrokes(
     pattern && mixHex(pattern.color, SHADE, pattern.target === 't' ? TOP_SHADE : BOTTOM_SHADE)
   for (const s of strokes)
     s.color =
-      (pattern && shade && patternAt(pattern, shade, s.ch, s.x, s.y)) ||
+      // 腿不上花纹：立牌的腿是另画的纯色，两边要一样
+      (pattern && shade && s.layer !== 'legs' && patternAt(pattern, shade, s.ch, s.x, s.y)) ||
       (hairy.has(s) ? tipped?.(s.y, s.ch) : undefined) ||
       (pal[s.ch] ?? '#ff00ff')
 }
@@ -2451,6 +2457,20 @@ function patternAt(p: Pattern, shade: string, ch: string, x: number, y: number) 
 }
 
 /** 头像和捏人界面画的一帧：站姿和原来的四帧走路，flip 是朝左时整张翻过来 */
+/** '#rrggbb' ↔ 小端 RGBA 像素（精修按像素算） */
+function pixelOf(hex: string) {
+  const n = parseInt(hex.slice(1), 16)
+  return (0xff000000 | ((n & 0xff) << 16) | (n & 0xff00) | ((n >> 16) & 0xff)) >>> 0
+}
+function hexOf(px: number) {
+  const n = ((px & 0xff) << 16) | (px & 0xff00) | ((px >> 16) & 0xff)
+  return '#' + n.toString(16).padStart(6, '0')
+}
+const FRAME_PX = new Uint32Array(FRAME_W * FRAME_H),
+  FRAME_CH = new Uint8Array(FRAME_W * FRAME_H),
+  FRAME_SCRATCH = new Uint32Array(FRAME_W * FRAME_H)
+
+/** 画一帧：叠好笔画、朝左的翻过来，再过一遍精修（和镇上的立牌同一个函数），最后一格格填上 */
 function drawFrame(
   ctx: CanvasRenderingContext2D,
   ox: number,
@@ -2462,16 +2482,21 @@ function drawFrame(
   flip: boolean
 ) {
   const stance = walk4(view, f)
-  const g: (string | null)[] = Array(FRAME_W * FRAME_H).fill(null)
+  FRAME_PX.fill(0)
+  FRAME_CH.fill(0)
   for (const s of sketch(look, pal, view, stance)) {
     const y = s.group ? s.y + stance.bob : s.y
-    if (s.x >= 0 && y >= 0 && s.x < FRAME_W && y < FRAME_H) g[y * FRAME_W + s.x] = s.color
+    if (s.x < 0 || y < 0 || s.x >= FRAME_W || y >= FRAME_H) continue
+    const i = y * FRAME_W + (flip ? FRAME_W - 1 - s.x : s.x)
+    FRAME_PX[i] = pixelOf(s.color)
+    FRAME_CH[i] = s.ch.charCodeAt(0)
   }
+  refineVillager(FRAME_PX, FRAME_CH, FRAME_W, FRAME_H, FRAME_SCRATCH, deepOf(pixelOf(pal.q)))
   for (let y = 0; y < FRAME_H; y++)
     for (let x = 0; x < FRAME_W; x++) {
-      const color = g[y * FRAME_W + (flip ? FRAME_W - 1 - x : x)]
-      if (!color) continue
-      ctx.fillStyle = color
+      const px = FRAME_PX[y * FRAME_W + x]
+      if (!px) continue
+      ctx.fillStyle = hexOf(px)
       ctx.fillRect(ox + x, oy + y, 1, 1)
     }
 }
