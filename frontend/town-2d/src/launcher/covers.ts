@@ -1,3 +1,5 @@
+import type { Scenery } from './scenery'
+
 // 明信片上的封面：一个小镇一张全景小图。预览建好后当场拍一张（GameMap.cover），存在这台设备上，
 // 下次打开选镇页就是上次看到的样子；还没拍过的，随应用带的地图和剧本各有一张拍好的
 // （assets/covers/<小镇编号>.jpg，重演页按整图机位拍的），玩家自己建的小镇返回 undefined。
@@ -9,6 +11,18 @@ const bundled = import.meta.glob<string>('../assets/covers/*.jpg', {
 const BUNDLED = new Map(
   Object.entries(bundled).map(([path, url]) => [path.slice(path.lastIndexOf('/') + 1, -4), url])
 )
+/** 随应用带的封面拍的是哪一刻：各镇最好看的时候。还没玩过时预览也照它画（断楼城是霓虹亮起的夜里，
+ *  温泉谷是下着雪的傍晚），实拍的封面和它是一个样子；玩过以后照存档停下的那一刻 */
+const SIGNATURE: Record<string, Scenery> = {
+  'default-town': { minutes: 17 * 60, weather: 'clear' },
+  'spring-valley': { minutes: 17 * 60 + 30, weather: 'snow' },
+  'broken-towers': { minutes: 21 * 60, weather: 'clear' },
+  'prefab-battle-royale': { minutes: 10 * 60 + 30, weather: 'clear' },
+  'prefab-swordholder': { minutes: 21 * 60, weather: 'clear' },
+  'prefab-werewolf': { minutes: 22 * 60, weather: 'clear' },
+}
+/** 这个小镇最好看的时刻和天气；玩家自己建的小镇没有 */
+export const signatureOf = (id: string): Scenery | undefined => SIGNATURE[id]
 /** 封面的宽高（像素）：明信片上显示成一半大，高分屏也清楚 */
 export const COVER_SIZE = [384, 226] as const
 const PREFIX = 'town:cover:'

@@ -31,7 +31,7 @@ import { installHomeSettings } from './settings'
 import { clockText, createSceneryBar, sceneryIcon, type Scenery } from './scenery'
 import { themeOf, type MapTheme } from '../map/themes'
 import { decoratePixels, pixelIcon } from 'town-shared/game/pixel'
-import { COVER_SIZE, coverOf, dropCover as forgetCover, saveCover } from './covers'
+import { COVER_SIZE, coverOf, dropCover as forgetCover, saveCover, signatureOf } from './covers'
 import { portraitKey } from 'town-shared/portraits'
 import { isWeatherKind } from 'town-shared/weather/types'
 import { villagerPortrait } from '../map/hd2d/villagerSprite'
@@ -54,8 +54,8 @@ const launcher = query<HTMLElement>(document, '.map-launcher')
 const hideUi = query<HTMLButtonElement>(document, '#scenic-hide')
 const showUi = query<HTMLButtonElement>(document, '#scenic-show')
 const sceneryHost = $('scenery-bar')
-/** 赏景过一次以后，还没玩过的镇换上来都照景色条上的时刻和天气画（返回选镇也不跳回傍晚）；
- *  玩过的镇照存档停下的那一刻画（见 savedScenery） */
+/** 赏景过一次以后，没有自己样子的镇（玩家建的、还没玩过）换上来都照景色条上的时刻和天气画
+ *  （返回选镇也不跳回傍晚）；别的镇照自己的样子画（见 Preview.own） */
 let sceneryUsed = false
 /** 展开现有的静态预览，底部景色条换时刻和天气。只换画面：不连接世界，不改存档的时钟或天气。 */
 function setScenic(enabled: boolean) {
@@ -74,8 +74,8 @@ function setScenic(enabled: boolean) {
     sceneryUsed = true
     const shown = shownPreview()
     if (shown) {
-      // 玩过的镇从存档停下的那一刻接着调，画面不跳
-      if (shown.saved) scenery.setValue(shown.saved)
+      // 从这座镇自己的那一刻接着调，画面不跳
+      if (shown.own) scenery.setValue(shown.own)
       scenery.setTheme(shown.theme.light)
       shown.map.setScenery?.(scenery.value.minutes, scenery.value.weather)
     }
@@ -231,13 +231,14 @@ let selected: MapEntry | undefined,
   request = 0,
   maps: MapEntry[] = []
 
-/** theme 给景色条画天色轨道，world 给赏景挑曲子，saved 是存档停下的时刻和天气（玩过的镇才有） */
+/** theme 给景色条画天色轨道，world 给赏景挑曲子。own 是这座镇自己的时刻和天气：玩过的是存档停下的
+ *  那一刻，没玩过的内置小镇是它最好看的时候（covers.ts 的 signatureOf），都没有就为空 */
 type Preview = {
   host: HTMLElement
   map: GameMap
   theme: MapTheme
   world: MusicWorld
-  saved?: Scenery
+  own?: Scenery
   /** 上次按界面盖住下边多少摆的镜头（见 setCovered） */
   covered?: number
 }
@@ -302,8 +303,8 @@ function finishPreview(map: MapEntry, fresh = false) {
   const shown = shownPreview()
   if (!shown) return
   setCovered(shown, coveredBottom())
-  // 玩过的镇停在哪就画哪；没玩过的照景色条（赏景调过才有，不然是场景自带的傍晚晴天）
-  const view = shown.saved ?? (sceneryUsed ? scenery.value : undefined)
+  // 有自己样子的镇照自己的画；没有的照景色条（赏景调过才有，不然是场景自带的傍晚晴天）
+  const view = shown.own ?? (sceneryUsed ? scenery.value : undefined)
   if (view) shown.map.setScenery?.(view.minutes, view.weather)
   // 刚建好的小镇先看整张图，不推近
   const whole = fitNext === map.id
@@ -321,7 +322,7 @@ function shootCover(map: MapEntry, preview: Preview) {
   window.setTimeout(() => {
     const alive = [...previews.values()].includes(preview)
     if (!alive || preview.host.hidden || document.hidden) return
-    if (launcher.classList.contains('is-scenic') || (sceneryUsed && !preview.saved)) return
+    if (launcher.classList.contains('is-scenic') || (sceneryUsed && !preview.own)) return
     const url = preview.map.cover?.(...COVER_SIZE)
     if (!url) return
     saveCover(map.id, url)
@@ -491,10 +492,11 @@ async function select(map: MapEntry) {
       host.remove()
       return
     }
-    const pending: Preview = { host, map: rendered, theme, world, saved: savedScenery(map) }
+    const own = savedScenery(map) ?? signatureOf(map.id)
+    const pending: Preview = { host, map: rendered, theme, world, own }
     pendingPreview = pending
-    // 场景一建好就是存档那一刻的天色，不先闪一下傍晚
-    if (pending.saved) rendered.setScenery?.(pending.saved.minutes, pending.saved.weather)
+    // 场景一建好就是那一刻的天色，不先闪一下傍晚
+    if (own) rendered.setScenery?.(own.minutes, own.weather)
     // 立体场景建好再拿掉「正在加载预览…」：之前只有底色和放大的地名
     await rendered.ready
     if (current !== request) {
