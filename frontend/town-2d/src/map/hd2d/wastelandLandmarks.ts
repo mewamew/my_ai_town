@@ -10,64 +10,17 @@ import {
   type Flipbook,
   type LandmarkSet,
 } from './landmarks'
-import { sprite, stone, wear } from './sprite'
+import { sprite, wear } from './sprite'
 import { WALL_COLORS } from '../themes/walls'
 
 // 末日废土的户外立牌。原作的地标都还在，只是锈了、褪色了、缺了几块；
-// 喷泉干了，市集是篷布摊和油桶火盆，港口有锈吊机和集装箱，栈桥边搁浅着锈船。
+// 喷泉干了（立体的，见 fountain.ts），市集是篷布摊和油桶火盆，港口有锈吊机和集装箱，栈桥边搁浅着锈船。
 // 镇外的荒地上散落轮胎、油桶、废车；干海床上有沉船、船锚、浮标、鱼骨、牛头骨和倒毙的骆驼。
 // 地图还能按坐标立（Atlas 的 standees）：火盆、霓虹招牌、褪色广告牌、一辆辆废车、废车场、
 // 碎水泥堆、鲸骨，和蹲在骨头边、楼顶上的秃鹫。
 
 const RUST = WALL_COLORS.rust
 const rust = (x: number, y: number, seed: number) => RUST[Math.floor(hash(x, y, seed) * 3)]
-
-/** 干掉的喷泉：池底龟裂发黑，积了一层沙，中间的雕像断了头 */
-function dryFountain() {
-  return sprite(58, 46, ({ px, rect }) => {
-    const ellipse = (
-      cx: number,
-      cy: number,
-      rx: number,
-      ry: number,
-      c: (x: number, y: number, t: number) => string
-    ) => {
-      for (let y = -ry; y <= ry; y++) {
-        const half = Math.round(rx * Math.sqrt(1 - (y / ry) ** 2))
-        for (let x = -half; x <= half; x++)
-          px(cx + x, cy + y, c(cx + x, cy + y, (x + half) / (2 * half + 1)))
-      }
-    }
-    rect(3, 36, 52, 8, '#948c7c')
-    rect(3, 36, 52, 1, '#aea694')
-    rect(3, 43, 52, 1, '#6a6254')
-    for (let x = 3; x < 55; x += 7) rect(x, 37, 1, 6, '#7e7668')
-    // 池沿缺了一块
-    rect(40, 36, 6, 3, '#6a6254')
-    ellipse(29, 35, 26, 6, (_x, _y, t) => stone(t, '#aaa290'))
-    ellipse(29, 35, 23, 4, (x, y) =>
-      noise(x / 3, y / 2, 9) > 0.55 ? '#b9a47e' : hash(x, y, 3) < 0.2 ? '#4a4238' : '#5e564a'
-    )
-    rect(26, 20, 6, 15, '#b0a896')
-    rect(26, 20, 2, 15, '#c8c0ae')
-    rect(30, 20, 2, 15, '#8a8272')
-    ellipse(29, 20, 10, 2, (_x, _y, t) => stone(t, '#aaa290'))
-    // 雕像只剩下半身，断口参差
-    rect(27, 10, 4, 9, '#c8c2b6')
-    rect(30, 10, 1, 9, '#9a948a')
-    for (const [x, y] of [
-      [27, 9],
-      [29, 8],
-      [30, 9],
-    ])
-      px(x, y, '#c8c2b6')
-    // 池子里的一只轮胎和碎石
-    rect(14, 32, 5, 3, '#1e1e1e')
-    px(16, 33, '#3a3a36')
-    for (let k = 0; k < 8; k++)
-      px(34 + Math.floor(hash(k, 1, 4) * 14), 33 + Math.floor(hash(k, 2, 4) * 4), '#8a8272')
-  })
-}
 
 /** 篷布摊：歪柱子，打补丁的篷布，下面是木箱搭的台子，摆着罐头、瓶子和零件 */
 function junkStall(k: number) {
@@ -751,11 +704,11 @@ function scrapyard(seed: number): [HTMLCanvasElement, number, number][] {
 export const WASTELAND_LANDMARKS: LandmarkSet = {
   boat: (seed, _view, kind) => (kind === 2 ? null : wreckBoat(seed)),
   dockGoods: (seed) => wear(dockGoods(seed), seed),
+  fountain: 'dry',
   plans: {
     ferris: (seed) => [[wear(ferrisWheel(true), seed), 0, -6]],
     carousel: (seed) => [[wear(carousel(true), seed), 0, -4]],
     obelisk: (seed) => [[wear(obelisk(), seed), 0, -6]],
-    fountain: () => [[dryFountain(), 0, -4]],
     temple: (seed) => [[wear(temple(), seed), 0, -6]],
     // 市集两头各一只油桶火盆，夜里照亮摊子
     market: (seed) => [

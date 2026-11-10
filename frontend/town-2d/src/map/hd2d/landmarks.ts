@@ -3,7 +3,7 @@ import { PIXEL } from '../grid'
 import { footprint, placer, type Dock } from '../pixel/island'
 import { hash, mixHex } from '../pixel/noise'
 import { villageBoat, type BoatView, type Moor } from './boats'
-import { fountain } from './fountain'
+import type { FountainLook } from './fountain'
 import { bench, deckChair, parasol, planter, reeds, rock, signpost, telescope } from './parkPieces'
 import {
   BIG_TREE_HALOS,
@@ -17,7 +17,7 @@ import {
 } from './groveArt'
 import { sprite, stone } from './sprite'
 
-// 户外地点的立体标志物：摩天轮、旋转亭、方尖碑、喷泉、神庙遗迹这些地标（弧形阶台是立体搭的，见 stand.ts），
+// 户外地点的立体标志物：摩天轮、旋转亭、方尖碑、神庙遗迹这些地标（弧形阶台、喷泉是立体搭的，见 stand.ts、fountain.ts），
 // 以及市场的摊位、港口栈桥边的船、花园的花拱门、公园的凉亭。都是竖在地上的像素立牌，
 // 和树、路灯一样按俯角转向镜头；光从左上来，左边亮右边暗。一个贴图像素对应一个地图像素。
 
@@ -93,6 +93,8 @@ export interface LandmarkSet {
   /** 公园（没有 decor、没指定地标的 park 区域）正中的凉亭搭成立体的（见 pixel/pavilions.ts），
    *  这些区域不再立 plans.park 的立牌；地图按坐标立的 park 立牌照旧（旧地图里的） */
   pavilion?: boolean
+  /** 喷泉区域的喷泉是立体的（见 fountain.ts），这里选样子：流水、冻住，还是干涸 */
+  fountain: FountainLook
   /** 散落物：每个地图像素放一件的概率，野地（land）和外圈（outer）分开算；sprite 给出一件的贴图 */
   scatter?: {
     land: number
@@ -460,11 +462,11 @@ export const VILLAGE_LANDMARKS: LandmarkSet = {
   boat: villageBoat,
   dockGoods,
   pavilion: true,
+  fountain: 'flowing',
   plans: {
     ferris: () => [[ferrisWheel(), 0, -6]],
     carousel: () => [[carousel(), 0, -4]],
     obelisk: () => [[obelisk(), 0, -6]],
-    fountain: () => [[fountain(), 0, -4]],
     temple: () => [[temple(), 0, -6]],
     market: (seed) => [
       [stall(seed), -30, -10],
@@ -646,6 +648,8 @@ export function landmarkSprites(
     const kind = r.landmark ?? (r.decor ? undefined : r.kind)
     // 立体凉亭由场景另搭（见 pixel/pavilions.ts）
     if (kind === 'park' && set.pavilion) continue
+    // 立体喷泉由场景另搭（见 pixel/fountains.ts）
+    if (kind === 'fountain') continue
     const plan = kind && kind !== 'court' ? set.plans[kind] : undefined
     if (!plan) continue
     const cx = (box.x0 + box.x1) / 2,

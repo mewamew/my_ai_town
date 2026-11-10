@@ -12,6 +12,7 @@ import { pier, PIER_DECK, pierLampCanvas } from './pier'
 import { bridge } from './bridge'
 import { liftOf, onBridge, type Bridge } from '../pixel/bridges'
 import { PAVILION_REACH, pavilionLift, type Pavilion } from '../pixel/pavilions'
+import { FOUNTAIN, fountainLift, fountainsOf, rimSpot, type Fountain } from '../pixel/fountains'
 import { standGap, standLift, standsOf, type Stand } from '../pixel/stands'
 import { buildStand } from './stand'
 import { fbm, hash, rng } from '../pixel/noise'
@@ -74,6 +75,7 @@ import { pixelMaterial } from './pixelSampling'
 import { landmarkSprites, mapStandees } from './landmarks'
 import { PETAL, stoneLantern } from './groveArt'
 import { buildGazebo } from './gazebo'
+import { buildFountain, type FountainSpray } from './fountain'
 import { Petals, type PetalSource } from './petals'
 import { coastTexture, outerMaterial, surfOnLand } from './sea'
 import { Horizon } from './horizon'
@@ -400,6 +402,10 @@ export class HdScene {
   private readonly selfLit: THREE.MeshLambertMaterial[] = []
   private glowMap!: THREE.Texture
   private pavilions: readonly Pavilion[] = []
+  private fountains: readonly Fountain[] = []
+  /** 喷泉的水花（粒子）；喷泉边座位的搭法（按座位的位置记） */
+  private readonly sprays: FountainSpray[] = []
+  private readonly rimSeats = new Map<string, Build | undefined>()
   private petals?: Petals
   /** 落花的立牌、聚萤火虫的地方：立地标时记下，后面建花瓣和微粒用 */
   private readonly petalSources: (PetalSource & { afloat?: number })[] = []
@@ -533,6 +539,7 @@ export class HdScene {
     this.houses = atlas.spaces.filter((s) => s.id !== OUTDOOR_SPACE).map((s) => houseOf(s, theme))
     this.ruins = (atlas.ruins ?? []).map((r) => ruinOf(r, theme))
     this.pavilions = ground.pavilions
+    this.fountains = fountainsOf(atlas)
     // 光照图先建好：后面建的地面、墙和立牌的材质都要接上它
     this.lightmap = new LightMap(ground.width, ground.height, [...this.houses, ...this.ruins])
     const sea = this.addGround(ground)
@@ -816,6 +823,7 @@ export class HdScene {
       this.fauna.step(t / 1000)
       this.motes.step(t)
       this.petals?.step(t)
+      for (const s of this.sprays) s.step(t)
       this.horizon.step(t / 1000)
       for (const b of this.beams) b.rotation.y -= dt * 0.9
       this.flare()
@@ -1674,6 +1682,7 @@ export class HdScene {
     const open = terrain.open.slice()
     this.clearStands(open, terrain.width, terrain.height)
     this.addGazebos(atlas, open, terrain.width, seed)
+    this.addFountains(open, terrain.width, seed)
     this.addLandmarks(atlas, terrain.docks, open, terrain.width, seed)
     this.addScatter(terrain, open, seed)
     return open
@@ -1707,6 +1716,50 @@ export class HdScene {
           if (i < 0 || i >= open.length) continue
           if (Math.hypot(dx, dy) <= reach) open[i] = OPEN.none
           else if (dy > 0 && open[i] !== OPEN.none) open[i] = OPEN.verge
+        }
+    }
+  }
+
+  /** 立体的喷泉（位置、大小见 pixel/fountains.ts，搭法见 fountain.ts），样子按风格包：接上天气和灯光；
+   *  流水的池面逐帧翻、水花是粒子，入夜池灯把水照亮、四周地面映一圈青光；占地不种树、不长草 */
+  private addFountains(open: Uint8Array, pw: number, seed: number) {
+    const look = this.theme.landmarks.fountain
+    for (const f of this.fountains) {
+      const own = Math.floor(hash(Math.round(f.x), Math.round(f.y), seed + 59) * 1e6)
+      const built = buildFountain(f, look, own)
+      this.weather.shade(built.top, { snow: 1, wet: 0.5 })
+      this.weather.shade(built.sides, { snow: 0, wet: 0.5 })
+      this.lightmap.shade(built.top, 'ground')
+      this.lightmap.shade(built.sides, 'wall')
+      for (const m of built.water) {
+        // 冰面、干池底和地面一样积雪淋湿，流水不积
+        if (!built.spray) this.weather.shade(m, { snow: 1, wet: 0.4 })
+        this.lightmap.shade(m, 'ground')
+      }
+      this.flat.add(built.group)
+      if (built.flipbook) this.flipbooks.push(built.flipbook)
+      if (built.spray) {
+        for (const m of built.water) this.glowing.push({ material: m, on: 0.12 })
+        built.spray.points.layers.set(REFLECTION_SKIP)
+        this.scene.add(built.spray.points)
+        this.sprays.push(built.spray)
+        const color = new THREE.Color('#6fc4f0').convertSRGBToLinear().multiplyScalar(0.45)
+        this.lightSources.push({
+          kind: 'lamp',
+          x: f.x,
+          y: f.y,
+          reach: 170 * f.scale,
+          color,
+          on: 0.12,
+        })
+      }
+      const reach = (FOUNTAIN.step * f.scale) / PIXEL
+      this.contacts.push({ x: f.x, y: f.y, r: reach * 0.95, strength: 0.35 })
+      const clear = Math.ceil(reach) + 2
+      for (let dy = -clear; dy <= clear; dy++)
+        for (let dx = -clear; dx <= clear; dx++) {
+          const i = pxIndex(f.x + dx * PIXEL, f.y + dy * PIXEL, pw)
+          if (i >= 0 && i < open.length && Math.hypot(dx, dy) <= clear) open[i] = OPEN.none
         }
     }
   }
@@ -2008,7 +2061,7 @@ export class HdScene {
   /** 看台（见 stand.ts）：台阶接上天气和灯光；人和道具站上台阶、舞台按那里的高度抬起来，桥上照旧 */
   private addStands(atlas: Atlas, seed: number) {
     this.stands = standsOf(atlas)
-    if (!this.stands.length && !this.pavilions.length) return
+    if (!this.stands.length && !this.pavilions.length && !this.fountains.length) return
     const worn = this.theme.ground.cracks !== undefined
     this.stands.forEach((s, k) => {
       const own = Math.floor(hash(Math.round(s.x), Math.round(s.y), seed + k) * 1e6)
@@ -2021,8 +2074,10 @@ export class HdScene {
     })
     const onBridges = liftOf(this.bridges),
       onStands = standLift(this.stands)
-    const inPavilion = pavilionLift(this.pavilions)
-    const lift = (x: number, y: number) => onBridges(x, y) || onStands(x, y) || inPavilion(x, y)
+    const inPavilion = pavilionLift(this.pavilions),
+      onFountains = fountainLift(this.fountains)
+    const lift = (x: number, y: number) =>
+      onBridges(x, y) || onStands(x, y) || inPavilion(x, y) || onFountains(x, y)
     // 躺在床上的人按床面垫高
     this.villagers.lift = (x, y) => lift(x, y) || (this.models?.liftAt(x, y) ?? 0)
     this.props.lift = lift
@@ -2343,6 +2398,23 @@ export class HdScene {
     }
   }
 
+  /** 喷泉边上的座位：不搭长椅，人坐到朝着它的那段池沿上，和长椅一样高。
+   *  一个座位的搭法只建一次：搭法换了道具就会重搭 */
+  private rimSeat(x: number, y: number): Build | undefined {
+    const key = `${x},${y}`
+    if (!this.rimSeats.has(key)) {
+      const spot = rimSpot(this.fountains, x, y)
+      this.rimSeats.set(
+        key,
+        spot &&
+          ((k) => {
+            k.use = { at: [spot[0] - x, spot[1] - y], lift: FOUNTAIN.rim }
+          })
+      )
+    }
+    return this.rimSeats.get(key)
+  }
+
   /** 道具：登记了搭法的搭成立体的，按屋子布置（贴墙、拼排）；其余的照旧立牌。屋里的跟着屋子掀开才显示。
    *  返回每件实际画的位置：x 是中心，base 是底边（立体的是正面的边）的 y，size 是立起来多高；
    *  SVG 层的点击区和名字据此跟着走。model 是立体的，width 是它点击区的宽 */
@@ -2355,7 +2427,10 @@ export class HdScene {
       const house = this.houses.find(
         (h) => p.x >= h.x && p.x <= h.x + h.w && p.y >= h.y && p.y <= h.y + h.h
       )
-      const build = house?.tower ? undefined : buildOf(p.definition, !!house)
+      const seat = !house && p.definition?.split('@')[0] === 'core:seat'
+      const build =
+        (seat && this.rimSeat(p.x, p.y)) ||
+        (house?.tower ? undefined : buildOf(p.definition, !!house))
       if (!build) continue
       let group = groups.get(house)
       if (!group) groups.set(house, (group = []))
@@ -2622,6 +2697,15 @@ export class HdScene {
         .add(this.sun.color.clone().multiplyScalar(this.sun.intensity * 0.2 * day))
         .add(new THREE.Color(1, 0.62, 0.4).multiplyScalar(0.5 * this.lit))
     )
+    // 喷泉的水花：白天按天光和日光，入夜被池灯映成青白
+    if (this.sprays.length) {
+      const light = this.hemi.color
+        .clone()
+        .multiplyScalar(this.hemi.intensity * 0.45)
+        .add(this.sun.color.clone().multiplyScalar(this.sun.intensity * 0.24 * day))
+      const glow = new THREE.Color(0.22, 0.48, 0.62).multiplyScalar(this.lit * 0.8)
+      for (const s of this.sprays) s.setLight(light, glow)
+    }
     if (now) this.request()
     else this.ambient = true
   }
@@ -2850,6 +2934,7 @@ export class HdScene {
     this.dissolveCell.value = Math.max(1, unitPx * PIXEL)
     this.motes.setScale(unitPx)
     this.petals?.setScale(unitPx)
+    for (const s of this.sprays) s.setScale(unitPx)
     this.weather.setView(target.x, target.z, w, h, screenH, unitPx, sin, cos, yawSin, yawCos)
     this.horizon.setView(target.x, target.z, w)
     // 日光路径从画面下沿（朝镜头那一侧的地面）出发

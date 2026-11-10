@@ -114,7 +114,8 @@ export interface Atlas {
    *  flip 左右翻过来；on 是一栋房子或 ruins 里一栋楼的编号，立牌蹲到它的墙顶上（楼顶的秃鹫）。
    *  kind 为 court 的是立体的看台（见 town-2d 的 map/pixel/stands.ts）：x、y 是舞台中心，size 是外半径
    *  （地图单位，不给 160），facing 是敞开的一面朝哪（不给朝南，正对缺省镜头）。
-   *  kind 为 pavilion 的是立体的八角凉亭（见 town-2d 的 map/hd2d/gazebo.ts）：x、y 是亭子正中，facing 同上 */
+   *  kind 为 pavilion 的是立体的八角凉亭（见 town-2d 的 map/hd2d/gazebo.ts）：x、y 是亭子正中，facing 同上。
+   *  kind 为 fountain 的是立体的喷泉（见 town-2d 的 map/pixel/fountains.ts）：x、y 是喷泉正中 */
   standees?: {
     kind: string
     x: number

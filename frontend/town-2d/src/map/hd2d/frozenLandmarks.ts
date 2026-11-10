@@ -11,54 +11,11 @@ import {
   type Flipbook,
   type LandmarkSet,
 } from './landmarks'
-import { snowCap, sprite, stone } from './sprite'
-import { ICE, SNOW, SNOW_GREY, SNOW_SHADE } from '../palette'
+import { snowCap, sprite } from './sprite'
+import { SNOW, SNOW_SHADE } from '../palette'
 
-// 冰封雪镇的户外立牌。原作的地标照旧，只是压了一层雪；喷泉冻成一串冰挂，
+// 冰封雪镇的户外立牌。原作的地标照旧，只是压了一层雪；喷泉是立体的，冻住了（见 fountain.ts），
 // 港口有晾鱼架，栈桥边的船冻在冰里。镇外雪地上有雪人、雪橇和柴垛，冰原上有冰钓小屋和冰窟窿。
-
-/** 冻住的喷泉：池里是冰，池沿压雪，中间的水柱冻成一串冰挂 */
-function frozenFountain() {
-  return sprite(58, 46, ({ px, rect }) => {
-    const ellipse = (
-      cx: number,
-      cy: number,
-      rx: number,
-      ry: number,
-      c: (x: number, y: number, t: number) => string
-    ) => {
-      for (let y = -ry; y <= ry; y++) {
-        const half = Math.round(rx * Math.sqrt(1 - (y / ry) ** 2))
-        for (let x = -half; x <= half; x++)
-          px(cx + x, cy + y, c(cx + x, cy + y, (x + half) / (2 * half + 1)))
-      }
-    }
-    rect(3, 36, 52, 8, '#9aa2ac')
-    rect(3, 36, 52, 1, SNOW)
-    rect(3, 43, 52, 1, '#6a727c')
-    for (let x = 3; x < 55; x += 7) rect(x, 37, 1, 6, '#8a929c')
-    ellipse(29, 35, 26, 6, (_x, _y, t) => (t < 0.55 ? SNOW : SNOW_SHADE))
-    ellipse(29, 35, 23, 4, (x, y) =>
-      (x + y * 3) % 9 === 0 ? '#e4f2fa' : noise(x / 4, y / 2, 5) > 0.55 ? '#bcdae8' : '#a4cadc'
-    )
-    rect(26, 18, 6, 17, '#b4bcc4')
-    rect(26, 18, 2, 17, '#d0d6dc')
-    rect(30, 18, 2, 17, '#9aa2ac')
-    ellipse(29, 18, 10, 2, (_x, _y, t) => stone(t, SNOW_GREY))
-    rect(27, 6, 4, 11, '#e4e0d8')
-    rect(26, 9, 6, 4, '#e4e0d8')
-    rect(28, 3, 3, 3, '#e4e0d8')
-    rect(27, 2, 5, 1, SNOW)
-    // 从上层盆边垂下的冰挂，越往下越细
-    for (const d of [-1, 1])
-      for (let k = 0; k < 4; k++) {
-        const x = 29 + d * (7 + k * 2),
-          len = 12 - k * 2
-        for (let y = 0; y < len; y++)
-          px(x, 20 + y, y === len - 1 ? '#ffffff' : k % 2 ? ICE : '#e4f2fa')
-      }
-  })
-}
 
 /** 港口的晾鱼架：两根木桩一根横杆，下面挂一排鱼干，杆上压雪 */
 function fishRack(seed: number) {
@@ -265,11 +222,11 @@ function snowRock(seed: number) {
 export const FROZEN_LANDMARKS: LandmarkSet = {
   boat: (seed, _view, kind) => (kind === 2 ? rowboat(seed) : frozenShip(seed)),
   dockGoods: (seed) => snowCap(dockGoods(seed), seed),
+  fountain: 'frozen',
   plans: {
     ferris: (seed) => [[snowCap(ferrisWheel(), seed), 0, -6]],
     carousel: (seed) => [[snowCap(carousel(), seed), 0, -4]],
     obelisk: (seed) => [[snowCap(obelisk(), seed), 0, -6]],
-    fountain: () => [[frozenFountain(), 0, -4]],
     temple: (seed) => [[snowCap(temple(), seed), 0, -6]],
     // 市集：三个压雪的棚子，摊前一排雪灯
     market: (seed) => [

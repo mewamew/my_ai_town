@@ -24,7 +24,7 @@ import type { GroundPalette, MapTheme } from '../themes/types'
 // 画布一个像素 = PIXEL 个地图单位，镜头只按整数倍放大它。
 
 /** 自带铺装的区域，路面不再盖一层土（沥青是区域的 decor，见 groundKind） */
-const PAVED = new Set(['plaza', 'market', 'gate', 'harbor', 'asphalt'])
+const PAVED = new Set(['plaza', 'market', 'gate', 'harbor', 'asphalt', 'fountain'])
 /** 区域的 decor 换掉地面画法的几种：旧沥青路面、碎石废墟地；都不长树 */
 const DECOR_GROUNDS = new Set(['asphalt', 'rubble'])
 
@@ -990,8 +990,9 @@ function groundColor(
         : c
     }
     case 'plaza':
+    case 'fountain':
     case 'gate':
-      return slabColor(spot, kind === 'plaza')
+      return slabColor(spot, kind !== 'gate')
     case 'market': {
       const [a, b, dot, stain] = G.market
       let c = u(((x >> 2) + (y >> 2)) & 1 ? a : b)
