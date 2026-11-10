@@ -130,6 +130,12 @@ export class ChimneySmoke {
     alpha.needsUpdate = true
   }
 
+  dispose() {
+    this.mesh?.geometry.dispose()
+    this.material.map?.dispose()
+    this.material.dispose()
+  }
+
   /** 烟团和立牌一样按俯角后仰，正对镜头 */
   setTilt(tilt: Tilt) {
     this.turn.setFromEuler(new THREE.Euler(-tilt.pitch, tilt.yaw, 0, 'YXZ'))

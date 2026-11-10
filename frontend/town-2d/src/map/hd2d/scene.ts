@@ -82,6 +82,9 @@ import { SpringSteam, springShore } from './steam'
 import { interior, interiorTop, keepInside } from './interior'
 import type { Partition } from './partition'
 import { PROP_BASE, PropStandees, type PropPlacement } from './props'
+import { arrange, furnish, type Decor, type Room } from './propArrange'
+import { buildOf, decorBuild, type Build } from './propBuilds'
+import { PropModels, type ModelPlacement } from './propModels'
 import { colonnadeFront, vaultRoof } from './structures'
 import { lighthouse } from './lighthouse'
 import { dissolvable } from './dissolve'
@@ -469,6 +472,20 @@ export class HdScene {
     }
   )
   private lastTick = performance.now()
+  /** 立体道具（propModels.ts）：第一份道具名单来了才建 */
+  private models?: PropModels
+  /** 立体道具的光晕：和别的光晕一样按俯角摆、入夜亮，道具拆掉时跟着拆 */
+  private readonly modelGlows = new Set<{
+    sprite: THREE.Sprite
+    on: number
+    at: [number, number, number]
+  }>()
+  /** 每间屋子里人会站的点（落脚点，地图坐标）：陈设让开它们和它们之间的直线 */
+  private readonly roomStops = new Map<string, [number, number][]>()
+  /** 掀开了的房子：屋里的陈设跟着显隐 */
+  private openRooms: ReadonlySet<string> = new Set()
+  /** 各间屋子算好的陈设，道具没动就不重算 */
+  private readonly decor = new Map<string, { key: string; list: Decor[] }>()
 
   private readonly theme: MapTheme
   /** 玩法的画面（gameModes/）：地面、海面、立着的东西和村民的着色先装好，名册来了交给它们 */
@@ -481,7 +498,9 @@ export class HdScene {
     atlas: Atlas,
     ground: Ground,
     private container: HTMLElement,
-    private svg: SVGSVGElement
+    private svg: SVGSVGElement,
+    /** 屋里摆不摆陈设（只给画面看的桌椅、绿植、地毯）：随应用发的内置地图才摆 */
+    private readonly furnished = false
   ) {
     const { seed, decor, theme } = ground
     this.theme = theme
@@ -666,6 +685,10 @@ export class HdScene {
         .filter((p) => p.space === s.id)
         .map((p) => roomPoint(s.unfold, p.x, p.y))
       const house = this.houses.find((h) => h.id === s.id)!
+      this.roomStops.set(
+        s.id,
+        atlas.stations.filter((p) => p.space === s.id).map((p) => roomPoint(s.unfold, p.x, p.y))
+      )
       const on = houseLightsOn(house)
       this.addHouse(house, s.door_outside, points, on, glowMap)
       const lamp = new THREE.Color(this.theme.light.lamp)
@@ -797,6 +820,7 @@ export class HdScene {
       for (const b of this.beams) b.rotation.y -= dt * 0.9
       this.flare()
       this.smoke.step(t / 1000)
+      this.models?.step(t / 1000)
       this.steam?.step(t / 1000)
       for (const b of this.flipbooks)
         for (const m of b.maps) m.offset.x = (Math.floor((t / 1000) * b.fps) % b.frames) / b.frames
@@ -1999,7 +2023,8 @@ export class HdScene {
       onStands = standLift(this.stands)
     const inPavilion = pavilionLift(this.pavilions)
     const lift = (x: number, y: number) => onBridges(x, y) || onStands(x, y) || inPavilion(x, y)
-    this.villagers.lift = lift
+    // 躺在床上的人按床面垫高
+    this.villagers.lift = (x, y) => lift(x, y) || (this.models?.liftAt(x, y) ?? 0)
     this.props.lift = lift
   }
 
@@ -2197,8 +2222,12 @@ export class HdScene {
       placements.map((p) => {
         // 落脚点就在道具上时，人站到道具底边前面一点，不站进家具里
         const at = this.propPlacements.find(
-          (q) => q.visible && Math.hypot(q.x - p.x, q.y - p.y) < 8
+          (q) =>
+            q.visible && (q.url || this.models?.has(q.id)) && Math.hypot(q.x - p.x, q.y - p.y) < 8
         )
+        // 立体道具各有各的操作位（柜台跟前、椅子和桌子之间、床上），不随镜头转
+        const use = at && this.models?.useOf(at.id)
+        if (use) return { ...p, offset: [use.x - p.x, use.y - p.y] as [number, number] }
         const toward = at ? at.size * PROP_BASE + 4 : 0
         const [x, y] = this.inside(
           p.x + toward * this.tilt.yawSin,
@@ -2235,28 +2264,187 @@ export class HdScene {
     return this.villagers.crown(id)
   }
 
-  /** 道具立牌：屋里的跟着屋子掀开才显示。返回每个立牌实际画的位置：x 是收进墙内侧后的，
-   *  base 是底边中点的 y；SVG 层的点击区和名字据此跟着立牌走 */
+  /** 立体道具的管理器：材质接上光照图和玩法的着色，光晕、垫高交给场景 */
+  private modelsOf() {
+    if (this.models) return this.models
+    const models = (this.models = new PropModels({
+      glowing: (material, on) => {
+        this.glowing.push({ material, on })
+      },
+      glow: (x, y, z, size, on) => {
+        const sprite = new THREE.Sprite(
+          new THREE.SpriteMaterial({
+            map: this.glowMap,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            transparent: true,
+            opacity: this.lightmap.level(on) * 0.3,
+          })
+        )
+        sprite.scale.set(size, size, 1)
+        onStandee(sprite, x, z, 0, this.tilt, 40)
+        sprite.position.y += y
+        this.scene.add(sprite)
+        this.modelGlows.add({ sprite, on, at: [x, y, z] })
+        return sprite
+      },
+      unglow: (sprite) => {
+        for (const g of this.modelGlows) if (g.sprite === sprite) this.modelGlows.delete(g)
+        sprite.removeFromParent()
+        sprite.material.dispose()
+      },
+      lift: (x, y) => this.props.lift(x, y),
+      changed: () => {
+        this.lightmap.setSources([...this.lightSources, ...models.lights()])
+        this.applyLight(false)
+      },
+    }))
+    this.lightmap.shade(models.top, 'ground')
+    this.lightmap.shade(models.side, 'wall')
+    for (const look of this.looks) {
+      look.shadeStanding(models.top, 'thing')
+      look.shadeStanding(models.side, 'thing')
+    }
+    this.flat.add(models.group)
+    models.setTilt(this.tilt)
+    this.upright.push((t) => {
+      models.setTilt(t)
+      for (const g of this.modelGlows) {
+        onStandee(g.sprite, g.at[0], g.at[2], 0, t, 40)
+        g.sprite.position.y += g.at[1]
+      }
+    })
+    return models
+  }
+
+  /** 屋子外墙内侧的范围和隔墙，家具按它布置（propArrange.ts）；外墙厚两个像素 */
+  private roomOf(house: House): Room {
+    const wall = 2 * PIXEL
+    const cx = house.x + house.w / 2,
+      cy = house.y + house.h / 2
+    const p = this.partitions.get(house.id)
+    return {
+      x0: house.x + wall,
+      y0: house.y + wall,
+      x1: house.x + house.w - wall,
+      y1: house.y + house.h - wall,
+      walls: (p?.segments ?? []).map(([from, to]) =>
+        p!.alongX
+          ? { horizontal: true, at: cy + p!.at, from: cx + from, to: cx + to }
+          : { horizontal: false, at: cx + p!.at, from: cy + from, to: cy + to }
+      ),
+    }
+  }
+
+  /** 道具：登记了搭法的搭成立体的，按屋子布置（贴墙、拼排）；其余的照旧立牌。屋里的跟着屋子掀开才显示。
+   *  返回每件实际画的位置：x 是中心，base 是底边（立体的是正面的边）的 y，size 是立起来多高；
+   *  SVG 层的点击区和名字据此跟着走。model 是立体的，width 是它点击区的宽 */
   setProps(placements: PropPlacement[]) {
     this.propPlacements = placements
-    const drawn = placements.map((p) => {
-      const [x, y] = this.inside(p.x, p.y, p.size / 2)
-      return { ...p, x, y }
-    })
-    this.props.sync(drawn)
+    const models = this.modelsOf()
+    // 按屋子分组：灯塔里是剖开的塔，不摆立体家具
+    const groups = new Map<House | undefined, { p: PropPlacement; build: Build }[]>()
+    for (const p of placements) {
+      const house = this.houses.find(
+        (h) => p.x >= h.x && p.x <= h.x + h.w && p.y >= h.y && p.y <= h.y + h.h
+      )
+      const build = house?.tower ? undefined : buildOf(p.definition, !!house)
+      if (!build) continue
+      let group = groups.get(house)
+      if (!group) groups.set(house, (group = []))
+      group.push({ p, build })
+    }
+    const list: ModelPlacement[] = []
+    const drawnModels = new Map<
+      string,
+      { x: number; y: number; base: number; size: number; width: number }
+    >()
+    for (const [house, group] of groups) {
+      const room = house && this.roomOf(house)
+      const pieces = group.map(({ p, build }) => {
+        const { foot, wall } = models.measure(build)
+        return { id: p.id, x: p.x, y: p.y, foot, wall }
+      })
+      const spots = arrange(room, pieces)
+      for (const { p, build } of group) {
+        const spot = spots.get(p.id)!
+        list.push({
+          id: p.id,
+          build,
+          x: spot.x,
+          y: spot.y,
+          turn: spot.turn,
+          visible: p.visible,
+          house: house?.id,
+        })
+        drawnModels.set(p.id, {
+          x: (spot.box.x0 + spot.box.x1) / 2,
+          y: (spot.box.y0 + spot.box.y1) / 2,
+          base: spot.box.y1,
+          size: Math.max(40, models.measure(build).tall),
+          width: Math.max(40, spot.box.x1 - spot.box.x0),
+        })
+      }
+      if (!house || !room || !this.furnished) continue
+      // 陈设：让开摆好的道具和人走的地方；道具没动就用上次算的
+      const boxes = group.map(({ p }) => spots.get(p.id)!.box)
+      const key = boxes.map((b) => `${b.x0},${b.y0},${b.x1},${b.y1}`).join(';')
+      let decor = this.decor.get(house.id)
+      if (decor?.key !== key) {
+        const lounge = group
+          .filter(({ build }) => models.measure(build).lounge)
+          .map(({ p }) => spots.get(p.id)!.box)
+        decor = {
+          key,
+          list: furnish(room, house.kind, boxes, this.roomStops.get(house.id) ?? [], lounge),
+        }
+        this.decor.set(house.id, decor)
+      }
+      decor.list.forEach((d, i) =>
+        list.push({
+          id: `decor:${house.id}:${i}`,
+          build: decorBuild(d.kind),
+          x: d.x,
+          y: d.y,
+          turn: 0,
+          visible: this.openRooms.has(house.id),
+          house: house.id,
+        })
+      )
+    }
+    models.sync(list)
+    const standees = placements
+      .filter((p) => p.url && !drawnModels.has(p.id))
+      .map((p) => {
+        const [x, y] = this.inside(p.x, p.y, p.size / 2)
+        return { ...p, x, y }
+      })
+    this.props.sync(standees)
     this.request()
-    return drawn.map((p) => ({
-      id: p.id,
-      x: p.x,
-      y: p.y,
-      base: p.y + p.size * PROP_BASE,
-      size: p.size,
-    }))
+    return [
+      ...standees.map((p) => ({
+        id: p.id,
+        x: p.x,
+        y: p.y,
+        base: p.y + p.size * PROP_BASE,
+        size: p.size,
+        model: false,
+        width: p.size,
+      })),
+      ...[...drawnModels].map(([id, d]) => ({ id, ...d, model: true })),
+    ]
+  }
+
+  /** 选中的道具、指着的道具：立体的在身上叠一层亮色（立牌的选中框在 SVG 层） */
+  setPickedProp(picked: string | null, hovered: string | null) {
+    this.models?.setPicked(picked, hovered)
+    this.request()
   }
 
   /** 这些房间去掉整栋房子，立起室内的墙，露出地面上画的地板；其余的盖回去。
    *  开合时外壳按像素格溶解（DISSOLVE_MS，要求减少动画时直接换），中途反悔从当时的样子往回走 */
   setOpenRooms(open: ReadonlySet<string>) {
+    this.openRooms = open
     const now = performance.now()
     for (const [id, r] of this.reveals) {
       if (open.has(id) === r.open) continue
@@ -2358,6 +2546,7 @@ export class HdScene {
     for (const g of this.glowing)
       (g.material as THREE.MeshLambertMaterial).emissiveIntensity = this.lightmap.level(g.on) * 0.9
     for (const g of this.glows) g.sprite.material.opacity = this.lightmap.level(g.on) * 0.3
+    for (const g of this.modelGlows) g.sprite.material.opacity = this.lightmap.level(g.on) * 0.3
     for (const m of this.moonlit) m.emissiveIntensity = night * ROOF_NIGHT_GLOW
     for (const m of this.selfLit) m.emissiveIntensity = lerp(0.3, 0.55, Math.max(night, twilight))
     this.seaSparkle.value = lerp(0.3, 1, day) * (1 - cloud * 0.9)
@@ -2708,6 +2897,7 @@ export class HdScene {
     this.abort.abort()
     this.weather.dispose()
     this.props.dispose()
+    this.models?.dispose()
     this.pitchControl?.remove()
     this.modeLayer.remove()
     this.villagers.dispose()

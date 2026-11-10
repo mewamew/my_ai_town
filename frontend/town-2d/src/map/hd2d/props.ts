@@ -13,7 +13,10 @@ export const PROP_BASE = 0.3
 
 export interface PropPlacement {
   id: string
+  /** 像素图；没有图、只有立体搭法的道具是空的 */
   url: string
+  /** 道具定义编号：登记了搭法的搭成立体的（propBuilds.ts），不立牌 */
+  definition?: string
   /** 道具图中心（地图坐标） */
   x: number
   y: number

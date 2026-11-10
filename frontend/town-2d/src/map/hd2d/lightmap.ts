@@ -7,15 +7,15 @@ import type { House } from './layout'
 // 光被房子挡住：路灯的光沿光线在房子占地图上步进，碰到房子就停。地面按像素格取光，
 // 亮度按台阶和有序抖动过渡，和像素海面同一种画法。光源只在入夜、开关屋顶时变，平时不重画。
 
-export type LightKind = 'lamp' | 'window' | 'door' | 'room'
-const KIND: Record<LightKind, number> = { lamp: 0, window: 1, door: 2, room: 3 }
+export type LightKind = 'lamp' | 'window' | 'door' | 'room' | 'prop'
+const KIND: Record<LightKind, number> = { lamp: 0, window: 1, door: 2, room: 3, prop: 4 }
 
 export interface LightSource {
   kind: LightKind
   /** 地图坐标：灯杆脚、窗下的墙脚、门口、屋子中心 */
   x: number
   y: number
-  /** 灯、门：照亮半径；窗：光斑朝外伸多远；屋：半深（地图单位） */
+  /** 灯、门、道具：照亮半径；窗：光斑朝外伸多远；屋：半深（地图单位） */
   reach: number
   /** 窗：窗宽；屋：半宽（地图单位） */
   width?: number
@@ -25,7 +25,7 @@ export interface LightSource {
   color: THREE.Color
   /** 夜里亮灯的程度超过它才亮（0～1），一盏盏错开 */
   on: number
-  /** 窗和屋里的灯属于哪栋房子：屋顶掀开时窗光换成屋里的光 */
+  /** 窗、屋里的灯和屋里道具的灯属于哪栋房子：屋顶掀开时窗光换成屋里的光 */
   house?: string
 }
 
@@ -87,10 +87,14 @@ void main() {
     // 门灯：门口一小团，不穿进屋里
     float d = distance(vMap, center);
     light = pow(max(0.0, 1.0 - d / reach), 1.6) * (1.0 - occupied(vMap));
-  } else {
+  } else if (kind < 3.5) {
     // 屋里的灯：掀开屋顶后整间屋子暖暖地亮，靠墙稍暗
     vec2 q = abs(vMap - center) / vec2(width, reach);
     light = 1.0 - smoothstep(0.35, 1.0, max(q.x, q.y));
+  } else {
+    // 屋里道具的灯（台灯、柜里的灯）：脚下一团暖光，不被自己这栋房子挡
+    float d = distance(vMap, center);
+    light = pow(max(0.0, 1.0 - d / reach), 1.7);
   }
   gl_FragColor = vec4(vColor * light * level, 1.0);
 }`
@@ -298,7 +302,8 @@ export class LightMap {
     let changed = false
     this.sources.forEach((s, i) => {
       const opened = s.house !== undefined && this.open.has(s.house)
-      const visible = s.kind === 'room' ? opened : s.kind === 'window' ? !opened : true
+      const visible =
+        s.kind === 'room' || s.kind === 'prop' ? opened : s.kind === 'window' ? !opened : true
       const v = visible ? this.level(s.on) : 0
       if (Math.abs(v - this.levels[i]) > 0.001) {
         this.levels[i] = v

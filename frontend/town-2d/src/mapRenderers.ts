@@ -41,6 +41,7 @@ export function createTownMap(
     notify: setup.notify ?? ((message) => console.error(message)),
     theme: data.theme,
     ground: setup.ground,
+    furnished: document.origin === 'builtin',
   })
 }
 

@@ -31,7 +31,7 @@ import { standUpright, uprightRatio } from './map/upright'
 import { ThoughtBubbles } from './map/bubbles'
 import { ResidentLayer } from './map/residents'
 import { PromptLayer } from './map/prompts'
-import { propArtwork } from './map/propArt'
+import { PROP_ART_SIZE, propArtwork } from './map/propArt'
 import { PlaceOverlay, type OverlayProp } from './map/placeOverlay'
 import { cellNear, freeNear } from 'town-shared/props/placeGrid'
 
@@ -78,6 +78,8 @@ export interface TownMapOptions {
   theme?: MapTheme
   /** 调用方已经算好的地面（建镇预览先拿它画缩略图）；不给就在这里算 */
   ground?: Ground
+  /** 屋里摆陈设（只给画面看的桌椅、绿植、地毯）：随应用发的内置地图才摆 */
+  furnished?: boolean
 }
 
 export class TownMap {
@@ -183,7 +185,17 @@ export class TownMap {
   }
   private markerScale = 1
   /** 道具立牌最近一次实际画的位置，名字和点击区跟着它 */
-  private drawnProps: { id: string; x: number; y: number; base: number; size: number }[] = []
+  private drawnProps: {
+    id: string
+    x: number
+    y: number
+    base: number
+    size: number
+    /** 立体搭的道具：选中、指着时场景在它身上叠亮色，点击区按它的宽高 */
+    model: boolean
+    width: number
+  }[] = []
+  private readonly furnished: boolean
   /** 行走坐标的比例由后端随化身状态给出，不在前端复制一份 */
   private walkUnits?: number
   /** 本页正在操控的人：立体场景里他的立牌按本地预测画（见 map/avatarMotion.ts） */
@@ -416,6 +428,7 @@ export class TownMap {
 
   constructor(options: TownMapOptions) {
     const { atlas, topology, container } = options
+    this.furnished = !!options.furnished
     this.sourceAtlas = atlas
     this.spatial = options.spatial
     this.topology = topology
@@ -584,7 +597,7 @@ export class TownMap {
       .then(({ HdScene }) => {
         const container = this.svg.parentElement
         if (this.disposed || !container || !this.ground) return
-        this.hd = new HdScene(atlas, this.ground, container, this.svg)
+        this.hd = new HdScene(atlas, this.ground, container, this.svg, this.furnished)
         this.ground = undefined
         this.svg.classList.add('hd2d')
         this.applyMarkerScale()
@@ -822,11 +835,22 @@ export class TownMap {
       if (!id) return
       const selected = this.scene.props.get(id)?.classList.contains('selected-prop')
       this.scene.propLabels.get(id)?.classList.toggle('named', on || !!selected)
+      this.hoveredProp = on ? id : this.hoveredProp === id ? null : this.hoveredProp
+      this.pickProps()
     }
     for (const type of ['pointerover', 'focusin'])
       this.svg.addEventListener(type, (e) => toggle(e.target, true))
     for (const type of ['pointerout', 'focusout'])
       this.svg.addEventListener(type, (e) => toggle(e.target, false))
+  }
+
+  /** 鼠标指着（或键盘聚焦）的道具 */
+  private hoveredProp: string | null = null
+
+  /** 把选中的、指着的道具告诉立体场景：立体搭的道具在身上叠一层亮色 */
+  private pickProps() {
+    const picked = this.svg.querySelector('.pp.selected-prop')?.getAttribute('data-prop-id')
+    this.hd?.setPickedProp(picked ?? null, this.hoveredProp)
   }
 
   /** 道具的点击区和名字跟着立牌走：点击区在立牌中心，名字挂在立牌头顶再高一点 */
@@ -841,9 +865,18 @@ export class TownMap {
       const [x, y] = this.camera.project([p.x, p.y])
       const base = y + p.base - p.y
       const centre = base - (p.size * up) / 2
-      this.scene.props
-        .get(p.id)
-        ?.setAttribute('transform', `translate(${x} ${centre}) scale(1 ${up})`)
+      const shape = this.scene.props.get(p.id)
+      shape?.setAttribute('transform', `translate(${x} ${centre}) scale(1 ${up})`)
+      // 立体道具的点击区按它的宽高，选中框不画（场景里已经亮了）
+      if (shape && p.model && shape.dataset.box !== `${p.width},${p.size}`) {
+        shape.dataset.box = `${p.width},${p.size}`
+        shape.classList.add('modelled')
+        const target = shape.querySelector('.prop-art-target')
+        target?.setAttribute('x', String(-p.width / 2))
+        target?.setAttribute('width', String(p.width))
+        target?.setAttribute('y', String(-p.size / 2))
+        target?.setAttribute('height', String(p.size))
+      }
       const label = this.scene.propLabels.get(p.id)
       if (!label) continue
       label.setAttribute('x', String(x))
@@ -895,8 +928,16 @@ export class TownMap {
       const hidden = covered(at)
       this.scene.props.get(id)?.classList.toggle('roofed', hidden)
       this.scene.propLabels.get(id)?.classList.toggle('roofed', hidden)
-      if (art)
-        standees.push({ id, url: art.url, x: at[0], y: at[1], size: art.size, visible: !hidden })
+      // 没有像素图的也交过去：登记了立体搭法的道具不靠图
+      standees.push({
+        id,
+        url: art?.url ?? '',
+        definition: this.propDefinitions.get(id),
+        x: at[0],
+        y: at[1],
+        size: art?.size ?? PROP_ART_SIZE,
+        visible: !hidden,
+      })
     }
     return standees
   }
@@ -1492,6 +1533,7 @@ export class TownMap {
     this.svg.querySelectorAll('.pl.named').forEach((el) => el.classList.remove('named'))
     shape?.classList.add('selected-prop')
     this.scene.propLabels.get(id)?.classList.add('named')
+    this.pickProps()
   }
   onReset() {
     this.lastRoster = undefined
