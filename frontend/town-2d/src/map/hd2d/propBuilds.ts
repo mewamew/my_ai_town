@@ -677,6 +677,261 @@ const buskStage: Build = (k) => {
   k.lamp([0, 6 * T, -8], LAMP, 170, 80, 0.9)
 }
 
+const LEAF = ['#4f8a4c', '#6fa85e']
+/** 一只铁皮桶插满花：桶口一圈叶子，上面一丛花，花色给两三种 */
+function flowerBucket(k: Kit, x: number, z: number, colors: string[]) {
+  k.prism(x, z, 7.5, 0, 1.8 * T, (side, v) => (v ? '#8c959f' : '#a7b0ba'), '#4f8a4c', 9)
+  const bloom = (u: number, v: number) =>
+    (u + v) % 3 === 2 ? LEAF[(u + v) % 2] : colors[(u * 2 + v) % colors.length]
+  k.box(x - 9, x + 9, z - 9, z + 9, 1.8 * T, 3 * T, {
+    all: LEAF[0],
+    south: (u, v) => (v === 0 ? colors[u % colors.length] : LEAF[u % 2]),
+    east: (u, v) => (v === 0 ? colors[u % colors.length] : LEAF[u % 2]),
+    west: (u, v) => (v === 0 ? colors[u % colors.length] : LEAF[u % 2]),
+    top: bloom,
+  })
+}
+
+/** 市集的花摊：摆在摊棚跟前的一排花桶和一块小价牌（摊棚是景物里的，这里只添看摊的东西） */
+const flowerStall: Build = (k) => {
+  k.footprint(54, 14, 8, 84)
+  k.use = { at: [-62, 88] }
+  flowerBucket(k, -34, 84, ['#e8687a', '#f6a3b0', '#c8323e'])
+  flowerBucket(k, -12, 86, ['#f2c64e', '#f8dc7c', '#f6f1e7'])
+  flowerBucket(k, 10, 84, ['#b07cd0', '#d6b0e6', '#f6f1e7'])
+  flowerBucket(k, 32, 86, ['#ef8c4a', '#f2c64e', '#e8687a'])
+  // 人字价牌
+  k.box(48, 62, 80, 83, 0, 3 * T, {
+    all: WOOD.dark,
+    south: (u, v, nu, nv) => (v === nv - 1 ? WOOD.dark : v === 0 ? '#e8687a' : '#3d4a44'),
+  })
+}
+
+/** 市集的棚铺：摊棚跟前一张小桌，上面几束包好的花、两卷丝带，桌边一只花桶 */
+const bouquetTable: Build = (k) => {
+  k.footprint(44, 14, -4, 84)
+  k.use = { at: [0, 112] }
+  for (const x of [-24, 18])
+    for (const z of [74, 88]) k.box(x, x + 6, z, z + 6, 0, 2.8 * T, { all: WOOD.dark, top: false })
+  k.box(-27, 27, 72, 96, 2.8 * T, 3.3 * T, {
+    all: WOOD.light,
+    top: (u) => (u % 3 === 2 ? WOOD.mid : WOOD.pale),
+  })
+  const y = 3.3 * T
+  const bouquet = (x: number, z: number, color: string) =>
+    k.box(x, x + 18, z, z + 6, y, y + 0.7 * T, {
+      all: CREAM,
+      top: (u) => (u === 0 ? color : u === 1 ? LEAF[1] : CREAM),
+      west: color,
+    })
+  bouquet(-24, 75, '#e8687a')
+  bouquet(-20, 83, '#f2c64e')
+  bouquet(2, 78, '#b07cd0')
+  k.prism(14, 90, 3.5, y, y + 0.6 * T, '#f6a3b0', '#f6f1e7')
+  k.prism(22, 88, 3.5, y, y + 0.6 * T, '#a9cfe6', '#f6f1e7')
+  flowerBucket(k, -40, 86, ['#f6f1e7', '#f6a3b0', '#f2c64e'])
+}
+
+const TOOL = { h: '#a8774c', s: '#aeb4bd', d: '#7d848e' }
+/** 园具点：木架上靠着铁锹、耙子、锄头，旁边一只喷壶和一只木桶 */
+const toolRack: Build = (k) => {
+  k.footprint(46, 12, 8, 2)
+  k.use = { at: [0, 30] }
+  for (const x of [-30, 27]) k.box(x, x + 3, -5, -2, 0, 7 * T, { all: WOOD.dark })
+  k.box(-30, 30, -5, -3, 5.6 * T, 6.1 * T, { all: WOOD.mid, top: WOOD.light })
+  const handle = ['.h.', '.h.', '.h.', '.h.', '.h.', '.h.', '.h.', '.h.']
+  cutout(k, -18, 0, 0, [...handle, 'sss', 'sss', 'ddd', '.d.'], TOOL)
+  cutout(k, 0, 0, 0, [...handle, '.h.', 'sss', 's.s', 's.s'], TOOL)
+  cutout(k, 18, 0, 0, [...handle, '.h.', '.h.', 'ssd', 's..'], TOOL)
+  // 喷壶
+  k.box(34, 46, 0, 10, 0, 1.6 * T, { all: '#5f9f98', top: '#3f6f6a' })
+  k.box(46, 53, 4, 6, 0.9 * T, 1.3 * T, { all: '#5f9f98' })
+  k.box(36, 44, 4, 6, 1.6 * T, 2.1 * T, { all: '#3f6f6a' })
+  k.prism(-42, 6, 8, 0, 1.6 * T, (side) => (side % 2 ? '#99693f' : '#855a35'), '#6b5a48')
+}
+
+/** 植物记录点：斜面小讲台上摊着记录本，旁边一盘小苗，插着几支标签 */
+const plantDesk: Build = (k) => {
+  k.footprint(36, 14, -8, 2)
+  k.use = { at: [8, 30] }
+  k.box(4, 10, -3, 3, 0, 3.6 * T, { all: WOOD.dark })
+  k.box(-9, 23, -9, 9, 3.6 * T, 4.1 * T, { all: WOOD.mid, top: WOOD.light })
+  k.box(-6, 20, -7, 7, 4.1 * T, 4.4 * T, {
+    all: WHITE,
+    top: (u, v, nu) => (u === Math.floor(nu / 2) ? '#5a8a4a' : v % 2 ? '#d9d3c6' : WHITE),
+  })
+  // 一盘小苗
+  k.box(-42, -15, -8, 12, 0, 1.2 * T, {
+    all: WOOD.mid,
+    south: (u) => (u % 2 ? WOOD.dark : WOOD.mid),
+    top: (u, v) => ((u + v) % 2 ? '#6b5a48' : '#6fae62'),
+  })
+  for (const x of [-36, -24]) k.box(x, x + 2, 8, 9, 1.2 * T, 2 * T, { all: WHITE })
+}
+
+/** 浇水点：石座上一只压水井，出水口下面接着木桶，旁边一只喷壶 */
+const waterPump: Build = (k) => {
+  k.footprint(28, 14)
+  k.use = { at: [0, 30] }
+  const iron = '#3d6b58',
+    lit = '#56917a'
+  k.box(-18, 24, -12, 12, 0, 0.5 * T, { all: '#bcb3a2', top: '#cfc6b5' })
+  k.box(-9, -1, -4, 4, 0.5 * T, 5 * T, { all: iron, south: (u, v) => (v === 0 ? lit : iron) })
+  k.box(-11, 1, -6, 6, 5 * T, 5.7 * T, { all: iron, top: lit })
+  k.box(-1, 10, -2, 2, 4 * T, 4.5 * T, { all: iron, top: lit })
+  k.box(-24, -9, -1.5, 1.5, 5.1 * T, 5.5 * T, { all: iron, top: lit })
+  k.box(-26, -23, -1.5, 1.5, 3.4 * T, 5.5 * T, { all: iron })
+  // 木桶接着水
+  k.prism(12, 2, 8.5, 0.5 * T, 2.1 * T, (side) => (side % 2 ? '#99693f' : '#855a35'))
+  k.prism(12, 2, 7, 2.05 * T, 2.1 * T, '#4f9fd0', '#62b2e0')
+  k.box(-34, -24, 2, 12, 0, 1.5 * T, { all: '#5f9f98', top: '#3f6f6a' })
+  k.box(-40, -34, 6, 8, 0.8 * T, 1.2 * T, { all: '#5f9f98' })
+}
+
+const BLOOMS = ['#e8687a', '#f2c64e', '#f6f1e7', '#b07cd0', '#ef8c4a']
+/** 观察花圃：一方木框围起的花床，一垄一垄的花，前沿插着名牌，中间两株高一点的 */
+const flowerBed: Build = (k) => {
+  k.footprint(38, 20)
+  k.use = { at: [0, 38] }
+  k.box(-36, 36, -18, 18, 0, 1.4 * T, {
+    all: WOOD.mid,
+    south: (u) => (u % 4 === 3 ? WOOD.dark : WOOD.mid),
+    top: (u, v, nu, nv) =>
+      u === 0 || v === 0 || u === nu - 1 || v === nv - 1
+        ? WOOD.light
+        : v % 2
+          ? u % 2
+            ? BLOOMS[(u >> 1) % BLOOMS.length]
+            : LEAF[1]
+          : '#6b5a48',
+  })
+  for (const [x, c] of [
+    [-12, '#f2c64e'],
+    [15, '#e8687a'],
+  ] as [number, string][]) {
+    k.box(x, x + 3, -6, -3, 1.4 * T, 3.4 * T, { all: LEAF[0] })
+    k.box(x - 4.5, x + 7.5, -9, 0, 3.4 * T, 4.3 * T, { all: c, top: mixHex(c, '#ffffff', 0.3) })
+  }
+  for (const x of [-27, -9, 9, 27])
+    k.box(x - 1.5, x + 1.5, 16, 17, 1.4 * T, 2.2 * T, { all: WHITE })
+}
+
+/** 渔具整理点：木架上靠着三根鱼竿，挂一张渔网，地上几只浮漂和一盘缆绳 */
+const tackleRack: Build = (k) => {
+  k.footprint(42, 14, 0, 2)
+  k.use = { at: [0, 32] }
+  for (const x of [-36, 33]) k.box(x, x + 3, -5, -2, 0, 8 * T, { all: WOOD.dark })
+  k.box(-36, 36, -5, -3, 6.4 * T, 6.9 * T, { all: WOOD.mid, top: WOOD.light })
+  for (const [x, h] of [
+    [-27, 11],
+    [-18, 12],
+    [-9, 10.5],
+  ]) {
+    k.box(x, x + 2, -2, 0, 0, h * T, { all: '#8a6440' })
+    k.box(x - 1.5, x + 3.5, -1, 2, 1.6 * T, 2.1 * T, { all: IRON })
+  }
+  cutout(
+    k,
+    15,
+    -1,
+    2.2 * T,
+    ['n.n.n.', '.n.n.n', 'n.n.n.', '.n.n.n', 'n.n.n.', '.n.n.n', 'n.n.n.'],
+    {
+      n: '#c9c3a8',
+    }
+  )
+  for (const [x, z, c] of [
+    [-30, 10, '#ef6a3a'],
+    [-18, 13, '#f6f1e7'],
+    [-6, 9, '#ef6a3a'],
+  ] as [number, number, string][])
+    k.prism(x, z, 5, 0, 0.9 * T, c, '#f6f1e7', 3.5)
+  k.prism(26, 9, 9, 0, 0.5 * T, '#c9a66b', '#b08c56')
+  k.prism(26, 9, 5, 0.5 * T, 0.9 * T, '#c9a66b', '#d8bb85')
+}
+
+/** 渔获清点处：两只木条箱里碎冰上码着鱼，上面还摞着一只小的，旁边立一杆秤 */
+const fishCrates: Build = (k) => {
+  // 往落点东边摆：西边紧挨着渔具架
+  k.footprint(40, 14, 20, 0)
+  k.use = { at: [20, 32] }
+  const ice = (u: number, v: number) =>
+    (u + v * 2) % 3 === 0 ? '#7fa6bd' : (u + v) % 2 ? '#e6f4f9' : '#cfe6ef'
+  const slats = (u: number, v: number) => (v % 2 ? WOOD.dark : WOOD.mid)
+  const crate = (x: number, z: number, w: number, d: number, y: number) =>
+    k.box(x, x + w, z, z + d, y, y + 1.6 * T, {
+      all: WOOD.mid,
+      south: slats,
+      east: slats,
+      west: slats,
+      top: (u, v, nu, nv) =>
+        u === 0 || v === 0 || u === nu - 1 || v === nv - 1 ? WOOD.light : ice(u, v),
+    })
+  crate(-16, -12, 30, 24, 0)
+  crate(17, -12, 30, 24, 0)
+  crate(-10, -9, 24, 18, 1.6 * T)
+  // 一杆秤：立柱、横梁、秤盘
+  k.box(53, 56, -3, 0, 0, 6 * T, { all: IRON })
+  k.box(47, 59, -3, 0, 6 * T, 6.4 * T, { all: IRON })
+  k.prism(50, 2, 5.5, 3.6 * T, 3.9 * T, BRASS, '#f3cf7a')
+  k.box(49.5, 50.5, -2, -1, 3.9 * T, 6 * T, { all: IRON })
+}
+
+/** 投递袋整理点：一辆平板推车，上面三只鼓鼓的邮袋和两个扎好的包裹 */
+const mailBags: Build = (k) => {
+  k.footprint(36, 18)
+  k.use = { at: [0, 36] }
+  for (const x of [-24, 18])
+    for (const z of [-15, 9]) k.box(x, x + 6, z, z + 6, 0, 0.7 * T, { all: IRON, top: false })
+  k.box(-30, 30, -16, 16, 0.7 * T, 1.1 * T, {
+    all: WOOD.mid,
+    top: (u) => (u % 3 === 2 ? WOOD.dark : WOOD.light),
+  })
+  k.box(-33, -30, -16, 16, 0.7 * T, 5 * T, { all: IRON })
+  const y = 1.1 * T
+  const canvas = ['#93a1b3', '#c2473d', '#7d8a9c']
+  for (const [x, z] of [
+    [-16, -4],
+    [4, -6],
+    [-6, 8],
+  ]) {
+    k.prism(x, z, 10.5, y, y + 2.8 * T, (side, v) => canvas[v] ?? canvas[2], undefined, 9)
+    k.prism(x, z, 9, y + 2.8 * T, y + 3.2 * T, canvas[0], '#aab6c6', 5)
+    k.prism(x, z, 4.5, y + 3.2 * T, y + 3.5 * T, '#7c5432', '#aab6c6')
+  }
+  const parcel = (x: number, z: number, w: number, h: number) =>
+    k.box(x, x + w, z, z + 12, y, y + h, {
+      all: '#b98a5c',
+      top: (u, v, nu, nv) =>
+        u === Math.floor(nu / 2) || v === Math.floor(nv / 2) ? '#f6f1e7' : '#c9a06a',
+      south: (u, v, nu) => (u === Math.floor(nu / 2) ? '#f6f1e7' : '#b98a5c'),
+    })
+  parcel(14, 2, 14, 1.2 * T)
+  parcel(16, -12, 12, 0.9 * T)
+}
+
+/** 邮件分拣点：一架带脚的格子柜，格子里插着信；旁边立一只红邮筒 */
+const sortingShelf: Build = (k) => {
+  k.footprint(46, 12, 10, 0)
+  k.use = { at: [-6, 30] }
+  for (const x of [-30, 24])
+    for (const z of [-9, 3]) k.box(x, x + 6, z, z + 6, 0, 2 * T, { all: WOOD.dark, top: false })
+  k.box(-30, 30, -9, 9, 2 * T, 8 * T, {
+    all: WOOD.mid,
+    south: (u, v) =>
+      u % 2 === 0 || v % 2 === 0 ? WOOD.mid : hash(u, v, 9) < 0.7 ? WHITE : WOOD.line,
+    top: false,
+  })
+  k.box(-33, 33, -10, 11, 8 * T, 8.5 * T, { all: WOOD.light, top: WOOD.pale })
+  // 红邮筒
+  const red = '#c2473d'
+  k.prism(46, 0, 9, 0, 0.5 * T, '#7a2c26')
+  k.prism(46, 0, 8, 0.5 * T, 6 * T, (side, v) =>
+    v === 1 && (side === 1 || side === 2) ? '#3a1c1c' : red
+  )
+  k.prism(46, 0, 9.5, 6 * T, 6.5 * T, '#a8392f', '#d9534a', 6)
+}
+
 /** 陈设：一张小圆桌，南北各一把椅子 */
 const tableSet: Build = (k) => {
   k.footprint(24, 60)
@@ -743,6 +998,16 @@ const BUILDS: Record<string, Build> = {
   'core:prop_89517accaa': paperBundles,
   'core:prop_cc9e724d25': musicStand,
   'core:prop_a2ab77765f': buskStage,
+  'core:prop_1fbb65933a': flowerStall,
+  'core:prop_6e3f09ae0c': bouquetTable,
+  'core:prop_371142e71a': toolRack,
+  'core:prop_ec7b8170f7': plantDesk,
+  'core:prop_3a42b137cd': waterPump,
+  'core:prop_f252180db1': flowerBed,
+  'core:prop_758a275de3': tackleRack,
+  'core:prop_2f80f563a2': fishCrates,
+  'core:prop_1a77291d7e': mailBags,
+  'core:prop_b1baf017bc': sortingShelf,
 }
 
 const DECOR: Record<DecorKind, Build> = {
