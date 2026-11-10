@@ -72,7 +72,9 @@ import { GpuTimer, PerfOverlay } from './perf'
 import { qualityLabels, storedQuality } from 'town-shared/quality'
 import { VolumetricPass } from './volumetric'
 import { pixelMaterial } from './pixelSampling'
-import { landmarkSprites, mapStandees } from './landmarks'
+import { landmarkSprites, mapStandees, type PlacedModel } from './landmarks'
+import { LandmarkModels } from './landmarkModels'
+import { Kit } from './propKit'
 import { PETAL, stoneLantern } from './groveArt'
 import { buildGazebo } from './gazebo'
 import { buildFountain, type FountainSpray } from './fountain'
@@ -406,6 +408,8 @@ export class HdScene {
   /** 喷泉的水花（粒子）；喷泉边座位的搭法（按座位的位置记） */
   private readonly sprays: FountainSpray[] = []
   private readonly rimSeats = new Map<string, Build | undefined>()
+  /** 搭成立体的户外标志物（摊棚、船）：第一件来了才建 */
+  private landmarkModels?: LandmarkModels
   private petals?: Petals
   /** 落花的立牌、聚萤火虫的地方：立地标时记下，后面建花瓣和微粒用 */
   private readonly petalSources: (PetalSource & { afloat?: number })[] = []
@@ -824,6 +828,7 @@ export class HdScene {
       this.motes.step(t)
       this.petals?.step(t)
       for (const s of this.sprays) s.step(t)
+      this.landmarkModels?.step(t / 1000)
       this.horizon.step(t / 1000)
       for (const b of this.beams) b.rotation.y -= dt * 0.9
       this.flare()
@@ -1800,6 +1805,10 @@ export class HdScene {
       ...landmarkSprites(atlas, seed, docks, set, water),
       ...mapStandees(atlas, seed, set),
     ]) {
+      if ('model' in s) {
+        this.addLandmarkModel(s, buildings, open, pw)
+        continue
+      }
       // 逐帧动画的立牌按一帧的宽度算
       const frames = s.frames ?? 1,
         width = s.canvas.width / frames
@@ -1874,6 +1883,93 @@ export class HdScene {
           if (i >= 0 && i < open.length && open[i] !== OPEN.none) open[i] = OPEN.verge
         }
     }
+  }
+
+  /** 搭成立体的标志物（摊棚、船，见 landmarkModels.ts）：和房子重叠的不放；灯入夜亮、照亮四周。
+   *  落在地上的脚下压一片影子，占地不种树不长草，身前一片只长草 */
+  private addLandmarkModel(
+    s: PlacedModel,
+    buildings: { x: number; y: number; w: number; h: number }[],
+    open: Uint8Array,
+    pw: number
+  ) {
+    const kit = new Kit()
+    s.model.build(kit)
+    // 占地按朝向转到地图上：积木的 x 轴朝 (c, sn)，z 轴朝 (-sn, c)
+    const { cx, cz, hw, hd } = kit.foot
+    const a = s.model.angle ?? 0
+    const c = Math.cos(a),
+      sn = Math.sin(a)
+    const at = (u: number, v: number): [number, number] => [
+      s.x + u * c - v * sn,
+      s.y + u * sn + v * c,
+    ]
+    const corners = [
+      at(cx - hw, cz - hd),
+      at(cx + hw, cz - hd),
+      at(cx + hw, cz + hd),
+      at(cx - hw, cz + hd),
+    ]
+    const x0 = Math.min(...corners.map(([x]) => x)),
+      x1 = Math.max(...corners.map(([x]) => x)),
+      y0 = Math.min(...corners.map(([, y]) => y)),
+      y1 = Math.max(...corners.map(([, y]) => y))
+    if (
+      !s.model.float &&
+      buildings.some((h) => x1 > h.x && x0 < h.x + h.w && y1 > h.y && y0 < h.y + h.h)
+    )
+      return
+    for (const l of this.landmarkModelsOf().add(kit, s.model, s.x, s.y)) {
+      const on = 0.1
+      this.addGlow(this.glowMap, l.at.x, l.at.z, 0, l.size, on, l.at.y)
+      this.lightSources.push({
+        kind: 'lamp',
+        x: l.at.x,
+        y: l.at.z,
+        reach: l.reach,
+        color: new THREE.Color(l.color).multiplyScalar(1.25 * l.strength),
+        on,
+      })
+    }
+    if (s.model.float) return
+    // 影子沿长边排几团
+    const long = Math.max(hw, hd),
+      short = Math.max(1, Math.min(hw, hd))
+    const n = Math.max(1, Math.round(long / short))
+    for (let i = 0; i < n; i++) {
+      const t = n === 1 ? 0 : (i / (n - 1)) * 2 - 1
+      const [x, y] = hw >= hd ? at(cx + t * (hw - hd), cz) : at(cx, cz + t * (hd - hw))
+      this.contacts.push({ x, y, r: (short / PIXEL) * 1.1, strength: 0.3 })
+    }
+    const px0 = Math.floor(x0 / PIXEL) - 1,
+      px1 = Math.ceil(x1 / PIXEL) + 1,
+      py0 = Math.floor(y0 / PIXEL) - 1,
+      py1 = Math.ceil(y1 / PIXEL) + 1
+    for (let py = py0; py <= py1 + 10; py++)
+      for (let px = Math.max(0, px0); px <= Math.min(pw - 1, px1); px++) {
+        const i = py * pw + px
+        if (i < 0 || i >= open.length) continue
+        if (py <= py1) open[i] = OPEN.none
+        else if (open[i] !== OPEN.none) open[i] = OPEN.verge
+      }
+  }
+
+  /** 立体标志物的管理器：材质接上天气、光照图和玩法的着色 */
+  private landmarkModelsOf() {
+    if (this.landmarkModels) return this.landmarkModels
+    const models = (this.landmarkModels = new LandmarkModels((material, on) =>
+      this.glowing.push({ material, on })
+    ))
+    this.weather.shade(models.top, { snow: 1, wet: 0.5 })
+    this.weather.shade(models.side, { snow: 0, wet: 0.5 })
+    this.lightmap.shade(models.top, 'ground')
+    this.lightmap.shade(models.side, 'wall')
+    for (const look of this.looks) {
+      look.shadeStanding(models.top, 'thing')
+      look.shadeStanding(models.side, 'thing')
+    }
+    this.flat.add(models.group)
+    return models
   }
 
   /** 散落物：野地上的轮胎、雪人，外圈（干海床、冰原）上的沉船、冰钓小屋。放在空地上，占的地方从空地里去掉 */

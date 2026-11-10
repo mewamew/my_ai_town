@@ -11,6 +11,7 @@ import {
   type LandmarkSet,
 } from './landmarks'
 import { sprite, wear } from './sprite'
+import { stall } from './stalls'
 import { WALL_COLORS } from '../themes/walls'
 
 // 末日废土的户外立牌。原作的地标都还在，只是锈了、褪色了、缺了几块；
@@ -21,46 +22,6 @@ import { WALL_COLORS } from '../themes/walls'
 
 const RUST = WALL_COLORS.rust
 const rust = (x: number, y: number, seed: number) => RUST[Math.floor(hash(x, y, seed) * 3)]
-
-/** 篷布摊：歪柱子，打补丁的篷布，下面是木箱搭的台子，摆着罐头、瓶子和零件 */
-function junkStall(k: number) {
-  const tarps = [
-    ['#4f6f86', '#8a8472', '#b0703a'],
-    ['#b0703a', '#6e6a5c', '#4f6f86'],
-    ['#6e7a5a', '#8a8472', '#9a5a3a'],
-  ][k % 3]
-  return sprite(28, 26, ({ px, rect, line }) => {
-    line(2, 8, 1, 25, '#5a4430')
-    line(3, 8, 2, 25, '#6e5840')
-    line(25, 7, 26, 25, '#4e3a28')
-    for (let x = 0; x < 28; x++)
-      for (let y = 1; y < 8; y++) {
-        const patch = tarps[Math.floor(hash(x >> 3, y >> 2, k + 7) * 3)]
-        let c = y === 1 ? mixHex(patch, '#1e1a16', 0.3) : patch
-        if ((x + y * 2) % 11 === 0) c = mixHex(c, '#1e1a16', 0.25)
-        px(x, y + Math.round(x / 14), c)
-      }
-    // 篷布下沿垂下来的破边
-    for (let x = 0; x < 28; x += 3) if (hash(x, 9, k) < 0.6) px(x, 9 + Math.round(x / 14), tarps[0])
-    // 木箱台子
-    for (const [x, w] of [
-      [1, 9],
-      [10, 9],
-      [19, 8],
-    ]) {
-      rect(x, 17, w, 7, '#8a6844')
-      rect(x, 17, w, 1, '#a88660')
-      rect(x, 20, w, 1, '#6a4c30')
-      rect(x + w - 1, 17, 1, 7, '#5e4630')
-    }
-    const goods = ['#8a8e8e', '#5a7a4a', '#a55f2e', '#b8b0a0', '#6a6e7a']
-    for (let i = 0; i < 8; i++) {
-      const c = goods[(i + k) % goods.length]
-      rect(2 + i * 3, 14 + (i % 2), 2, 3 - (i % 2), c)
-      px(2 + i * 3, 14 + (i % 2), mixHex(c, '#ffffff', 0.3))
-    }
-  })
-}
 
 /** 港口的锈吊机：格构塔身，顶上一根横臂，吊钩还垂着 */
 function crane() {
@@ -712,9 +673,9 @@ export const WASTELAND_LANDMARKS: LandmarkSet = {
     temple: (seed) => [[wear(temple(), seed), 0, -6]],
     // 市集两头各一只油桶火盆，夜里照亮摊子
     market: (seed) => [
-      [junkStall(seed), -30, -10],
-      [junkStall(seed + 1), 0, -14],
-      [junkStall(seed + 2), 30, -10],
+      [stall(seed, 'wasteland'), -30, -10],
+      [stall(seed + 1, 'wasteland'), 0, -14],
+      [stall(seed + 2, 'wasteland'), 30, -10],
       [fireBarrel(seed + 3), -50, -4],
       [fireBarrel(seed + 4), 50, -4],
     ],
@@ -728,9 +689,9 @@ export const WASTELAND_LANDMARKS: LandmarkSet = {
     fire: (seed) => [[fireBarrel(seed), 0, 0]],
     wreck: (seed) => [[carWreck(seed), 0, 0]],
     stalls: (seed) => [
-      [junkStall(seed), -34, -4],
-      [junkStall(seed + 1), 0, -6],
-      [junkStall(seed + 2), 34, -4],
+      [stall(seed, 'wasteland'), -34, -4],
+      [stall(seed + 1, 'wasteland'), 0, -6],
+      [stall(seed + 2, 'wasteland'), 34, -4],
     ],
     scrapyard,
     billboard: (seed) => [[billboard(seed), 0, 0]],

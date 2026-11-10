@@ -4,6 +4,8 @@ import { footprint, placer, type Dock } from '../pixel/island'
 import { hash, mixHex } from '../pixel/noise'
 import { villageBoat, type BoatView, type Moor } from './boats'
 import type { FountainLook } from './fountain'
+import type { Kit } from './propKit'
+import { stall } from './stalls'
 import { bench, deckChair, parasol, planter, reeds, rock, signpost, telescope } from './parkPieces'
 import {
   BIG_TREE_HALOS,
@@ -71,15 +73,34 @@ export interface LandmarkSprite {
   on?: string
 }
 
+/** 搭成立体的标志物（摊棚、船）：用道具的积木搭（propKit.ts），原点在落点的地面上，正面朝南。
+ *  angle 是它的东（积木的 x 轴）在地图上转到哪个方向（弧度，地图 x 朝东、y 朝南）；
+ *  float 是浮在水上随波起伏（船），roll 是绕积木的 x 轴歪多少（搁浅的船）。进场景见 landmarkModels.ts */
+export interface LandmarkModel {
+  build: (k: Kit) => void
+  angle?: number
+  float?: boolean
+  roll?: number
+}
+
+/** 一件标志物：立牌、逐帧动画的立牌，或者搭成立体的 */
+export type LandmarkArt = HTMLCanvasElement | Flipbook | LandmarkModel
+
+/** 摆好位置的立体标志物（地图坐标） */
+export interface PlacedModel {
+  x: number
+  y: number
+  model: LandmarkModel
+}
+
+const isModel = (art: LandmarkArt): art is LandmarkModel => 'build' in art
+
 /** 一种风格的户外立牌：各类地点放什么、栈桥边停什么船、桥上堆什么、野地和外圈散落什么 */
 export interface LandmarkSet {
   /** 一种户外地点在自己的区域里放哪些立牌：[贴图或逐帧动画, 相对区域中心的偏移（地图像素）, 能不能立在水上]。
    *  按区域的 kind 挑，区域指定了 landmark 就按它挑。落到水上的一般拉回岸上，第四项为 true 的照立
    *  （冰钓小屋立在冻住的海上） */
-  plans: Record<
-    string,
-    (seed: number) => [HTMLCanvasElement | Flipbook, number, number, boolean?][]
-  >
+  plans: Record<string, (seed: number) => [LandmarkArt, number, number, boolean?][]>
   /** 栈桥边的船：kind 0、1 是大船，2 是小舢板；view 是镜头看见侧面还是船尾，moor 是怎么系的。
    *  没有这种船时给 null */
   boat: (
@@ -264,34 +285,6 @@ export function temple() {
   })
 }
 
-const AWNINGS: [string, string][] = [
-  ['#d0473c', '#f1ead8'],
-  ['#3f7a9a', '#f1ead8'],
-  ['#d8a840', '#f1ead8'],
-  ['#5a9a5a', '#f1ead8'],
-]
-const GOODS = ['#e05a4a', '#f0c040', '#7ab050', '#e89040', '#b86ab0']
-
-export function stall(k: number) {
-  const [a, b] = AWNINGS[k % AWNINGS.length]
-  return sprite(28, 26, ({ px, rect }) => {
-    rect(1, 7, 2, 19, '#6a4a30')
-    rect(25, 7, 2, 19, '#4e3624')
-    for (let x = 0; x < 28; x++) for (let y = 1; y < 7; y++) px(x, y, (x >> 2) & 1 ? b : a)
-    rect(0, 0, 28, 1, mixHex(a, '#2a2230', 0.3))
-    for (let x = 0; x < 28; x++)
-      if ((x >> 2) % 2 === 0 || x % 4 === 1) px(x, 7, (x >> 2) & 1 ? b : a)
-    rect(0, 17, 28, 7, '#8a6a44')
-    rect(0, 17, 28, 1, '#a88660')
-    rect(0, 23, 28, 1, '#5e4630')
-    for (let i = 0; i < 9; i++) {
-      const c = GOODS[(i + k) % GOODS.length]
-      rect(2 + i * 3, 15, 2, 2, c)
-      px(2 + i * 3, 15, mixHex(c, '#ffffff', 0.4))
-    }
-  })
-}
-
 /** 栈桥上的杂物：摞起来的两只木箱、木桶、一盘缆绳、一只鱼篓，按编号挑一种 */
 export function dockGoods(seed: number) {
   const k = Math.floor(hash(seed, 1, 23) * 4)
@@ -469,9 +462,9 @@ export const VILLAGE_LANDMARKS: LandmarkSet = {
     obelisk: () => [[obelisk(), 0, -6]],
     temple: () => [[temple(), 0, -6]],
     market: (seed) => [
-      [stall(seed), -30, -10],
-      [stall(seed + 1), 0, -14],
-      [stall(seed + 2), 30, -10],
+      [stall(seed, 'village'), -30, -10],
+      [stall(seed + 1, 'village'), 0, -14],
+      [stall(seed + 2, 'village'), 30, -10],
     ],
     garden: () => [[roseArch(), 0, -8]],
     park: () => [[gazeboLit(), 0, -6]],
@@ -597,17 +590,28 @@ function mirrored(art: HTMLCanvasElement | Flipbook): HTMLCanvasElement | Flipbo
 
 /** 地图按坐标立的立牌（Atlas 的 standees）：照风格包 plans 里的名字画，不占区域格子，
  *  落在水上（干海床、冰面）也照立。种子按立牌的位置取，挪动一件不影响别的 */
-export function mapStandees(atlas: Atlas, seed: number, set: LandmarkSet): LandmarkSprite[] {
-  const out: LandmarkSprite[] = []
+export function mapStandees(
+  atlas: Atlas,
+  seed: number,
+  set: LandmarkSet
+): (LandmarkSprite | PlacedModel)[] {
+  const out: (LandmarkSprite | PlacedModel)[] = []
   for (const s of atlas.standees ?? []) {
     const plan = s.kind === 'court' ? undefined : set.plans[s.kind]
     if (!plan) continue
     const own = Math.floor(hash(Math.round(s.x), Math.round(s.y), seed + 41) * 1e6)
     for (const [art, dx, dy] of plan(own)) {
+      const x = s.x + (s.flip ? -dx : dx) * PIXEL,
+        y = s.y + dy * PIXEL
+      // 立体的不翻：转过去看就是另一面
+      if (isModel(art)) {
+        out.push({ x, y, model: art })
+        continue
+      }
       const drawn = s.flip ? mirrored(art) : art
       out.push({
-        x: s.x + (s.flip ? -dx : dx) * PIXEL,
-        y: s.y + dy * PIXEL,
+        x,
+        y,
         ...(drawn instanceof HTMLCanvasElement ? { canvas: drawn } : drawn),
         ...(s.on ? { on: s.on } : {}),
       })
@@ -623,8 +627,10 @@ export function landmarkSprites(
   docks: Dock[],
   set: LandmarkSet,
   water: (x: number, y: number) => boolean
-): LandmarkSprite[] {
-  const out: LandmarkSprite[] = docks.flatMap((d, k) => mooredBoats(d, k, set, seed, water))
+): (LandmarkSprite | PlacedModel)[] {
+  const out: (LandmarkSprite | PlacedModel)[] = docks.flatMap((d, k) =>
+    mooredBoats(d, k, set, seed, water)
+  )
   // 各地点立牌的种子按摆了几件往后数；船的条数不定，按原先每条栈桥一条船起算，地标的样子不跟着变
   let placed = docks.length
   for (const r of atlas.regions) {
@@ -660,11 +666,13 @@ export function landmarkSprites(
       // 落到水上的（港口的地标偏得远）往中心拉回陆上
       let k = 1
       while (!afloat && k > 0 && water(cx + dx * PIXEL * k, cy + dy * PIXEL * k)) k -= 0.1
-      out.push({
-        x: cx + dx * PIXEL * Math.max(0, k),
-        y: cy + dy * PIXEL * Math.max(0, k),
-        ...(art instanceof HTMLCanvasElement ? { canvas: art } : art),
-      })
+      const x = cx + dx * PIXEL * Math.max(0, k),
+        y = cy + dy * PIXEL * Math.max(0, k)
+      out.push(
+        isModel(art)
+          ? { x, y, model: art }
+          : { x, y, ...(art instanceof HTMLCanvasElement ? { canvas: art } : art) }
+      )
     }
   }
   return out

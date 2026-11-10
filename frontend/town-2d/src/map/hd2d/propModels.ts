@@ -64,6 +64,30 @@ interface Built {
   tall: number
 }
 
+/** 搭好的料变成网格放进 group：朝上的面、立着的面用给的材质，发光的面按颜色问 lit 要材质。
+ *  返回受光的网格（发光的面不投影、不算在内） */
+export function kitMeshes(
+  kit: Kit,
+  group: THREE.Group,
+  top: THREE.Material,
+  side: THREE.Material,
+  lit: (color: string, always: boolean) => THREE.Material
+) {
+  const solid: THREE.Mesh[] = []
+  const add = (geometry: THREE.BufferGeometry, material: THREE.Material, shaded = true) => {
+    if (!geometry.getAttribute('position').count) return
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.castShadow = mesh.receiveShadow = shaded
+    group.add(mesh)
+    if (shaded) solid.push(mesh)
+  }
+  add(kit.top.build(), top)
+  add(kit.side.build(), side)
+  for (const [color, m] of kit.night) add(m.build(), lit(color, false), false)
+  for (const [color, m] of kit.always) add(m.build(), lit(color, true), false)
+  return solid
+}
+
 /** 热气用烟囱的烟缩小了画：一团烟缩到这么大 */
 const STEAM_SCALE = 0.2
 /** 人站在道具正面跟前，离占地边这么远 */
@@ -141,18 +165,13 @@ export class PropModels {
     const kit = new Kit()
     p.build(kit, seed, p.amount)
     const group = new THREE.Group()
-    const solid: THREE.Mesh[] = []
-    const add = (geometry: THREE.BufferGeometry, material: THREE.Material, lit = true) => {
-      if (!geometry.getAttribute('position').count) return
-      const mesh = new THREE.Mesh(geometry, material)
-      mesh.castShadow = mesh.receiveShadow = lit
-      group.add(mesh)
-      if (lit) solid.push(mesh)
-    }
-    add(kit.top.build(), p.house ? this.top : this.topOut)
-    add(kit.side.build(), p.house ? this.side : this.sideOut)
-    for (const [color, m] of kit.night) add(m.build(), this.lit(color, false), false)
-    for (const [color, m] of kit.always) add(m.build(), this.lit(color, true), false)
+    const solid = kitMeshes(
+      kit,
+      group,
+      p.house ? this.top : this.topOut,
+      p.house ? this.side : this.sideOut,
+      (color, always) => this.lit(color, always)
+    )
     // 脚下压一圈影子，家具才像落在地板上
     const { cx, cz, hw, hd } = kit.foot
     if (hw > 0) {

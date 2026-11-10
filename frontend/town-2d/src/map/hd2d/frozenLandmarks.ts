@@ -6,12 +6,12 @@ import {
   gazebo,
   obelisk,
   roseArch,
-  stall,
   temple,
   type Flipbook,
   type LandmarkSet,
 } from './landmarks'
 import { snowCap, sprite } from './sprite'
+import { stall } from './stalls'
 import { SNOW, SNOW_SHADE } from '../palette'
 
 // 冰封雪镇的户外立牌。原作的地标照旧，只是压了一层雪；喷泉是立体的，冻住了（见 fountain.ts），
@@ -230,9 +230,9 @@ export const FROZEN_LANDMARKS: LandmarkSet = {
     temple: (seed) => [[snowCap(temple(), seed), 0, -6]],
     // 市集：三个压雪的棚子，摊前一排雪灯
     market: (seed) => [
-      [snowCap(stall(seed), seed), -30, -10],
-      [snowCap(stall(seed + 1), seed + 1), 0, -14],
-      [snowCap(stall(seed + 2), seed + 2), 30, -10],
+      [stall(seed, 'frozen'), -30, -10],
+      [stall(seed + 1, 'frozen'), 0, -14],
+      [stall(seed + 2, 'frozen'), 30, -10],
       [snowLantern(seed), -38, 8],
       [snowLantern(seed + 1), -13, 6],
       [snowLantern(seed + 2), 13, 6],
@@ -242,7 +242,7 @@ export const FROZEN_LANDMARKS: LandmarkSet = {
     park: (seed) => [[snowCap(gazebo(), seed), 0, -6]],
     harbor: (seed) => [
       [fishRack(seed), -24, -8],
-      [snowCap(stall(seed + 3), seed), 22, -6],
+      [stall(seed + 3, 'frozen'), 22, -6],
     ],
     // 冰钓场（手绘地图的区域指定）：岸边柴垛和雪橇，往外的海冰上几间冰钓小屋、几个冰窟窿
     icefishing: (seed) => [
