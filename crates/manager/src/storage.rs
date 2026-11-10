@@ -317,7 +317,8 @@ impl Storage {
         Ok(())
     }
 
-    /// 小镇列表上的进度：玩到第几天、住了几个人。读存档 world.json，还没开始过的小镇是 null。
+    /// 小镇列表上的进度：玩到第几天、住了几个人，停在几点、什么天气，住着谁（按入住先后，最多 8 位，
+    /// 带名字和长相，选镇页画头像用）。读存档 world.json，还没开始过的小镇是 null。
     /// 电脑上的管理服务（scripts/towns/storage.mjs）按同样的规则算，两边的 /api/towns 保持一致。
     fn progress(&self, id: &str) -> Value {
         #[derive(serde::Deserialize)]
@@ -329,23 +330,50 @@ impl Storage {
         #[derive(serde::Deserialize)]
         struct SaveWorld {
             minutes: f64,
+            #[serde(default)]
+            weather: Value,
         }
         #[derive(serde::Deserialize)]
         struct SavePopulation {
             #[serde(default)]
-            residents: std::collections::BTreeMap<String, serde::de::IgnoredAny>,
+            residents: std::collections::BTreeMap<String, Value>,
         }
         let path = self.root.join("towns").join(id).join("world.json");
         let Ok(text) = fs::read(path) else {
             return Value::Null;
         };
-        match serde_json::from_slice::<Save>(&text) {
-            Ok(save) => json!({
-                "day": (save.world.minutes / 1440.0).floor() as i64 + 1,
-                "residents": save.population.map_or(0, |p| p.residents.len()),
-            }),
-            Err(_) => Value::Null,
-        }
+        let Ok(save) = serde_json::from_slice::<Save>(&text) else {
+            return Value::Null;
+        };
+        let weather = &save.world.weather;
+        let kind = (weather["status"] == "enabled")
+            .then(|| weather["weather"]["view"]["kind"].as_str())
+            .flatten()
+            .unwrap_or("clear");
+        // 存档里按编号排好了；再按入住先后排（稳定排序，先后相同的仍按编号）
+        let mut residents: Vec<Value> = save
+            .population
+            .map(|p| p.residents.into_values().collect())
+            .unwrap_or_default();
+        residents.sort_by_key(|r| r["order"].as_u64().unwrap_or(0));
+        let cast: Vec<Value> = residents
+            .iter()
+            .take(8)
+            .map(|r| {
+                json!({
+                    "name": r["name"].as_str().unwrap_or_default(),
+                    "template_id": r.get("template_id").cloned().unwrap_or(Value::Null),
+                    "look": r["appearance"].get("look").cloned().unwrap_or(Value::Null),
+                })
+            })
+            .collect();
+        json!({
+            "day": (save.world.minutes / 1440.0).floor() as i64 + 1,
+            "residents": residents.len(),
+            "minutes": save.world.minutes.floor() as i64,
+            "weather": kind,
+            "cast": cast,
+        })
     }
 
     pub fn list(&self) -> Result<Vec<Value>, ApiError> {

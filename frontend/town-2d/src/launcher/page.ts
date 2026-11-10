@@ -28,10 +28,13 @@ import { storedDepthBlur } from 'town-shared/quality'
 import { installSelects } from 'town-shared/design/select'
 import { installFavicon, logoUrl } from 'town-shared/brand/brand'
 import { installHomeSettings } from './settings'
-import { clockText, createSceneryBar } from './scenery'
+import { clockText, createSceneryBar, sceneryIcon, type Scenery } from './scenery'
 import { themeOf, type MapTheme } from '../map/themes'
 import { decoratePixels, pixelIcon } from 'town-shared/game/pixel'
-import { coverOf } from './covers'
+import { COVER_SIZE, coverOf, dropCover as forgetCover, saveCover } from './covers'
+import { portraitKey } from 'town-shared/portraits'
+import { isWeatherKind } from 'town-shared/weather/types'
+import { villagerPortrait } from '../map/hd2d/villagerSprite'
 // 小镇选择页：选中的小镇铺满窗口当背景，界面是游戏里那套白底零件——左下镇名、简介和「进入游戏」，
 // 最下面一排明信片（一个小镇一张，写着玩到第几天、住了几个人）。预览不启动世界。
 installPlatform()
@@ -49,7 +52,8 @@ const launcher = query<HTMLElement>(document, '.map-launcher')
 const hideUi = query<HTMLButtonElement>(document, '#scenic-hide')
 const showUi = query<HTMLButtonElement>(document, '#scenic-show')
 const sceneryHost = $('scenery-bar')
-/** 赏景过一次以后，换上来的预览都照景色条上的时刻和天气画（返回选镇也不跳回傍晚） */
+/** 赏景过一次以后，还没玩过的镇换上来都照景色条上的时刻和天气画（返回选镇也不跳回傍晚）；
+ *  玩过的镇照存档停下的那一刻画（见 savedScenery） */
 let sceneryUsed = false
 /** 展开现有的静态预览，底部景色条换时刻和天气。只换画面：不连接世界，不改存档的时钟或天气。 */
 function setScenic(enabled: boolean) {
@@ -68,6 +72,8 @@ function setScenic(enabled: boolean) {
     sceneryUsed = true
     const shown = shownPreview()
     if (shown) {
+      // 玩过的镇从存档停下的那一刻接着调，画面不跳
+      if (shown.saved) scenery.setValue(shown.saved)
       scenery.setTheme(shown.theme.light)
       shown.map.setScenery?.(scenery.value.minutes, scenery.value.weather)
     }
@@ -139,23 +145,30 @@ showUi.onclick = () => setBare(false)
 const stage = query<HTMLElement>(document, '.launcher-stage')
 const bottom = query<HTMLElement>(document, '.launcher-bottom')
 const strip = query<HTMLElement>(document, '.launcher-strip')
-/** 界面盖住了地图的下边多少：镜头把小镇的中心和景深的焦点放进露出来的那块。电脑上只算最下面那排明信片
- *  （镇名一组只占左下一角），手机上镇名、明信片、按钮整块都算；赏景时只有景色条，收起界面后什么都不盖 */
-function syncInsets() {
-  const shown = shownPreview()
-  if (!shown) return
+/** 界面盖住了地图的下边多少（CSS 像素）。电脑上只算最下面那排明信片（镇名一组只占左下一角），
+ *  手机上镇名、明信片、按钮整块都算；赏景时只有景色条，收起界面后什么都不盖 */
+function coveredBottom() {
   const box = stage.getBoundingClientRect()
-  const covered = launcher.classList.contains('is-bare')
+  const top = launcher.classList.contains('is-bare')
     ? box.bottom
     : launcher.classList.contains('is-scenic')
       ? sceneryHost.getBoundingClientRect().top
       : (isCompact() ? bottom : strip).getBoundingClientRect().top
-  shown.map.setViewInsets?.({
-    top: 0,
-    right: 0,
-    bottom: Math.max(0, Math.round(box.bottom - covered)),
-    left: 0,
-  })
+  return Math.max(0, Math.round(box.bottom - top))
+}
+/** 镜头把小镇的中心和景深的焦点放进没被界面盖住的那块 */
+function syncInsets() {
+  shownPreview()?.map.setViewInsets?.({ top: 0, right: 0, bottom: coveredBottom(), left: 0 })
+}
+/** 新建好的预览：镜头对准镇中心（最大的广场），放在露出来那块的正中间；倍数不动 */
+function aimAtHeart(preview: Preview) {
+  const camera = preview.map.director,
+    heart = preview.map.townHeart?.()
+  const height = stage.getBoundingClientRect().height
+  if (!camera || !heart || !height) return
+  // 露出来那块的中间比画面中间高半个遮挡：镜头中心落在镇中心往下这么多（视图单位）
+  const lower = (coveredBottom() / 2 / height) * preview.map.getViewBox()[3]
+  camera.setShot({ ...camera.shot(), center: heart }, -lower)
 }
 window.addEventListener('resize', syncInsets)
 // 明信片放不下时横着滚：鼠标滚轮上下滚也算
@@ -207,8 +220,21 @@ let selected: MapEntry | undefined,
   request = 0,
   maps: MapEntry[] = []
 
-/** theme 给景色条画天色轨道，world 给赏景挑曲子 */
-type Preview = { host: HTMLElement; map: GameMap; theme: MapTheme; world: MusicWorld }
+/** theme 给景色条画天色轨道，world 给赏景挑曲子，saved 是存档停下的时刻和天气（玩过的镇才有） */
+type Preview = {
+  host: HTMLElement
+  map: GameMap
+  theme: MapTheme
+  world: MusicWorld
+  saved?: Scenery
+}
+/** 存档停在一天里的几点、什么天气；没玩过（或管理服务是旧的，没带这两项）时为 undefined */
+function savedScenery(map: MapEntry): Scenery | undefined {
+  const p = map.progress
+  return p?.minutes !== undefined && isWeatherKind(p.weather)
+    ? { minutes: ((p.minutes % 1440) + 1440) % 1440, weather: p.weather }
+    : undefined
+}
 // 桌面保留最近两张预览，避免来回切换时重新生成地面和 WebGL 场景；触屏设备只保留一张，控制显存。
 const previews = new Map<string, Preview>()
 let pendingPreview: Preview | undefined
@@ -258,13 +284,105 @@ function finishPreview(map: MapEntry) {
   scenic.disabled = false
   dropCover()
   syncInsets()
-  if (sceneryUsed) shownPreview()?.map.setScenery?.(scenery.value.minutes, scenery.value.weather)
+  // 玩过的镇停在哪就画哪；没玩过的照景色条（赏景调过才有，不然是场景自带的傍晚晴天）
+  const shown = shownPreview()
+  const view = shown?.saved ?? (sceneryUsed ? scenery.value : undefined)
+  if (view) shown?.map.setScenery?.(view.minutes, view.weather)
   if (fitNext === map.id) {
     fitNext = ''
     $('map-preview')
       .querySelector<HTMLButtonElement>('.map-preview-scene:not([hidden]) .zoom-readout')
       ?.click()
   }
+}
+
+/** 预览露出来两三秒（天气落到地面了）再拍一张全镇当封面，存在本机，明信片换成它。
+ *  赏景调过时刻天气的画面不拍：封面是小镇自己的样子 */
+function shootCover(map: MapEntry, preview: Preview) {
+  window.setTimeout(() => {
+    const alive = [...previews.values()].includes(preview)
+    if (!alive || preview.host.hidden || document.hidden) return
+    if (launcher.classList.contains('is-scenic') || (sceneryUsed && !preview.saved)) return
+    const url = preview.map.cover?.(...COVER_SIZE)
+    if (!url) return
+    saveCover(map.id, url)
+    const picture = document.querySelector<HTMLElement>(
+      `[data-map-id="${CSS.escape(map.id)}"] .map-cover`
+    )
+    picture?.replaceChildren(coverImage(url))
+  }, 2600)
+}
+function coverImage(url: string) {
+  const image = document.createElement('img')
+  image.alt = ''
+  image.draggable = false
+  image.src = url
+  return image
+}
+
+/** 和游戏里时钟牌上的叫法一样（内核 calendar.rs 的时段表） */
+function periodOf(minutes: number) {
+  return minutes < 360
+    ? '凌晨'
+    : minutes < 660
+      ? '上午'
+      : minutes < 810
+        ? '晌午'
+        : minutes < 1050
+          ? '下午'
+          : minutes < 1200
+            ? '傍晚'
+            : '夜里'
+}
+/** 时钟牌：存档停在几点、什么天气、第几天；没玩过的镇不出 */
+function showClock(map: MapEntry) {
+  const plate = $('town-clock')
+  const saved = savedScenery(map)
+  plate.hidden = !saved
+  if (!saved || !map.progress) return
+  query(plate, '.clock-weather').replaceChildren(
+    pixelIcon(sceneryIcon(saved.minutes, saved.weather))
+  )
+  $('town-clock-time').textContent = clockText(saved.minutes)
+  $('town-clock-period').textContent = periodOf(saved.minutes)
+  $('town-clock-day').textContent = `第 ${map.progress.day} 天`
+  $('town-clock-name').textContent = ` · ${map.name}`
+  plate.title = '上次停在这一刻，进去后接着走'
+}
+/** 住着谁：像素头像和名字，按入住先后；放不下的写「+几」 */
+function showResidents(map: MapEntry) {
+  const host = $('town-residents')
+  const cast = map.progress?.cast ?? []
+  const shown = cast.slice(0, isCompact() ? 5 : 8)
+  host.hidden = !shown.length
+  const people = shown.map((person) => {
+    const figure = document.createElement('figure'),
+      slot = document.createElement('span'),
+      image = document.createElement('img'),
+      name = document.createElement('figcaption')
+    slot.className = 'resident-slot'
+    image.alt = ''
+    image.draggable = false
+    image.src = villagerPortrait(
+      portraitKey({
+        id: person.name,
+        template_id: person.template_id ?? undefined,
+        appearance: { look: person.look ?? undefined },
+      })
+    )
+    slot.append(image)
+    name.textContent = person.name
+    figure.append(slot, name)
+    return figure
+  })
+  const rest = (map.progress?.residents ?? 0) - shown.length
+  if (rest > 0) {
+    const more = document.createElement('span')
+    more.className = 'resident-more'
+    more.textContent = `+${rest}`
+    people.push(more)
+  }
+  host.replaceChildren(...people)
 }
 
 /** 哪张明信片是选中的；它不在画面里时滚进来 */
@@ -290,6 +408,8 @@ function describe(map: MapEntry) {
     ? '接着上次的进度玩。这里只是预览，进去后小镇才接着走。'
     : '这里只是预览，进去后小镇才开始。'
   enterLabel.textContent = played ? '继续玩' : '进入游戏'
+  showClock(map)
+  showResidents(map)
   updateActions()
   enter.disabled = deleting || !map.available
 }
@@ -352,7 +472,10 @@ async function select(map: MapEntry) {
       host.remove()
       return
     }
-    const pending = (pendingPreview = { host, map: rendered, theme, world })
+    const pending: Preview = { host, map: rendered, theme, world, saved: savedScenery(map) }
+    pendingPreview = pending
+    // 场景一建好就是存档那一刻的天色，不先闪一下傍晚
+    if (pending.saved) rendered.setScenery?.(pending.saved.minutes, pending.saved.weather)
     // 立体场景建好再拿掉「正在加载预览…」：之前只有底色和放大的地名
     await rendered.ready
     if (current !== request) {
@@ -364,6 +487,8 @@ async function select(map: MapEntry) {
     const cacheKey = key || `${map.id}:request:${current}`
     previews.set(cacheKey, pending)
     finishPreview(map)
+    aimAtHeart(pending)
+    shootCover(map, pending)
   } catch (error) {
     if (current === request) {
       $('preview-state').textContent = errorText(error)
@@ -395,13 +520,7 @@ function mapOption(map: MapEntry) {
     status = document.createElement('span')
   picture.className = 'map-cover'
   const url = coverOf(map.id)
-  if (url) {
-    const image = document.createElement('img')
-    image.alt = ''
-    image.draggable = false
-    image.src = url
-    picture.append(image)
-  } else picture.append(pixelIcon('door'))
+  picture.append(url ? coverImage(url) : pixelIcon('door'))
   name.textContent = map.name
   status.className = 'map-option-status'
   status.textContent = progressText(map)
@@ -456,6 +575,8 @@ async function buildPrefab(prefab: Prefab) {
   $('selected-map-description').title = prefab.description
   $('pause-status').textContent = ''
   enterLabel.textContent = '进入游戏'
+  $('town-clock').hidden = true
+  $('town-residents').hidden = true
   enter.disabled = true
   actions.hidden = true
   retry.hidden = true
@@ -622,6 +743,7 @@ remove.onclick = async () => {
   $('pause-status').textContent = '正在关闭服务并删除地图…'
   try {
     await api(`/${encodeURIComponent(map.id)}/delete`, {})
+    forgetCover(map.id)
     for (const key of previews.keys()) if (key.startsWith(`${map.id}:`)) dropPreview(key)
     if (selected?.id === map.id) {
       selected = undefined
@@ -653,6 +775,7 @@ reset.onclick = async () => {
   $('pause-status').textContent = '正在清掉这一局…'
   try {
     await api(`/${encodeURIComponent(map.id)}/reset`, {})
+    forgetCover(map.id)
     for (const key of previews.keys()) if (key.startsWith(`${map.id}:`)) dropPreview(key)
     deleting = false
     await buildPrefab(prefab)

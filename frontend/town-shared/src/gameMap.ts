@@ -150,6 +150,11 @@ export interface GameMap {
   setViewInsets?(insets: Insets): void
   /** 画面加载完（2D 的立体场景建好或退回平面图）；之前只有底色和地名 */
   ready?: Promise<void>
+  /** 镇中心在哪（地图坐标）：最大的那片有名字的广场，没有广场时是全镇的正中间。选镇页的镜头对准它 */
+  townHeart?(): [number, number]
+  /** 拍一张全镇的小图当封面（JPEG 的 data URL）：机位临时摆成正面看全镇、不带失焦模糊，拍完摆回去，
+   *  屏幕上看不出来。只有立体场景能拍，否则返回 undefined */
+  cover?(width: number, height: number): string | undefined
   onVillagerClick: ((id: string) => void) | null
   /** 没在摆道具时点了空地（控制化身时 onAvatarWalkTo 同时收到走过去的目标） */
   onGroundClick?: (() => void) | null

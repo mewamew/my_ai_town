@@ -1,5 +1,6 @@
 import type { Spatial, AssetManifest } from './spatial'
 import type { Appearance } from './props/types'
+import type { VillagerLook } from './protocol'
 // 地图文档：atlas 提供绘图几何；topology 提供地点名称与物品所属地点；spatial 是三维数据。
 // 类型放在共用层，加载逻辑在 town-2d 的 assets 模块。
 
@@ -188,8 +189,15 @@ export interface MapEntry {
   running?: boolean
   deletable?: boolean
   origin?: string
-  /** 玩到第几天、住了几个人（读存档）；还没开始过的小镇是 null */
-  progress?: { day: number; residents: number } | null
+  /** 存档停在哪（读存档）：第几天、住了几个人、世界分钟、天气，住着谁（按入住先后，最多 8 位）；
+   *  还没开始过的小镇是 null。后三项旧的管理服务不带 */
+  progress?: {
+    day: number
+    residents: number
+    minutes?: number
+    weather?: string
+    cast?: { name: string; template_id: string | null; look: VillagerLook | null }[]
+  } | null
   /** 一句话建的小镇才有 */
   creation?: TownCreation | null
 }

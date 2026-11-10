@@ -45,6 +45,9 @@ export function clockText(minutes: number) {
 }
 /** 和游戏里的时钟牌一样：19 点到次日 5 点画月亮 */
 const moonAt = (minutes: number) => minutes >= 19 * 60 || minutes < 5 * 60
+/** 这个时刻、这种天气的图标（晴天夜里是月亮） */
+export const sceneryIcon = (minutes: number, weather: WeatherKind): PixelName =>
+  weather === 'clear' && moonAt(minutes) ? 'moon' : ICONS[weather]
 
 export function createSceneryBar(
   host: HTMLElement,
@@ -230,6 +233,12 @@ export function createSceneryBar(
     },
     get playing() {
       return playing
+    },
+    /** 景色条摆到这个时刻和天气，不通知（预览已经是这副样子：进赏景时接着存档停下的那一刻） */
+    setValue(next: Readonly<Scenery>) {
+      value.minutes = ((next.minutes % 1440) + 1440) % 1440
+      value.weather = next.weather
+      render()
     },
     /** 轨道换成这座镇的天色 */
     setTheme(light: LightPalette) {

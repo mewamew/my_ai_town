@@ -616,12 +616,8 @@ export class TownMap {
       .finally(() => this.loaded())
   }
 
-  /** 取景只读图集：围绕本镇真正的广场组织街景，俯视容纳道路和所有建筑，不依赖默认地图坐标。 */
-  private showCameraPreset(overhead: boolean) {
-    const hd = this.hd
-    if (!hd) return
-    hd.setYaw(0)
-    hd.setPitch(overhead ? PITCH_MAX : DEFAULT_PITCH)
+  /** 全镇占的一块：地面、房屋和道路的外框；图集是空的就取整张画布 */
+  private contentBox(): { x: number; y: number; width: number; height: number } {
     const atlas = this.sourceAtlas
     let x0 = Infinity,
       y0 = Infinity,
@@ -650,8 +646,59 @@ export class TownMap {
       x1 = atlas.canvas.width
       y1 = atlas.canvas.height
     }
-    const width = Math.max(1, x1 - x0),
-      height = Math.max(1, y1 - y0)
+    return { x: x0, y: y0, width: Math.max(1, x1 - x0), height: Math.max(1, y1 - y0) }
+  }
+
+  /** 镇中心：最大的那片有名字的广场；没有广场就是全镇的正中间 */
+  townHeart(): [number, number] {
+    // 没有名字的铺装（河堤）不是地点，镜头不对着它
+    const plaza = this.sourceAtlas.regions
+      .filter((region) => region.kind === 'plaza' && region.name && region.cells.length)
+      .sort((a, b) => b.cells.length * b.cell_size ** 2 - a.cells.length * a.cell_size ** 2)[0]
+    if (plaza)
+      return plaza.cells.reduce<[number, number]>(
+        (point, [x, y]) => [
+          point[0] + ((x + 0.5) * plaza.cell_size) / plaza.cells.length,
+          point[1] + ((y + 0.5) * plaza.cell_size) / plaza.cells.length,
+        ],
+        [0, 0]
+      )
+    const box = this.contentBox()
+    return [box.x + box.width / 2, box.y + box.height / 2]
+  }
+
+  /** 拍一张全镇的小图当封面（见 GameMap.cover）：正面、默认俯角，全镇装进画布正中间和小图同样长宽比的
+   *  那一块，四边留一点给屋顶和海岸 */
+  cover(width: number, height: number): string | undefined {
+    const hd = this.hd
+    const view = this.svg.getBoundingClientRect()
+    if (!hd || !view.width || !view.height) return undefined
+    const before = this.director.shot()
+    const whole = this.camera.showingWhole
+    const box = this.contentBox()
+    hd.setAngles(DEFAULT_PITCH, 0, true)
+    const crop = Math.min(view.width, (view.height * width) / height)
+    const need = Math.max(box.width, (box.height * hd.verticalScale * width) / height) * 1.12
+    this.camera.setShot([box.x + box.width / 2, box.y + box.height / 2], (need * view.width) / crop)
+    const image = hd.capture(width, height, () => {
+      hd.setAngles(before.pitch, before.yaw, true)
+      if (whole) this.camera.resetView()
+      else this.camera.setShot(before.center, before.width)
+    })
+    try {
+      return image.toDataURL('image/jpeg', 0.82)
+    } catch {
+      return undefined
+    }
+  }
+
+  /** 取景只读图集：围绕本镇真正的广场组织街景，俯视容纳道路和所有建筑，不依赖默认地图坐标。 */
+  private showCameraPreset(overhead: boolean) {
+    const hd = this.hd
+    if (!hd) return
+    hd.setYaw(0)
+    hd.setPitch(overhead ? PITCH_MAX : DEFAULT_PITCH)
+    const { x: x0, y: y0, width, height } = this.contentBox()
     let area: CameraArea
     if (overhead) {
       // 屋脊仍高于地面，四边留空让最外侧的屋顶、树冠与水岸能完整入镜。
@@ -662,22 +709,7 @@ export class TownMap {
         height: height * 1.2,
       }
     } else {
-      // 没有名字的铺装（河堤）不是地点，镜头不对着它
-      const plazas = atlas.regions.filter(
-        (region) => region.kind === 'plaza' && region.name && region.cells.length
-      )
-      const plaza = plazas.sort(
-        (a, b) => b.cells.length * b.cell_size ** 2 - a.cells.length * a.cell_size ** 2
-      )[0]
-      const center = plaza
-        ? plaza.cells.reduce(
-            (point, [x, y]) => [
-              point[0] + ((x + 0.5) * plaza.cell_size) / plaza.cells.length,
-              point[1] + ((y + 0.5) * plaza.cell_size) / plaza.cells.length,
-            ],
-            [0, 0]
-          )
-        : [x0 + width / 2, y0 + height / 2]
+      const center = this.townHeart()
       // 广场位于清晰中景偏下处，镜头向北多留一些空间给屋顶、树林与远雾。
       const viewWidth = width * 0.58,
         viewHeight = height * 0.64

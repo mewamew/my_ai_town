@@ -63,6 +63,16 @@
             <p id="selected-map-description"></p>
           </div>
           <div class="launcher-actions">
+            <!-- 存档停在哪一刻：和游戏里左上角那块时钟牌一样 -->
+            <div id="town-clock" class="hud-clock launcher-clock" hidden>
+              <span class="clock-weather"></span>
+              <div class="hud-time">
+                <b><span id="town-clock-time"></span><span id="town-clock-period"></span></b>
+                <span class="hud-place"
+                  ><span id="town-clock-day"></span><span id="town-clock-name"></span
+                ></span>
+              </div>
+            </div>
             <button id="enter-game" class="enter-game" disabled>
               <i data-pixel="play"></i><span>进入游戏</span>
             </button>
@@ -86,6 +96,13 @@
               <button id="pause-retry" hidden>重试暂停</button>
             </div>
           </div>
+          <!-- 住着谁：像素头像和名字，和游戏里的头像条一样 -->
+          <div
+            id="town-residents"
+            class="launcher-residents"
+            aria-label="住在这里的村民"
+            hidden
+          ></div>
         </section>
         <section class="launcher-strip" aria-label="选择小镇">
           <div id="map-list" class="map-list" role="group" aria-label="小镇"></div>

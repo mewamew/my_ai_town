@@ -191,16 +191,29 @@ export class Storage {
       creation,
     }
   }
-  // 小镇列表上的进度：玩到第几天、住了几个人。读存档 world.json，还没开始过的小镇是 null。
+  // 小镇列表上的进度：玩到第几天、住了几个人，停在几点、什么天气，住着谁（按入住先后，最多 8 位，
+  // 带名字和长相，选镇页画头像用）。读存档 world.json，还没开始过的小镇是 null。
   // 手机上的管理服务（crates/manager）按同样的规则算，两边的 /api/towns 保持一致。
   async progress(id) {
     try {
       const save = await readJson(path.join(this.root, 'towns', id, 'world.json'))
       const minutes = save?.world?.minutes
       if (typeof minutes !== 'number') return null
+      const residents = Object.entries(save.population?.residents ?? {})
+      const weather = save.world.weather
       return {
         day: Math.floor(minutes / 1440) + 1,
-        residents: Object.keys(save.population?.residents ?? {}).length,
+        residents: residents.length,
+        minutes: Math.floor(minutes),
+        weather: (weather?.status === 'enabled' && weather.weather?.view?.kind) || 'clear',
+        cast: residents
+          .sort(([a, x], [b, y]) => (x.order ?? 0) - (y.order ?? 0) || (a < b ? -1 : a > b ? 1 : 0))
+          .slice(0, 8)
+          .map(([, r]) => ({
+            name: r.name ?? '',
+            template_id: r.template_id ?? null,
+            look: r.appearance?.look ?? null,
+          })),
       }
     } catch {
       return null

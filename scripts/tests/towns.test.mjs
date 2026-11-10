@@ -226,7 +226,13 @@ test('preview/save/open/reopen/reset/isolation work with actual hosts and persis
       )
     )
     await api(`/${a.id}/close`, {})
-    assert.equal((await api('')).towns.find((town) => town.id === a.id).running, false)
+    const closed = (await api('')).towns.find((town) => town.id === a.id)
+    assert.equal(closed.running, false)
+    // 列表带着存档停在哪：选镇页据此画时钟牌、头像和那一刻的天色
+    assert.equal(closed.progress.residents, 1)
+    assert.equal(closed.progress.cast[0].template_id, 'builtin_ashu')
+    assert.equal(closed.progress.minutes, Math.floor(closed.progress.minutes))
+    assert.equal(typeof closed.progress.weather, 'string')
     restored = await api(`/${a.id}/open`, {})
     const oldEndpoint = restored.endpoint
     const closing = m.hosts.close(a.id)

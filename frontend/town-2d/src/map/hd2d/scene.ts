@@ -824,6 +824,45 @@ export class HdScene {
     this.drawn = true
   }
 
+  /** 当场画一帧，把画布正中间（和小图同样长宽比的那块）缩成 width×height 的小图。这一帧不画失焦模糊，
+   *  也不叫镜头的钩子（调用方已经摆好机位）；restore 把机位摆回去，接着补画一帧——两帧在同一拍里画完，
+   *  屏幕上只看得到后一帧 */
+  capture(width: number, height: number, restore: () => void): HTMLCanvasElement {
+    const hook = this.beforeDraw
+    const bokeh = this.bokeh.enabled
+    const tilt = this.tiltShift.map((p) => p.enabled)
+    this.beforeDraw = undefined
+    this.bokeh.enabled = false
+    for (const p of this.tiltShift) p.enabled = false
+    this.draw(performance.now())
+    const source = this.renderer.domElement
+    const image = document.createElement('canvas')
+    image.width = width
+    image.height = height
+    const k = Math.max(width / source.width, height / source.height)
+    const w = width / k,
+      h = height / k
+    image
+      .getContext('2d')
+      ?.drawImage(
+        source,
+        (source.width - w) / 2,
+        (source.height - h) / 2,
+        w,
+        h,
+        0,
+        0,
+        width,
+        height
+      )
+    this.bokeh.enabled = bokeh
+    this.tiltShift.forEach((p, i) => (p.enabled = tilt[i]))
+    this.beforeDraw = hook
+    restore()
+    this.draw(performance.now())
+    return image
+  }
+
   /** 玩家操控的人的本地预测（见 villagers.ts 的 LiveMotion）；没在操控时为空 */
   setLiveMotion(motion: LiveMotion | null) {
     this.villagers.setLiveMotion(motion)
