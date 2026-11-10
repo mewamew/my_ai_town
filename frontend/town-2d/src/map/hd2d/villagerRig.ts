@@ -1,4 +1,5 @@
 import { mixHex } from '../pixel/noise'
+import { MATERIAL as LETTER_MATERIAL, deepOf, refineVillager } from './villagerRefine'
 import { SIGNS, type Sign } from './villagerSigns'
 import {
   FRAME_H,
@@ -16,7 +17,8 @@ import {
 
 // 村民立牌的一帧：按此刻的姿势、表情和天气，把分层的笔画（villagerSprite.ts 的 sketch）叠进一块
 // 带留白的小贴图。笔画按身子朝向、头的朝向和手臂缓存；每帧只挪组（呼吸时头沉一格、走路时身子起伏）、
-// 摆头发，叠上手里的道具，改眼睛、嘴和腮红，再按定好的颜色填像素。所有变化都是整格的，保持像素感。
+// 摆头发，叠上手里的道具，改眼睛、嘴和腮红，再按定好的颜色填像素，最后过一遍精修（villagerRefine.ts：
+// 描边跟着颜色走、头发衣服压一档暗面、刘海落影）。所有变化都是整格的，保持像素感。
 
 /** 一帧四周的留白：两边给伞、躺下和头边的符号，头顶给伞面和往上飘的小东西 */
 export const PAD_X = 8
@@ -149,14 +151,7 @@ const LOOSE = 1,
   OUTLINE_MAT = 8
 /** 算法线时四周垫一圈的宽度 */
 const PW = RIG_W + 2
-const MATERIAL = new Uint8Array(128).fill(4)
-MATERIAL[0] = 0
-MATERIAL[code('K')] = 0
-for (const c of 'hHLw') MATERIAL[code(c)] = 1
-for (const c of 'sSJjvP') MATERIAL[code(c)] = 2
-MATERIAL[code('e')] = 3
-MATERIAL[code('%')] = 3
-for (const c of 'YUM') MATERIAL[code(c)] = 5
+const MATERIAL = Uint8Array.from(LETTER_MATERIAL)
 MATERIAL[LOOSE] = LOOSE_MAT
 MATERIAL[GLOW] = GLOW_MAT
 /** 量化好的法线：按左右、上下两边的高差（各 -3～3 格）查表，8 个方向 × 2 档倾斜；R、G 编成 0～255 */
@@ -179,6 +174,8 @@ for (let gx = -3; gx <= 3; gx++)
 const WHITE = rgba('#ffffff'),
   GOLD = rgba('#ffd25a')
 const K = code('K'),
+  /** 裤子的颜色：腿上面那几行 */
+  TROUSERS = code('q'),
   E = code('e'),
   /** 发亮的瞳色 */
   SHINE = code('%'),
@@ -186,6 +183,9 @@ const K = code('K'),
   J = code('J'),
   CHEEK = code('j'),
   SKIN = new Set([...'sSJjv'].map(code))
+
+/** 精修时留一份加工前的颜色：画一帧是同步的，所有人共用一块 */
+const REFINE_SCRATCH = new Uint32Array(RIG_W * RIG_H)
 
 /** '#rrggbb' → 小端 RGBA 像素（不透明） */
 function rgba(hex: string) {
@@ -200,6 +200,8 @@ export class VillagerRig {
   /** 颜色位 → 像素颜色：道具和后改的格子（眼睛、嘴）按它上色 */
   private readonly lut = new Uint32Array(128)
   private readonly cache = new Map<string, Built>()
+  /** 鞋的颜色：裤子的描边色 */
+  private readonly shoe: number
   // 叠出来的一帧：每格的颜色和颜色位（按身子的朝向，翻转在填像素时做）
   private readonly color = new Uint32Array(RIG_W * RIG_H)
   private readonly ch = new Uint8Array(RIG_W * RIG_H)
@@ -221,6 +223,7 @@ export class VillagerRig {
       '%': mixHex(this.pal.e, '#ffffff', 0.5),
     }
     for (const [k, v] of Object.entries(colors)) this.lut[code(k)] = rgba(v)
+    this.shoe = deepOf(this.lut[TROUSERS])
   }
 
   private built(view: View, arm: Stance['arm'], turn?: HeadTurn): Built {
@@ -270,11 +273,12 @@ export class VillagerRig {
     this.ch.fill(0)
     const x0 = OX + PAD_X,
       y0 = OY + PAD_TOP
-    // 腿：两格宽的黑块，不跟身子挪
+    // 腿：两格宽，上面是裤子的颜色，最下面一行是鞋（留给精修按裤子压深）；不跟身子挪
     for (const [x, top, n] of f.stance.legs)
       for (let y = top; y < top + n; y++) {
-        this.put(x + x0, y + y0, K)
-        this.put(x + x0 + 1, y + y0, K)
+        const c = y === top + n - 1 ? K : TROUSERS
+        this.put(x + x0, y + y0, c)
+        this.put(x + x0 + 1, y + y0, c)
       }
     for (const [x, y] of f.stance.toes ?? []) this.put(x + x0, y + y0, K)
     for (const [x, y, c] of f.props?.back ?? []) this.put(x + x0, y + y0 + f.bodyDy, code(c))
@@ -338,6 +342,8 @@ export class VillagerRig {
         scrCh.set(ch.subarray(row, row + RIG_W), row)
       }
     }
+    // 精修在画面方向上做（翻转、躺下之后），光才总是从左上来；后面的符号和选中描边不参与
+    refineVillager(scr, scrCh, RIG_W, RIG_H, REFINE_SCRATCH, this.shoe)
     // 冒出来的小东西、头顶的标记和符号：画面坐标，单算一种材质（平的，不鼓）
     const dot = (x: number, y: number, c: string) => {
       if (x < 0 || y < 0 || x >= RIG_W || y >= RIG_H) return
