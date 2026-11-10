@@ -1,6 +1,6 @@
-import { hash } from '../pixel/noise'
+import { hash, mixHex } from '../pixel/noise'
 import type { DecorKind } from './propArrange'
-import { Kit, T } from './propKit'
+import { Kit, P, T } from './propKit'
 
 // 各件道具的搭法：按道具定义编号登记，没登记的道具照旧用像素图立牌（props.ts）。
 // 家具按村民的身子定大小：柜台 4.5 个墙面像素高，到村民的脖子；椅面 3 个墙面像素高。
@@ -378,6 +378,305 @@ const waterBarrel: Build = (k) => {
   k.box(11, 24, -1.5, 1.5, 4.3 * T, 4.5 * T, { all: WOOD.light })
 }
 
+/** 一片像素画（吉他这种靠轮廓认的东西）：rows 从上到下，一个字一格，'.' 空着；格子是正方的，正反两面都画。
+ *  (x, z) 是底边中点，y 是底边的高度 */
+function cutout(
+  k: Kit,
+  x: number,
+  z: number,
+  y: number,
+  rows: string[],
+  palette: Record<string, string>
+) {
+  const nu = rows[0].length,
+    nv = rows.length
+  const w = nu * P,
+    h = nv * P
+  const paint = (flip: boolean) => (u: number, v: number) => {
+    const ch = rows[v][flip ? nu - 1 - u : u]
+    return ch === '.' ? null : palette[ch]
+  }
+  k.panel(k.side, [x - w / 2, y + h, z + 1], [w, 0, 0], [0, -h, 0], [0, 0, 1], nu, nv, paint(false))
+  k.panel(
+    k.side,
+    [x + w / 2, y + h, z - 1],
+    [-w, 0, 0],
+    [0, -h, 0],
+    [0, 0, -1],
+    nu,
+    nv,
+    paint(true),
+    -0.2
+  )
+}
+
+/** 公园长椅：铁架子，木板条的座面和两道靠背；人坐在座板上。室外的座位都是它 */
+const bench: Build = (k, seed) => {
+  k.footprint(30, 12)
+  k.use = { at: [0, 5], lift: 2.5 * T }
+  const wood = ['#b98858', '#a8774c', '#c49464'][Math.floor(hash(seed, 1, 3) * 3)]
+  const pale = mixHex(wood, '#fff6e6', 0.25),
+    dark = mixHex(wood, '#2a2230', 0.25)
+  for (const x of [-30, 24]) {
+    k.box(x, x + 6, 6, 9, 0, 3.4 * T, { all: IRON })
+    k.box(x, x + 6, -12, -9, 0, 5.4 * T, { all: IRON })
+    k.box(x, x + 6, -12, 10, 3.4 * T, 3.8 * T, { all: IRON, top: '#5f5e69' })
+  }
+  k.box(-27, 27, -9, 9, 2.1 * T, 2.5 * T, {
+    all: wood,
+    top: (u, v) => (v === 1 ? dark : pale),
+    south: pale,
+  })
+  for (const y of [3 * T, 4.4 * T])
+    k.box(-27, 27, -12, -9, y, y + 0.8 * T, { all: wood, top: pale })
+}
+
+const PAPERS: Record<string, string> = {
+  f: WOOD.light,
+  c: '#c9a36a',
+  w: '#f6f1e7',
+  y: '#f4dc8a',
+  p: '#f2b6c0',
+  b: '#a9cfe6',
+  g: '#bfe0b0',
+}
+/** 公告栏：一长块软木板钉满了纸，顶上一道小屋檐，檐下三盏灯，两头各一只花箱。
+ *  板子往落点的西边伸（东边紧挨着张贴处），比人高，看公告的人站在跟前也露得出上半截 */
+const noticeBoard: Build = (k) => {
+  k.footprint(69, 15, -30, 0)
+  k.use = { at: [-30, 34] }
+  for (const x of [-96, -33, 30]) k.box(x, x + 6, -3, 3, 0, 12.2 * T, { all: WOOD.dark })
+  k.box(-90, 30, -2, 2, 6 * T, 6.5 * T, { all: WOOD.dark })
+  const rows = [
+    'ffffffffffffffffffff',
+    'fwwcyycppcwwwcbbcggf',
+    'fwwcyycwwcwwwcbbcwwf',
+    'fcccggcwwccyycccccwf',
+    'ffffffffffffffffffff',
+  ]
+  k.box(-90, 30, -2, 2, 6.5 * T, 11.5 * T, {
+    all: WOOD.mid,
+    south: (u, v) => PAPERS[rows[v]?.[u] ?? 'f'],
+    north: WOOD.dark,
+  })
+  // 图钉
+  for (const x of [-78, -60, -42, -21, 0, 18])
+    k.box(x - 1.5, x + 1.5, 2, 3, 10.4 * T - 3, 10.4 * T, { all: '#c8323e' })
+  // 小屋檐：一层瓦，压一道脊
+  k.box(-102, 42, -13, 14, 11.6 * T, 12.1 * T, {
+    all: '#7a4a3c',
+    top: (u) => (u % 2 ? '#8a5646' : '#7a4a3c'),
+    south: (u) => (u % 2 ? '#8a5646' : '#6a3e32'),
+  })
+  k.box(-102, 42, -5, 5, 12.1 * T, 12.7 * T, { all: '#9a6450', top: '#b07a62' })
+  for (const x of [-72, -30, 12]) k.glow(x - 3, x + 3, 9, 11, 11.15 * T, 11.55 * T, WARM)
+  k.lamp([-30, 9 * T, 20], LAMP, 150, 76, 0.9)
+  // 花箱
+  for (const x of [-99, 15]) {
+    k.box(x, x + 24, 3, 15, 0, 1.2 * T, { all: '#bcb3a2', top: '#6b5a48', south: '#cfc6b5' })
+    k.box(x + 2, x + 22, 5, 13, 1.2 * T, 2 * T, {
+      all: '#5a8a4a',
+      south: (u) => ['#e8687a', '#5a8a4a', '#f2c64e', '#77a65a'][u % 4],
+      top: (u, v) => ['#f08c9a', '#77a65a', '#f6d776', '#5a8a4a'][(u + v) % 4],
+    })
+  }
+}
+
+/** 张贴处：一张小桌，上面浆糊桶和刷子、几卷海报、一沓传单 */
+const pasteTable: Build = (k) => {
+  k.footprint(21, 14)
+  k.use = { at: [0, 30] }
+  for (const x of [-18, 12])
+    for (const z of [-12, 6]) k.box(x, x + 6, z, z + 6, 0, 2.8 * T, { all: WOOD.dark, top: false })
+  k.box(-21, 21, -14, 14, 2.8 * T, 3.3 * T, {
+    all: WOOD.light,
+    top: (u) => (u % 3 === 2 ? WOOD.mid : WOOD.pale),
+  })
+  const y = 3.3 * T
+  k.prism(-11, -4, 6.5, y, y + 1.2 * T, '#aeb4bd', '#f3ead2')
+  k.box(-14, -8, -6, 9, y + 1.2 * T, y + 1.45 * T, { all: WOOD.mid })
+  k.box(2, 18, -11, -6, y, y + 0.55 * T, { all: WHITE, east: '#e25a70', west: '#e25a70' })
+  k.box(4, 20, -5, 0, y, y + 0.55 * T, { all: '#a9cfe6', east: '#3f86c0', west: '#3f86c0' })
+  k.box(3, 19, -8, -3, y + 0.55 * T, y + 1.1 * T, {
+    all: '#f4dc8a',
+    east: '#d9a441',
+    west: '#d9a441',
+  })
+  k.box(-3, 9, 4, 12, y, y + 0.3 * T, {
+    all: CREAM,
+    top: (u, v) => (v === 0 ? '#d07f52' : WHITE),
+  })
+}
+
+const MAGS = ['#d9534a', '#3f86c0', '#e8b53c', '#4fa08a', '#b07cd0']
+const NEWS = { paper: '#ece7d9', edge: '#cfc8b6', ink: '#5a554d', twine: '#9a6a3a' }
+const newsLayers = (u: number, v: number) => (v % 2 ? NEWS.edge : NEWS.paper)
+/** 报刊亭：青绿的柜身，台面上三摞报纸，背后一架杂志，红白条的雨棚，檐下一条灯。卖报的人站在亭子西边 */
+const newsstand: Build = (k) => {
+  k.footprint(36, 18)
+  k.use = { at: [-54, 12] }
+  const teal = { frame: '#245a56', core: '#2f7f78' }
+  k.box(-30, 30, -15, 12, 0, 4 * T, {
+    all: teal.core,
+    south: (u, v, nu, nv) =>
+      v === nv - 1 ? '#1c4744' : v === 0 || u % 5 === 0 || u % 5 === 4 ? teal.frame : teal.core,
+    top: false,
+  })
+  k.box(-33, 33, -16, 15, 4 * T, 4.5 * T, { all: WOOD.light, top: WOOD.pale })
+  const y = 4.5 * T
+  const stack = (x: number, h: number) =>
+    k.box(x, x + 12, 0, 12, y, y + h, {
+      all: NEWS.paper,
+      south: newsLayers,
+      east: newsLayers,
+      west: newsLayers,
+      top: (u, v) => (v === 0 ? NEWS.ink : NEWS.paper),
+    })
+  stack(-27, 1.2 * T)
+  stack(-12, 0.8 * T)
+  stack(6, 1.6 * T)
+  k.prism(25, 6, 3.6, y, y + 0.6 * T, BRASS, '#f3cf7a')
+  // 背板上的杂志架：三排封面，排与排之间一道搁板
+  k.box(-30, 30, -15, -11, y, 10.5 * T, {
+    all: teal.frame,
+    south: (u, v, nu) =>
+      u === 0 || u === nu - 1 || v % 2 ? teal.frame : MAGS[(((u - 1) >> 1) + v) % MAGS.length],
+  })
+  for (const x of [-30, 27]) k.box(x, x + 3, 9, 12, y, 10.5 * T, { all: teal.frame })
+  // 雨棚和垂下来的一道边
+  const stripe = (u: number) => (u % 2 ? '#d9534a' : CREAM)
+  k.box(-36, 36, -18, 14, 10.5 * T, 11 * T, { all: '#c2473d', top: stripe, south: stripe })
+  k.box(-36, 36, 13, 14, 9.7 * T, 10.5 * T, {
+    south: (u) => (u % 2 ? '#c2473d' : '#e6dac0'),
+    north: false,
+    top: false,
+    east: '#c2473d',
+    west: '#c2473d',
+  })
+  // 招牌：红底一行白字
+  k.box(-21, 21, -6, -2, 11 * T, 13 * T, {
+    all: '#b9443a',
+    south: (u, v, nu) => (v === 0 && u > 0 && u < nu - 1 && u !== 3 ? CREAM : '#b9443a'),
+    top: '#d9534a',
+  })
+  k.glow(-24, 24, 9.5, 10.5, 10.1 * T, 10.4 * T, WARM)
+  k.lamp([0, 7 * T, 22], LAMP, 140, 70, 0.9)
+}
+
+/** 报纸整理点：垫板上几捆扎好的报纸，地上还有一捆，旁边靠着一只帆布挎包 */
+const paperBundles: Build = (k) => {
+  k.footprint(33, 18)
+  k.use = { at: [0, 34] }
+  k.box(-24, 24, -15, 12, 0, 0.6 * T, {
+    all: WOOD.mid,
+    top: (u) => (u % 3 === 2 ? WOOD.dark : WOOD.light),
+  })
+  const bundle = (x: number, z: number, y: number, h: number) =>
+    k.box(x, x + 18, z, z + 18, y, y + h, {
+      all: NEWS.paper,
+      south: newsLayers,
+      east: newsLayers,
+      west: newsLayers,
+      top: (u, v) => (u === 1 || v === 1 ? NEWS.twine : v === 0 ? NEWS.ink : NEWS.paper),
+    })
+  bundle(-21, -12, 0.6 * T, 2 * T)
+  bundle(0, -12, 0.6 * T, 1.3 * T)
+  bundle(1, -11, 1.9 * T, 0.9 * T)
+  bundle(12, 0, 0, 1.2 * T)
+  k.box(-33, -24, -6, 9, 0, 2.2 * T, {
+    all: '#7d8c56',
+    south: (u, v) => (v === 0 ? '#96a66a' : '#7d8c56'),
+    top: '#96a66a',
+  })
+}
+
+/** 排练点：谱架上摊着两页谱，旁边一只高脚凳，地上一只琴盒。练曲子的人站在谱架后面 */
+const musicStand: Build = (k) => {
+  k.footprint(36, 14, 0, 4)
+  k.use = { at: [0, -18] }
+  k.prism(0, 0, 9, 0, 0.25 * T, IRON, '#55545f')
+  k.box(-1.5, 1.5, -1.5, 1.5, 0.25 * T, 5 * T, { all: IRON })
+  k.box(-18, 18, -2, 2, 5 * T, 7 * T, {
+    all: WOOD.dark,
+    south: (u, v, nu) =>
+      u === 0 || u === nu - 1 ? WOOD.dark : v === 0 ? WHITE : u % 2 ? '#d9d3c6' : WHITE,
+  })
+  k.box(-18, 18, 2, 4, 5 * T, 5.3 * T, { all: WOOD.dark, top: WOOD.mid })
+  k.prism(27, 4, 2.5, 0, 2.4 * T, WOOD.dark)
+  k.prism(27, 4, 9, 2.4 * T, 2.8 * T, WOOD.light, WOOD.pale)
+  k.box(-36, -12, 6, 16, 0, 0.9 * T, {
+    all: '#5a2f2a',
+    top: (u, v, nu) => (u === 0 || u === nu - 1 ? '#5a2f2a' : '#7a3f38'),
+    south: (u, v, nu) => (u === 1 || u === nu - 2 ? BRASS : '#5a2f2a'),
+  })
+}
+
+/** 演奏点：一方矮木台，台上高脚凳、靠着的吉他、小音箱，台前敞开的琴盒里有几枚硬币；
+ *  两根高杆子拉一串小灯，入夜亮。演奏的人站在台上 */
+const buskStage: Build = (k) => {
+  k.footprint(54, 58, 0, 10)
+  k.use = { at: [-9, 8], lift: 0.8 * T }
+  const y = 0.8 * T
+  k.prism(0, 0, 48, 0, y, (side) => (side % 2 ? WOOD.mid : WOOD.dark), WOOD.light)
+  k.box(-30, 24, -12, 24, y, y + 0.9, {
+    top: (u, v, nu, nv) => {
+      const edge = Math.min(u, v, nu - 1 - u, nv - 1 - v)
+      return edge === 0 ? '#8f4a4a' : edge === 1 ? CREAM : (u + v) % 2 ? '#a85a50' : '#c9805a'
+    },
+    south: '#8f4a4a',
+    east: '#8f4a4a',
+    west: '#8f4a4a',
+    north: false,
+  })
+  k.prism(-12, -15, 2.5, y, y + 2.6 * T, IRON)
+  k.prism(-12, -15, 8, y + 2.6 * T, y + 3 * T, '#5a2f2a', '#8f2f3a')
+  // 吉他靠在小架子上
+  k.prism(27, -10, 6, y, y + 0.2 * T, IRON, '#55545f')
+  cutout(
+    k,
+    27,
+    -10,
+    y + 0.2 * T,
+    [
+      '.kkk.',
+      '..n..',
+      '..n..',
+      '..n..',
+      '..n..',
+      '..n..',
+      '.hww.',
+      'hwwww',
+      '.wow.',
+      'wwwww',
+      'wwbww',
+      '.www.',
+    ],
+    { k: '#2a1c14', n: '#5a3a26', h: '#f0b860', w: '#d08a3c', o: '#3a2418', b: '#5a3a26' }
+  )
+  // 小音箱
+  k.box(-39, -27, -24, -12, y, y + 1.8 * T, {
+    all: '#2e2c34',
+    south: (u, v) => (v === 0 ? '#55545f' : '#3d3b45'),
+    top: '#45444e',
+  })
+  // 台前敞开的琴盒，里面几枚硬币
+  k.box(-18, 18, 50, 68, 0, 0.6 * T, {
+    all: '#3d2a24',
+    top: (u, v, nu, nv) =>
+      u === 0 || v === 0 || u === nu - 1 || v === nv - 1 ? '#3d2a24' : u % 2 ? BRASS : '#8f2f3a',
+  })
+  // 两根杆子拉一串小灯，比人高
+  for (const x of [-54, 51]) k.box(x, x + 3, -40, -37, 0, 15 * T, { all: IRON })
+  const tints = [WARM, '#ffb0a0', WARM, '#bfe6c8', WARM, '#ffb0a0', WARM]
+  tints.forEach((tint, i) => {
+    const x = -39 + i * 13
+    const h = (13.5 + ((i - 3) * (i - 3)) / 10) * T
+    k.box(x - 7, x + 7, -39, -38, h, h + 1, { all: IRON })
+    k.glow(x - 2.5, x + 2.5, -41, -36, h - 0.5 * T, h, tint)
+  })
+  k.lamp([0, 6 * T, -8], LAMP, 170, 80, 0.9)
+}
+
 /** 陈设：一张小圆桌，南北各一把椅子 */
 const tableSet: Build = (k) => {
   k.footprint(24, 60)
@@ -438,6 +737,12 @@ const BUILDS: Record<string, Build> = {
   'core:prop_91ab2f9d1f': orderCounter,
   'core:prop_d8ed6d0f46': pastryCase,
   'core:prop_fb48cd2aaf': cafeChair,
+  'core:bulletin_board': noticeBoard,
+  'core:prop_f813ca3705': pasteTable,
+  'core:prop_6d08f5c84a': newsstand,
+  'core:prop_89517accaa': paperBundles,
+  'core:prop_cc9e724d25': musicStand,
+  'core:prop_a2ab77765f': buskStage,
 }
 
 const DECOR: Record<DecorKind, Build> = {
@@ -448,12 +753,12 @@ const DECOR: Record<DecorKind, Build> = {
 
 /**
  * 这件道具的搭法；没有就返回 undefined，照旧立牌。reference 是定义编号（带不带版本都行），
- * indoor 是它在不在屋里：座位这个定义在室外是长椅、喷泉石沿、看台，景物里已经画了，只有屋里的才是扶手椅。
+ * indoor 是它在不在屋里：座位这个定义屋里的是扶手椅，室外的（喷泉边、公园、看台、亭子里）是长椅。
  */
 export function buildOf(reference: string | undefined, indoor: boolean): Build | undefined {
   const id = reference?.split('@')[0]
   if (!id) return undefined
-  if (id === 'core:seat') return indoor ? armchair : undefined
+  if (id === 'core:seat') return indoor ? armchair : bench
   return BUILDS[id]
 }
 

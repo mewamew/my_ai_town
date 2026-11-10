@@ -2299,11 +2299,18 @@ export class HdScene {
         this.applyLight(false)
       },
     }))
-    this.lightmap.shade(models.top, 'ground')
-    this.lightmap.shade(models.side, 'wall')
-    for (const look of this.looks) {
-      look.shadeStanding(models.top, 'thing')
-      look.shadeStanding(models.side, 'thing')
+    this.weather.shade(models.topOut, { snow: 1, wet: 0.5 })
+    this.weather.shade(models.sideOut, { snow: 0, wet: 0.5 })
+    for (const [top, side] of [
+      [models.top, models.side],
+      [models.topOut, models.sideOut],
+    ]) {
+      this.lightmap.shade(top, 'ground')
+      this.lightmap.shade(side, 'wall')
+      for (const look of this.looks) {
+        look.shadeStanding(top, 'thing')
+        look.shadeStanding(side, 'thing')
+      }
     }
     this.flat.add(models.group)
     models.setTilt(this.tilt)

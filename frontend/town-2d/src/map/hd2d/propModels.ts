@@ -8,7 +8,7 @@ import { Kit } from './propKit'
 import { ChimneySmoke } from './smoke'
 
 // 立体道具进场景：把搭好的料（propKit.ts）变成网格，接上影子、光照图、夜里的灯和热气。
-// 全镇的道具共用两个材质（朝上的面、立着的面），发光的面按颜色各一个。
+// 全镇的道具共用两对材质（朝上的面、立着的面，屋里屋外各一对），发光的面按颜色各一个。
 // 摆在哪、朝哪由场景按房间算好（propArrange.ts）再交进来；这里只管搭和显隐。
 
 export interface ModelPlacement {
@@ -71,6 +71,9 @@ export class PropModels {
   readonly group = new THREE.Group()
   readonly top = new THREE.MeshLambertMaterial({ vertexColors: true })
   readonly side = new THREE.MeshLambertMaterial({ vertexColors: true })
+  /** 室外的道具另用一对材质：场景给它们补积雪、淋湿和云影 */
+  readonly topOut = new THREE.MeshLambertMaterial({ vertexColors: true })
+  readonly sideOut = new THREE.MeshLambertMaterial({ vertexColors: true })
   private readonly contact = new THREE.MeshBasicMaterial({
     color: '#161019',
     transparent: true,
@@ -144,8 +147,8 @@ export class PropModels {
       group.add(mesh)
       if (lit) solid.push(mesh)
     }
-    add(kit.top.build(), this.top)
-    add(kit.side.build(), this.side)
+    add(kit.top.build(), p.house ? this.top : this.topOut)
+    add(kit.side.build(), p.house ? this.side : this.sideOut)
     for (const [color, m] of kit.night) add(m.build(), this.lit(color, false), false)
     for (const [color, m] of kit.always) add(m.build(), this.lit(color, true), false)
     // 脚下压一圈影子，家具才像落在地板上
@@ -204,7 +207,14 @@ export class PropModels {
       seen.add(p.id)
       let b = this.all.get(p.id)
       const was = b?.placement
-      if (was && (was.build !== p.build || was.x !== p.x || was.y !== p.y || was.turn !== p.turn)) {
+      if (
+        was &&
+        (was.build !== p.build ||
+          was.x !== p.x ||
+          was.y !== p.y ||
+          was.turn !== p.turn ||
+          was.house !== p.house)
+      ) {
         this.remove(p.id)
         b = undefined
       }
@@ -318,6 +328,8 @@ export class PropModels {
     for (const m of [
       this.top,
       this.side,
+      this.topOut,
+      this.sideOut,
       this.contact,
       this.tints.picked,
       this.tints.hovered,
