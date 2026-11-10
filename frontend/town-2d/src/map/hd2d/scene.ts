@@ -45,7 +45,6 @@ import {
   glowCanvas,
   lampCanvas,
   awningCanvas,
-  flagCanvas,
   gableCanvases,
   roofCanvas,
   treeCanvas,
@@ -1553,9 +1552,9 @@ export class HdScene {
     }
   }
 
-  /** 功能类型的立体特征：门口的条纹雨棚、公所屋脊上的旗 */
+  /** 功能类型的立体特征：门口的条纹雨棚、柱廊门前的一排石柱 */
   private addFeatures(group: THREE.Group, house: House, doorX?: number) {
-    const { w, h, wallH, ridge, look } = house
+    const { w, h, wallH, look } = house
     if (look.awning && doorX !== undefined) {
       const [doorW, doorH] = DOORS[look.door]
       const width = look.awning.whole ? w - 4 * PIXEL : (doorW + 10) * PIXEL
@@ -1586,23 +1585,6 @@ export class HdScene {
       group.add(awning)
     }
     if (look.columns) group.add(colonnadeFront(house))
-    if (look.flag) {
-      const poleH = 16 * WALL_TEXEL
-      const pole = new THREE.Mesh(
-        new THREE.BoxGeometry(PIXEL, poleH, PIXEL),
-        new THREE.MeshLambertMaterial({ color: '#3a3634' })
-      )
-      pole.position.set(0, wallH + ridge + poleH / 2, 0)
-      pole.castShadow = true
-      const map = texture(flagCanvas(this.theme.flag))
-      const cloth = pixelMaterial(new THREE.MeshLambertMaterial({ map, side: THREE.DoubleSide }))
-      this.weather.shade(cloth, { snow: 0, wet: 0.3, sway: true })
-      const flag = new THREE.Mesh(new THREE.PlaneGeometry(10 * PIXEL, 6 * WALL_TEXEL), cloth)
-      flag.geometry.translate(5 * PIXEL, 0, 0)
-      flag.position.set(PIXEL / 2, wallH + ridge + poleH - 3 * WALL_TEXEL, 0)
-      flag.castShadow = true
-      group.add(pole, flag)
-    }
   }
 
   /** 灯塔整块占地是石台，塔立在正中（见 lighthouse.ts）。材质接上天气和光照图；灯室天一暗就最先亮，

@@ -1,6 +1,7 @@
 import type { Atlas } from 'town-shared/mapDocument'
 
-// 按房间的功能定外观：墙面、墙高、屋顶颜色和坡度、窗、门，再加一两个认得出的特征（招牌、雨棚、旗杆）。
+// 按房间的功能定外观：墙面、墙高、屋顶颜色和坡度、窗、门，再加一两个认得出的特征（招牌、雨棚）。
+// 屋脊不立旗：几道色条的旗子怎么配色都容易看成哪国国旗。
 // 每种功能具体长什么样由风格包给（themes/），这里只有类型、门的尺寸和判断功能的规则。
 // 功能取地图里房间的 kind（建镇生成的地图都有）；默认小镇这类旧地图没有 kind，按编号和名字判断。
 // 平面图的地板、海岸收进的海塔和立体场景的房子都用这里的判断，同一间房只有一种功能。
@@ -101,7 +102,6 @@ export interface BuildingStyle {
   sign?: 'cross' | 'book' | 'hammer' | 'inn' | 'emblem' | 'mask'
   flowers?: boolean
   lanterns?: boolean
-  flag?: boolean
   /** 屋顶形状：默认双坡，剧院是半圆的拱顶 */
   vault?: boolean
   /** 不盖房子：整块占地是石台，正中立一座灯塔（hd2d/lighthouse.ts）；墙高只用来定掀开后的室内墙高 */

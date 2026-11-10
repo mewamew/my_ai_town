@@ -633,13 +633,11 @@ function bloomPixmap(flowers: readonly string[], seed: number) {
   })
 }
 
-/** 信号旗：几面不同图案的方旗 */
+/** 信号旗：几面不同图案的方旗。不用横竖三道色条，那样怎么配色都像哪国国旗 */
 const FLAGS: ((i: number, j: number) => string)[] = [
   (i) => (i < 2 ? '#f4f1ea' : '#3a5f9a'),
   (i, j) => (i + j < 4 ? '#c8453b' : '#e8c24a'),
   (i, j) => (i < 2 !== j < 2 ? '#c8453b' : '#f4f1ea'),
-  (_, j) => (j === 1 || j === 2 ? '#f4f1ea' : '#3a5f9a'),
-  (i) => (i === 1 || i === 2 ? '#c8453b' : '#e8c24a'),
   () => '#e8c24a',
 ]
 

@@ -785,21 +785,6 @@ export function awningCanvas(len: number, colors: readonly [string, string]) {
   return c
 }
 
-/** 旗子：两色横条；torn 时外沿撕成锯齿，中间一个破洞 */
-export function flagCanvas(flag: MapTheme['flag']) {
-  const c = canvas(10, 6),
-    x = c.getContext('2d')!
-  x.fillStyle = flag.colors[0]
-  x.fillRect(0, 0, 10, 6)
-  x.fillStyle = flag.colors[1]
-  x.fillRect(0, 2, 10, 2)
-  if (flag.torn) {
-    for (let j = 0; j < 6; j++) x.clearRect(10 - [1, 3, 2, 4, 1, 3][j], j, 4, 1)
-    x.clearRect(4, 3, 1, 2)
-  }
-  return c
-}
-
 /** 立起来的树：与平面图同一套树冠画法，底边中点是树根 */
 export function treeCanvas(
   r: number,

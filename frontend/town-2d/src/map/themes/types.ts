@@ -149,12 +149,11 @@ export interface MapTheme {
     lift: number
     fireflies: boolean
   }
-  /** 路灯画法（none 是不立路灯：野外小径）、旗子配色；灯塔是红白条纹、积雪的红塔，还是塌了顶烧着一盆火
+  /** 路灯画法（none 是不立路灯：野外小径）；灯塔是红白条纹、积雪的红塔，还是塌了顶烧着一盆火
    *  （见 hd2d/lighthouse.ts） */
   lamp: 'street' | 'scrap' | 'none'
   /** 沿路两盏路灯隔多远（地面像素），不给是 80；废土隔得远，留出暗处给火盆和霓虹 */
   lampGap?: number
-  flag: { colors: readonly [string, string]; torn: boolean }
   lighthouse: 'striped' | 'snowy' | 'ruined'
   /** 秃鹫：白天在骨头、沉船上空盘旋（地图给了 flocks 就照它）；不要就不给 */
   vultures?: boolean

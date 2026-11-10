@@ -40,7 +40,6 @@ const buildings: Record<BuildingKind, BuildingStyle> = {
     windows: 'boarded',
     door: 'grand',
     sign: 'emblem',
-    flag: true,
   },
   library: {
     walls: ['concrete'],
@@ -165,7 +164,6 @@ const buildings: Record<BuildingKind, BuildingStyle> = {
     windows: 'boarded',
     door: 'grand',
     awning: { colors: BLUE_TARP, whole: false },
-    flag: true,
   },
   colonnade: {
     walls: ['concrete'],
@@ -281,7 +279,6 @@ export const wasteland: MapTheme = {
   },
   lamp: 'scrap',
   lampGap: 140,
-  flag: { colors: ['#8a3a2a', '#b8b0a0'], torn: true },
   lighthouse: 'ruined',
   vultures: true,
 }
