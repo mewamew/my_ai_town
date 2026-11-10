@@ -1,48 +1,39 @@
 @import './theme.css';
 
-/* 地图选择页：选中的地图铺在右侧，左边是地图列表，右下角是进入游戏。 */
-/* 选图页整页滚动由 html 负责；body 的横向裁切（共用样式）会让它自己成为滚动框，
-   里面的 position: sticky（手机上吸底的「进入游戏」）就不贴视口了 */
+/* 选择小镇页：选中的小镇铺满整个窗口（立体场景，近处虚掉），界面是游戏里那套白底零件，零散浮在上面：
+   左上品牌，右上「赏景、设定、音乐」，左下镇名、简介和「进入游戏」，最下面一排明信片，一个小镇一张。
+   没有整块的面板；零件之间的空当照样能拖地图。 */
 body:has(.map-launcher) {
-  overflow: visible;
-  height: auto;
-  min-height: 100dvh;
-  background: var(--ui-stage);
-  color: var(--ui-ink);
-  font-family: var(--ui-font);
-  font-size: 14px;
+  overflow: hidden;
+  height: 100dvh;
+  background: var(--night-0);
 }
 .map-launcher {
-  --panel-width: 380px;
-  --gap: 24px;
-  min-height: 100dvh;
+  --edge: 14px;
+  position: fixed;
+  inset: 0;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
 }
 .map-launcher [hidden] {
   display: none !important;
 }
-:where(.map-launcher) button,
-:where(.map-launcher) summary {
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-.map-launcher button:focus-visible,
-.map-launcher summary:focus-visible,
-.map-launcher a:focus-visible {
-  outline: 2px solid var(--ui-accent);
-  outline-offset: 2px;
+/* 只有字的方钮两边一样宽（带图标的左边窄一点，见 shell/hud.css） */
+.map-launcher .hud-button:not(:has(.pixel-icon)) {
+  padding: 0 16px;
 }
 
+/* ---------- 铺满窗口的预览 ---------- */
 .launcher-stage {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  background: var(--ui-stage);
+  background: var(--night-0);
 }
-/* 预览只占面板右边的区域，地图居中时不会压在列表下面。
-   拖动和捏合都由地图自己处理（map/camera.ts）：不然手机浏览器捏到一半会接过去放大整页 */
+/* 拖动和捏合都由地图自己处理（map/camera.ts）：不然手机浏览器捏到一半会接过去放大整页 */
 .map-preview {
   position: absolute;
-  inset: 0 0 0 calc(var(--panel-width) + var(--gap) * 2);
+  inset: 0;
   overflow: hidden;
   touch-action: none;
 }
@@ -50,7 +41,7 @@ body:has(.map-launcher) {
   position: absolute;
   inset: 0;
 }
-/* 立体场景还没建好时 SVG 上只有底色和放大的地名，先藏起来，由「正在加载预览…」占着 */
+/* 立体场景还没建好时 SVG 上只有底色和放大的地名，先藏起来 */
 .map-preview svg.map-loading {
   visibility: hidden;
 }
@@ -59,299 +50,262 @@ body:has(.map-launcher) {
   width: 100%;
   height: 100%;
 }
-/* 右下角是信息卡，缩放按钮移到右上角。 */
+/* 缩放钮在右上那排方钮下面：右下角是明信片 */
 .map-preview .map-zoom {
-  top: var(--gap);
-  right: var(--gap);
+  top: calc(var(--edge) + 72px);
+  right: var(--edge);
   bottom: auto;
   left: auto;
+  border-color: var(--hud-line);
+  box-shadow: var(--hud-shadow);
+}
+/* 场景还在建：先垫这个小镇的明信片，放大、虚掉，建好再淡出 */
+.preview-cover {
+  position: absolute;
+  inset: -28px;
+  background: center / cover no-repeat;
+  filter: blur(16px);
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+.preview-cover.is-leaving {
+  opacity: 0;
+}
+/* 压暗上下两头：上面托住品牌和方钮，下面托住镇名和明信片。不拦鼠标 */
+.launcher-shade {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to bottom, rgb(12 16 14 / 0.36), transparent 17%),
+    linear-gradient(to top, rgb(12 16 14 / 0.68), rgb(12 16 14 / 0.34) 27%, transparent 58%);
+  pointer-events: none;
 }
 .preview-state {
   position: absolute;
-  inset: 0 0 0 calc(var(--panel-width) + var(--gap) * 2);
-  display: grid;
-  place-items: center;
-  color: var(--ui-ink-soft);
-  font-size: 15px;
+  top: 40%;
+  left: 50%;
+  z-index: 5;
+  max-width: min(520px, calc(100% - 48px));
+  padding: 7px 16px;
+  border-radius: 18px;
+  background: var(--toast-bg);
+  color: var(--toast-ink);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+  transform: translate(-50%, -50%);
   pointer-events: none;
 }
 .preview-retry {
   position: absolute;
-  top: calc(50% + 32px);
-  left: calc(
-    var(--panel-width) + var(--gap) * 2 + (100% - var(--panel-width) - var(--gap) * 2) / 2
-  );
+  top: calc(40% + 30px);
+  left: 50%;
+  z-index: 5;
+  height: 44px;
   transform: translateX(-50%);
-  min-height: 40px;
-  padding: 0 16px;
-  border: 1px solid var(--ui-line-strong);
-  border-radius: 10px;
-  background: var(--ui-panel);
-}
-/* 预览左上角：「赏景」（赏景时是「返回选镇」）和赏景时的「收起界面」 */
-.scenic-actions {
-  position: absolute;
-  top: max(16px, env(safe-area-inset-top));
-  left: calc(var(--panel-width) + var(--gap) * 3);
-  z-index: 6;
-  display: flex;
-  gap: 8px;
-}
-.scenic-actions button,
-.scenic-show {
-  min-height: 42px;
-  padding: 0 16px;
-  border: 1px solid var(--ui-line-strong);
-  border-radius: 10px;
-  background: var(--ui-panel);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.2);
-}
-.preview-scenic:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
-.launcher-panel,
-.launcher-card {
-  border: 1px solid var(--ui-line);
-  border-radius: 16px;
-  background: var(--ui-panel);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
-}
-.launcher-panel {
-  position: fixed;
-  top: var(--gap);
-  bottom: var(--gap);
-  left: var(--gap);
-  width: var(--panel-width);
+/* ---------- 上面两角 ---------- */
+.launcher-top {
+  position: absolute;
+  top: max(var(--edge), env(safe-area-inset-top));
+  right: max(var(--edge), env(safe-area-inset-right));
+  left: max(var(--edge), env(safe-area-inset-left));
+  z-index: 7;
   display: flex;
-  flex-direction: column;
-  padding: 24px;
-  overflow-y: auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
 }
 .launcher-brand {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 10px;
-  font-size: 16px;
-  font-weight: 600;
+  gap: 12px;
+  height: 58px;
+  padding-left: 4px;
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-shadow: 0 2px 10px rgb(10 14 12 / 0.55);
 }
 .launcher-mark {
   display: block;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  box-shadow: var(--hud-shadow);
 }
-.launcher-heading h1 {
-  margin: 28px 0 6px;
-  font: 600 26px/1.3 var(--ui-font);
-}
-.launcher-heading p {
-  margin: 0 0 24px;
-  color: var(--ui-ink-muted);
-  font-size: 14px;
-}
-/* 一句话说清这是什么游戏；下面那句预览说明是小字 */
-.launcher-heading p.launcher-intro {
-  margin-bottom: 8px;
-  color: var(--ui-ink);
-  line-height: 1.6;
-}
-.launcher-heading p.launcher-preview-note {
-  font-size: 12.5px;
-}
-.map-library {
+.launcher-corner {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.map-library-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 0 4px;
-  color: var(--ui-ink-muted);
-  font-size: 13px;
-}
-.map-library-heading h2 {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 400;
-}
-.map-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.map-option {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 13px 14px;
-  border: 1px solid var(--ui-line);
-  border-radius: var(--ui-radius);
-  background: transparent;
-  text-align: left;
-}
-.map-option:hover {
-  border-color: var(--ui-line-strong);
-  background: var(--ui-fill);
-}
-.map-option[aria-pressed='true'] {
-  border-color: var(--ui-accent);
-  background: var(--ui-accent-soft);
-}
-.map-option > span:last-child {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-}
-.map-option strong {
-  font-size: 16px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-.map-option-status {
-  color: var(--ui-ink-muted);
-  font-size: 13px;
-}
-.launcher-empty {
-  margin: 0;
-  padding: 16px 4px;
-  color: var(--ui-ink-muted);
-}
-.map-library .create-town-button {
-  display: flex;
-  width: 100%;
-  min-height: 48px;
-  align-items: center;
-  justify-content: center;
-  border: 1px dashed var(--ui-line-strong);
-  border-radius: var(--ui-radius);
-  background: transparent;
-  color: var(--ui-ink);
-  font-size: 15px;
-  font-weight: 400;
-}
-.map-library .create-town-button:hover {
-  border-color: var(--ui-accent);
-  color: var(--ui-accent);
-}
-/* 内置小镇：左边一道强调色，名字后带「内置」 */
-.map-option.is-builtin {
-  border-left: 3px solid var(--ui-accent);
-}
-.map-option-badge {
-  margin-left: 8px;
-  padding: 1px 6px;
-  border: 1px solid var(--ui-accent);
-  border-radius: 999px;
-  color: var(--ui-accent);
-  font-size: 11px;
-  font-weight: 500;
-  vertical-align: 2px;
-}
-.launcher-panel-footer {
-  display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 12px;
-  margin-top: auto;
-  padding-top: 16px;
-  border-top: 1px solid var(--ui-line);
+  gap: 8px;
 }
-#launcher-music-toggle {
+.launcher-corner > * {
+  pointer-events: auto;
+}
+.preview-scenic:disabled {
+  opacity: 0.6;
+}
+/* 品牌下面：还没连模型的提示卡、第一次来的说明 */
+.launcher-notes {
+  position: absolute;
+  top: calc(max(var(--edge), env(safe-area-inset-top)) + 72px);
+  left: max(var(--edge), env(safe-area-inset-left));
+  z-index: 6;
+  display: grid;
+  gap: 10px;
+  width: min(340px, calc(100% - var(--edge) * 2));
+}
+.launcher-notes .model-prompt {
+  margin: 0;
+  border-color: var(--hud-line);
+  background: var(--surface);
+  box-shadow: var(--hud-shadow);
+}
+/* 第一次来的一句话说明：和游戏里的新手提示同一张深色小卡，点「知道了」就不再出现 */
+.launcher-intro {
+  padding: 12px 14px 8px;
+  border-radius: var(--r-m);
+  background: #262b28;
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 1.55;
+  box-shadow: var(--elev-3);
+}
+.launcher-intro p {
+  margin: 0;
+}
+.launcher-intro div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 6px;
+}
+.launcher-intro small {
+  color: rgb(255 255 255 / 0.55);
+  font-size: 12px;
+}
+.launcher-intro button {
   min-height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--ui-line-strong);
-  border-radius: 8px;
+  padding: 0 2px;
+  border: 0;
   background: transparent;
-  font-size: 13px;
-}
-#launcher-music-toggle[aria-pressed='false'] {
-  color: var(--ui-ink-muted);
+  color: #9fd6bd;
+  font-weight: 600;
 }
 
-.launcher-card {
-  position: fixed;
-  right: var(--gap);
-  bottom: var(--gap);
-  width: min(460px, calc(100vw - var(--panel-width) - var(--gap) * 3));
+/* ---------- 下面：镇名一组，再下面一排明信片 ---------- */
+.launcher-bottom {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 6;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 20px 24px;
+  gap: 8px;
+  pointer-events: none;
+}
+.launcher-lockup {
+  display: grid;
+  justify-items: start;
+  padding: 0 max(28px, env(safe-area-inset-right)) 0 max(28px, env(safe-area-inset-left));
 }
 .launcher-eyebrow {
-  margin: 0;
-  color: var(--ui-ink-muted);
+  margin: 0 0 12px;
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
+  background: var(--toast-bg);
+  color: var(--toast-ink);
   font-size: 13px;
 }
+/* 选中后镇名就是标题，「请选择小镇」这行只在还没选中、列表读不到时出现 */
+.launcher-lockup:has(.map-detail:not([hidden])) .launcher-eyebrow {
+  display: none;
+}
 .map-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: -8px;
+  max-width: min(640px, 100%);
 }
-.map-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.map-title-row h2 {
-  margin: 0;
-  font: 600 22px/1.3 var(--ui-font);
+/* 镇名照地图上地名的写法：白字，一圈柔和的深色描边 */
+#selected-map-name {
+  margin: 0 0 8px;
+  color: #ffffff;
+  font-size: clamp(34px, 3.7vw, 52px);
+  font-weight: 700;
+  line-height: 1.16;
+  letter-spacing: 0.02em;
   overflow-wrap: anywhere;
-}
-.map-metadata {
-  display: flex;
-  gap: 8px;
-  margin: 0;
-  color: var(--ui-ink-soft);
-  font-size: 14px;
-  line-height: 1.6;
+  -webkit-text-stroke: 5px rgb(24 30 27 / 0.36);
+  paint-order: stroke fill;
+  text-shadow: 0 3px 16px rgb(10 14 12 / 0.5);
 }
 #selected-map-description {
-  overflow-wrap: anywhere;
+  display: -webkit-box;
+  max-width: 600px;
+  margin: 0 0 18px;
+  overflow: hidden;
+  color: rgb(255 255 255 / 0.95);
+  font-size: 15px;
+  line-height: 24px;
+  text-shadow: 0 1px 8px rgb(10 14 12 / 0.75);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
+.launcher-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.launcher-actions > * {
+  pointer-events: auto;
+}
+/* 「进入游戏」和游戏里的开始钮一样：绿底、白色像素三角 */
 .enter-game {
   display: flex;
-  min-height: 52px;
   align-items: center;
-  justify-content: center;
   gap: 10px;
+  height: 58px;
+  padding: 0 26px 0 13px;
   border: 0;
-  border-radius: var(--ui-radius);
-  background: var(--ui-accent-fill);
-  color: var(--ui-accent-ink);
-  font-size: 17px;
+  border-radius: 12px;
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  box-shadow: var(--hud-shadow);
+  font-size: 18px;
   font-weight: 700;
+  white-space: nowrap;
 }
 .enter-game:hover:not(:disabled) {
-  background: var(--ui-accent-hover);
+  background: var(--accent-strong);
 }
 .enter-game:disabled {
-  opacity: 0.45;
+  opacity: 0.6;
   cursor: default;
 }
 .launcher-status {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: var(--ui-ink-muted);
-  font-size: 13px;
-  line-height: 1.6;
+  max-width: 260px;
+  margin-left: 8px;
+  color: rgb(255 255 255 / 0.9);
+  font-size: 12.5px;
+  line-height: 1.5;
   overflow-wrap: anywhere;
+  text-shadow: 0 1px 6px rgb(10 14 12 / 0.75);
+  pointer-events: none;
 }
 #pause-retry {
   flex: none;
   min-height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--ui-line-strong);
-  border-radius: 8px;
-  background: transparent;
+  pointer-events: auto;
 }
 
 .town-actions {
@@ -360,34 +314,40 @@ body:has(.map-launcher) {
 }
 .town-actions summary {
   display: grid;
-  width: 40px;
-  height: 40px;
+  width: 58px;
+  height: 58px;
   place-items: center;
-  border-radius: 10px;
-  color: var(--ui-ink-soft);
+  border: 1px solid var(--hud-line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--hud-shadow);
+  cursor: pointer;
   list-style: none;
 }
 .town-actions summary::-webkit-details-marker {
   display: none;
 }
-.town-actions summary:hover,
+.town-actions summary:hover {
+  background: var(--surface-sunken);
+}
 .town-actions[open] summary {
-  background: var(--ui-fill-strong);
-  color: var(--ui-ink);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 .town-actions-menu {
   position: absolute;
-  right: 0;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% + 8px);
+  left: 0;
   z-index: 5;
   display: flex;
-  min-width: 180px;
+  min-width: 200px;
   flex-direction: column;
   padding: 6px;
-  border: 1px solid var(--ui-line-strong);
-  border-radius: 10px;
-  background: var(--ui-panel-solid);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--hud-line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--hud-shadow-big);
 }
 .town-actions-menu button {
   min-height: 40px;
@@ -398,128 +358,155 @@ body:has(.map-launcher) {
   text-align: left;
 }
 .town-actions-menu button:hover:not(:disabled) {
-  background: var(--ui-fill-strong);
+  background: var(--surface-sunken);
 }
 .town-actions-menu .delete-town {
-  color: var(--ui-danger);
+  color: var(--danger);
 }
 
-/* 720–1023（折叠屏展开、竖放的平板、窄窗口）：仍是左列表、右预览、右下角进入游戏，列表窄一些。
-   从上到下排的话，在 744×729 这样的屏幕上「进入游戏」要往下滚才看得到。 */
-@media (min-width: 720px) and (max-width: 1023px) {
-  .map-launcher {
-    --panel-width: 300px;
-    --gap: 16px;
-  }
+/* 明信片：白边相框里是小镇的全景，下面名字和进度。分三组：内置地图、剧本、我建的。
+   放不下时横着滚（滚轮也行），「创建小镇」钉在最右不跟着走 */
+.launcher-strip {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  padding: 16px max(24px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom))
+    max(24px, env(safe-area-inset-left));
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  /* 选中的那张滚进来时停在钉住的「创建小镇」左边，不钻到它底下 */
+  scroll-padding: 0 150px 0 24px;
+  scrollbar-width: none;
+  pointer-events: auto;
 }
-
-/* 窄屏：面板、地图、卡片从上到下排（手机布局在下面再调顺序）。 */
-@media (max-width: 719px) {
-  .map-launcher {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    padding: 16px;
-  }
-  .launcher-panel,
-  .launcher-card,
-  .launcher-stage {
-    position: relative;
-    inset: auto;
-    width: auto;
-  }
-  .launcher-panel {
-    order: 1;
-  }
-  .launcher-stage {
-    order: 2;
-    height: 55vh;
-    border-radius: 16px;
-    overflow: hidden;
-  }
-  .launcher-card {
-    order: 3;
-  }
-  .map-preview,
-  .preview-state {
-    inset: 0;
-  }
-  .preview-retry {
-    left: 50%;
-  }
-  .scenic-actions {
-    left: max(16px, env(safe-area-inset-left));
-  }
-  .launcher-panel-footer {
-    margin-top: 16px;
-  }
-}
-
-/* 手机：上面是地图预览，下面依次是小镇列表和进入游戏；建镇只在电脑版。 */
-@media (max-width: 719px) {
-  .map-launcher {
-    gap: 0;
-    padding: 0;
-  }
-  .launcher-stage {
-    order: 1;
-    height: 32dvh;
-    border-radius: 0;
-  }
-  .launcher-panel {
-    order: 2;
-    z-index: 2;
-    margin: -24px 12px 0;
-    padding: 20px;
-  }
-  .launcher-heading h1 {
-    margin: 16px 0 4px;
-    font-size: 22px;
-  }
-  .launcher-heading p {
-    margin-bottom: 16px;
-  }
-  /* 「进入游戏」这张卡吸在屏幕底部：小镇多了列表变长，也不用滚到最下面才找得到 */
-  .launcher-card {
-    order: 3;
-    position: sticky;
-    bottom: 0;
-    z-index: 3;
-    margin: 12px 0 0;
-    padding: 16px 20px calc(14px + env(safe-area-inset-bottom));
-    border-radius: 16px 16px 0 0;
-    box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.38);
-  }
-  /* 选中后标题就是小镇名，上面「已选择 · 小镇名」那行不再重复 */
-  .launcher-card:has(.map-detail:not([hidden])) #selection-status {
-    display: none;
-  }
-  .enter-game {
-    min-height: 52px;
-  }
-}
-
-/* 赏景仍是原来的静态地图；只让出面板占的空间，桌面和手机都保留退出及镜头控件。 */
-body:has(.map-launcher.is-scenic) {
-  overflow: hidden;
-}
-.map-launcher.is-scenic .launcher-panel,
-.map-launcher.is-scenic .launcher-card {
+.launcher-strip::-webkit-scrollbar {
   display: none;
 }
-.map-launcher.is-scenic .launcher-stage {
-  position: fixed;
-  inset: 0;
+.map-list {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 18px;
+}
+.map-group {
+  display: grid;
+  flex: none;
+  gap: 18px;
+}
+.map-group-name {
+  padding-left: 2px;
+  color: rgb(255 255 255 / 0.92);
+  font-size: 12px;
+  line-height: 16px;
+  text-shadow: 0 1px 6px rgb(10 14 12 / 0.75);
+}
+.map-group-cards {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.map-option {
+  display: block;
+  flex: none;
+  width: 146px;
+  padding: 5px 5px 8px;
+  border: 1px solid var(--hud-line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--hud-shadow);
+  text-align: left;
+  transition:
+    transform 0.14s var(--ease),
+    box-shadow 0.14s var(--ease);
+}
+.map-option:hover:not(:disabled) {
+  border-color: var(--hud-line);
+  background: var(--surface);
+  transform: translateY(-5px);
+}
+/* 选中的那张抬起来、套一圈绿，和游戏里选中的头像格一样 */
+.map-option[aria-pressed='true'],
+.map-option[aria-pressed='true']:hover {
+  box-shadow:
+    0 0 0 3px var(--accent-fill),
+    0 12px 26px rgb(20 24 22 / 0.34);
+  transform: translateY(-12px);
+}
+.map-cover {
+  display: grid;
+  height: 80px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--surface-sunken);
+}
+.map-cover img:not(.pixel-icon) {
+  display: block;
   width: 100%;
-  height: 100dvh;
-  border-radius: 0;
+  height: 100%;
+  object-fit: cover;
 }
-.map-launcher.is-scenic .map-preview,
-.map-launcher.is-scenic .preview-state {
-  inset: 0;
+.map-option strong {
+  display: block;
+  margin: 7px 3px 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
-.map-launcher.is-scenic .scenic-actions {
-  left: max(16px, env(safe-area-inset-left));
+.map-option-status {
+  display: block;
+  margin: 1px 3px 0;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.launcher-empty {
+  margin: 0;
+  padding: 16px 4px;
+  color: #ffffff;
+  text-shadow: 0 1px 6px rgb(10 14 12 / 0.75);
+}
+.create-town-slot {
+  position: sticky;
+  right: 0;
+  flex: none;
+}
+.launcher-strip .create-town-button {
+  display: grid;
+  width: 100px;
+  height: 137px;
+  min-height: 0;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  padding: 0;
+  border: 1.5px dashed rgb(31 36 33 / 0.32);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--hud-shadow);
+  font-size: 13px;
+  font-weight: 600;
+}
+.launcher-strip .create-town-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---------- 赏景：只留风景和景色条 ---------- */
+.map-launcher.is-scenic :is(.launcher-bottom, .launcher-notes) {
+  display: none;
+}
+.map-launcher.is-scenic .launcher-shade {
+  background:
+    linear-gradient(to bottom, rgb(12 16 14 / 0.3), transparent 15%),
+    linear-gradient(to top, rgb(12 16 14 / 0.34), transparent 22%);
 }
 
 /* 景色条（launcher/scenery.ts）：赏景时贴在底部正中。电脑上一行：播放、天色轨道、时刻、七种天气；
@@ -537,16 +524,12 @@ body:has(.map-launcher.is-scenic) {
   align-items: center;
   gap: 16px;
   padding: 10px 16px;
-  border: 1px solid var(--ui-line-strong);
+  border: 1px solid var(--hud-line);
   border-radius: 12px;
-  background: var(--ui-panel);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.2);
+  background: var(--surface);
+  box-shadow: var(--hud-shadow);
   user-select: none;
   -webkit-user-select: none;
-}
-.scenery-bar .pixel-icon {
-  display: block;
-  image-rendering: pixelated;
 }
 .scenery-bar button {
   display: grid;
@@ -559,15 +542,16 @@ body:has(.map-launcher.is-scenic) {
   border-radius: 8px;
   background: transparent;
 }
-/* 停着时绿底白三角，播放时白底两道，和游戏里的开始、暂停一样 */
+/* 停着时绿底白三角，播放时浅底两道，和游戏里的开始、暂停一样 */
 .scenery-bar .scenery-play {
-  background: var(--ui-accent-fill);
+  background: var(--accent-fill);
 }
 .scenery-bar .scenery-play:hover {
-  background: var(--ui-accent-hover);
+  background: var(--accent-strong);
 }
 .scenery-bar .scenery-play.is-playing {
-  background: var(--ui-ink);
+  border-color: var(--line);
+  background: var(--surface-sunken);
 }
 .scenery-track {
   position: relative;
@@ -581,7 +565,7 @@ body:has(.map-launcher.is-scenic) {
   touch-action: none;
 }
 .scenery-track:focus-visible {
-  outline: 2px solid var(--ui-accent);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 /* 天色：上半是天顶的颜色，下半是天边的 */
@@ -592,21 +576,21 @@ body:has(.map-launcher.is-scenic) {
   width: 100%;
   height: 12px;
   border-radius: 6px;
-  outline: 1px solid rgb(236 238 233 / 0.12);
+  outline: 1px solid rgb(31 36 33 / 0.14);
   outline-offset: -1px;
 }
 .scenery-thumb {
   position: absolute;
   top: 2px;
   margin-left: -16px;
-  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.55));
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35));
   pointer-events: none;
 }
 .scenery-tick {
   position: absolute;
   top: 31px;
   transform: translateX(-50%);
-  color: var(--ui-ink-muted);
+  color: var(--text-3);
   font-size: 11px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -621,11 +605,11 @@ body:has(.map-launcher.is-scenic) {
 }
 .scenery-readout b {
   font-size: 19px;
-  font-weight: 600;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 .scenery-readout small {
-  color: var(--ui-ink-soft);
+  color: var(--text-2);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -633,18 +617,18 @@ body:has(.map-launcher.is-scenic) {
   flex: none;
   width: 1px;
   height: 32px;
-  background: var(--ui-line-strong);
+  background: var(--line);
 }
 .scenery-weather {
   display: flex;
   gap: 4px;
 }
 .scenery-weather button:hover {
-  background: var(--ui-fill-strong);
+  background: var(--surface-sunken);
 }
 .scenery-weather button[aria-pressed='true'] {
-  border-color: var(--ui-accent);
-  background: rgb(95 174 140 / 0.2);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 @media (max-width: 859px) {
   .scenery-bar {
@@ -683,23 +667,190 @@ body:has(.map-launcher.is-scenic) {
 }
 
 /* 收起界面：只剩风景。左上角留「显示界面」，鼠标停一会儿就淡掉，动一下、点一下画面又浮出来 */
-.map-launcher.is-bare .scenic-actions,
-.map-launcher.is-bare .scenery-bar,
+.map-launcher.is-bare :is(.launcher-top, .scenery-bar, .launcher-shade),
 .map-launcher.is-bare .map-preview .map-zoom {
   display: none;
 }
 .scenic-show {
   position: absolute;
-  top: max(16px, env(safe-area-inset-top));
-  left: max(16px, env(safe-area-inset-left));
+  top: max(var(--edge), env(safe-area-inset-top));
+  left: max(var(--edge), env(safe-area-inset-left));
   z-index: 6;
   transition: opacity 0.6s;
 }
 .scenic-show.is-idle {
   opacity: 0;
 }
+
+/* ---------- 窄窗口和手机 ---------- */
+/* 720–1023（折叠屏展开、竖放的平板、窄窗口）：明信片小一号 */
+@media (max-width: 1023px) {
+  .map-option {
+    width: 128px;
+  }
+  .map-cover {
+    height: 70px;
+  }
+  .launcher-strip .create-town-button {
+    width: 92px;
+    height: 127px;
+  }
+}
+/* 手机：同一套东西竖着排。右上三个钮只留图标；镇名、简介在上，明信片横着滑，
+   「进入游戏」一整行贴在最下面，拇指够得到 */
+@media (max-width: 719px) {
+  .map-launcher {
+    --edge: 12px;
+  }
+  .launcher-brand {
+    gap: 9px;
+    height: 46px;
+    font-size: 18px;
+  }
+  .launcher-mark {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+  }
+  .launcher-corner .hud-button {
+    height: 46px;
+    padding: 0 12px;
+    border-radius: 11px;
+    font-size: 13px;
+  }
+  .launcher-corner .hud-button:has(.pixel-icon) {
+    width: 46px;
+    padding: 0;
+    justify-content: center;
+  }
+  .launcher-corner .hud-button:has(.pixel-icon) > :not(.pixel-icon) {
+    display: none;
+  }
+  /* 音乐关着：图标淡下去（字藏了，靠它看出开关） */
+  #launcher-music-toggle[aria-pressed='false'] .pixel-icon {
+    opacity: 0.35;
+  }
+  .launcher-notes {
+    top: calc(max(var(--edge), env(safe-area-inset-top)) + 56px);
+  }
+  /* 提示卡在的时候先不出说明，两张叠起来会压到镇名 */
+  .launcher-notes:has(.model-prompt:not([hidden])) .launcher-intro {
+    display: none;
+  }
+  .launcher-shade {
+    background:
+      linear-gradient(to bottom, rgb(12 16 14 / 0.42), transparent 20%),
+      linear-gradient(to top, rgb(12 16 14 / 0.82), rgb(12 16 14 / 0.5) 38%, transparent 66%);
+  }
+  .launcher-bottom {
+    gap: 0;
+    padding-bottom: max(18px, env(safe-area-inset-bottom));
+  }
+  /* 镇名一组拆开，和明信片排进同一列：按钮那行挪到明信片下面 */
+  .launcher-lockup {
+    display: contents;
+  }
+  .launcher-bottom > .launcher-strip {
+    order: 2;
+  }
+  .launcher-eyebrow,
+  .map-detail,
+  .launcher-actions {
+    margin-right: var(--edge);
+    margin-left: var(--edge);
+  }
+  .launcher-eyebrow {
+    align-self: flex-start;
+  }
+  .launcher-actions {
+    order: 3;
+    flex-wrap: nowrap;
+  }
+  /* 状态那句话单独一行，在按钮上面 */
+  .launcher-actions:has(#pause-status:not(:empty)),
+  .launcher-actions:has(#pause-retry:not([hidden])) {
+    flex-wrap: wrap;
+  }
+  .launcher-status {
+    order: -1;
+    flex-basis: 100%;
+    max-width: none;
+    margin: 0 0 2px;
+  }
+  .launcher-status:not(:has(#pause-status:not(:empty), #pause-retry:not([hidden]))) {
+    display: none;
+  }
+  #selected-map-name {
+    margin-bottom: 6px;
+    font-size: 32px;
+    -webkit-text-stroke-width: 4px;
+  }
+  #selected-map-description {
+    margin-bottom: 0;
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .enter-game {
+    flex: 1;
+    height: 54px;
+    justify-content: center;
+    padding: 0 16px;
+  }
+  .town-actions summary {
+    width: 54px;
+    height: 54px;
+  }
+  .town-actions-menu {
+    right: 0;
+    left: auto;
+  }
+  .launcher-strip {
+    gap: 12px;
+    padding: 14px var(--edge) 12px;
+  }
+  .map-list,
+  .map-group {
+    gap: 12px;
+  }
+  .map-group-cards {
+    gap: 8px;
+  }
+  .map-option {
+    width: 118px;
+    padding: 4px 4px 7px;
+    border-radius: 11px;
+  }
+  .map-option[aria-pressed='true'],
+  .map-option[aria-pressed='true']:hover {
+    transform: translateY(-8px);
+  }
+  .map-cover {
+    height: 64px;
+    border-radius: 7px;
+  }
+  .map-option strong {
+    margin-top: 6px;
+    font-size: 13px;
+  }
+  .map-option-status {
+    font-size: 11px;
+  }
+  /* 手机一屏只放得下三张，「创建小镇」不钉在右边挡着，排在最后 */
+  .create-town-slot {
+    position: static;
+  }
+  .launcher-strip {
+    scroll-padding: 0 12px;
+  }
+  .launcher-strip .create-town-button {
+    width: 84px;
+    height: 117px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .scenic-show {
+  .scenic-show,
+  .preview-cover,
+  .map-option {
     transition: none;
   }
 }

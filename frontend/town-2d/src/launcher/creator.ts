@@ -1,4 +1,5 @@
 import { query } from 'town-shared/dom'
+import { pixelIcon } from 'town-shared/game/pixel'
 import { onBack } from 'town-shared/platform'
 import { creatorTemplate } from './creatorTemplate'
 import './creator.css'
@@ -123,7 +124,7 @@ export function initCreator<D extends Draft = Draft>(
 ) {
   const open = document.createElement('button')
   open.className = 'create-town-button'
-  open.textContent = '＋ 创建小镇'
+  open.append(pixelIcon('hammer'), '创建小镇')
   query(document, '[data-create-town-slot]').append(open)
   const panel = document.createElement('section')
   panel.className = 'town-creator'

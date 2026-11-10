@@ -56,7 +56,8 @@
   padding: 10px 12px;
   border: 1px solid var(--ui-line-strong);
   border-radius: 10px;
-  background: var(--ui-fill);
+  /* 输入框是白的：它常落在浅灰的步骤块里，再垫一层灰就看不出是能写字的地方 */
+  background: var(--surface);
   color: var(--ui-ink);
   font: inherit;
   font-size: 15px;
@@ -335,7 +336,7 @@
   border: 1px solid var(--ui-line);
   border-radius: 16px;
   background: var(--ui-panel);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--hud-shadow-big);
 }
 .creator-heading {
   display: flex;
@@ -688,7 +689,7 @@
   gap: 4px;
   padding: 10px 6px;
   border-color: var(--ui-line);
-  background: rgba(243, 239, 230, 0.03);
+  background: var(--surface);
   text-align: center;
 }
 .creator-place-card svg {
@@ -907,7 +908,7 @@
     margin: auto -16px 0;
     padding: 12px 16px max(12px, env(safe-area-inset-bottom));
     background: var(--ui-panel);
-    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 -6px 20px rgb(20 24 22 / 0.1);
   }
   /* 弹出键盘时底栏先让开，不然它正好盖住正在写的输入框；收起键盘就回来 */
   .typing .creator-footer {

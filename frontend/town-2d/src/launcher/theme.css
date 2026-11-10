@@ -1,51 +1,25 @@
-/* 选择地图页与建镇页：界面语言「清楚」的深色版本（色板在 town-shared 的 design/tokens.css），地图铺底，深色面板浮在上面。
-   --ui-* 是这两页沿用的名字，值全部取自 design 的原色；页面 body 带 data-tier="night"，共用组件也取深色值。 */
+/* 选择小镇页与建镇页：和游戏里同一套浅色界面（色板在 town-shared 的 design/tokens.css），白底零件浮在地图上。
+   --ui-* 是这两页沿用的名字，值全部取自 design 的语义色。 */
 :root {
-  --ui-stage: var(--night-0);
-  --ui-panel: var(--night-2);
-  --ui-panel-solid: var(--night-2);
-  --ui-fill: rgb(236 238 233 / 0.05);
-  --ui-fill-strong: rgb(236 238 233 / 0.1);
-  --ui-line: #343a36;
-  --ui-line-strong: #4a514c;
-  --ui-ink: var(--night-ink);
-  --ui-ink-soft: var(--night-ink-2);
-  --ui-ink-muted: var(--night-ink-3);
+  /* 建镇页预览区的底色；选镇页的风景铺满窗口，底下另垫深色（launcher/style.css） */
+  --ui-stage: var(--surface-page);
+  --ui-panel: var(--surface);
+  --ui-panel-solid: var(--surface);
+  --ui-fill: rgb(31 36 33 / 0.04);
+  --ui-fill-strong: rgb(31 36 33 / 0.08);
+  --ui-line: var(--line);
+  --ui-line-strong: #cfcdc4;
+  --ui-ink: var(--text);
+  --ui-ink-soft: var(--text-2);
+  --ui-ink-muted: var(--text-3);
   /* 文字、描边、进度条用 --ui-accent；实心按钮用 --ui-accent-fill 配白字 */
-  --ui-accent: var(--green-400);
-  --ui-accent-fill: var(--green-500);
-  --ui-accent-hover: var(--green-450);
-  --ui-accent-ink: #ffffff;
-  --ui-accent-soft: #24352d;
-  --ui-danger: var(--red-300);
+  --ui-accent: var(--accent);
+  --ui-accent-fill: var(--accent-fill);
+  --ui-accent-hover: var(--accent-strong);
+  --ui-accent-ink: var(--on-accent);
+  --ui-accent-soft: var(--accent-soft);
+  --ui-danger: var(--danger);
   --ui-font: var(--font-ui);
   --ui-display: var(--font-ui);
   --ui-radius: var(--r-m);
-}
-
-/* 预览地图自带的缩放按钮改成深色，和面板一致。 */
-:is(.map-preview, .creator-preview) .map-zoom {
-  border-color: var(--ui-line);
-  border-radius: 10px;
-  background: var(--ui-panel);
-  box-shadow: none;
-}
-:is(.map-preview, .creator-preview) .map-zoom button {
-  color: var(--ui-ink);
-}
-:is(.map-preview, .creator-preview) .map-zoom button + button {
-  border-top-color: var(--ui-line);
-}
-:is(.map-preview, .creator-preview) .map-zoom button:hover:not(:disabled) {
-  background: var(--ui-fill-strong);
-}
-:is(.map-preview, .creator-preview) .map-pitch {
-  border-bottom-color: var(--ui-line);
-  color: var(--ui-ink);
-}
-:is(.map-preview, .creator-preview) .map-pitch {
-  --pitch-color: var(--ui-accent);
-}
-:is(.map-preview, .creator-preview) .map-pitch-track {
-  background: var(--ui-line);
 }

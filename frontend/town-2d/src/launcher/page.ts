@@ -1,4 +1,5 @@
 import 'town-shared/style.css'
+import 'town-shared/shell/hud.css'
 import './style.css'
 import type { MapEntry } from 'town-shared/mapDocument'
 import type { GameMap } from 'town-shared/gameMap'
@@ -23,28 +24,23 @@ import {
   type MusicWorld,
 } from 'town-shared/audio/scene'
 import { installPlatform, isCompact, isTouch, onBack, systemBars } from 'town-shared/platform'
+import { storedDepthBlur } from 'town-shared/quality'
 import { installSelects } from 'town-shared/design/select'
 import { installFavicon, logoUrl } from 'town-shared/brand/brand'
 import { installHomeSettings } from './settings'
 import { clockText, createSceneryBar } from './scenery'
 import { themeOf, type MapTheme } from '../map/themes'
-// 小镇选择页：一句话说清这是什么游戏、小镇列表（写着玩到第几天、住了几个人）、静态预览、进入或继续玩。
-// 预览不启动世界。
+import { decoratePixels, pixelIcon } from 'town-shared/game/pixel'
+import { coverOf } from './covers'
+// 小镇选择页：选中的小镇铺满窗口当背景，界面是游戏里那套白底零件——左下镇名、简介和「进入游戏」，
+// 最下面一排明信片（一个小镇一张，写着玩到第几天、住了几个人）。预览不启动世界。
 installPlatform()
 installSelects()
+// 顶上是风景，压着深色：系统栏用浅色的字
 systemBars('night')
 installFavicon()
+decoratePixels(document)
 query<HTMLImageElement>(document, '.launcher-mark').src = logoUrl
-// 手机布局里预览在列表上面
-const previewNote = document.querySelector<HTMLElement>('.launcher-preview-note')
-const notePreview = () => {
-  if (previewNote)
-    previewNote.textContent = isCompact()
-      ? '上面是选中小镇的预览，可以拖动和缩放。'
-      : '选中的小镇显示在右边，可以拖动和缩放。'
-}
-notePreview()
-window.addEventListener('resize', notePreview)
 
 const enter = query<HTMLButtonElement>(document, '#enter-game')
 const retry = query<HTMLButtonElement>(document, '#preview-retry')
@@ -53,22 +49,20 @@ const launcher = query<HTMLElement>(document, '.map-launcher')
 const hideUi = query<HTMLButtonElement>(document, '#scenic-hide')
 const showUi = query<HTMLButtonElement>(document, '#scenic-show')
 const sceneryHost = $('scenery-bar')
-let scenicScrollY = 0
 /** 赏景过一次以后，换上来的预览都照景色条上的时刻和天气画（返回选镇也不跳回傍晚） */
 let sceneryUsed = false
 /** 展开现有的静态预览，底部景色条换时刻和天气。只换画面：不连接世界，不改存档的时钟或天气。 */
 function setScenic(enabled: boolean) {
   if (enabled === launcher.classList.contains('is-scenic')) return
-  if (enabled) scenicScrollY = window.scrollY
-  else setBare(false)
+  if (!enabled) setBare(false)
   launcher.classList.toggle('is-scenic', enabled)
   scenic.setAttribute('aria-pressed', String(enabled))
-  scenic.textContent = enabled ? '返回选镇' : '赏景'
-  scenic.title = enabled ? '返回选择小镇（Esc）' : '展开地图，换时间和天气看小镇的景色'
+  query(scenic, 'span').textContent = enabled ? '返回选镇' : '赏景'
+  scenic.title = enabled ? '返回选择小镇（Esc）' : '收起选镇的界面，换时间和天气看小镇的景色'
   hideUi.hidden = !enabled
   sceneryHost.hidden = !enabled
   scenery.setActive(enabled)
-  window.scrollTo(0, enabled ? 0 : scenicScrollY)
+  syncInsets()
   scenic.focus({ preventScroll: true })
   if (enabled) {
     sceneryUsed = true
@@ -84,6 +78,7 @@ function setScenic(enabled: boolean) {
   }
 }
 scenic.onclick = () => setScenic(!launcher.classList.contains('is-scenic'))
+scenic.title = '收起选镇的界面，换时间和天气看小镇的景色'
 const scenery = createSceneryBar(sceneryHost, {
   change(value) {
     shownPreview()?.map.setScenery?.(value.minutes, value.weather)
@@ -122,6 +117,7 @@ function setBare(bare: boolean) {
   if (bare === launcher.classList.contains('is-bare')) return
   launcher.classList.toggle('is-bare', bare)
   showUi.hidden = !bare
+  syncInsets()
   clearTimeout(idleTimer)
   if (bare) {
     // 焦点不留在藏起来的按钮上
@@ -141,6 +137,38 @@ function wake() {
 hideUi.onclick = () => setBare(true)
 showUi.onclick = () => setBare(false)
 const stage = query<HTMLElement>(document, '.launcher-stage')
+const bottom = query<HTMLElement>(document, '.launcher-bottom')
+const strip = query<HTMLElement>(document, '.launcher-strip')
+/** 界面盖住了地图的下边多少：镜头把小镇的中心和景深的焦点放进露出来的那块。电脑上只算最下面那排明信片
+ *  （镇名一组只占左下一角），手机上镇名、明信片、按钮整块都算；赏景时只有景色条，收起界面后什么都不盖 */
+function syncInsets() {
+  const shown = shownPreview()
+  if (!shown) return
+  const box = stage.getBoundingClientRect()
+  const covered = launcher.classList.contains('is-bare')
+    ? box.bottom
+    : launcher.classList.contains('is-scenic')
+      ? sceneryHost.getBoundingClientRect().top
+      : (isCompact() ? bottom : strip).getBoundingClientRect().top
+  shown.map.setViewInsets?.({
+    top: 0,
+    right: 0,
+    bottom: Math.max(0, Math.round(box.bottom - covered)),
+    left: 0,
+  })
+}
+window.addEventListener('resize', syncInsets)
+// 明信片放不下时横着滚：鼠标滚轮上下滚也算
+strip.addEventListener(
+  'wheel',
+  (event) => {
+    if (strip.scrollWidth <= strip.clientWidth || Math.abs(event.deltaX) > Math.abs(event.deltaY))
+      return
+    event.preventDefault()
+    strip.scrollLeft += event.deltaY
+  },
+  { passive: false }
+)
 stage.addEventListener('pointermove', wake)
 stage.addEventListener('pointerdown', wake)
 document.addEventListener('keydown', (event) => {
@@ -209,9 +237,27 @@ function showPreview(key: string) {
     previews.set(key, preview)
   }
 }
+const cover = $('preview-cover')
+let coverTimer: ReturnType<typeof setTimeout> | undefined
+/** 场景还在建：先垫这个小镇的明信片（放大、虚掉），不露黑底；没有明信片就不垫 */
+function showCover(id: string) {
+  clearTimeout(coverTimer)
+  const url = coverOf(id)
+  cover.hidden = !url
+  cover.classList.remove('is-leaving')
+  if (url) cover.style.backgroundImage = `url("${url}")`
+}
+function dropCover() {
+  if (cover.hidden) return
+  cover.classList.add('is-leaving')
+  clearTimeout(coverTimer)
+  coverTimer = setTimeout(() => (cover.hidden = true), 650)
+}
 function finishPreview(map: MapEntry) {
   $('preview-state').hidden = true
   scenic.disabled = false
+  dropCover()
+  syncInsets()
   if (sceneryUsed) shownPreview()?.map.setScenery?.(scenery.value.minutes, scenery.value.weather)
   if (fitNext === map.id) {
     fitNext = ''
@@ -221,20 +267,29 @@ function finishPreview(map: MapEntry) {
   }
 }
 
+/** 哪张明信片是选中的；它不在画面里时滚进来 */
+function markSelected(id: string) {
+  for (const card of document.querySelectorAll<HTMLElement>('[data-map-id]')) {
+    const on = card.dataset.mapId === id
+    card.setAttribute('aria-pressed', String(on))
+    if (on) card.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }
+}
+
 function describe(map: MapEntry) {
-  document
-    .querySelectorAll<HTMLElement>('[data-map-id]')
-    .forEach((el) => el.setAttribute('aria-pressed', String(el.dataset.mapId === map.id)))
+  markSelected(map.id)
   const detail = document.querySelector<HTMLElement>('.map-detail')
   if (detail) detail.hidden = false
   $('selected-map-name').textContent = map.name
   $('selected-map-description').textContent = map.description
+  // 简介只露两行，全文放在悬停提示里
+  $('selected-map-description').title = map.description
   $('selection-status').textContent = `已选择 · ${map.name}`
   const played = !!map.progress
   $('pause-status').textContent = played
     ? '接着上次的进度玩。这里只是预览，进去后小镇才接着走。'
     : '这里只是预览，进去后小镇才开始。'
-  enter.replaceChildren(played ? '继续玩 ' : '进入游戏 ', arrow())
+  enterLabel.textContent = played ? '继续玩' : '进入游戏'
   updateActions()
   enter.disabled = deleting || !map.available
 }
@@ -254,10 +309,13 @@ async function select(map: MapEntry) {
   const key = previewKey(map)
   showPreview(key)
   if (key && previews.has(key)) {
+    clearTimeout(coverTimer)
+    cover.hidden = true
     finishPreview(map)
     warmSelectedGame(map)
     return
   }
+  showCover(map.id)
   $('preview-state').hidden = false
   $('preview-state').textContent = '正在加载预览…'
   // 先把选中状态画出来再干重活；连点时只建最后一张预览
@@ -284,6 +342,11 @@ async function select(map: MapEntry) {
       host.remove()
       throw error
     }
+    // 近处虚掉，镇名和明信片压在虚掉的地方；玩家在设定里关了失焦模糊就照关
+    if (storedDepthBlur() !== 'off') rendered.setDepthBlur?.('cinema')
+    // 比游戏里开场的近景退一档：标题画面多看见半条街
+    const [x, y, w, h] = rendered.getViewBox()
+    rendered.setViewBox([x - w / 4, y - h / 4, w * 1.5, h * 1.5])
     if (current !== request) {
       rendered.dispose()
       host.remove()
@@ -309,48 +372,58 @@ async function select(map: MapEntry) {
   }
 }
 
-function arrow() {
-  const span = document.createElement('span')
-  span.setAttribute('aria-hidden', 'true')
-  span.textContent = '→'
-  return span
-}
+const enterLabel = query<HTMLElement>(enter, 'span')
 
-/** 列表上的小字：玩到第几天、住了几个人；自带的小镇没玩过时写「自带的小镇」 */
+/** 明信片上的小字：玩到第几天、住了几个人 */
 function progressText(map: MapEntry) {
   if (!map.available) return '无法打开'
   const p = map.progress
   if (p && p.residents > 0) return `第 ${p.day} 天 · ${p.residents} 位村民`
   if (p) return `第 ${p.day} 天 · 还没有村民`
-  return map.origin === 'builtin' ? '自带的小镇 · 还没开始' : '还没开始'
+  return '还没开始'
 }
 
+/** 一张明信片：白边相框里是小镇的全景，下面名字和进度。还没有封面的先放一枚小图标 */
 function mapOption(map: MapEntry) {
   const b = document.createElement('button')
   b.className = 'map-option'
   b.dataset.mapId = map.id
   b.setAttribute('aria-pressed', 'false')
   b.setAttribute('aria-label', `选择${map.name}`)
-  const text = document.createElement('span'),
+  const picture = document.createElement('span'),
     name = document.createElement('strong'),
     status = document.createElement('span')
+  picture.className = 'map-cover'
+  const url = coverOf(map.id)
+  if (url) {
+    const image = document.createElement('img')
+    image.alt = ''
+    image.draggable = false
+    image.src = url
+    picture.append(image)
+  } else picture.append(pixelIcon('door'))
   name.textContent = map.name
   status.className = 'map-option-status'
   status.textContent = progressText(map)
-  text.append(name, status)
-  b.append(text)
-  if (isBuiltinTown(map)) {
-    b.classList.add('is-builtin')
-    const badge = document.createElement('span')
-    badge.className = 'map-option-badge'
-    badge.textContent = '内置'
-    name.append(badge)
-  }
+  b.append(picture, name, status)
   b.onclick = () => {
     if (selected?.id === map.id && selected.mapHash === map.mapHash && retry.hidden) return
     void select(map)
   }
   return b
+}
+
+function mapGroup(name: string, cards: HTMLElement[]) {
+  const group = document.createElement('div'),
+    label = document.createElement('span'),
+    row = document.createElement('div')
+  group.className = 'map-group'
+  label.className = 'map-group-name'
+  label.textContent = name
+  row.className = 'map-group-cards'
+  row.append(...cards)
+  group.append(label, row)
+  return group
 }
 
 function prefabOption(prefab: Prefab) {
@@ -375,19 +448,18 @@ async function buildPrefab(prefab: Prefab) {
   selected = undefined
   dropPendingPreview()
   showPreview('')
-  document
-    .querySelectorAll<HTMLElement>('[data-map-id]')
-    .forEach((el) =>
-      el.setAttribute('aria-pressed', String(el.dataset.mapId === prefabTownId(prefab)))
-    )
+  markSelected(prefabTownId(prefab))
   const detail = document.querySelector<HTMLElement>('.map-detail')
   if (detail) detail.hidden = false
   $('selected-map-name').textContent = prefab.name
   $('selected-map-description').textContent = prefab.description
+  $('selected-map-description').title = prefab.description
   $('pause-status').textContent = ''
+  enterLabel.textContent = '进入游戏'
   enter.disabled = true
   actions.hidden = true
   retry.hidden = true
+  showCover(prefabTownId(prefab))
   $('preview-state').hidden = false
   $('preview-state').textContent = '正在生成岛…'
   try {
@@ -405,13 +477,23 @@ async function buildPrefab(prefab: Prefab) {
 async function refresh(id?: string) {
   try {
     maps = await listMaps()
-    // 还没生成的预制小镇也排在内置小镇里，选中时才生成
-    const options = maps.map(mapOption)
-    const after = maps.filter(isBuiltinTown).length
-    options.splice(after, 0, ...missingPrefabs(maps).map(prefabOption))
-    $('map-list').replaceChildren(...options)
-    $('map-count').textContent = `${maps.length} 个`
+    // 三组：随应用带的地图、选了就玩某个玩法的剧本（还没生成的也排在这里，选中时才生成）、玩家自己建的
+    const groups: [string, HTMLElement[]][] = [
+      ['内置地图', maps.filter((m) => m.origin === 'builtin').map(mapOption)],
+      [
+        '剧本',
+        [
+          ...maps.filter((m) => m.id.startsWith('prefab-')).map(mapOption),
+          ...missingPrefabs(maps).map(prefabOption),
+        ],
+      ],
+      ['我建的', maps.filter((m) => !isBuiltinTown(m)).map(mapOption)],
+    ]
+    $('map-list').replaceChildren(
+      ...groups.filter(([, cards]) => cards.length).map(([name, cards]) => mapGroup(name, cards))
+    )
     $('map-empty').hidden = maps.length > 0
+    syncInsets()
     const wanted = id ?? new URLSearchParams(location.search).get('map')
     const initial = maps.find((m) => m.id === wanted)
     const prefab = PREFABS.find((p) => prefabTownId(p) === wanted)
@@ -599,6 +681,57 @@ initCreator(
     location.assign(gameUrl(runtime))
   }
 )
+// ← → 换到旁边那张明信片（赏景时这两个键归景色条换时刻；建镇页、设定页开着时不管）
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+  if (launcher.hidden || launcher.classList.contains('is-scenic') || building || deleting) return
+  const target = event.target instanceof Element ? event.target : null
+  if (target?.closest('input, textarea, select, [contenteditable], dialog')) return
+  if (document.querySelector('dialog[open]')) return
+  const cards = [...document.querySelectorAll<HTMLElement>('[data-map-id]')]
+  const at = cards.findIndex((card) => card.getAttribute('aria-pressed') === 'true')
+  const next = cards[at + (event.key === 'ArrowLeft' ? -1 : 1)]
+  if (at < 0 || !next) return
+  event.preventDefault()
+  next.focus({ preventScroll: true })
+  next.click()
+})
+// 第一次来（一个镇都没玩过）：一句话说清这是什么游戏，和游戏里的新手提示同一张小卡，点「知道了」不再出现
+const INTRO_KEY = 'town:launcher-intro'
+function showIntro() {
+  const seen = (() => {
+    try {
+      return localStorage.getItem(INTRO_KEY) === '1'
+    } catch {
+      return false
+    }
+  })()
+  if (seen || maps.some((m) => m.progress) || document.querySelector('.launcher-intro')) return
+  const card = document.createElement('div'),
+    text = document.createElement('p'),
+    row = document.createElement('div'),
+    note = document.createElement('small'),
+    ok = document.createElement('button')
+  card.className = 'launcher-intro'
+  card.setAttribute('role', 'status')
+  text.textContent =
+    '这里的村民是 AI：自己起床、做饭、串门、聊天，还记得发生过的事。挑一张明信片进去，在旁边看，或者和大家说说话。'
+  note.textContent = '新手提示 · 只出现一次'
+  ok.type = 'button'
+  ok.textContent = '知道了'
+  ok.onclick = () => {
+    card.remove()
+    try {
+      localStorage.setItem(INTRO_KEY, '1')
+    } catch {
+      // 存不了就只在这次打开里收起
+    }
+  }
+  row.append(note, ok)
+  card.append(text, row)
+  query(document, '.launcher-notes').append(card)
+}
 // 安卓返回键：先收起「更多操作」，其余交给应用壳（再按一次退出）
 onBack(() => {
   if (launcher.classList.contains('is-bare')) {
@@ -613,4 +746,4 @@ onBack(() => {
   actions.open = false
   return true
 })
-void refresh()
+void refresh().then((ok) => ok && showIntro())
