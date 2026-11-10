@@ -22,6 +22,21 @@ export function pixelFilter(t: THREE.Texture) {
   return t
 }
 
+/**
+ * 立牌的深度：牌子按俯角后仰着对镜头，上半截其实伸到了身后，照实算会扎进身后的墙和家具里。
+ * 所以按「竖直立在脚下」算：脚底的深度，越高离镜头越近（竖着的东西本来如此）。这样身前的东西挡得住它，
+ * 身后的再高也挡不住它（人站在柜子跟前，头不会被柜子盖掉）。base 是这一点脚下的位置、rise 是离脚多高，
+ * 都是世界坐标里的量；接近正俯视时竖直方向在画面上几乎没有高度，放大倍数封顶。
+ */
+export const uprightDepth = (base: string, rise: string) => /* glsl */ `
+  {
+    vec4 uprightView = viewMatrix * ${base};
+    vec3 uprightUp = (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz;
+    uprightView.z += ${rise} * uprightUp.z / max(abs(uprightUp.y), 0.2);
+    vec4 uprightClip = projectionMatrix * uprightView;
+    gl_Position.z = uprightClip.z / uprightClip.w * gl_Position.w;
+  }`
+
 /** 立牌：朝向镜头的竖板，底边中点落在 (x, y)；scale 为 1 时投影后一个贴图像素正好一个地图像素。
  *  frame 是图集里一帧的像素尺寸，不给就取整张图 */
 export function standee(
@@ -41,15 +56,14 @@ export function standee(
   const m = pixelMaterial(
     new THREE.MeshLambertMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide })
   )
-  // 立牌按俯角后仰，上半截会伸到身后：整张牌的深度都按底边算，身前的墙挡得住它，身后的墙挡不住
   m.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader.replace(
       '#include <project_vertex>',
       `#include <project_vertex>
-  {
-    vec4 baseClip = projectionMatrix * viewMatrix * modelMatrix * vec4(transformed.x, 0.0, transformed.z, 1.0);
-    gl_Position.z = baseClip.z / baseClip.w * gl_Position.w;
-  }`
+  ${uprightDepth(
+    'modelMatrix * vec4(transformed.x, 0.0, transformed.z, 1.0)',
+    'length((modelMatrix * vec4(0.0, transformed.y, 0.0, 0.0)).xyz)'
+  )}`
     )
   }
   if (emissive) {

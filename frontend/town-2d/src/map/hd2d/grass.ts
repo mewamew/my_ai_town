@@ -7,7 +7,7 @@ import type { MapTheme } from '../themes/types'
 import type { Tilt } from './layout'
 import { pixelMaterial } from './pixelSampling'
 import { sprite } from './sprite'
-import { texture } from './standee'
+import { uprightDepth, texture } from './standee'
 import { WIND } from './weather'
 
 // 草丛和花：一簇簇像素小立牌。一阵风吹过时成片往下风方向倒、再立起来，人走过时往两边分开（踩踏图，见 trail.ts），
@@ -178,12 +178,11 @@ export class Grass {
         .replace(
           '#include <project_vertex>',
           `#include <project_vertex>
-          {
-            // 和立牌一样：整簇的深度按根部算，身前的墙挡得住它
-            vec4 baseClip = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix
-              * vec4(transformed.x, 0.0, transformed.z, 1.0);
-            gl_Position.z = baseClip.z / baseClip.w * gl_Position.w;
-          }`
+          // 和立牌一样按竖直立在根上算深度，和人、树的前后才对得上
+          ${uprightDepth(
+            'modelMatrix * instanceMatrix * vec4(transformed.x, 0.0, transformed.z, 1.0)',
+            'length((modelMatrix * instanceMatrix * vec4(0.0, transformed.y, 0.0, 0.0)).xyz)'
+          )}`
         )
     }
     this.material.customProgramCacheKey = () => 'grass-tufts'
