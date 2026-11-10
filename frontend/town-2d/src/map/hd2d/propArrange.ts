@@ -45,6 +45,8 @@ export interface Spot {
 const THICK = 6
 /** 靠墙的家具背后离墙不超过这么远就贴上去 */
 const SNAP = 72
+/** 北墙比东西墙多让这么远 */
+const NORTH_BIAS = 48
 
 /** 模型里的一点 (lx, lz) 转 turn 个直角以后的偏移 */
 export function turned(lx: number, lz: number, turn: Turn): [number, number] {
@@ -94,13 +96,14 @@ export function arrange(room: Room | undefined, pieces: Piece[]): Map<string, Sp
       anchor: null,
     }
     if (!room || !piece.wall) return s
-    // 背靠各面墙时，背后还空着多远；一样近时优先北墙（正面对着镜头）
+    // 背靠各面墙时，背后还空着多远。北墙优先：靠北墙正面对着镜头，靠东西墙只看得见侧面，
+    // 所以北墙哪怕远出 NORTH_BIAS 也选它
     const north = piece.y + cz - hd - room.y0
     const west = piece.x + cz - hd - room.x0
     const east = room.x1 - (piece.x - cz + hd)
-    const nearest = Math.min(north - 12, west, east)
+    const nearest = Math.min(north - NORTH_BIAS, west, east)
     if (nearest > SNAP) return s
-    if (nearest === north - 12) {
+    if (nearest === north - NORTH_BIAS) {
       s.anchor = 'n'
       s.cy = room.y0 + hd
     } else {

@@ -8,6 +8,9 @@ import {
   WHITE,
   WOOD,
   cabinet,
+  crate,
+  cutout,
+  flowerBucket,
   shelf,
   table,
   tableLamp,
@@ -16,7 +19,8 @@ import {
   type Tier,
 } from './propParts'
 
-// 公共建筑屋里的家具：图书馆、公共食堂、诊所。零件见 propParts.ts，登记在 propBuilds.ts。
+// 公共建筑屋里的家具：图书馆、公共食堂、诊所、镇公所、杂货铺、工作坊、码头仓库。
+// 零件见 propParts.ts，登记在 propBuilds.ts。
 
 const SPINES = ['#b9443a', '#3f6f8f', '#5a8a4a', '#d9a441', '#7a4a8a', '#c9805a', '#2f5c4a']
 /** 一层书：一格一本，书脊颜色按位置定；gaps 是空着的比例 */
@@ -372,6 +376,391 @@ const revivalStone: Build = (k) => {
   k.lamp([0, 3 * T, 6], '#7fe8d8', 85, 60, 0.9)
 }
 
+// ---- 镇公所 ----
+
+const sheets = (u: number, v: number) => (v === 0 ? WHITE : (u + v) % 3 ? WHITE : '#b9b3a6')
+
+/** 议事桌：长桌四把椅子，桌上两沓文书、墨水台和一面小旗。议事的人坐在北边的椅子上 */
+const meetingTable: Build = (k) => {
+  k.footprint(51, 62)
+  k.use = { at: [-24, -34] }
+  for (const x of [-24, 24]) {
+    woodChair(k, x, -45, -1)
+    woodChair(k, x, 45, 1)
+  }
+  const y = table(k, -45, 45, -21, 21)
+  k.box(-36, -18, -8, 6, y, y + 0.3 * T, { all: WHITE, top: sheets })
+  k.box(6, 24, -2, 12, y, y + 0.3 * T, { all: WHITE, top: sheets })
+  k.prism(-4, 2, 4.5, y, y + 0.6 * T, '#2e2c34', BRASS)
+  k.box(34, 36, -4, -2, y, y + 3.2 * T, { all: BRASS })
+  k.box(36, 48, -4, -3, y + 2.2 * T, y + 3.2 * T, { all: '#c2473d' })
+}
+
+/** 办事柜台：深色柜身，台面上一沓表格、笔筒、按铃和一块号码牌 */
+const serviceCounter: Build = (k) => {
+  k.footprint(45, 18)
+  const y = cabinet(
+    k,
+    42,
+    15,
+    { frame: '#4a3a2c', core: '#6b523c', slab: '#d9ccb0', edge: '#c4b596' },
+    2
+  )
+  k.box(-32, -14, -6, 8, y, y + 0.45 * T, { all: WHITE, top: sheets })
+  k.prism(-2, -2, 3.8, y, y + 0.9 * T, '#3f6f8f', '#2e2c34')
+  k.prism(10, 5, 3.6, y, y + 0.5 * T, BRASS, '#f3cf7a')
+  k.box(22, 36, -2, 1, y, y + 1.7 * T, {
+    all: '#2f5c4a',
+    south: (u, v) => (v === 0 ? CREAM : '#2f5c4a'),
+  })
+}
+
+/** 表格架：带脚的架子，三层各色表格 */
+const formRack: Build = (k) => {
+  k.footprint(27, 10)
+  for (const x of [-24, 18]) k.box(x, x + 6, -6, 6, 0, 1.2 * T, { all: WOOD.dark, top: false })
+  const forms =
+    (tint: string): Tier =>
+    (u) =>
+      u % 3 === 2 ? null : u % 2 ? tint : WHITE
+  shelf(k, 0, 24, 8, 1.2 * T, [forms('#e3ddd0'), forms('#a9cfe6'), forms('#f4dc8a')], {
+    frame: WOOD.mid,
+    board: WOOD.light,
+    back: WOOD.dark,
+  })
+}
+
+/** 档案柜：靠墙两只铁皮柜，一格格抽屉贴着标签，柜顶几只档案盒 */
+const fileCabinet: Build = (k) => {
+  k.footprint(32, 12)
+  k.wall = true
+  const metal = '#7d8c7a',
+    dark = '#5c6a5a'
+  k.box(-30, 30, -10, 10, 0, 7 * T, {
+    all: metal,
+    south: (u, v) =>
+      u % 5 === 0 || u % 5 === 4 ? dark : v % 2 ? dark : u % 5 === 2 ? WHITE : metal,
+    top: '#93a290',
+  })
+  k.box(-24, -10, -6, 6, 7 * T, 8.1 * T, {
+    all: '#b98a5c',
+    south: (u, v) => (v === 0 ? WHITE : '#b98a5c'),
+  })
+  k.box(-6, 8, -6, 6, 7 * T, 7.8 * T, {
+    all: '#3f6f8f',
+    south: (u, v) => (v === 0 ? WHITE : '#3f6f8f'),
+  })
+  k.box(12, 26, -6, 6, 7 * T, 8.4 * T, { all: '#8a6a4a' })
+}
+
+/** 职员的办公桌：靠墙，桌上打字机、文件筐、台灯；桌前一把椅子，办公的人坐在那儿 */
+const clerkDesk: Build = (k) => {
+  k.footprint(36, 34, 0, 17)
+  k.wall = true
+  k.use = { at: [0, 30] }
+  woodChair(k, 0, 36, 1)
+  const y = table(k, -30, 30, -15, 15)
+  k.box(-12, 8, -8, 4, y, y + 0.9 * T, {
+    all: '#3d3b45',
+    top: (u, v) => (v === 0 ? '#2e2c34' : '#55545f'),
+  })
+  k.box(-8, 4, -9, -7, y + 0.9 * T, y + 1.9 * T, { all: WHITE })
+  k.box(-28, -16, -6, 8, y, y + 0.5 * T, { all: WOOD.mid, top: sheets })
+  tableLamp(k, 22, -6, y, 115)
+}
+
+// ---- 杂货铺 ----
+
+const ice = (u: number, v: number) =>
+  (u + v * 2) % 3 === 0 ? '#7fa6bd' : (u + v) % 2 ? '#e6f4f9' : '#cfe6ef'
+
+/** 铺着条纹布的货摊：返回摊面的高度 */
+function stallTable(k: Kit, w: number, a: string, b: string) {
+  k.box(-w, w, -15, 15, 0, 3 * T, {
+    all: a,
+    south: (u, v) => (v === 0 ? b : u % 2 ? a : b),
+    east: (u) => (u % 2 ? a : b),
+    west: (u) => (u % 2 ? a : b),
+    top: false,
+  })
+  k.box(-w - 2, w + 2, -16, 17, 3 * T, 3.4 * T, { all: WOOD.light, top: WOOD.pale })
+  return 3.4 * T
+}
+
+/** 鱼货摊：蓝白条的摊子，一盘碎冰上码着鱼，旁边一台秤和一块价牌 */
+const fishStall: Build = (k) => {
+  k.footprint(41, 18)
+  const y = stallTable(k, 39, '#3f86c0', CREAM)
+  k.box(-33, 15, -11, 9, y, y + 0.6 * T, {
+    all: '#aeb4bd',
+    top: (u, v, nu, nv) =>
+      u === 0 || v === 0 || u === nu - 1 || v === nv - 1 ? '#cdd0d7' : ice(u, v),
+  })
+  k.box(21, 35, -8, 4, y, y + 0.5 * T, { all: '#55565e' })
+  k.prism(28, -2, 6, y + 0.5 * T, y + 0.7 * T, BRASS, '#f3cf7a')
+  k.box(-12, 0, 11, 13, y, y + 1.2 * T, {
+    all: CREAM,
+    south: (u, v) => (v === 0 ? '#3f86c0' : CREAM),
+  })
+}
+
+/** 屋里的花摊：后面一层木台上三盆花，前面两只花桶 */
+const flowerStand: Build = (k, seed) => {
+  k.footprint(38, 18)
+  k.box(-36, 36, -16, -2, 0, 2.2 * T, {
+    all: WOOD.mid,
+    south: (u, v, nu, nv) => (v === nv - 1 ? WOOD.line : u % 4 === 3 ? WOOD.dark : WOOD.mid),
+    top: WOOD.pale,
+  })
+  const blooms = [
+    ['#e8687a', '#f6a3b0'],
+    ['#f2c64e', '#f8dc7c'],
+    ['#b07cd0', '#d6b0e6'],
+    ['#ef8c4a', '#f6f1e7'],
+  ]
+  for (let i = 0; i < 3; i++) {
+    const x = -24 + i * 24
+    const [c, lit] = blooms[(i + (seed % 4)) % blooms.length]
+    k.box(x - 6, x + 6, -15, -3, 2.2 * T, 3.1 * T, { all: '#bb6a44', top: '#8a4a30' })
+    k.box(x - 9, x + 9, -18, 0, 3.1 * T, 4.4 * T, {
+      all: '#4f8a4c',
+      south: (u, v) => (v === 0 ? c : (u + v) % 2 ? '#4f8a4c' : '#6fa85e'),
+      top: (u, v) => ((u + v) % 2 ? c : lit),
+    })
+  }
+  flowerBucket(k, -20, 9, [blooms[seed % 4][0], '#f6f1e7', blooms[(seed + 1) % 4][0]])
+  flowerBucket(k, 14, 9, [blooms[(seed + 2) % 4][0], blooms[(seed + 3) % 4][1], '#f6f1e7'])
+}
+
+const PRODUCE = [
+  ['#c8323e', '#e25a50'],
+  ['#ef8c4a', '#f6b060'],
+  ['#5a8a4a', '#8cc474'],
+  ['#e8b53c', '#f6d776'],
+]
+/** 杂货摊：红白条的摊子，三箱果蔬，几只罐子，摊边靠一袋粮 */
+const groceryStall: Build = (k, seed) => {
+  k.footprint(41, 18)
+  const y = stallTable(k, 39, '#c2473d', CREAM)
+  for (let i = 0; i < 3; i++) {
+    const [c, lit] = PRODUCE[(i + (seed % 4)) % PRODUCE.length]
+    crate(k, -36 + i * 21, -11, 18, 18, y, 0.9 * T, (u, v, nu, nv) =>
+      u === 0 || v === 0 || u === nu - 1 || v === nv - 1 ? WOOD.light : (u + v) % 2 ? c : lit
+    )
+  }
+  k.box(27, 33, -9, -3, y, y + 1.4 * T, { all: '#bfe0dc', top: BRASS })
+  k.box(29, 35, 0, 6, y, y + 1.1 * T, { all: '#e2b05a', top: BRASS })
+  k.prism(-46, 8, 9, 0, 2.2 * T, (side, v) => (v ? '#b18d57' : '#d6b47a'), '#e3cc9c', 7)
+}
+
+// ---- 工作坊 ----
+
+const STEEL = '#aeb4bd'
+/** 装配用的锯架台：两只木马架一块长板，板上一只做了一半的凳子和一把手锯 */
+const sawhorse: Build = (k) => {
+  k.footprint(39, 12)
+  for (const x of [-30, 24]) {
+    for (const z of [-10, 6]) k.box(x, x + 6, z, z + 4, 0, 3 * T, { all: WOOD.dark, top: false })
+    k.box(x - 1, x + 7, -10, 10, 2.6 * T, 3 * T, { all: WOOD.mid })
+  }
+  k.box(-36, 36, -9, 9, 3 * T, 3.4 * T, {
+    all: WOOD.light,
+    top: (u, v) => (v === 1 ? WOOD.pale : '#e6c99a'),
+  })
+  const y = 3.4 * T
+  for (const [x, z] of [
+    [-27, -6],
+    [-15, -6],
+    [-27, 3],
+  ])
+    k.box(x, x + 3, z, z + 3, y, y + 1.4 * T, { all: WOOD.mid })
+  k.box(-28, -11, -7, 7, y + 1.4 * T, y + 1.75 * T, { all: WOOD.pale })
+  k.box(6, 30, -2, 3, y, y + 0.15 * T, { all: STEEL, top: '#cdd0d7' })
+  k.box(30, 36, -3, 4, y, y + 0.35 * T, { all: WOOD.dark })
+}
+
+/** 打磨机：靠墙的铁座上一台蓝色电机，一只砂轮，迸着几点火星（一直亮） */
+const grinder: Build = (k) => {
+  k.footprint(15, 12)
+  k.wall = true
+  k.box(-10, 10, -10, 10, 0, 3 * T, {
+    all: '#55545f',
+    south: (u, v) => (v === 0 ? '#6b6a74' : '#45444e'),
+    top: false,
+  })
+  k.box(-13, 13, -9, 7, 3 * T, 4.6 * T, {
+    all: '#3f6f8f',
+    top: '#5a8fb0',
+    south: (u, v) => (v === 0 ? '#5a8fb0' : '#3f6f8f'),
+  })
+  cutout(k, 0, 9, 3.2 * T, ['.gg.', 'gdgg', 'ggdg', '.gg.'], { g: '#9a9ea8', d: '#6d7078' })
+  k.glow(11, 13, 10, 11, 4 * T, 4.2 * T, '#ffcf5e', true)
+  k.glow(14, 15.5, 11, 12, 3.6 * T, 3.75 * T, '#ffb347', true)
+  k.lamp([12, 4 * T, 14], '#ffb45e', 44, 26, 0.5)
+}
+
+const GOODS = ['#c2473d', '#3f86c0', '#e8b53c', '#b98a5c', '#f6f1e7', '#5a8a4a']
+const goods =
+  (row: number): Tier =>
+  (u) =>
+    hash(u, row, 13) < 0.3 ? null : GOODS[Math.floor(hash(u, row, 17) * GOODS.length)]
+
+/** 成品架：靠墙三层，摆着做好的各色器物 */
+const goodsShelf: Build = (k) => {
+  k.footprint(32, 12)
+  k.wall = true
+  shelf(k, 0, 30, 10, 0, [goods(1), goods(2), goods(3)])
+}
+
+/** 主木工台：厚实的台子，台钳、刨子、一把锤子，台面上散着刨花，背后一块挂工具的板 */
+const workbench: Build = (k) => {
+  k.footprint(42, 19)
+  for (const x of [-39, 30]) k.box(x, x + 9, -15, 15, 0, 3 * T, { all: WOOD.dark, top: false })
+  k.box(-36, 36, -12, 12, 0.8 * T, 1.2 * T, { all: WOOD.mid })
+  k.box(-42, 42, -17, 17, 3 * T, 3.8 * T, {
+    all: WOOD.light,
+    top: (u, v) => (hash(u, v, 3) < 0.18 ? '#f1dcb0' : u % 4 === 3 ? WOOD.light : WOOD.pale),
+  })
+  const y = 3.8 * T
+  k.box(-42, -30, 9, 19, y - 1 * T, y + 0.5 * T, { all: '#55565e', top: '#74777f' })
+  k.box(-12, 6, -4, 4, y, y + 0.6 * T, { all: WOOD.mid, top: WOOD.dark })
+  k.box(14, 32, 2, 5, y, y + 0.3 * T, { all: WOOD.dark })
+  k.box(28, 36, -1, 8, y, y + 0.5 * T, { all: '#55565e' })
+  // 挂工具的板
+  k.box(-39, 39, -19, -17, y, y + 3 * T, {
+    all: '#8a6a4a',
+    south: (u, v, nu) =>
+      u === 0 || u === nu - 1
+        ? WOOD.dark
+        : (u * 3 + v) % 5 === 0
+          ? STEEL
+          : (u + v * 2) % 7 === 0
+            ? WOOD.dark
+            : '#8a6a4a',
+  })
+}
+
+/** 木料架：靠墙的架子上码着木板（看得见一头头的截面），旁边靠着几根长料 */
+const lumberRack: Build = (k) => {
+  k.footprint(36, 12, 4, 0)
+  k.wall = true
+  const ends =
+    (row: number): Tier =>
+    (u) =>
+      [WOOD.pale, WOOD.light, '#e6c99a', WOOD.mid][(u + row) % 4]
+  shelf(k, -6, 24, 10, 0, [ends(0), ends(1), ends(2)], {
+    frame: '#45444e',
+    board: '#6b6a74',
+    back: '#2e2c34',
+  })
+  for (const [x, h, c] of [
+    [22, 9, WOOD.light],
+    [28, 10, WOOD.pale],
+    [34, 8.4, WOOD.mid],
+  ] as [number, number, string][])
+    k.box(x, x + 5, -9, -5, 0, h * T, { all: c })
+}
+
+/** 修理交接台：柜台上等着修的东西——一盏歪了罩的台灯、一只座钟、一只红工具箱 */
+const repairDesk: Build = (k) => {
+  k.footprint(36, 18)
+  const y = cabinet(k, 33, 15, WALNUT, 2)
+  k.prism(-22, -2, 4, y, y + 0.3 * T, BRASS, BRASS)
+  k.box(-23, -21, -3, -1, y + 0.3 * T, y + 1.2 * T, { all: BRASS })
+  k.prism(-19, -2, 7, y + 1.2 * T, y + 2.2 * T, '#d9ccb0', '#efe4cc', 4.5)
+  k.box(-6, 6, -6, 0, y, y + 1.6 * T, {
+    all: WOOD.dark,
+    south: (u, v) => (v === 0 ? CREAM : WOOD.dark),
+    top: WOOD.mid,
+  })
+  k.box(14, 30, -7, 3, y, y + 1 * T, { all: '#c2473d', top: '#d9534a' })
+  k.box(19, 25, -3, -1, y + 1 * T, y + 1.4 * T, { all: '#3d3b45' })
+}
+
+// ---- 码头仓库 ----
+
+/** 手推车：两只大轮子的平板车，上面摞着三只木箱，北头一副铁把手 */
+const handCart: Build = (k) => {
+  k.footprint(30, 18)
+  for (const x of [-30, 24]) k.box(x, x + 6, -6, 8, 0, 1.6 * T, { all: '#3d3b45', top: '#55545f' })
+  k.box(-24, 24, -15, 15, 1 * T, 1.4 * T, {
+    all: WOOD.mid,
+    top: (u) => (u % 3 === 2 ? WOOD.dark : WOOD.light),
+  })
+  crate(k, -21, -12, 24, 24, 1.4 * T, 2 * T)
+  crate(k, 4, -9, 17, 18, 1.4 * T, 1.5 * T)
+  crate(k, -17, -9, 16, 16, 3.4 * T, 1.3 * T)
+  for (const x of [-24, 21]) k.box(x, x + 3, -18, -15, 1.4 * T, 5.4 * T, { all: IRON })
+  k.box(-24, 24, -18, -15, 5.1 * T, 5.4 * T, { all: IRON })
+}
+
+/** 渔网堆：堆成一座小丘的渔网，上面压着三只浮漂，旁边一盘缆绳 */
+const netPile: Build = (k) => {
+  k.footprint(32, 24)
+  const net = (side: number, v: number) => ((side + v) % 2 ? '#c9c3a8' : '#a9a48a')
+  k.prism(0, 0, 26, 0, 1.4 * T, net, '#b9b398', 19)
+  k.prism(-3, -2, 17, 1.4 * T, 2.5 * T, net, '#d6d0b6', 9)
+  for (const [x, z, c] of [
+    [10, 12, '#ef6a3a'],
+    [-14, 10, '#f6f1e7'],
+    [2, -4, '#ef6a3a'],
+  ] as [number, number, string][])
+    k.prism(
+      x,
+      z,
+      5,
+      x === 2 ? 2.5 * T : 1.4 * T,
+      (x === 2 ? 2.5 : 1.4) * T + 0.8 * T,
+      c,
+      '#f6f1e7',
+      3.5
+    )
+  k.prism(26, 14, 8, 0, 0.5 * T, '#c9a66b', '#b08c56')
+  k.prism(26, 14, 4.5, 0.5 * T, 0.9 * T, '#c9a66b', '#d8bb85')
+}
+
+/** 入库木箱：两只并排、上面再摞一只，箱板上刷着记号 */
+const crateStack: Build = (k) => {
+  k.footprint(30, 15)
+  const lid = (u: number, v: number, nu: number, nv: number) =>
+    u === 0 || v === 0 || u === nu - 1 || v === nv - 1
+      ? WOOD.dark
+      : u === v
+        ? WOOD.dark
+        : WOOD.light
+  crate(k, -28, -13, 27, 26, 0, 2.2 * T, lid)
+  crate(k, 1, -11, 26, 24, 0, 2 * T, lid)
+  crate(k, -16, -10, 24, 21, 2.2 * T, 1.8 * T, lid)
+}
+
+/** 货单桌：一张高脚小桌，夹着货单的写字板、一枚印章、一盏台灯 */
+const tallyDesk: Build = (k) => {
+  k.footprint(22, 14)
+  const y = table(k, -18, 18, -12, 12, 3.8 * T)
+  k.box(-12, 4, -7, 7, y, y + 0.3 * T, {
+    all: '#8a6a4a',
+    top: (u, v) => (v === 0 ? '#3d3b45' : (u + v) % 3 ? WHITE : '#b9b3a6'),
+  })
+  k.box(8, 12, 2, 6, y, y + 0.8 * T, { all: WOOD.dark, top: '#8f2f3a' })
+  tableLamp(k, 12, -6, y, 105)
+}
+
+const STOCK = ['#b98a5c', '#d6b47a', '#855a35', '#7d8c7a', '#c9805a']
+/** 仓库的货架：靠墙的铁架三层，箱子、麻袋、木桶 */
+const storageRack: Build = (k) => {
+  k.footprint(44, 13)
+  k.wall = true
+  const stock =
+    (row: number): Tier =>
+    (u) =>
+      hash(u >> 1, row, 23) < 0.2 ? null : STOCK[Math.floor(hash(u >> 1, row, 29) * STOCK.length)]
+  shelf(k, 0, 42, 11, 0, [stock(1), stock(2), stock(3)], {
+    frame: '#45444e',
+    board: '#6b6a74',
+    back: '#2e2c34',
+  })
+}
+
 /** 书的定义编号是 core:book-N，都用展台 */
 export const bookBuild: Build = bookDisplay
 
@@ -395,4 +784,25 @@ export const PUBLIC_BUILDS: Record<string, Build> = {
   'core:medicine_cabinet': medicineCabinet,
   'core:medical_kit': firstAidKit,
   'core:revival_stone': revivalStone,
+  'core:prop_c2a3f71093': meetingTable,
+  'core:prop_9637021f77': serviceCounter,
+  'core:prop_8027663c65': formRack,
+  'core:prop_87ac10e608': fileCabinet,
+  'core:prop_4412190019': clerkDesk,
+  'core:prop_13b51fbe0f': fishStall,
+  'core:prop_3b8425f629': flowerStand,
+  'core:prop_ace65ef490': flowerStand,
+  'core:prop_27dee840cf': groceryStall,
+  'core:prop_c75138b13a': groceryStall,
+  'core:prop_c332b3d588': sawhorse,
+  'core:prop_85488fb21a': grinder,
+  'core:prop_3aa5440c88': goodsShelf,
+  'core:workbench': workbench,
+  'core:prop_35e8c138dd': lumberRack,
+  'core:prop_a5084de387': repairDesk,
+  'core:prop_6d11edf922': handCart,
+  'core:prop_8848b79337': netPile,
+  'core:prop_614f630b11': crateStack,
+  'core:prop_c1c10c842b': tallyDesk,
+  'core:prop_055fa1337d': storageRack,
 }
