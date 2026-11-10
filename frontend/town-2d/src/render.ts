@@ -871,7 +871,7 @@ export class TownMap {
       if (shape && p.model && shape.dataset.box !== `${p.width},${p.size}`) {
         shape.dataset.box = `${p.width},${p.size}`
         shape.classList.add('modelled')
-        const target = shape.querySelector('.prop-art-target')
+        const target = shape.querySelector('.prop-art-target, .book-pile-target')
         target?.setAttribute('x', String(-p.width / 2))
         target?.setAttribute('width', String(p.width))
         target?.setAttribute('y', String(-p.size / 2))
@@ -924,7 +924,7 @@ export class TownMap {
   /** 盖着屋顶的房子里的道具连名字藏起来；有像素图的道具在立体场景里立起来，SVG 里的图只留作点击区 */
   private coverProps(covered: (p: [number, number]) => boolean): PropPlacement[] {
     const standees: PropPlacement[] = []
-    for (const { id, at, art } of this.placed) {
+    for (const { id, at, art, count } of this.placed) {
       const hidden = covered(at)
       this.scene.props.get(id)?.classList.toggle('roofed', hidden)
       this.scene.propLabels.get(id)?.classList.toggle('roofed', hidden)
@@ -933,6 +933,7 @@ export class TownMap {
         id,
         url: art?.url ?? '',
         definition: this.propDefinitions.get(id),
+        amount: count,
         x: at[0],
         y: at[1],
         size: art?.size ?? PROP_ART_SIZE,

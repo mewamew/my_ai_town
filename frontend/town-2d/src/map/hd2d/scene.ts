@@ -2369,7 +2369,7 @@ export class HdScene {
     for (const [house, group] of groups) {
       const room = house && this.roomOf(house)
       const pieces = group.map(({ p, build }) => {
-        const { foot, wall } = models.measure(build)
+        const { foot, wall } = models.measure(build, p.amount)
         return { id: p.id, x: p.x, y: p.y, foot, wall }
       })
       const spots = arrange(room, pieces)
@@ -2383,12 +2383,13 @@ export class HdScene {
           turn: spot.turn,
           visible: p.visible,
           house: house?.id,
+          amount: p.amount,
         })
         drawnModels.set(p.id, {
           x: (spot.box.x0 + spot.box.x1) / 2,
           y: (spot.box.y0 + spot.box.y1) / 2,
           base: spot.box.y1,
-          size: Math.max(40, models.measure(build).tall),
+          size: Math.max(40, models.measure(build, p.amount).tall),
           width: Math.max(40, spot.box.x1 - spot.box.x0),
         })
       }

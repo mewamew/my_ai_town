@@ -14,6 +14,8 @@ import { ChimneySmoke } from './smoke'
 export interface ModelPlacement {
   id: string
   build: Build
+  /** 数量（一摞书有几本），搭法要用的才给 */
+  amount?: number
   /** 模型原点（地图坐标）和转几个直角 */
   x: number
   y: number
@@ -108,13 +110,13 @@ export class PropModels {
   }
 
   /** 这种搭法占多大的地、靠不靠墙 */
-  measure(build: Build): Measure {
-    let m = this.measures.get(build)
+  measure(build: Build, amount?: number): Measure {
+    let m = amount === undefined ? this.measures.get(build) : undefined
     if (!m) {
       const kit = new Kit()
-      build(kit, 0)
+      build(kit, 0, amount)
       m = { foot: kit.foot, wall: kit.wall, lounge: kit.lounge, tall: kit.tall }
-      this.measures.set(build, m)
+      if (amount === undefined) this.measures.set(build, m)
     }
     return m
   }
@@ -137,7 +139,7 @@ export class PropModels {
   private build(p: ModelPlacement): Built {
     const seed = hashString(p.id)
     const kit = new Kit()
-    p.build(kit, seed)
+    p.build(kit, seed, p.amount)
     const group = new THREE.Group()
     const solid: THREE.Mesh[] = []
     const add = (geometry: THREE.BufferGeometry, material: THREE.Material, lit = true) => {
@@ -213,6 +215,7 @@ export class PropModels {
           was.x !== p.x ||
           was.y !== p.y ||
           was.turn !== p.turn ||
+          was.amount !== p.amount ||
           was.house !== p.house)
       ) {
         this.remove(p.id)

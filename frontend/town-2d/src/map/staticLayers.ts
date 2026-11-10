@@ -16,6 +16,8 @@ export interface PlacedProp {
   id: string
   at: [number, number]
   art?: { url: string; size: number }
+  /** 合成一摞的书有几本（见 bookPile） */
+  count?: number
 }
 
 /** 地图外面的底色：外圈最远处的颜色，深海、盐碱地或冰面 */
@@ -395,7 +397,7 @@ function drawProps(
     const shape = bookPile(ids, pile.at, cover)
     gProps.appendChild(shape)
     for (const id of ids) shapes.set(id, shape)
-    placed.push({ id: ids[0], at: pile.at })
+    placed.push({ id: ids[0], at: pile.at, count: ids.length })
     const [x, y] = pile.at
     obstacles.push({ x0: x - 34, y0: y - 50, x1: x + 46, y1: y + 38 })
   }

@@ -121,6 +121,13 @@ svg.hd2d .prop-art-image {
 svg.hd2d .pp.modelled.prop-art-ready:is(.selected-prop, :focus) > .prop-art-target {
   stroke: none;
 }
+/* 一摞书搭成了立体的展台：SVG 里叠着的封面和本数不画，只留点击区 */
+svg.hd2d .pp.modelled.book-pile > :not(.book-pile-target) {
+  display: none;
+}
+svg.hd2d .pp.modelled.book-pile:is(.selected-prop, :focus) > .book-pile-target {
+  stroke: none;
+}
 /* 立体场景里道具名字不常驻，指到或选中才出现（见 TownMap.nameHoveredProps）；
    选择器要压过 zoom-detail 与 single-place 下的常显规则 */
 svg.hd2d .pl:not(.named) {

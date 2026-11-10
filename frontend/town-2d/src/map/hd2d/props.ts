@@ -17,6 +17,8 @@ export interface PropPlacement {
   url: string
   /** 道具定义编号：登记了搭法的搭成立体的（propBuilds.ts），不立牌 */
   definition?: string
+  /** 合成一摞画的书有几本 */
+  amount?: number
   /** 道具图中心（地图坐标） */
   x: number
   y: number

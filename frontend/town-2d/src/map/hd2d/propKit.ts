@@ -335,9 +335,18 @@ export class Kit {
     )
   }
 
-  /** 发光的八棱柱（灯罩），入夜才亮 */
-  shade(cx: number, cz: number, r: number, y0: number, y1: number, color: string, r1 = r) {
-    this.prism(cx, cz, r, y0, y1, color, color, r1, this.lit(false, color))
+  /** 发光的八棱柱：灯罩入夜才亮；always 的白天也亮（炉火、发光的石头） */
+  shade(
+    cx: number,
+    cz: number,
+    r: number,
+    y0: number,
+    y1: number,
+    color: string,
+    r1 = r,
+    always = false
+  ) {
+    this.prism(cx, cz, r, y0, y1, color, color, r1, this.lit(always, color))
   }
 
   lamp(at: Vec, color: string, reach: number, size: number, strength = 1) {
