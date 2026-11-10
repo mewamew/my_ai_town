@@ -2,7 +2,7 @@ import type { Atlas } from 'town-shared/mapDocument'
 import { PIXEL } from '../grid'
 import { footprint, placer, type Dock } from '../pixel/island'
 import { hash, mixHex } from '../pixel/noise'
-import { villageBoat, type BoatView, type Moor } from './boats'
+import { boatModel } from './boats'
 import type { FountainLook } from './fountain'
 import type { Kit } from './propKit'
 import { stall } from './stalls'
@@ -101,14 +101,8 @@ export interface LandmarkSet {
    *  按区域的 kind 挑，区域指定了 landmark 就按它挑。落到水上的一般拉回岸上，第四项为 true 的照立
    *  （冰钓小屋立在冻住的海上） */
   plans: Record<string, (seed: number) => [LandmarkArt, number, number, boolean?][]>
-  /** 栈桥边的船：kind 0、1 是大船，2 是小舢板；view 是镜头看见侧面还是船尾，moor 是怎么系的。
-   *  没有这种船时给 null */
-  boat: (
-    seed: number,
-    view: BoatView,
-    kind: number,
-    moor: Moor
-  ) => HTMLCanvasElement | Flipbook | null
+  /** 栈桥边的船（搭成立体的，见 boats.ts）：kind 0、1 是大船，2 是小舢板；没有这种船时给 null */
+  boat: (seed: number, kind: number) => LandmarkModel | null
   /** 栈桥上堆的杂物（木箱、木桶、缆绳、鱼篓） */
   dockGoods: (seed: number) => HTMLCanvasElement
   /** 公园（没有 decor、没指定地标的 park 区域）正中的凉亭搭成立体的（见 pixel/pavilions.ts），
@@ -452,7 +446,7 @@ export function gazeboLit(): Flipbook {
 }
 
 export const VILLAGE_LANDMARKS: LandmarkSet = {
-  boat: villageBoat,
+  boat: (seed, kind) => boatModel('village', seed, kind),
   dockGoods,
   pavilion: true,
   fountain: 'flowing',
@@ -515,51 +509,46 @@ export const VILLAGE_LANDMARKS: LandmarkSet = {
   },
 }
 
-/** 栈桥边的船：一条大船靠在桥身后面（横向的桥看侧面、船头朝桥头；竖向的桥看船尾），
- *  多半还有一条小舢板拴在桥前头靠根部的地方、一条船系在桥头外面港湾里的浮筒上。
- *  船底下要整片是水才放（water 按地图坐标问） */
+/** 栈桥边的船（见 boats.ts）：一条大船靠在桥身后面，船身顺着桥、船头朝桥头；多半还有一条小舢板拴在桥前头
+ *  靠根部的地方，船头朝岸；一条船下了锚停在桥头外面的港湾里，船头大致朝岸。船底下要整片是水才放（water 按地图坐标问） */
 function mooredBoats(
   dock: Dock,
   k: number,
   set: LandmarkSet,
   seed: number,
   water: (x: number, y: number) => boolean
-): LandmarkSprite[] {
+): PlacedModel[] {
   const at = placer(dock)
   const { L, W } = footprint(dock)
-  const side = dock.dx !== 0
-  const view: BoatView = side ? 'side' : 'stern'
   // 船占的一片（沿桥 u0..u1、横过桥 v0..v1）隔两像素抽查一遍
   const clear = (u0: number, u1: number, v0: number, v1: number) => {
     for (let u = u0; u <= u1; u += 2)
       for (let v = v0; v <= v1; v += 2) if (!water(...at(u, v))) return false
     return true
   }
-  const tied = (mirror: boolean): Moor => ({ mirror, tied: true })
-  const out: LandmarkSprite[] = []
-  const add = (u: number, v: number, art: HTMLCanvasElement | Flipbook | null) => {
-    if (!art) return
+  const out: PlacedModel[] = []
+  const along = Math.atan2(dock.dy, dock.dx)
+  const add = (u: number, v: number, model: LandmarkModel | null, angle: number) => {
+    if (!model) return
     const [x, y] = at(u, v)
-    out.push({ x, y, ...(art instanceof HTMLCanvasElement ? { canvas: art } : art) })
+    out.push({ x, y, model: { ...model, angle } })
   }
   // 地形种子各张地图一样，按栈桥的位置再取一个：各个小镇的船不一样
   const own = Math.floor(hash(Math.round(dock.x), Math.round(dock.y), seed + k) * 1e6)
   const roll = (salt: number) => hash(own, salt, 17)
   const kind = Math.floor(roll(1) * 2)
-  // 大船：侧面船长约 34、看船尾时宽约 14 像素
+  // 大船长 32、宽 10 像素以内，船边离桥一个半像素
   const u = L - 13,
-    v = side ? -4 : -9
-  if (u > 17 && clear(u - 17, u + 17, v - (side ? 3 : 7), v + (side ? 3 : 7)))
-    add(u, v, set.boat(own, view, kind, tied(dock.dx < 0)))
+    v = -6.5
+  if (u > 17 && clear(u - 17, u + 17, v - 5.5, v + 5.5)) add(u, v, set.boat(own, kind), along)
   const ru = 14,
-    rv = W + (side ? 3 : 5)
-  if (roll(2) < 0.75 && clear(ru - 10, ru + 10, rv - 2, rv + 4))
-    add(ru, rv, set.boat(own + 7, view, 2, tied(dock.dx > 0)))
-  // 港湾里的船：在桥头外面、桥身后方，和靠桥的大船错开
+    rv = W + 3.5
+  if (roll(2) < 0.75 && clear(ru - 8, ru + 8, rv - 3, rv + 3))
+    add(ru, rv, set.boat(own + 7, 2), along + Math.PI)
   const au = L + 14,
-    av = side ? -24 : -26
-  if (roll(3) < 0.8 && clear(au - 18, au + 18, av - 4, av + 4))
-    add(au, av, set.boat(own + 13, view, 1 - kind, { mirror: dock.dx > 0, tied: false }))
+    av = -24
+  if (roll(3) < 0.8 && clear(au - 18, au + 18, av - 6, av + 6))
+    add(au, av, set.boat(own + 13, 1 - kind), along + Math.PI + (roll(4) - 0.5) * 0.7)
   return out
 }
 

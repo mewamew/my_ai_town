@@ -12,6 +12,7 @@ import {
 } from './landmarks'
 import { sprite, wear } from './sprite'
 import { stall } from './stalls'
+import { boatModel } from './boats'
 import { WALL_COLORS } from '../themes/walls'
 
 // 末日废土的户外立牌。原作的地标都还在，只是锈了、褪色了、缺了几块；
@@ -663,7 +664,7 @@ function scrapyard(seed: number): [HTMLCanvasElement, number, number][] {
 }
 
 export const WASTELAND_LANDMARKS: LandmarkSet = {
-  boat: (seed, _view, kind) => (kind === 2 ? null : wreckBoat(seed)),
+  boat: (seed, kind) => boatModel('wasteland', seed, kind),
   dockGoods: (seed) => wear(dockGoods(seed), seed),
   fountain: 'dry',
   plans: {

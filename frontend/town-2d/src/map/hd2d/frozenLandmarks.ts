@@ -12,6 +12,7 @@ import {
 } from './landmarks'
 import { snowCap, sprite } from './sprite'
 import { stall } from './stalls'
+import { boatModel } from './boats'
 import { SNOW, SNOW_SHADE } from '../palette'
 
 // 冰封雪镇的户外立牌。原作的地标照旧，只是压了一层雪；喷泉是立体的，冻住了（见 fountain.ts），
@@ -36,43 +37,6 @@ function fishRack(seed: number) {
     rect(4, 18, 10, 1, SNOW)
     rect(16, 20, 8, 2, '#7a5a3a')
     rect(16, 19, 8, 1, SNOW)
-  })
-}
-
-/** 冻在冰里的船：船身一圈冰，甲板和桅杆的横桁上压雪 */
-function frozenShip(seed: number) {
-  const hull = ['#6a2a24', '#2e4a6a', '#3a4a3a'][seed % 3]
-  return sprite(40, 32, ({ px, rect, line }) => {
-    for (const mx of [13, 22]) {
-      rect(mx, 2, 1, 20, '#3a2a20')
-      rect(mx - 4, 7, 9, 1, '#3a2a20')
-      rect(mx - 4, 6, 9, 1, SNOW)
-    }
-    line(13, 2, 34, 20, '#5a4a40')
-    rect(22, 14, 10, 6, '#d8d0c0')
-    rect(22, 13, 10, 1, SNOW)
-    rect(24, 16, 2, 2, '#f0d890')
-    for (let y = 20; y < 28; y++) {
-      const inset = Math.round(((y - 20) / 8) * 5)
-      for (let x = inset; x < 40 - inset; x++)
-        px(
-          x,
-          y,
-          y === 20
-            ? SNOW
-            : y === 21
-              ? mixHex(hull, '#ffffff', 0.2)
-              : x > 32 - inset
-                ? mixHex(hull, '#000000', 0.35)
-                : hull
-        )
-    }
-    // 船身四周冻住的冰和雪堆
-    for (let x = 0; x < 40; x++) {
-      const h = 2 + Math.round(noise(x / 3, 0, seed) * 3)
-      for (let k = 0; k < h; k++)
-        px(x, 31 - k, k === h - 1 ? SNOW : k === 0 ? '#a4cadc' : '#dde8f0')
-    }
   })
 }
 
@@ -220,7 +184,7 @@ function snowRock(seed: number) {
 }
 
 export const FROZEN_LANDMARKS: LandmarkSet = {
-  boat: (seed, _view, kind) => (kind === 2 ? rowboat(seed) : frozenShip(seed)),
+  boat: (seed, kind) => boatModel('frozen', seed, kind),
   dockGoods: (seed) => snowCap(dockGoods(seed), seed),
   fountain: 'frozen',
   plans: {
