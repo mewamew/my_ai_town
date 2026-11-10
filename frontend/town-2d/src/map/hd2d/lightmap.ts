@@ -136,7 +136,7 @@ const RIM = /* glsl */ `
   #endif`
 
 /** 受光的方式：地面逐像素格；墙按墙外一格取、越高越暗；立牌按脚底取、越高越暗 */
-export type LightSurface = 'ground' | 'wall' | 'standee'
+export type LightSurface = 'ground' | 'wall' | 'standee' | 'canopy'
 
 export class LightMap {
   readonly target: THREE.WebGLRenderTarget
@@ -386,7 +386,7 @@ export class LightMap {
       before(shader, renderer)
       Object.assign(shader.uniforms, uniforms)
       const foot =
-        surface === 'standee'
+        surface === 'standee' || surface === 'canopy'
           ? `#ifdef USE_INSTANCING
               vLightFoot = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xz;
             #else
@@ -411,7 +411,10 @@ export class LightMap {
             ? `vec3 lampN = normalize(vLightNormal);
               vec3 lamp = lightAt(vLightFoot + lampN.xz * ${(1.5 * PIXEL).toFixed(1)})
                 * exp(-max(vLightHeight, 0.0) / ${(36 * PIXEL).toFixed(1)}) * (1.0 - max(lampN.y, 0.0));`
-            : `vec3 lamp = lightAt(vLightFoot) * mix(1.0, 0.45, clamp(vLightHeight / ${(60 * PIXEL).toFixed(1)}, 0.0, 1.0));
+            : surface === 'canopy'
+              ? `vec3 lamp = lightAt(vLightFoot) * (0.08 + 0.92 * (1.0 - smoothstep(${(16 * PIXEL).toFixed(1)}, ${(58 * PIXEL).toFixed(1)}, vLightHeight)));
+              ${RIM}`
+              : `vec3 lamp = lightAt(vLightFoot) * mix(1.0, 0.45, clamp(vLightHeight / ${(60 * PIXEL).toFixed(1)}, 0.0, 1.0));
               ${RIM}`
       shader.fragmentShader =
         'varying vec2 vLightFoot;\nvarying float vLightHeight;\nvarying vec3 vLightNormal;\n' +

@@ -19,6 +19,7 @@ import { REFLECTION_SAMPLE, type Reflection } from './reflection'
 // 冰雪里画成冰原：近岸冻得厚、发白，越远越蓝；近岸一圈碎浮冰，成片积雪、风吹雪纹、断续的冰堆，冰面偶尔一点反光。
 // 温泉（岛内标成温泉的水，哪种风格都一样）：青绿的热水，池心深、池边浅，乳白的矿物纹慢慢转，
 // 水面贴着一层慢慢飘的白汽，贴池沿的一圈压着石头的影子；入夜透出青光（自发光）。立起来的白汽见 steam.ts。
+// 镜池（岛内标成镜池的水，只在海的画法里有）：水色深、不透底，倒影比别处清楚得多，灯的倒影拉成光带。
 
 /** 一道浪从外海推到岸上要多久（秒）；近岸浪线的疏密 */
 const SURF_PERIOD = 3.4
@@ -61,7 +62,7 @@ uniform float uPathFade;
 uniform float uSpringGlow;
 // uTrail、uTrailOrigin、uTrailSize（踩踏图）由天气着色声明：海面也接了 weather.shade
 varying vec2 vSeaPos;
-// 温泉的自发光，在各段着色里算，最后加到自发光上
+// 温泉的自发光（镜池夜里的一点月色也走它），在各段着色里算，最后加到自发光上
 vec3 springLight = vec3(0.0);
 ${hashNoise('sea')}
 ${REFLECTION_SAMPLE}
@@ -144,6 +145,35 @@ const SPRING = /* glsl */ `
     if (seaHash(cell + vec2(seaTick(3.0) * 11.0, 5.0)) > 0.9965) w = mix(w, vec3(1.0), 0.7);
     c = w;
     springLight = seaHex(vec3(40.0, 168.0, 178.0)) * uSpringGlow * mix(0.35, 1.0, hot) * (1.0 - 0.5 * smoothstep(0.46, 0.86, veil));
+  }
+`
+
+/** 镜池：离岸贴图里岸边地物为 5 的水。水色深、不透底，平得像镜子：岸上的树、亭子、灯笼清清楚楚映在里面，
+ *  灯的倒影朝镜头拉成一道道光带；偶尔一道细细的水纹 */
+const MIRROR = /* glsl */ `
+  if (coast.y == 5.0) {
+    float mt = floor(uSeaTime * 8.0) / 8.0;
+    float depthK = smoothstep(1.0, 8.0, d);
+    vec3 w = mix(seaHex(vec3(92.0, 176.0, 178.0)), seaHex(vec3(30.0, 98.0, 150.0)), depthK);
+    if (d < 1.5) w = mix(w, seaHex(vec3(18.0, 44.0, 56.0)), 0.5);
+    if (uReflAmount > 0.0) {
+      vec4 r = seaReflection(cell, mt, 1.15);
+      float k = clamp(uReflAmount * 2.6, 0.0, 0.82) * (1.0 - 0.5 * uRain);
+      w = mix(w, uReflSky, k * 0.42 * (1.0 - r.a));
+      w = mix(w, r.rgb * vec3(0.86, 0.92, 0.98), k * r.a);
+      vec3 streak = vec3(0.0);
+      for (int i = 1; i <= 5; i++) {
+        vec4 sr = reflectionAt(vec3(vSeaPos.x, 0.0, vSeaPos.y), uReflStreak * float(i));
+        streak = max(streak, sr.rgb * sr.a * (1.0 - float(i) * 0.14));
+      }
+      float gap = step(0.22, seaHash(floor(cell / vec2(4.0, 2.0)) + seaTick(3.0)));
+      w += max(streak - 0.34, 0.0) * k * 2.8 * gap;
+    }
+    if (seaNoise(cell / vec2(10.0, 2.0) + vec2(mt * 0.22, 0.0)) > 0.87 && d > 2.0)
+      w = mix(w, seaHex(uGlint), 0.05 + 0.12 * uSparkle);
+    c = w;
+    // 夜里水面留一点月色，不黑成一个洞（uSpringGlow 白天接近 0、入夜到 1）
+    springLight = seaHex(vec3(22.0, 40.0, 96.0)) * 0.2 * uSpringGlow;
   }
 `
 
@@ -294,6 +324,7 @@ const COLOR = /* glsl */ `
     if (glint > 1.0 - band * 0.14 * uSunPath * max(detail, 0.35)) c = mix(c, uSunGlint, 0.8);
   }
   ${SPRING}
+  ${MIRROR}
   diffuseColor.rgb = c;
 `
 

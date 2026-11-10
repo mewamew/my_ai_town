@@ -5,6 +5,7 @@ import { fromPx, MARGIN, OUTDOOR_SPACE, PIXEL, roomRect, toPx } from '../grid'
 import { bayer, crack, fbm, hash, noise, pick } from './noise'
 import { SNOW, SNOW_SHADE, WALL_CAP } from '../palette'
 import { bridgesOf, onBridge, spanOf, type Bridge } from './bridges'
+import { PAVILION_REACH, pavilionsOf, type Pavilion } from './pavilions'
 import { DEFAULT_EDGE_WIDTH } from '../route'
 import {
   designOf,
@@ -58,7 +59,8 @@ export const TERRAIN_SEED = 20260923
  * path 标出土路（2 是路中间的实土），立体场景在上面积水坑；depth 是水面离岸、陆地离水的像素数；
  * shore 标出海边的地物，立体场景按它画浪（见 shoreOf）；calm 是码头一带水面的平静程度（0～255，见 calmOf）；
  * docks 是栈桥（地图坐标），立体场景按它搭桥，船停在旁边；bridges 是路过岛内水面的桥（见 bridges.ts）；
- * spring 标出温泉的水面，立体场景在上面冒白汽、夜里发光
+ * spring 标出温泉的水面，立体场景在上面冒白汽、夜里发光；pavilions 是立体凉亭（见 pavilions.ts），
+ * 和房子重叠的已经去掉
  */
 export interface Ground {
   atlas: Atlas
@@ -77,6 +79,7 @@ export interface Ground {
   docks: Dock[]
   bridges: Bridge[]
   spring: Uint8Array
+  pavilions: Pavilion[]
 }
 
 /** 这个风格的草坪公园是修剪过的：画修剪条纹、中间不种树、几乎不长草丛（风格包给了条纹色） */
@@ -121,6 +124,22 @@ export function groundOf(atlas: Atlas, theme: MapTheme, seed = TERRAIN_SEED): Gr
   // 温泉四周不种树、不长草丛：池边留一片干净的雪地
   if (layers.clear.some(Boolean))
     decor.vegetation = decor.vegetation.filter((v) => !layers.clear[toPx(v.y) * pw + toPx(v.x)])
+  // 立体凉亭：和房子、楼重叠的不搭；亭子占的地方不种树、不长草丛
+  const roofs = footprints(atlas)
+  const pavilions = pavilionsOf(atlas, theme.landmarks.pavilion === true).filter(
+    (p) =>
+      !roofs.some(
+        (b) =>
+          p.x + PAVILION_REACH > b.x &&
+          p.x - PAVILION_REACH < b.x1 &&
+          p.y + PAVILION_REACH > b.y &&
+          p.y - PAVILION_REACH < b.y1
+      )
+  )
+  if (pavilions.length)
+    decor.vegetation = decor.vegetation.filter(
+      (v) => !pavilions.some((p) => Math.hypot(v.x - p.x, v.y - p.y) < PAVILION_REACH + 2 * PIXEL)
+    )
   const calm = calmOf(layers, theme.outer === 'sea')
   const base = new Uint32Array(pw * ph)
   paintBase(layers, base)
@@ -154,6 +173,7 @@ export function groundOf(atlas: Atlas, theme: MapTheme, seed = TERRAIN_SEED): Gr
     docks,
     bridges,
     spring: coast.spring,
+    pavilions,
   }
 }
 
@@ -289,6 +309,7 @@ interface Layers {
   inland: Uint8Array
   /** 其中的温泉，和温泉池边一圈压雪的黑石头（离水 1～RIM 像素），池子四周不种树的一圈（见 springRim） */
   spring: Uint8Array
+  mirror: Uint8Array
   rim: Uint8Array
   clear: Uint8Array
   piers: Uint8Array
@@ -380,6 +401,7 @@ function coastOf(
     sea,
     inland,
     spring,
+    mirror,
     piers,
     quay,
     rocks,
@@ -407,7 +429,7 @@ function coastOf(
       ((x1 - x0) * (y1 - y0))
     )
   }
-  return { sea, inland, spring, piers, quay, rocks, docks, depth, seaAround }
+  return { sea, inland, spring, mirror, piers, quay, rocks, docks, depth, seaAround }
 }
 
 /** 温泉池沿有几圈像素宽（两层石头） */
@@ -703,7 +725,7 @@ function calmOf(L: Layers, deepen: boolean) {
  *  3 是外海边的岩石岸和礁石，4 是温泉的水。立体场景只在外海上起浪，浪冲上沙滩、拍在岩石上；
  *  温泉另画（见 sea.ts） */
 function shoreOf(L: Layers) {
-  const { pw, ph, wet, rocks, inland, spring } = L
+  const { pw, ph, wet, rocks, inland, spring, mirror } = L
   const out = new Uint8Array(pw * ph)
   // 从地图四边的水往里灌，灌得到的就是外海；岛内的水和外海连着也不灌进去
   const stack: number[] = []
@@ -725,6 +747,7 @@ function shoreOf(L: Layers) {
   for (let i = 0; i < pw * ph; i++) {
     if (wet[i]) {
       if (spring[i]) out[i] = 4
+      else if (mirror[i]) out[i] = 5
       continue
     }
     const kind = shoreKind(L, i)
@@ -746,9 +769,11 @@ function openGround(atlas: Atlas, L: Layers) {
     open[i] =
       (decor === 'clearing' || (decor && DECOR_GROUNDS.has(decor))
         ? OPEN.none
-        : decor === 'lawn'
-          ? OPEN.lawn
-          : OPEN_KINDS[kind]) ?? OPEN.town
+        : decor === 'meadow'
+          ? OPEN.verge
+          : decor === 'lawn'
+            ? OPEN.lawn
+            : OPEN_KINDS[kind]) ?? OPEN.town
   }
   // 公园、林子里的路：南边一条只长草，不让树冠把路挡住（草坪本来就不撒树）
   const from = Math.round(VERGE.from / PIXEL),

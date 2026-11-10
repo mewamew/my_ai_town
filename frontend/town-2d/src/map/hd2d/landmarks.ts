@@ -5,6 +5,16 @@ import { hash, mixHex } from '../pixel/noise'
 import { villageBoat, type BoatView, type Moor } from './boats'
 import { fountain } from './fountain'
 import { bench, deckChair, parasol, planter, reeds, rock, signpost, telescope } from './parkPieces'
+import {
+  BIG_TREE_HALOS,
+  bigTree,
+  blossomTree,
+  cascade,
+  cedar,
+  deer,
+  lilyPads,
+  stoneLantern,
+} from './groveArt'
 import { sprite, stone } from './sprite'
 
 // 户外地点的立体标志物：摩天轮、旋转亭、方尖碑、喷泉、神庙遗迹这些地标（弧形阶台是立体搭的，见 stand.ts），
@@ -28,6 +38,17 @@ export interface Flipbook {
   frames: number
   fps: number
   light?: StandeeLight
+  /** 花木：随风摆；高过 60 个贴图像素的大树，脚下的灯光越往上越暗（树顶留在月色里） */
+  plant?: boolean
+  /** 灯：自发光的部分天黑才亮（不给时白天也微亮） */
+  lamp?: boolean
+  /** 在这些点上加一团光晕：[横向偏移（贴图像素）, 离地多少贴图像素, 光晕大小（地图单位）] */
+  halos?: [number, number, number][]
+  /** 落花：花瓣从花冠里飘下来（见 petals.ts）。r 是花冠半径，low～high 是花冠离地多高（地图单位），count 片；
+   *  afloat 是身边的水面上再浮多少片 */
+  sheds?: { r: number; low: number; high: number; count: number; afloat?: number }
+  /** 入夜身边聚多少只萤火虫，散在多大半径里（地图单位） */
+  swarm?: { r: number; count: number }
 }
 
 export interface LandmarkSprite {
@@ -40,6 +61,12 @@ export interface LandmarkSprite {
   fps?: number
   glow?: HTMLCanvasElement
   light?: StandeeLight
+  /** 以下几项同 Flipbook */
+  plant?: boolean
+  lamp?: boolean
+  halos?: [number, number, number][]
+  sheds?: Flipbook['sheds']
+  swarm?: Flipbook['swarm']
   /** 蹲到这栋房子（或只看不进的楼）的墙顶上 */
   on?: string
 }
@@ -63,6 +90,9 @@ export interface LandmarkSet {
   ) => HTMLCanvasElement | Flipbook | null
   /** 栈桥上堆的杂物（木箱、木桶、缆绳、鱼篓） */
   dockGoods: (seed: number) => HTMLCanvasElement
+  /** 公园（没有 decor、没指定地标的 park 区域）正中的凉亭搭成立体的（见 pixel/pavilions.ts），
+   *  这些区域不再立 plans.park 的立牌；地图按坐标立的 park 立牌照旧（旧地图里的） */
+  pavilion?: boolean
   /** 散落物：每个地图像素放一件的概率，野地（land）和外圈（outer）分开算；sprite 给出一件的贴图 */
   scatter?: {
     land: number
@@ -429,6 +459,7 @@ export function gazeboLit(): Flipbook {
 export const VILLAGE_LANDMARKS: LandmarkSet = {
   boat: villageBoat,
   dockGoods,
+  pavilion: true,
   plans: {
     ferris: () => [[ferrisWheel(), 0, -6]],
     carousel: () => [[carousel(), 0, -4]],
@@ -453,6 +484,39 @@ export const VILLAGE_LANDMARKS: LandmarkSet = {
     rock: (seed) => [[rock(seed), 0, 0]],
     telescope: () => [[telescope(), 0, 0]],
     signpost: (seed) => [[signpost(seed), 0, 0]],
+    // 花树林（见 groveArt.ts），地图按坐标立：大花树落花、入夜聚萤火虫，灯笼和石灯天黑才亮
+    bigtree: () => [
+      [
+        {
+          ...bigTree(),
+          plant: true,
+          lamp: true,
+          halos: BIG_TREE_HALOS.map(([dx, up]) => [dx, up, 54]),
+          sheds: { r: 290, low: 150, high: 430, count: 300, afloat: 110 },
+          swarm: { r: 520, count: 170 },
+        },
+        0,
+        0,
+      ],
+    ],
+    blossom: (seed) => [
+      [
+        {
+          canvas: blossomTree(seed),
+          frames: 1,
+          fps: 1,
+          plant: true,
+          sheds: { r: 90, low: 60, high: 170, count: 14 },
+        },
+        0,
+        0,
+      ],
+    ],
+    cedar: (seed) => [[{ canvas: cedar(seed), frames: 1, fps: 1, plant: true }, 0, 0]],
+    lantern: (seed) => [[{ ...stoneLantern(seed), lamp: true, halos: [[0, 8, 60]] }, 0, 0]],
+    lily: (seed) => [[lilyPads(seed), 0, 0]],
+    cascade: () => [[cascade(), 0, 0]],
+    deer: (seed) => [[deer(seed), 0, 0]],
   },
 }
 
@@ -580,6 +644,8 @@ export function landmarkSprites(
     // 林子、行道树、草坪这些只管样子的区域不摆这类地点自带的凉亭、花拱门；指定了地标的照它摆。
     // 看台（court）是立体搭的，见 stand.ts
     const kind = r.landmark ?? (r.decor ? undefined : r.kind)
+    // 立体凉亭由场景另搭（见 pixel/pavilions.ts）
+    if (kind === 'park' && set.pavilion) continue
     const plan = kind && kind !== 'court' ? set.plans[kind] : undefined
     if (!plan) continue
     const cx = (box.x0 + box.x1) / 2,

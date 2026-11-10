@@ -4,10 +4,11 @@ import type { Appearance } from './props/types'
 // 类型放在共用层，加载逻辑在 town-2d 的 assets 模块。
 
 /** 岛内的一片水：多边形，或者带宽度的折线（河）；都是地图坐标。kind 为 spring 的是温泉：
- *  青绿的热水，池边一圈压雪的黑石头，水面冒白汽，夜里透出青光 */
+ *  青绿的热水，池边一圈压雪的黑石头，水面冒白汽，夜里透出青光。kind 为 mirror 的是镜池：
+ *  水色深、不透底，平得像镜子，岸上的树、亭子和灯清清楚楚映在里面 */
 export type IslandWater = (
   { polygon: [number, number][] } | { line: [number, number][]; width: number }
-) & { kind?: 'spring' }
+) & { kind?: 'spring' | 'mirror' }
 
 /**
  * 画好的海岸（手绘的内置地图才有）：陆地底稿交给引擎扭曲、冲刷出小湾和礁石，岛内的河、湖、港湾等冲刷完
@@ -39,11 +40,11 @@ export interface Atlas {
     cells: [number, number][]
     label_anchor?: [number, number]
     /** 只管样子的区域：woods 成片的林子、allee 一排排的树（行道树、河边柳）、lawn 草坪公园（树稀、少灌木；
-     *  风格包给了修剪条纹色的画成修剪过的草坪，中间开阔、树只种在北沿）、
+     *  风格包给了修剪条纹色的画成修剪过的草坪，中间开阔、树只种在北沿）、meadow 花甸（不种树，满地野花）、
      *  clearing 空地（不种树，只零星几丛草，雪橇坡这类）、asphalt 裂开积沙的旧沥青路面、
      *  rubble 碎水泥块撒了一地的废墟地（这两种都不长树）。
      *  有 decor 的区域不摆这类地点自带的标志物（凉亭、花拱门）；没有名字的区域不标名字 */
-    decor?: 'woods' | 'allee' | 'lawn' | 'clearing' | 'asphalt' | 'rubble'
+    decor?: 'woods' | 'allee' | 'lawn' | 'meadow' | 'clearing' | 'asphalt' | 'rubble'
     /** 港口朝海的方向（横竖之一）；不给时从镇子中心指向港口算。看台（court）敞开的一面朝哪，不给朝南 */
     facing?: [number, number]
     /** 这处户外地点立什么地标：风格包 landmarks.plans 里的名字（如冰雪的 icefishing 冰钓场、sledding 雪橇坡），
@@ -62,6 +63,8 @@ export interface Atlas {
     width?: number
     /** 路跨过岛内的水时搭什么桥：stone 石拱桥，wood 木板桥（不给时的样子） */
     bridge?: 'stone' | 'wood'
+    /** 这段路边的灯：none 不立，lantern 立矮石灯（公园里的步道）；不给照风格包立路灯 */
+    lamp?: 'none' | 'lantern'
   }[]
   spaces: {
     id: string
@@ -109,7 +112,8 @@ export interface Atlas {
    *  kind 是风格包 landmarks.plans 里的名字（风格包里没有这一种就不立），x、y 是立牌底边中点；
    *  flip 左右翻过来；on 是一栋房子或 ruins 里一栋楼的编号，立牌蹲到它的墙顶上（楼顶的秃鹫）。
    *  kind 为 court 的是立体的看台（见 town-2d 的 map/pixel/stands.ts）：x、y 是舞台中心，size 是外半径
-   *  （地图单位，不给 160），facing 是敞开的一面朝哪（不给朝南，正对缺省镜头） */
+   *  （地图单位，不给 160），facing 是敞开的一面朝哪（不给朝南，正对缺省镜头）。
+   *  kind 为 pavilion 的是立体的八角凉亭（见 town-2d 的 map/hd2d/gazebo.ts）：x、y 是亭子正中，facing 同上 */
   standees?: {
     kind: string
     x: number

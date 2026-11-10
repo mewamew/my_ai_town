@@ -26,6 +26,8 @@ export interface Design {
   land: Uint8Array
   water: Uint8Array
   spring: Uint8Array
+  /** 镜池：平得像镜子的池塘，倒影格外清楚 */
+  mirror: Uint8Array
   shape: Shape
 }
 /** 港口、海塔朝海一侧离海岸的距离（像素） */
@@ -91,6 +93,8 @@ export interface Island {
   inland: Uint8Array
   /** 岛内水面里的温泉（inland 的一部分） */
   spring: Uint8Array
+  /** 岛内水面里的镜池 */
+  mirror: Uint8Array
   /** 栈桥（含尽头平台）在水面上的投影，桥下仍是水 */
   piers: Uint8Array
   /** 码头朝南临水那一面往下画的木墙：1、2 是两行墙板，3 是露出水面的桩；不算水 */
@@ -216,10 +220,12 @@ export function designOf(design: IslandDesign | undefined, w: number, h: number)
   if (!design?.land.length) return undefined
   const land = new Uint8Array(w * h),
     water = new Uint8Array(w * h),
-    spring = new Uint8Array(w * h)
+    spring = new Uint8Array(w * h),
+    mirror = new Uint8Array(w * h)
   for (const pts of design.land) fillPolygon(land, pts, w, h)
   for (const part of design.water) {
-    const into = part.kind === 'spring' ? [water, spring] : [water]
+    const into =
+      part.kind === 'spring' ? [water, spring] : part.kind === 'mirror' ? [water, mirror] : [water]
     for (const mask of into)
       if ('polygon' in part) fillPolygon(mask, part.polygon, w, h)
       else fillLine(mask, part.line, part.width, w, h)
@@ -229,7 +235,7 @@ export function designOf(design: IslandDesign | undefined, w: number, h: number)
     const v = design[key]
     if (typeof v === 'number' && Number.isFinite(v)) shape[key] = v
   }
-  return { land, water, spring, shape } satisfies Design
+  return { land, water, spring, mirror, shape } satisfies Design
 }
 
 /** 从画布边缘灌水，连不到外海的海面改回陆地，免得镇子中间冒出一小块海 */
@@ -706,10 +712,13 @@ export function island(
   for (let i = 0; i < pw * ph; i++) if (!water[i]) inland[i] = 0
   const spring = new Uint8Array(pw * ph)
   if (design) for (let i = 0; i < pw * ph; i++) spring[i] = inland[i] && design.spring[i] ? 1 : 0
+  const mirror = new Uint8Array(pw * ph)
+  if (design) for (let i = 0; i < pw * ph; i++) mirror[i] = inland[i] && design.mirror[i] ? 1 : 0
   return {
     sea,
     inland,
     spring,
+    mirror,
     piers,
     quay,
     rocks,

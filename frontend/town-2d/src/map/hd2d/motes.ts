@@ -78,10 +78,12 @@ export class Motes {
   readonly points: THREE.Points
   private readonly material: THREE.ShaderMaterial
 
+  /** swarms：萤火虫格外多的地方（池边、花树下），每处在半径 r 里再放 count 只 */
   constructor(
     terrain: { width: number; height: number; open: Uint8Array },
     seed: number,
-    motes: MapTheme['motes']
+    motes: MapTheme['motes'],
+    swarms: { x: number; y: number; r: number; count: number }[] = []
   ) {
     const { width: pw, height: ph, open } = terrain
     const random = rng(seed + 5)
@@ -95,13 +97,32 @@ export class Motes {
       )
         green.push(i)
     }
-    const count = DUST + (green.length ? FIREFLIES : 0)
+    const base = DUST + (green.length ? FIREFLIES : 0)
+    const extra: [number, number][] = []
+    if (motes.fireflies)
+      for (const sw of swarms)
+        for (let k = 0; k < sw.count; k++) {
+          const a = random() * Math.PI * 2,
+            d = Math.sqrt(random()) * sw.r
+          extra.push([sw.x + Math.cos(a) * d, sw.y + Math.sin(a) * d * 0.8])
+        }
+    const count = base + extra.length
     const pos = new Float32Array(count * 3),
       phase = new Float32Array(count),
       kind = new Float32Array(count),
       size = new Float32Array(count)
     for (let i = 0; i < count; i++) {
       const firefly = i >= DUST
+      if (i >= base) {
+        const [x, y] = extra[i - base]
+        pos[i * 3] = x
+        pos[i * 3 + 1] = (1.5 + random() * 12) * PIXEL
+        pos[i * 3 + 2] = y
+        phase[i] = random()
+        kind[i] = 1
+        size[i] = FIREFLY_SIZE * (0.6 + random() * 0.8)
+        continue
+      }
       const pool = firefly ? green : land
       const p = pool.length
         ? pool[Math.floor(random() * pool.length)]

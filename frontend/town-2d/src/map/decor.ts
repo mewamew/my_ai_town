@@ -237,6 +237,8 @@ const PLANTING = {
   lawn: { tree: 0.035, bush: 0.015, grass: 0.065, edge: 0.07, edgeGrass: 0.06, edgeBush: false },
   mown: { tree: 0.12, bush: 0.02, grass: 0.012, edge: 0.1, edgeGrass: 0.03, edgeBush: false },
   clearing: { tree: 0, bush: 0, grass: 0.03, edge: 0.03, edgeGrass: 0.04, edgeBush: false },
+  // 花甸：不种树，满地野花
+  meadow: { tree: 0, bush: 0, grass: 0.2, edge: 0.5, edgeGrass: 0.2, edgeBush: false },
 }
 /** 草坪的树种在离边几格以内，南边还得留着这么多格草坪 */
 const LAWN_RIM = 3
@@ -286,7 +288,7 @@ function regionVegetation(
   const P =
     r.decor === 'lawn' && mown
       ? PLANTING.mown
-      : r.decor === 'allee' || r.decor === 'lawn' || r.decor === 'clearing'
+      : r.decor === 'allee' || r.decor === 'lawn' || r.decor === 'clearing' || r.decor === 'meadow'
         ? PLANTING[r.decor]
         : r.kind === 'park'
           ? PLANTING.park
@@ -317,6 +319,11 @@ function regionVegetation(
         scale: scale + random() * spread,
         flip: random() < 0.5,
       })
+    if (r.decor === 'meadow') {
+      if (roll < 0.5 && !nearRoad(cx, cy, 26)) plant('flowers', 0.8, 0.5)
+      else if (roll < 0.8) plant('grass', 0.9, 0.4)
+      continue
+    }
     if (inner) {
       // 草坪中间不种树和灌木，只零星几丛草
       const wooded = !rim || rim.has(keyOf(c, rr))
