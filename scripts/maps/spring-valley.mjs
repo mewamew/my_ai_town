@@ -412,6 +412,7 @@ town.region('outdoor_forest_trail_01', '雪松林步道', 'park', blob(1480, 220
     station: 'place_arrival_forest_trail',
     node: 'arrival_forest_trail',
     from: 'outdoor_east_park_01',
+    only: ['east_park_bench__rest'],
     at: { east_park_bench__rest: [1560, 2380] },
   },
 })

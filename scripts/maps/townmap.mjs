@@ -6,7 +6,8 @@
 //   门开在内景门所在的那面墙外。
 // - 户外地点：到达点、道具和落脚点同样按编号从那份地图搬过来，整体平移到新的到达点旁边；新地点在设计里写。
 // - 海岸：陆地底稿和岛内的水写进 layout.island，由前端扭曲、冲刷、挖水（见 frontend 的 map/pixel/island.ts）；
-//   岛内的水用 spring() 包起来的是温泉（青绿的热水、黑石池沿、冒白汽，夜里透光）。
+//   岛内的水用 spring() 包起来的是温泉（青绿的热水、黑石池沿、冒白汽，夜里透光），
+//   用 still() 包起来的是镜池（平得像镜子，倒影清楚）。
 // - 风格：environment 写地图风格（同建镇参数的 environment.preset，比如 frozen 冰封雪镇），不写是默认风格；
 //   worldview 是随地图带的世界观，第一次进镇时开局向导默认用它。
 // - 只看不进的楼（ruin）、按坐标立的立牌（standee）、盘旋的鸟群（flock）写进 layout 的 ruins、standees、flocks，
@@ -33,6 +34,8 @@ export const minus = (a, b) => ({ t: 'minus', a, b })
 export const union = (...s) => ({ t: 'union', s })
 /** 岛内的水里，这一片是温泉 */
 export const spring = (shape) => ({ t: 'spring', s: shape })
+/** 岛内的水里，这一片是镜池：平得像镜子，倒影格外清楚 */
+export const still = (shape) => ({ t: 'spring', s: shape, kind: 'mirror' })
 
 function inPoly(x, y, pts) {
   let inside = false
@@ -170,7 +173,8 @@ function cellsOf(shape, taken) {
 /** 陆地底稿、岛内的水换成 layout.island 的写法：多边形照抄，带子写成带宽度的折线 */
 function flatten(shape) {
   if (shape.t === 'union') return shape.s.flatMap(flatten)
-  if (shape.t === 'spring') return flatten(shape.s).map((part) => ({ ...part, kind: 'spring' }))
+  if (shape.t === 'spring')
+    return flatten(shape.s).map((part) => ({ ...part, kind: shape.kind ?? 'spring' }))
   if (shape.t === 'poly') return [{ polygon: shape.pts.map(round) }]
   if (shape.t === 'band') return [{ line: shape.pts.map(round), width: shape.width }]
   if (shape.t === 'ellipse')
@@ -361,7 +365,7 @@ export function townMap({
     },
     /** 一块室外区域，先登记的先占格子。place 给了就是一处地点：type、summary、features 是地点的类型、简介、
      *  看得见的东西；arrival 是到达点（station、node 是它落脚点和节点的编号），onRoad 给了且离路不到这么远时
-     *  到达点就落在路上；from 是来源地图里搬道具和落脚点的地点，at 按编号指定其中几件的位置，
+     *  到达点就落在路上；from 是来源地图里搬道具和落脚点的地点（only 给了就只搬这几件道具），at 按编号指定其中几件的位置，
      *  rename 为 true 时道具名字里原来的地名换成新地名；
      *  props 是新添的道具 { id, definition, name, at }，stations 是新添的落脚点 { id, name, at, activity, pose, role }；
      *  landmark 指定立什么地标（风格包 plans 里的名字），不给按 kind；label 是地名标在哪（地图坐标），
@@ -386,10 +390,11 @@ export function townMap({
       }
       return api
     },
-    /** 一条路：折线（默认平滑），宽 width；bridge 是跨水时的桥（stone、wood） */
-    road(rid, pts, width = 60, { curve = true, bridge } = {}) {
+    /** 一条路：折线（默认平滑），宽 width；bridge 是跨水时的桥（stone、wood）；
+     *  lamp 是路边的灯（none 不立，lantern 立矮石灯），不给照风格立路灯 */
+    road(rid, pts, width = 60, { curve = true, bridge, lamp } = {}) {
       const line = (curve ? smooth(pts) : pts).map(round)
-      streets.push({ id: rid, line, width, bridge })
+      streets.push({ id: rid, line, width, bridge, lamp })
       return api
     },
     /** 房子：占地矩形 [x, y, w, h]，内景按 room 编号（默认同 sid）从来源地图搬，或者直接给一份 room；
@@ -617,7 +622,14 @@ function network(streets, connectors) {
         (p, n) => n === 0 || Math.hypot(p[0] - line[n - 1][0], p[1] - line[n - 1][1]) > 1
       )
       if (clean.length < 2) continue
-      edges.push({ from: a.key, to: b.key, line: clean, width: s.width, bridge: s.bridge })
+      edges.push({
+        from: a.key,
+        to: b.key,
+        line: clean,
+        width: s.width,
+        bridge: s.bridge,
+        lamp: s.lamp,
+      })
     }
   }
   for (const a of access) {
@@ -737,6 +749,7 @@ function assemble(m) {
           ? { ...named, name: named.name.replaceAll(oldPlace.name, placeName.get(o.locale)) }
           : named
       for (const p of old.props) {
+        if (o.only && !o.only.includes(p.id)) continue
         const { mark, ...prop } = p
         const [x, y] = shift([mark.x, mark.y], p.id)
         props.push(renamed({ ...prop, locale: o.locale }))
@@ -813,6 +826,7 @@ function assemble(m) {
       polyline: e.line,
       width: e.width,
       ...(e.bridge ? { bridge: e.bridge } : {}),
+      ...(e.lamp ? { lamp: e.lamp } : {}),
     })
     for (const [side, n, locale] of [
       ['a', a, from],
