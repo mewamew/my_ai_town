@@ -692,6 +692,15 @@ export class TownMap {
     }
   }
 
+  /** 此刻的画面（见 GameMap.still） */
+  still(maxWidth: number): string | undefined {
+    try {
+      return this.hd?.grab(maxWidth).toDataURL('image/jpeg', 0.86)
+    } catch {
+      return undefined
+    }
+  }
+
   /** 取景只读图集：围绕本镇真正的广场组织街景，俯视容纳道路和所有建筑，不依赖默认地图坐标。 */
   private showCameraPreset(overhead: boolean) {
     const hd = this.hd

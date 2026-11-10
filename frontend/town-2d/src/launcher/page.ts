@@ -35,6 +35,8 @@ import { COVER_SIZE, coverOf, dropCover as forgetCover, saveCover } from './cove
 import { portraitKey } from 'town-shared/portraits'
 import { isWeatherKind } from 'town-shared/weather/types'
 import { villagerPortrait } from '../map/hd2d/villagerSprite'
+import { createStageCamera, stageCalm } from './camera'
+import { saveHandoff } from '../enterHandoff'
 // 小镇选择页：选中的小镇铺满窗口当背景，界面是游戏里那套白底零件——左下镇名、简介和「进入游戏」，
 // 最下面一排明信片（一个小镇一张，写着玩到第几天、住了几个人）。预览不启动世界。
 installPlatform()
@@ -156,9 +158,18 @@ function coveredBottom() {
       : (isCompact() ? bottom : strip).getBoundingClientRect().top
   return Math.max(0, Math.round(box.bottom - top))
 }
+/** 推近、慢漂、进镇时再推近（见 camera.ts） */
+const stageCamera = createStageCamera(stage)
 /** 镜头把小镇的中心和景深的焦点放进没被界面盖住的那块 */
+function setCovered(preview: Preview, covered: number) {
+  preview.covered = covered
+  preview.map.setViewInsets?.({ top: 0, right: 0, bottom: covered, left: 0 })
+}
+/** 界面盖住的边变了（窗口大小、进出赏景、收起界面）：正露着的预览跟着挪；没变就不打断镜头 */
 function syncInsets() {
-  shownPreview()?.map.setViewInsets?.({ top: 0, right: 0, bottom: coveredBottom(), left: 0 })
+  const shown = shownPreview()
+  const covered = coveredBottom()
+  if (shown && covered !== shown.covered) stageCamera.around(() => setCovered(shown, covered))
 }
 /** 新建好的预览：镜头对准镇中心（最大的广场），放在露出来那块的正中间；倍数不动 */
 function aimAtHeart(preview: Preview) {
@@ -227,6 +238,8 @@ type Preview = {
   theme: MapTheme
   world: MusicWorld
   saved?: Scenery
+  /** 上次按界面盖住下边多少摆的镜头（见 setCovered） */
+  covered?: number
 }
 /** 存档停在一天里的几点、什么天气；没玩过（或管理服务是旧的，没带这两项）时为 undefined */
 function savedScenery(map: MapEntry): Scenery | undefined {
@@ -250,6 +263,7 @@ function dropPreview(key: string) {
   const preview = previews.get(key)
   if (!preview) return
   previews.delete(key)
+  stageCamera.drop(preview.map)
   preview.map.dispose()
   preview.host.remove()
 }
@@ -279,21 +293,26 @@ function dropCover() {
   clearTimeout(coverTimer)
   coverTimer = setTimeout(() => (cover.hidden = true), 650)
 }
-function finishPreview(map: MapEntry) {
+/** 预览露出来了。fresh 是刚建好第一次露面：镜头对准镇中心、从远处推近，过一会儿拍封面；
+ *  换回留着的那张时从它原来的位置接着漂 */
+function finishPreview(map: MapEntry, fresh = false) {
   $('preview-state').hidden = true
   scenic.disabled = false
   dropCover()
-  syncInsets()
-  // 玩过的镇停在哪就画哪；没玩过的照景色条（赏景调过才有，不然是场景自带的傍晚晴天）
   const shown = shownPreview()
-  const view = shown?.saved ?? (sceneryUsed ? scenery.value : undefined)
-  if (view) shown?.map.setScenery?.(view.minutes, view.weather)
-  if (fitNext === map.id) {
+  if (!shown) return
+  setCovered(shown, coveredBottom())
+  // 玩过的镇停在哪就画哪；没玩过的照景色条（赏景调过才有，不然是场景自带的傍晚晴天）
+  const view = shown.saved ?? (sceneryUsed ? scenery.value : undefined)
+  if (view) shown.map.setScenery?.(view.minutes, view.weather)
+  // 刚建好的小镇先看整张图，不推近
+  const whole = fitNext === map.id
+  if (whole) {
     fitNext = ''
-    $('map-preview')
-      .querySelector<HTMLButtonElement>('.map-preview-scene:not([hidden]) .zoom-readout')
-      ?.click()
-  }
+    query<HTMLButtonElement>(shown.host, '.zoom-readout').click()
+  } else if (fresh) aimAtHeart(shown)
+  stageCamera.show(shown.map, fresh && !whole)
+  if (fresh) shootCover(map, shown)
 }
 
 /** 预览露出来两三秒（天气落到地面了）再拍一张全镇当封面，存在本机，明信片换成它。
@@ -486,9 +505,7 @@ async function select(map: MapEntry) {
     // 没有摘要时不能判断内容是否变化，只在本次选中期间保留。
     const cacheKey = key || `${map.id}:request:${current}`
     previews.set(cacheKey, pending)
-    finishPreview(map)
-    aimAtHeart(pending)
-    shootCover(map, pending)
+    finishPreview(map, true)
   } catch (error) {
     if (current === request) {
       $('preview-state').textContent = errorText(error)
@@ -629,18 +646,97 @@ async function refresh(id?: string) {
     return false
   }
 }
+/** 进镇的转场：别的零件散开，镜头推近；电脑上时钟牌、「进入游戏」和头像原样飞到它们在游戏里的位置
+ *  （左上那一列，见 shell/hud.css 的 .hud-left：时钟牌在 14,14，右边隔 8 是开始钮，下面隔 10 是头像条）。
+ *  手机、触屏和要求减少动画时不飞，只散开。返回动画做完的时刻、飞到位的那几样，和进不去时摆回原样的办法 */
+function leaveForGame() {
+  launcher.classList.add('is-entering')
+  const steps: (() => void)[] = [() => launcher.classList.remove('is-entering')]
+  const flown: HTMLElement[] = []
+  if (!stageCalm() && !isCompact()) {
+    const plate = $('town-clock'),
+      residents = $('town-residents')
+    const plans: [HTMLElement, number, number, number?][] = []
+    if (!plate.hidden) plans.push([plate, 14, 14])
+    // 没玩过的镇没有时钟牌，游戏里会有：开始钮落在它右边大概的位置
+    plans.push([enter, plate.hidden ? 187 : 14 + plate.offsetWidth + 8, 14, 58])
+    if (!residents.hidden) plans.push([residents, 14, 82])
+    // 先都量好再动：谁先离开原位都会挤动别人。原位留一个同样大的空当，旁边的东西不跳
+    const boxes = plans.map(([el]) => el.getBoundingClientRect())
+    plans.forEach(([el, left, top, width], i) => {
+      const box = boxes[i]
+      const gap = document.createElement('div')
+      gap.style.cssText = `flex:none;width:${box.width}px;height:${box.height}px;margin:${getComputedStyle(el).margin}`
+      el.before(gap)
+      const before = el.style.cssText
+      el.classList.add('is-flying')
+      Object.assign(el.style, {
+        position: 'fixed',
+        left: `${box.left}px`,
+        top: `${box.top}px`,
+        width: `${box.width}px`,
+        margin: '0',
+      })
+      void el.offsetWidth
+      el.style.left = `${left}px`
+      el.style.top = `${top}px`
+      if (width) el.style.width = `${width}px`
+      flown.push(el)
+      steps.push(() => {
+        el.classList.remove('is-flying')
+        el.style.cssText = before
+        gap.remove()
+      })
+    })
+  }
+  return {
+    done: Promise.all([
+      stageCamera.enter(),
+      new Promise((resolve) => setTimeout(resolve, flown.length ? 760 : 0)),
+    ]),
+    flown,
+    undo() {
+      stageCamera.back()
+      for (const step of steps.reverse()) step()
+    },
+  }
+}
+/** 正在进镇的那场转场；没在进镇时为空 */
+let leaving: ReturnType<typeof leaveForGame> | undefined
+/** 没进成，或者从游戏页按后退回到这一页（浏览器把这页原样留着）：界面摆回原样 */
+function cancelLeaving() {
+  leaving?.undo()
+  leaving = undefined
+  enter.disabled = deleting || !selected?.available
+}
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) cancelLeaving()
+})
 enter.onclick = async () => {
-  if (!selected?.available || deleting) return
+  if (!selected?.available || deleting || leaving) return
   const map = selected
   enter.disabled = true
+  setScenic(false)
   $('pause-status').textContent = '正在打开小镇…'
+  const going = (leaving = leaveForGame())
+  // 小镇开得慢时（世界进程冷启动）：零件都散开了，画面中间说一声
+  const slow = setTimeout(() => {
+    $('preview-state').textContent = '正在进入小镇…'
+    $('preview-state').hidden = false
+  }, 1500)
   try {
-    const runtime = await openMap(map.id)
+    const [runtime] = await Promise.all([openMap(map.id), going.done])
     await pauseWorld(runtime.endpoint)
-    if (selected === map) location.assign(gameUrl(map))
+    // 最后一帧和飞到位的那几样交给游戏页，垫着等场景建好（enterHandoff.ts）
+    const image = shownPreview()?.map.still?.(2400)
+    if (image) saveHandoff(map.id, image, going.flown)
+    location.assign(gameUrl(map))
   } catch (error) {
+    cancelLeaving()
     $('pause-status').textContent = errorText(error)
-    enter.disabled = false
+  } finally {
+    clearTimeout(slow)
+    $('preview-state').hidden = true
   }
 }
 retry.onclick = () => {
@@ -809,6 +905,7 @@ document.addEventListener('keydown', (event) => {
   if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
   if (launcher.hidden || launcher.classList.contains('is-scenic') || building || deleting) return
+  if (leaving) return
   const target = event.target instanceof Element ? event.target : null
   if (target?.closest('input, textarea, select, [contenteditable], dialog')) return
   if (document.querySelector('dialog[open]')) return

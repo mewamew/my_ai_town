@@ -4,6 +4,17 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AI小镇</title>
+    <!-- 从选镇页进来时先垫深色：样式表到了、脚本还没跑的那一下不闪白（gameEntry.ts 垫上画面后撤掉） -->
+    <style>
+      html.entering body {
+        background: #111412;
+      }
+    </style>
+    <script>
+      try {
+        if (sessionStorage.getItem('town:enter')) document.documentElement.classList.add('entering')
+      } catch {}
+    </script>
   </head>
   <body>
     <script type="module" src="/src/gameEntry.ts"></script>

@@ -155,6 +155,8 @@ export interface GameMap {
   /** 拍一张全镇的小图当封面（JPEG 的 data URL）：机位临时摆成正面看全镇、不带失焦模糊，拍完摆回去，
    *  屏幕上看不出来。只有立体场景能拍，否则返回 undefined */
   cover?(width: number, height: number): string | undefined
+  /** 此刻的画面（JPEG 的 data URL），宽不超过 maxWidth。进镇时拍下来，游戏页加载时垫在下面 */
+  still?(maxWidth: number): string | undefined
   onVillagerClick: ((id: string) => void) | null
   /** 没在摆道具时点了空地（控制化身时 onAvatarWalkTo 同时收到走过去的目标） */
   onGroundClick?: (() => void) | null

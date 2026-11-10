@@ -154,6 +154,45 @@ a:focus-visible {
   align-items: center;
   gap: 20px;
 }
+/* 从选镇页进来（town-2d 的 enterHandoff.ts）：选镇页最后一帧铺满垫在最上面，只留一句「正在进入小镇…」；
+   游戏画面在底下建好后淡出 */
+.entry-state.has-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  background: var(--night-0) center / cover no-repeat;
+  transition: opacity 0.6s var(--ease);
+}
+.entry-state.has-backdrop.is-leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+.entry-state.has-backdrop h1 {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  margin: 0;
+  padding: 7px 16px;
+  border-radius: 18px;
+  background: var(--toast-bg);
+  color: var(--toast-ink);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+}
+.entry-state.has-backdrop :is(p, .entry-actions) {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .entry-state.has-backdrop {
+    transition: none;
+  }
+}
 .entry-actions a {
   color: var(--accent);
 }

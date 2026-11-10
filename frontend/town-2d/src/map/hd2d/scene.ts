@@ -835,6 +835,25 @@ export class HdScene {
     this.bokeh.enabled = false
     for (const p of this.tiltShift) p.enabled = false
     this.draw(performance.now())
+    const image = this.copy(width, height)
+    this.bokeh.enabled = bokeh
+    this.tiltShift.forEach((p, i) => (p.enabled = tilt[i]))
+    this.beforeDraw = hook
+    restore()
+    this.draw(performance.now())
+    return image
+  }
+
+  /** 此刻的画面，原样拍下来（宽不超过 maxWidth） */
+  grab(maxWidth: number): HTMLCanvasElement {
+    this.draw(performance.now())
+    const source = this.renderer.domElement
+    const width = Math.max(1, Math.min(maxWidth, source.width))
+    return this.copy(width, Math.max(1, Math.round((source.height * width) / source.width)))
+  }
+
+  /** 画布正中间、和小图同样长宽比的那块，缩成 width×height。画布不留上一帧，要紧跟在 draw 后面拷 */
+  private copy(width: number, height: number): HTMLCanvasElement {
     const source = this.renderer.domElement
     const image = document.createElement('canvas')
     image.width = width
@@ -855,11 +874,6 @@ export class HdScene {
         width,
         height
       )
-    this.bokeh.enabled = bokeh
-    this.tiltShift.forEach((p, i) => (p.enabled = tilt[i]))
-    this.beforeDraw = hook
-    restore()
-    this.draw(performance.now())
     return image
   }
 
