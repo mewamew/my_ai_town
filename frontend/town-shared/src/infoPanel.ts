@@ -1,6 +1,8 @@
 // 选中村民：地图上点人，脚下冒出一排动作钮（info/focus.ts）；点「资料」打开右栏的角色卡。
 // 角色卡分页签（info/tabs.ts）：「近况」是像素小人和想法、住处、正在做的事、身体状态、口袋，原因和记录收在
 // 「更多细节」里；「人设」「长相」「模型」就地改这位村民。
+// 卡片上的东西都从每拍的名册来，只有「更多细节 → 目标与记忆」例外：那一截有好几 KB，名册里不带，
+// 展开它时才告诉世界在看谁（watch_resident），世界单独发来、变了再发（resident_detail）。
 // 跨级反馈：记录每项需求的上一个 band，变化时状态条一次性强调 + 追加本地事件。
 
 import {
@@ -34,6 +36,10 @@ interface InfoPanelDeps {
   onOpenDiary: () => void
   onOpenMemory: () => void
   onSelectResident: (id: string) => void
+  /** 告诉世界在看谁的「目标与记忆」，世界把那一位的细节发来、变了再发；null 是不看了 */
+  onWatchDetail: (id: string | null) => void
+  /** 重演录像：没有世界可问，「目标与记忆」那一截写明不显示 */
+  replay: boolean
   /** 选中的村民换了人（右栏里的聊天记录页要退回角色卡） */
   onSelectionChange: () => void
   /** 选中谁定下来了（含取消选中）：头像条跟着高亮 */
@@ -142,7 +148,7 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     },
   })
   const plan = createPlanView($('info-plan'))
-  const agent = createAgentView($('info-agent'))
+  const agent = createAgentView($('info-agent'), deps.replay)
   const stage = createStage(query<HTMLCanvasElement>(panel, '.card-sprite'))
   const focus = createFocus(deps.map, $('map'), {
     talk: () => {
@@ -190,7 +196,25 @@ export function initInfoPanel(deps: InfoPanelDeps) {
     panel.classList.toggle('collapsed', collapsed)
     if (collapsed) tabs.collapsed()
     syncFocus()
+    syncWatch()
   }
+
+  // 「更多细节」和里面的「目标与记忆」：两层都展开、卡片开着，才要选中那位的细节
+  const folds = [
+    query<HTMLDetailsElement>(panel, '.card-more'),
+    query<HTMLDetailsElement>(panel, '#info-agent-fold'),
+  ]
+  /** 连着世界：没连着时不发，连上再说 */
+  let online = false
+  /** 已经告诉世界在看谁；断线后世界不记得，连上要再说一遍 */
+  let watching: string | null = null
+  function syncWatch() {
+    const wanted = selectedId && !panel.hidden && folds.every((f) => f.open) ? selectedId : null
+    if (!online || wanted === watching) return
+    watching = wanted
+    deps.onWatchDetail(wanted)
+  }
+  for (const fold of folds) fold.addEventListener('toggle', syncWatch)
   /** 收起角色卡，保留选中：地图上的动作钮还在 */
   function collapse() {
     setCollapsed(true)
@@ -279,6 +303,7 @@ export function initInfoPanel(deps: InfoPanelDeps) {
       $('info-home').textContent = ''
     }
     syncFocus()
+    syncWatch()
     deps.onSelected()
   }
 
@@ -447,9 +472,22 @@ export function initInfoPanel(deps: InfoPanelDeps) {
       tabs.keep(new Set(registrations.keys()))
       renderHome()
     },
-    /** 人设原文、模型配置等交给页签里的各页；不认领，后面的面板照常收到 */
+    /** 「目标与记忆」的细节自己收下（换人以后才到的上一位的不画）；人设原文、模型配置等交给页签里的
+     *  各页，不认领，后面的面板照常收到 */
     handleMsg(msg: ServerMsg) {
+      if (msg.type === 'resident_detail') {
+        if (msg.resident_id === watching) agent.detail(msg.detail ?? null)
+        return true
+      }
       tabs.handleMsg(msg)
+    },
+    connected() {
+      online = true
+      syncWatch()
+    },
+    disconnected() {
+      online = false
+      watching = null
     },
     /** 名册：先定选中谁，再刷新信息、跨级检测与跟随 */
     roster({ residents, msg }: RosterFrame) {

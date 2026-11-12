@@ -226,19 +226,21 @@ interface WorldFact {
     previous_version: string | null
   }
 }
+/** 名册里每拍都带的 Agent 状态：画面和各面板判断用。目标、动作结果、互动和记着的事不在这里，
+ *  见 ResidentDetailView */
 export interface ResidentAgentView {
   state: AgentState
   reason: string
   /** 在等时等什么、最迟几点醒来；event 是哪类事件来了会提前醒，只按时间等时没有 */
   wait?: { reason: string; until: number; event?: FactKind }
-  daily_calls: number
-  daily_limit: number
-  daily_tokens: number
-  daily_input_tokens: number
-  daily_cache_hit_tokens: number
-  /** 生活决策回复累计数与其中因世界变化过时、未执行的数 */
-  replies: number
-  stale_replies: number
+  /** 最近定下或改过的进行中目标；换了，画面上这个人头上冒灯泡 */
+  latest_goal?: { id: string; updated_at: number }
+  /** 最近一次自己发起、被对方婉拒的邀请（编号）；换了，画面上这个人头上冒怒气 */
+  declined_invitation?: string
+}
+/** 角色卡「目标与记忆」里的细节。不随名册发：页面用 watch_resident 说了在看谁，世界才把那一位的
+ *  发来（resident_detail），之后变了再发 */
+export interface ResidentDetailView {
   goals: {
     id: string
     title: string
@@ -940,6 +942,9 @@ export type ServerMsg =
       model_binding?: ModelChoice
     }
   | { type: 'agent_saved'; request_id: string; ok: boolean; message: string }
+  /** 角色卡细节：只发给说了在看这位村民的页面（watch_resident），说的时候一份，之后变了才发；
+   *  这位村民没有 Agent 会话时没有 detail */
+  | { type: 'resident_detail'; resident_id: string; detail?: ResidentDetailView }
   /**
    * 通用错误：命令无法执行、格式错误、读取失败或保存失败。request_id 是引起错误的命令自带的编号
    * （加入小镇是操作编号）；周期存盘失败这类不是由命令引起的错误没有。
@@ -1163,6 +1168,9 @@ export type ClientMsg =
     }
   | { type: 'get_resident_join_result'; world_id: string; op_id: string }
   | { type: 'get_agent_config' | 'get_diary'; resident?: string }
+  /** 说自己在看哪位村民的角色卡细节（回 resident_detail，之后变了再发）；不带 resident 是不看了。
+   *  一条连接同时只看一位，断线后世界不记得，重连要再说一遍 */
+  | { type: 'watch_resident'; resident?: string }
   | { type: 'get_notebook'; resident: string; request_id: string; query: NotebookQuery }
   | {
       type: 'get_notebook_detail'

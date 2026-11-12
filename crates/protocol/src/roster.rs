@@ -88,6 +88,7 @@ pub struct RosterMember {
     /// 最近一次决定时的想法（无则省略）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thought: Option<ThoughtView>,
+    /// Agent 此刻的状态（没有会话的个体省略）。角色卡细节不在名册里，见 ResidentDetailView
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resident_agent: Option<ResidentAgentView>,
 }

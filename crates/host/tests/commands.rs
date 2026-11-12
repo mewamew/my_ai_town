@@ -1,6 +1,7 @@
-//! 用临时配置启动真实 host，覆盖命令分发、回执只回发出的连接、额度暂停、自动快进与配置文件的启动门槛。
+//! 用临时配置启动真实 host，覆盖命令分发、回执只回发出的连接、角色卡细节只发给在看的连接、
+//! 额度暂停、自动快进与配置文件的启动门槛。
 use crate::support::*;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::{
     fs,
     time::{Duration, Instant},
@@ -55,6 +56,84 @@ fn receipts_go_only_to_the_connection_that_sent_the_command() {
     send(&mut first, json!({"type":"get_world_settings"}));
     let seen = received_until(&mut first, |m| m["type"] == "world_settings");
     assert!(!seen.iter().any(|m| m["type"] == "error"), "{seen:?}");
+}
+
+/// 名册每拍整份广播，只带每拍要用的 Agent 状态。角色卡细节（目标、动作结果、互动、记着的事）只发给
+/// 说了在看这位村民的连接：说的时候一份，之后变了才再发；别的连接收不到，不看了就停。
+#[test]
+fn card_detail_goes_only_to_the_watching_connection_and_only_when_it_changes() {
+    const LISTS: [&str; 4] = ["goals", "results", "interactions", "memories"];
+    let details = |seen: &[Value]| -> Vec<Value> {
+        seen.iter()
+            .filter(|m| m["type"] == "resident_detail")
+            .map(|m| m["detail"].clone())
+            .collect()
+    };
+    let mut town = Town::new();
+    town.persistent = false;
+    let mut watcher = town.start();
+    let id = join_id(&mut watcher, "tpl_a");
+    let mut other = connect_again(&watcher);
+
+    send(&mut watcher, json!({"type":"watch_resident","resident":id}));
+    let first = until(&mut watcher, |m| m["type"] == "resident_detail");
+    assert_eq!(first["resident_id"], id, "{first}");
+    for list in LISTS {
+        assert!(first["detail"][list].is_array(), "{first}");
+    }
+    // 世界停着，细节没变：名册照常每拍来，细节不重发；名册里的人只带状态
+    let quiet = through_rosters(&mut watcher, 5);
+    assert!(details(&quiet).is_empty(), "{quiet:?}");
+    let member = members(quiet.last().unwrap())
+        .into_iter()
+        .find(|m| m["id"] == id)
+        .unwrap();
+    let agent = member["resident_agent"].as_object().unwrap();
+    assert!(agent.contains_key("state"), "{member}");
+    for list in LISTS {
+        assert!(!agent.contains_key(list), "{member}");
+    }
+
+    // 他快渴死了，世界一走就有新的经历记下来：细节变了，才来新的一份，每一份都和上一份不一样
+    let world_id = reply(&mut watcher, json!({"type":"get_population"}), "population")
+        ["population"]["world_id"]
+        .clone();
+    let parched = reply(
+        &mut watcher,
+        json!({"type":"set_resident_body","request_id":"parched","world_id":world_id,
+            "resident_id":id,"values":{"water":1,"fullness":1}}),
+        "agent_saved",
+    );
+    assert_eq!(parched["ok"], true, "{parched}");
+    send(
+        &mut watcher,
+        json!({"type":"set_speed","request_id":"go","speed":20}),
+    );
+    let mut seen = received_until(&mut watcher, |m| {
+        m["type"] == "resident_detail" && m["detail"] != first["detail"]
+    });
+    seen.extend(through_rosters(&mut watcher, 20));
+    let mut previous = first["detail"].clone();
+    for detail in details(&seen) {
+        assert_ne!(detail, previous, "细节没变也发了一份");
+        previous = detail;
+    }
+
+    // 另一个页面没说在看：一份也收不到
+    send(&mut other, json!({"type":"get_world_settings"}));
+    let unwatched = received_until(&mut other, |m| m["type"] == "world_settings");
+    assert!(unwatched.iter().any(|m| m["type"] == "roster"));
+    assert!(details(&unwatched).is_empty(), "{unwatched:?}");
+
+    // 这边不看了、换那个页面看：细节改发给它，这边不再收到
+    send(&mut watcher, json!({"type":"watch_resident"}));
+    send(&mut other, json!({"type":"watch_resident","resident":id}));
+    let moved = until(&mut other, |m| m["type"] == "resident_detail");
+    assert_eq!(moved["resident_id"], id, "{moved}");
+    send(&mut watcher, json!({"type":"get_world_settings"}));
+    received_until(&mut watcher, |m| m["type"] == "world_settings");
+    let after = through_rosters(&mut watcher, 10);
+    assert!(details(&after).is_empty(), "{after:?}");
 }
 
 #[test]
@@ -192,12 +271,8 @@ fn the_world_fast_forwards_only_while_everyone_is_settled() {
     }
     assert!(waited >= 5, "没有看到等回复的过程");
     assert!(fastest >= 8.0, "大家都在等着时没有快进：最快 {fastest}");
-    let roster = until(&mut ws, |m| m["type"] == "roster");
-    let member = members(&roster)
-        .into_iter()
-        .find(|m| m["id"] == id)
-        .unwrap();
-    assert_eq!(member["resident_agent"]["stale_replies"], 0, "{member}");
+    let usage = usage_of(&mut ws, &id);
+    assert_eq!(usage["stale_replies"], 0, "{usage}");
 }
 
 /// providers.json 存在但损坏：启动拒绝，写路径也拒绝覆盖，原文件原样保留。

@@ -34,12 +34,11 @@ fn joining_while_running_keeps_the_first_resident_and_survives_restart() {
         &mut ws,
         json!({"type":"set_speed","request_id":"test-set-speed","speed":20}),
     );
-    let running = until(&mut ws, |m| {
+    until(&mut ws, |m| {
         m["type"] == "roster" && m["sim_minutes"].as_f64().unwrap() > 425.0
     });
-    let first_before = members(&running)
-        .into_iter()
-        .find(|m| m["id"] == first_id)
+    let calls_before = usage_of(&mut ws, &first_id)["daily_calls"]
+        .as_u64()
         .unwrap();
     let outcome = join(&mut ws, "tpl_b", None);
     assert_eq!(outcome["ok"], true, "{outcome}");
@@ -56,14 +55,11 @@ fn joining_while_running_keeps_the_first_resident_and_survives_restart() {
         second["plan"]["upcoming"].as_array().unwrap().is_empty(),
         "没有入村脚本"
     );
-    let first_after = people.iter().find(|m| m["id"] == first_id).unwrap();
     assert!(
-        first_after["resident_agent"]["daily_calls"]
+        usage_of(&mut ws, &first_id)["daily_calls"]
             .as_u64()
             .unwrap()
-            >= first_before["resident_agent"]["daily_calls"]
-                .as_u64()
-                .unwrap(),
+            >= calls_before,
         "第一人的用量没有被初始化"
     );
     send(

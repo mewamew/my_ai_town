@@ -49,6 +49,16 @@ fn agent_view() -> ResidentAgentView {
             until: 490.0,
             event: Some(FactKind::Presence),
         }),
+        latest_goal: Some(GoalMark {
+            id: "read".into(),
+            updated_at: 431.0,
+        }),
+        declined_invitation: Some("i0".into()),
+    }
+}
+
+fn detail_view() -> ResidentDetailView {
+    ResidentDetailView {
         goals: vec![ResidentGoalView {
             id: "read".into(),
             title: "去图书馆读书".into(),
@@ -105,13 +115,6 @@ fn agent_view() -> ResidentAgentView {
                 }),
             }],
         }],
-        daily_calls: 3,
-        daily_limit: 120,
-        daily_tokens: 12_000,
-        daily_input_tokens: 10_000,
-        daily_cache_hit_tokens: 4_000,
-        replies: 3,
-        stale_replies: 1,
     }
 }
 
@@ -711,6 +714,10 @@ pub fn server_samples() -> Vec<ServerMsg> {
             request_id: "req-1".into(),
             ok: true,
             message: "已设当前值".into(),
+        },
+        ServerMsg::ResidentDetail {
+            resident_id: "resident_ashu".into(),
+            detail: Some(detail_view()),
         },
         ServerMsg::Error {
             request_id: Some("op1".into()),
@@ -1752,6 +1759,9 @@ pub fn client_samples() -> Vec<ClientMsg> {
             api_key: None,
         },
         ClientMsg::GetAgentConfig {
+            resident: Some("resident_ashu".into()),
+        },
+        ClientMsg::WatchResident {
             resident: Some("resident_ashu".into()),
         },
         ClientMsg::SetPersona {

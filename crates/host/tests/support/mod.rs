@@ -329,6 +329,28 @@ pub fn reply(ws: &mut WebSocket<TcpStream>, command: Value, kind: &str) -> Value
     until(ws, |m| m["type"] == kind)
 }
 
+/// 消耗页里这位居民的一行：今天的调用数、token、回复数与其中过时的。
+#[track_caller]
+pub fn usage_of(ws: &mut WebSocket<TcpStream>, id: &str) -> Value {
+    reply(ws, json!({"type":"get_usage"}), "usage")["residents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == id)
+        .expect("消耗页里没有这位居民")
+        .clone()
+}
+
+/// 读到第 `count` 份名册为止，返回读到的全部消息。
+#[track_caller]
+pub fn through_rosters(ws: &mut WebSocket<TcpStream>, count: usize) -> Vec<Value> {
+    let seen = std::cell::Cell::new(0);
+    received_until(ws, |m| {
+        seen.set(seen.get() + usize::from(m["type"] == "roster"));
+        seen.get() >= count
+    })
+}
+
 pub fn members(roster: &Value) -> Vec<Value> {
     roster["locales"]
         .as_array()

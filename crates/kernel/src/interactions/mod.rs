@@ -200,6 +200,19 @@ impl Interactions {
         items
     }
 
+    /// 本人最近一次发起、被对方婉拒的邀请（按发出的先后，和 `for_actor` 的次序一致）。
+    /// 名册每拍给每个人取一次，所以只扫一遍、不排序。
+    pub fn latest_declined_offer(&self, actor: &str) -> Option<&Interaction> {
+        self.items
+            .values()
+            .filter(|i| i.status == Status::Declined && i.initiator == actor)
+            .max_by(|a, b| {
+                a.created_at
+                    .total_cmp(&b.created_at)
+                    .then_with(|| a.id.cmp(&b.id))
+            })
+    }
+
     /// 刚发出的邀请：状态为已提议，now 起 INVITE_MINUTES 内可回应。交谈邀请带着空的聊天状态。
     pub(crate) fn new_offer(
         id: &str,

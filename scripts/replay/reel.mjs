@@ -3,10 +3,33 @@
 // 每一份完整的，按 t 的先后交出 {t, msg}。只用纯 JS，浏览器（重演画面）和 Node（拍摄工具）共用；
 // 解压由调用方做（浏览器 DecompressionStream，Node zlib）。
 
-/** 录像格式号，和 recording.rs 的 FORMAT 一致；2 在名册变化里把身体单独记（b），1 的录像照样读 */
-export const FORMAT = 2
+/** 录像格式号，和 recording.rs 的 FORMAT 一致；2 在名册变化里把身体单独记（b）；3 的名册里每个人只带
+ *  每拍要用的 Agent 状态，不再带整份角色卡细节。1、2 的录像照样读 */
+export const FORMAT = 3
 /** 读得了的格式号 */
-export const FORMATS = [1, 2]
+export const FORMATS = [1, 2, 3]
+
+/** 3 以前的录像：名册里每个人带着整份角色卡细节（目标、动作结果、互动、记忆），画面要的两个记号
+ *  （最近改过的进行中目标、最近一次被婉拒的邀请）当时由页面从这些列表里现找。这里照当时的找法补成
+ *  现在名册的写法，页面只认一种；原来的列表留着不动。3 的名册没有这些列表，原样返回 */
+function withAgentMarks(member) {
+  const agent = member.resident_agent
+  if (!agent || !Array.isArray(agent.goals)) return member
+  const goal = agent.goals
+    .filter((g) => g.status === 'active')
+    .reduce((a, g) => (!a || g.updated_at > a.updated_at ? g : a), undefined)
+  const declined = (agent.interactions ?? []).find(
+    (i) => i.status === 'declined' && i.participants[0] === member.name
+  )
+  return {
+    ...member,
+    resident_agent: {
+      ...agent,
+      ...(goal && { latest_goal: { id: goal.id, updated_at: goal.updated_at } }),
+      ...(declined && { declined_invitation: declined.id }),
+    },
+  }
+}
 
 /** 一段的原文 → 一行行的对象；进程意外退出时最后一行可能没写完，丢掉它 */
 export function parseSegment(text) {
@@ -41,7 +64,7 @@ export function createRosterState() {
       top = rest
       members = new Map()
       order = locales.map(({ locale, members: list }) => {
-        for (const member of list) members.set(member.id, member)
+        for (const member of list) members.set(member.id, withAgentMarks(member))
         return [locale, list.map((m) => m.id)]
       })
       return build()
@@ -56,7 +79,8 @@ export function createRosterState() {
       }
       members = new Map(members)
       for (const [id, fields] of Object.entries(d.m ?? {})) {
-        members.set(id, { ...members.get(id), ...fields })
+        const member = { ...members.get(id), ...fields }
+        members.set(id, fields.resident_agent ? withAgentMarks(member) : member)
       }
       for (const [id, keys] of Object.entries(d.x ?? {})) {
         const member = { ...members.get(id) }

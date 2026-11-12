@@ -45,6 +45,7 @@ impl Runtime {
     pub(crate) fn network_command(&mut self, event: NetworkEvent, clients: &Clients) {
         match event {
             NetworkEvent::Disconnected(id) => {
+                self.watchers.forget(id);
                 if let Some(lease) = self
                     .avatar_control
                     .lease

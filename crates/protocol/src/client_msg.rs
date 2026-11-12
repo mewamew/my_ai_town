@@ -225,6 +225,12 @@ pub enum ClientMsg {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         resident: Option<String>,
     },
+    /// 说自己在看哪位村民的角色卡细节（回 ResidentDetail，之后细节变了再发）；不带 resident 是不看了。
+    /// 一条连接同时只看一位；连接断了世界就不记得，重连后要再说一遍。
+    WatchResident {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resident: Option<String>,
+    },
     /// 保存人设原文（markdown；热重载，下一次请求计划生效）
     SetPersona {
         request_id: String,
@@ -391,6 +397,7 @@ impl ClientMsg {
             | GetProps
             | GetModelConfig
             | GetAgentConfig { .. }
+            | WatchResident { .. }
             | GetPopulation
             | GetUsage
             | GetResidentLibrary { .. }

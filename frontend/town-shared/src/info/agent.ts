@@ -1,4 +1,4 @@
-import type { ResidentAgentView } from '../protocol'
+import type { ResidentAgentView, ResidentDetailView } from '../protocol'
 import { el as text } from '../dom'
 import { clock, playerText } from '../format'
 import {
@@ -10,10 +10,10 @@ import {
   memoryStatusLabels,
 } from '../labels'
 
-type Goal = ResidentAgentView['goals'][number]
-type Result = ResidentAgentView['results'][number]
-type Interaction = NonNullable<ResidentAgentView['interactions']>[number]
-type Memory = ResidentAgentView['memories'][number]
+type Goal = ResidentDetailView['goals'][number]
+type Result = ResidentDetailView['results'][number]
+type Interaction = ResidentDetailView['interactions'][number]
+type Memory = ResidentDetailView['memories'][number]
 
 const resultStatusLabels = {
   succeeded: '完成',
@@ -107,40 +107,56 @@ function memoryRow(memory: Memory, opened: Set<string | undefined>) {
   return row
 }
 
-/** 只读投影；原始来源用原生 details 打开，更新状态时保留已展开项。 */
-export function createAgentView(box: HTMLElement) {
+/**
+ * 只读投影，分两截：状态和原因跟着名册每拍来（render）；目标、动作结果、互动和记着的事是世界单独发来的
+ * 细节（detail），变了才来一份，更新时保留已展开的来源。recorded：重演录像，没有世界可问，细节不显示。
+ */
+export function createAgentView(box: HTMLElement, recorded = false) {
   box.classList.add('resident-agent')
-  let previous = ''
+  const head = text('div')
+  const lists = text('div')
+  /** 上次画的状态和原因；空串是还没画过这个人 */
+  let drawn = ''
   function clear() {
-    previous = ''
+    drawn = ''
+    lists.replaceChildren()
     box.replaceChildren(text('p', '该村民没有 Agent 会话', 'dim'))
   }
   function render(view?: ResidentAgentView) {
     if (!view) {
-      if (previous) clear()
+      if (drawn) clear()
       return
     }
-    const key = JSON.stringify(view)
-    if (key === previous) return
-    previous = key
+    const key = `${view.state}\n${view.reason}`
+    if (key === drawn) return
+    if (!drawn) {
+      box.replaceChildren(head, lists)
+      // 重演时只有名册：说清这一截为什么空着
+      if (recorded) lists.replaceChildren(text('p', '重演录像时不显示目标与记忆', 'dim'))
+    }
+    drawn = key
+    head.replaceChildren(...header(view))
+  }
+  /** 选中这位的细节到了；null 是世界说他没有（没有 Agent 会话） */
+  function detail(view: ResidentDetailView | null) {
+    if (!view) return lists.replaceChildren()
     const opened = new Set(
-      Array.from(box.querySelectorAll<HTMLDetailsElement>('details[open]')).map(
+      Array.from(lists.querySelectorAll<HTMLDetailsElement>('details[open]')).map(
         (d) => d.dataset.memoryId
       )
     )
     const fragment = document.createDocumentFragment()
     fragment.append(
-      ...header(view),
       ...section('持续目标', view.goals, '还没有记录目标', goalRow),
       ...section('最近动作结果', view.results, '还没有动作结果', resultRow)
     )
-    if (view.interactions?.length)
+    if (view.interactions.length)
       fragment.append(text('h4', '互动与聊天'), ...view.interactions.map(interactionRow))
     fragment.append(
       ...section('记着的事', view.memories, '还没有记下什么', (memory) => memoryRow(memory, opened))
     )
-    box.replaceChildren(fragment)
+    lists.replaceChildren(fragment)
   }
   clear()
-  return { render, clear, reset: clear }
+  return { render, detail, clear, reset: clear }
 }

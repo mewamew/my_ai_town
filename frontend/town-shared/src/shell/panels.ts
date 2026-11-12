@@ -127,6 +127,9 @@ export function createPanels(input: ShellInputs) {
       if (!session.inSettings()) pages.memory.open(r)
     }),
     onSelectResident: (id) => send({ type: 'get_agent_config', resident: id }),
+    onWatchDetail: (id) =>
+      send(id ? { type: 'watch_resident', resident: id } : { type: 'watch_resident' }),
+    replay: input.replay,
     onSelectionChange: () => chatHistory.residentChanged(),
     onSelected: () => strip.select(),
     avatarActive: () => avatar.active(),

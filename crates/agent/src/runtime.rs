@@ -201,6 +201,8 @@ pub struct ResidentRuntime {
     trace: Vec<TraceRecord>,
     /// 每位村民记忆文件视图的缓存；不存档。
     documents: BTreeMap<String, DocumentsCache>,
+    /// 每位村民角色卡上「记着的事」的缓存（view.rs）；不存档。
+    memory_views: BTreeMap<String, crate::view::MemoryViews>,
     /// 最近一次 poll 传入的现实时间（Unix 秒），写进台账。
     wall_clock: u64,
 }
@@ -227,6 +229,7 @@ impl ResidentRuntime {
             index: MemoryIndex::new()?,
             trace: vec![],
             documents: BTreeMap::new(),
+            memory_views: BTreeMap::new(),
             wall_clock: 0,
         })
     }
@@ -235,6 +238,15 @@ impl ResidentRuntime {
     }
     pub fn session(&self, actor: &str) -> Option<&Session> {
         self.state.sessions.get(actor)
+    }
+    /// 一位村民的会话，连同他「记着的事」的缓存（view.rs 拼角色卡细节时两样一起要）。
+    pub(crate) fn session_with_memory_views(
+        &mut self,
+        actor: &str,
+    ) -> Option<(&Session, &mut crate::view::MemoryViews)> {
+        let session = self.state.sessions.get(actor)?;
+        let views = self.memory_views.entry(actor.to_owned()).or_default();
+        Some((session, views))
     }
     pub fn drain_trace(&mut self) -> Vec<TraceRecord> {
         std::mem::take(&mut self.trace)

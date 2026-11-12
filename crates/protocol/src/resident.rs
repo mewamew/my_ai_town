@@ -179,6 +179,9 @@ pub enum EvidenceSource {
     Inferred,
 }
 
+/// 名册里每拍都带的 Agent 状态：画面和各面板判断用，名册每 0.1 秒整份广播，所以只放它们每拍要看的。
+/// 目标、动作结果、互动和记着的事是角色卡细节（ResidentDetailView），不随名册发；调用次数和 token
+/// 在消耗页（ResidentUsage）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResidentAgentView {
     pub state: AgentState,
@@ -186,24 +189,29 @@ pub struct ResidentAgentView {
     /// 在等时等什么、最迟几点醒来；没在等就省略
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wait: Option<AgentWaitView>,
+    /// 最近定下或改过的进行中目标；换了，画面上这个人头上冒灯泡。没有进行中的目标时省略
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_goal: Option<GoalMark>,
+    /// 最近一次自己发起、被对方婉拒的邀请的编号；换了，画面上这个人头上冒怒气。没有时省略
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declined_invitation: Option<String>,
+}
+
+/// 一个目标此刻的记号：编号和最近改动的时刻，画面只用它认「换了没有」。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoalMark {
+    pub id: String,
+    pub updated_at: f64,
+}
+
+/// 角色卡「目标与记忆」里的细节。一位村民的这一份有好几 KB，只发给说了在看他的连接
+/// （ClientMsg::WatchResident → ServerMsg::ResidentDetail），说的时候一份，之后变了才发。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ResidentDetailView {
     pub goals: Vec<ResidentGoalView>,
     pub results: Vec<ActionResultView>,
-    #[serde(default)]
     pub interactions: Vec<ResidentInteractionView>,
     pub memories: Vec<ResidentMemoryView>,
-    pub daily_calls: u64,
-    pub daily_limit: u64,
-    pub daily_tokens: u64,
-    /// 服务商实际计的输入 token 与其中的缓存命中，供侧栏显示命中率。
-    #[serde(default)]
-    pub daily_input_tokens: u64,
-    #[serde(default)]
-    pub daily_cache_hit_tokens: u64,
-    /// 生活决策回复累计数与其中因世界变化过时、未执行的数，供评估过时比例。
-    #[serde(default)]
-    pub replies: u64,
-    #[serde(default)]
-    pub stale_replies: u64,
 }
 
 /// 村民在等什么：自己写的理由、最迟醒来的时刻，以及哪类事件来了会提前醒（只按时间等时没有）。
@@ -216,7 +224,7 @@ pub struct AgentWaitView {
 }
 
 /// 观察仪里的一条动作结果：动作结果本身加上动作种类。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActionResultView {
     #[serde(flatten)]
     pub result: ActionResult,
@@ -338,7 +346,7 @@ pub struct RequestView {
     pub cache_hit_tokens: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResidentInteractionView {
     pub id: String,
     pub title: String,
@@ -347,7 +355,7 @@ pub struct ResidentInteractionView {
     pub result: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResidentGoalView {
     pub id: String,
     pub title: String,
@@ -358,7 +366,7 @@ pub struct ResidentGoalView {
     pub updated_at: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResidentMemoryView {
     pub memory_id: u64,
     pub kind: MemoryKind,

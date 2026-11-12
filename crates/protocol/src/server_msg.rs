@@ -1,10 +1,11 @@
 //! 服务端消息（后端 → 前端）。命令的回执、查询结果与错误只发给发出命令的连接，回执带命令的
 //! 请求编号，前端按编号配对；名册、事件、想法和其他状态变化广播给所有连接。
+//! 角色卡细节（ResidentDetail）和化身状态只发给在看、在控制的那条连接。
 use crate::{
     ActiveModelChoice, AgentLimits, AgentUsage, ChatEntry, ChatSummary, DiaryDay, JoinOutcome,
     JoinPreview, ModelChoice, NeedsTuning, NotebookDetail, NotebookView, PopulationView,
-    ProviderView, RequestView, ResidentTemplate, ResidentUsage, RosterLocale, TemplateCard,
-    TemplateFields, UsageSummary, WorldHold,
+    ProviderView, RequestView, ResidentDetailView, ResidentTemplate, ResidentUsage, RosterLocale,
+    TemplateCard, TemplateFields, UsageSummary, WorldHold,
 };
 use serde::Serialize;
 
@@ -177,6 +178,13 @@ pub enum ServerMsg {
         request_id: String,
         ok: bool,
         message: String,
+    },
+    /// 角色卡细节：只发给用 WatchResident 说了在看这位村民的连接，说的时候一份，之后变了才发。
+    /// 这位村民没有 Agent 会话（或不在世界里）时 detail 省略。
+    ResidentDetail {
+        resident_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<ResidentDetailView>,
     },
     /// 通用错误：命令无法执行、格式错误、读取失败或保存失败。request_id 是引起错误的命令自带的
     /// 编号（加入小镇的命令是它的操作编号）；不是由某条命令引起的（周期存盘失败）或命令没有编号时省略。

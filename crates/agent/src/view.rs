@@ -1,15 +1,17 @@
 //! 会话与世界结果的观察仪投影，保持有界并保留可追溯的原始事件。
+//! 分两份：名册里每拍带的状态（`view`，每位村民每拍算一次，只放便宜的），和角色卡细节
+//! （`detail`，有连接看着这位村民时才算）。
 mod memory_page;
 use crate::{
     event, interaction,
     memory::{self, MemoryStatus, TEXT_PREVIEW_CHARS},
     runtime::ResidentRuntime,
-    session::{PendingTool, Session},
+    session::{Goal, GoalStatus, PendingTool, Session},
 };
 use kernel::{world::Actor, World};
 use protocol::{
-    AgentState, AgentWaitView, FactKind, ResidentAgentView, ResidentGoalView, ResidentMemoryView,
-    ResidentUsage,
+    AgentState, AgentWaitView, FactKind, GoalMark, ResidentAgentView, ResidentDetailView,
+    ResidentGoalView, ResidentMemoryView, ResidentUsage,
 };
 
 /// 观察仪各列表的上限。
@@ -137,6 +139,20 @@ impl Session {
     }
 }
 
+/// 最近定下或改过的进行中目标：画面上换了就冒灯泡。改动时刻相同时取编号靠前的。
+fn latest_goal(s: &Session) -> Option<GoalMark> {
+    let mut latest: Option<&Goal> = None;
+    for goal in s.goals.values().filter(|g| g.status == GoalStatus::Active) {
+        if latest.is_none_or(|l| goal.updated_at > l.updated_at) {
+            latest = Some(goal);
+        }
+    }
+    latest.map(|g| GoalMark {
+        id: g.id.clone(),
+        updated_at: g.updated_at,
+    })
+}
+
 /// 进行中和暂停的目标在前，其余按更新时间倒序。
 fn goal_views(s: &Session) -> Vec<ResidentGoalView> {
     let mut goals: Vec<_> = s.goals.values().collect();
@@ -222,7 +238,33 @@ fn memory_views(s: &Session, a: &Actor) -> Vec<ResidentMemoryView> {
         .collect()
 }
 
+/// 一位村民「记着的事」的缓存，由运行器持有，不存档。记忆每变一次修订号就加一，会话和修订号都没变
+/// 就用上次算好的，不必每次把全部记忆排一遍序；来源事件写下后不再改，所以不用另外看。
+#[derive(Debug, Default)]
+pub(crate) struct MemoryViews {
+    /// 会话编号、记忆修订号，和按它们算出的那一份
+    cached: Option<(u64, u64, Vec<ResidentMemoryView>)>,
+}
+
+impl MemoryViews {
+    fn get(&mut self, s: &Session, a: &Actor) -> Vec<ResidentMemoryView> {
+        match &self.cached {
+            Some((session, revision, views))
+                if (*session, *revision) == (s.id, s.memory.revision) =>
+            {
+                views.clone()
+            }
+            _ => {
+                let views = memory_views(s, a);
+                self.cached = Some((s.id, s.memory.revision, views.clone()));
+                views
+            }
+        }
+    }
+}
+
 impl ResidentRuntime {
+    /// 名册里每拍带的状态：每位村民每拍算一次，不排序、不整份抄记忆。
     pub fn view(&self, world: &World, actor: &str) -> Option<ResidentAgentView> {
         let s = self.session(actor)?;
         let a = world.actor(actor)?;
@@ -231,6 +273,19 @@ impl ResidentRuntime {
             state,
             reason,
             wait,
+            latest_goal: latest_goal(s),
+            declined_invitation: world
+                .interactions()
+                .latest_declined_offer(actor)
+                .map(|i| i.id.clone()),
+        })
+    }
+
+    /// 角色卡细节：目标、最近的动作结果、互动和记着的事。有连接看着这位村民时 host 才来取。
+    pub fn detail(&mut self, world: &World, actor: &str) -> Option<ResidentDetailView> {
+        let a = world.actor(actor)?;
+        let (s, memories) = self.session_with_memory_views(actor)?;
+        Some(ResidentDetailView {
             goals: goal_views(s),
             results: recent_results(a),
             interactions: world
@@ -240,14 +295,7 @@ impl ResidentRuntime {
                 .take(INTERACTIONS_SHOWN)
                 .map(|i| interaction::summary(world, i))
                 .collect(),
-            memories: memory_views(s, a),
-            daily_calls: s.daily.calls,
-            daily_limit: self.state().limits.calls_per_day,
-            daily_tokens: s.daily.tokens,
-            daily_input_tokens: s.daily.input_tokens,
-            daily_cache_hit_tokens: s.daily.cache_hit_tokens,
-            replies: s.tally.replies,
-            stale_replies: s.tally.stale_replies,
+            memories: memories.get(s, a),
         })
     }
 }

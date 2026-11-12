@@ -2,9 +2,10 @@ import type { AgentState, NeedBand, NeedKind, RosterMember } from 'town-shared/p
 import type { Body, Mood } from './villagerActing'
 import type { Sign } from './villagerSigns'
 
-// 名册里和表演有关的那几项：render.ts 从名册摘出来交给立牌。不加协议字段，只换个演法——
+// 名册里和表演有关的那几项：render.ts 从名册摘出来交给立牌，只换个演法——
 // 动作词演成姿势，聊天演成面对面说话，需求和身体状况演成表情。表情只跟着有数据的状态走，
-// 不从模型写的文字里猜情绪；没有数据就是平常脸。
+// 不从模型写的文字里猜情绪；没有数据就是平常脸。被婉拒的邀请和新定的目标，名册里各带一个记号
+// （整份目标和互动是角色卡细节，不随名册来）。
 
 /** 一个人此刻的线索 */
 export interface Cue {
@@ -62,16 +63,7 @@ export function cueOf(
   const recent = recover && minutes - recover.at <= FRESH_RECOVERY ? recover : undefined
   const speech = member.speech
   const agent = member.resident_agent
-  // 婉拒的邀请：参与者按发起人在前，名字对得上才是自己被拒
-  const declined = agent?.interactions.find(
-    (i) => i.status === 'declined' && i.participants[0] === member.name
-  )
-  const goal = agent?.goals
-    .filter((g) => g.status === 'active')
-    .reduce<(typeof agent.goals)[number] | undefined>(
-      (a, g) => (!a || g.updated_at > a.updated_at ? g : a),
-      undefined
-    )
+  const goal = agent?.latest_goal
   const alive = body?.life !== 'dead'
   return {
     // 道具动作和换了姿势的停留（坐下、躺下）按动作词摆姿势
@@ -92,7 +84,7 @@ export function cueOf(
     state: agent?.state,
     persona,
     indoors,
-    declined: declined?.id,
+    declined: agent?.declined_invitation,
     goal: goal && `${goal.id}:${goal.updated_at}`,
   }
 }

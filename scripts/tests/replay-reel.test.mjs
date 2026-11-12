@@ -64,6 +64,52 @@ test('录下的一卷读回来，页面当时收到的名册和世界日志一�
   assert.equal(header.to_clock, last.clock)
 })
 
+test('格式 3 以前的录像：名册里带着整份角色卡细节，画面要的两个记号照当时的找法补上', () => {
+  const agent = {
+    state: 'waiting',
+    reason: '',
+    goals: [
+      { id: 'g1', status: 'active', updated_at: 10 },
+      { id: 'g2', status: 'completed', updated_at: 30 },
+      { id: 'g3', status: 'active', updated_at: 20 },
+    ],
+    // 参与者第一位是自己才算自己被拒
+    interactions: [
+      { id: 'i2', status: 'declined', participants: ['小禾', '阿树'] },
+      { id: 'i1', status: 'declined', participants: ['阿树', '小禾'] },
+    ],
+    results: [],
+    memories: [],
+  }
+  const state = createRosterState()
+  const member = (roster) => roster.locales[0].members[0]
+  const first = member(
+    state.key({
+      type: 'roster',
+      locales: [{ locale: 'plaza', members: [{ id: 'a', name: '阿树', resident_agent: agent }] }],
+    })
+  )
+  assert.deepEqual(first.resident_agent.latest_goal, { id: 'g3', updated_at: 20 })
+  assert.equal(first.resident_agent.declined_invitation, 'i1')
+  assert.equal(first.resident_agent.memories, agent.memories, '原来的列表留着')
+  // 变化里换了整份 Agent 状态：记号跟着重找，没有了的不留
+  const next = member(
+    state.delta({
+      m: {
+        a: {
+          resident_agent: {
+            ...agent,
+            goals: [{ id: 'g4', status: 'active', updated_at: 40 }],
+            interactions: [],
+          },
+        },
+      },
+    })
+  )
+  assert.deepEqual(next.resident_agent.latest_goal, { id: 'g4', updated_at: 40 })
+  assert.equal(next.resident_agent.declined_invitation, undefined)
+})
+
 test('重演跳到录像里任意一刻，交出的名册和顺着放到那一刻的一样', async () => {
   const { createReplaySource } = await import('../../frontend/town-2d/src/replay/source.ts')
   const dir = path.join(sample, 'reel')

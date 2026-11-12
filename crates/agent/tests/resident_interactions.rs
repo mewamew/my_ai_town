@@ -222,6 +222,14 @@ fn busy_invitation_does_not_cancel_work_until_the_resident_accepts() {
         "reply_invitation",
         json!({"interaction_id":"busy-no","accept":false,"message":"我还在忙，稍后吧"}),
     );
+    // 名册里「被婉拒」的记号记在发出邀请的人头上（画面上他冒怒气），不记在拒绝的人头上
+    let declined = |actor: &str| {
+        w.interactions()
+            .latest_declined_offer(actor)
+            .map(|i| i.id.clone())
+    };
+    assert_eq!(declined("r2").as_deref(), Some("busy-no"));
+    assert_eq!(declined("r1"), None);
     assert!(r.poll(&mut w, true).is_empty());
     assert_eq!(
         w.action_group("r1", &group).unwrap().status,

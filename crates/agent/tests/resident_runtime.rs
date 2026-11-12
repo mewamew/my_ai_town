@@ -53,8 +53,9 @@ fn outdated_replies_are_counted_and_two_revision_conflicts_in_a_row_stop_only_th
     let fourth = request(&mut r, &mut w);
     reply(&mut r, &mut w, &fourth, "observe", json!({}));
     assert_eq!(counts(&r), (4, 3, 0));
-    let view = r.view(&w, "r1").unwrap();
-    assert_eq!((view.replies, view.stale_replies), (4, 3));
+    // 消耗页的按人一行照这两个数显示
+    let usage = r.session("r1").unwrap().usage(&w);
+    assert_eq!((usage.replies, usage.stale_replies), (4, 3));
 }
 
 #[test]
