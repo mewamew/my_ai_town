@@ -13,7 +13,7 @@ corepack pnpm build
 corepack pnpm preview   # http://127.0.0.1:5174
 ```
 
-开发时用 `corepack pnpm dev`。两种方式都启动 Rust 管理服务 `target/debug/town-manager`（`crates/manager`，安装包里也是它），由它按需启动各小镇的世界进程：dev 另起 Vite 热更新页面，`/api/towns` 由 Vite 代理到管理服务（默认端口 8788）；preview 由管理服务直接发构建好的页面，会检查构建摘要，前端源码变更后需重新构建。改了 Rust 代码要重新 `cargo build` 再重启。`AI_TOWN_HOME` 指定数据目录，`TOWN_MANAGER_PORT` 换管理服务端口，`TOWN_HOST_BINARY` 换世界进程（跑长局用 release 版），`TOWN_MOCK_LLM=1` 让世界用固定回复模型。`/api/towns/health` 的 `source` 字段可确认实际运行的工作区。
+开发时用 `corepack pnpm dev`。两种方式都启动 Rust 管理服务 `target/debug/town-manager`（`crates/manager`，安装包里也是它），由它按需启动各小镇的世界进程：dev 另起 Vite 热更新页面，`/api/towns` 由 Vite 代理到管理服务（默认端口 8788）；preview 由管理服务直接发构建好的页面，会检查构建摘要，前端源码变更后需重新构建。改了 Rust 代码要重新 `cargo build` 再重启。`AI_TOWN_HOME` 指定数据目录，`TOWN_MANAGER_PORT` 换管理服务端口，`TOWN_HOST_BINARY` 换世界进程（跑长局用 release 版），`TOWN_MANAGER_BINARY` 换管理服务（在没编 Rust 的工作区里用别处编好的），`TOWN_MOCK_LLM=1` 让世界用固定回复模型。`/api/towns/health` 的 `source` 字段可确认实际运行的工作区。
 
 建镇时生成器（`scripts/mapgen`）在页面的工作线程里运行，管理服务只理解描述、校验成品地图并保存；生成器因此不能依赖 Node 专有接口。
 

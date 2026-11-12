@@ -2,7 +2,8 @@
 // （页面热更新；/api/towns、/data/props 由 vite.config.ts 代理到管理服务），preview 由管理服务直接发构建好的
 // 页面（frontend/town-2d/dist）。先 cargo build -p host -p manager。
 // 环境变量：AI_TOWN_HOME 数据目录（缺省见 data-root.mjs）；TOWN_MANAGER_PORT 管理服务端口（dev，缺省 8788）；
-// TOWN_HOST_BINARY 换一个世界进程（跑长局用 target/release/host）；TOWN_MOCK_LLM=1 世界用固定回复模型。
+// TOWN_HOST_BINARY 换一个世界进程（跑长局用 target/release/host）；TOWN_MANAGER_BINARY 换一个管理服务
+// （在没编 Rust 的 worktree 里用主仓库编好的）；TOWN_MOCK_LLM=1 世界用固定回复模型。
 import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import os from 'node:os'
@@ -29,10 +30,11 @@ console.log(`[town-client] ${mode} · ${root}`)
 
 const binary = (name) =>
   path.join(root, 'target/debug', name + (process.platform === 'win32' ? '.exe' : ''))
+const managerBinary = process.env.TOWN_MANAGER_BINARY ?? binary('town-manager')
 const ready = path.join(os.tmpdir(), `town-manager-ready-${process.pid}.json`)
 await fs.rm(ready, { force: true })
 const manager = spawn(
-  binary('town-manager'),
+  managerBinary,
   [
     ...['--root', dataRoot(), '--app', root, '--web', path.join(root, 'frontend/town-2d/dist')],
     ...['--host-bin', process.env.TOWN_HOST_BINARY ?? binary('host')],
@@ -49,7 +51,7 @@ const managerExit = new Promise((resolve) => {
   manager.once('error', (e) => {
     console.error(
       e.code === 'ENOENT'
-        ? `[town-client] 找不到 ${binary('town-manager')}，请先 cargo build -p host -p manager`
+        ? `[town-client] 找不到 ${managerBinary}，请先 cargo build -p host -p manager`
         : `[town-client] 管理服务没能启动：${e.message}`
     )
     resolve(1)
