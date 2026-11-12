@@ -5,7 +5,6 @@ use protocol::{ClientMsg, EventInfo, ServerMsg};
 use std::collections::BTreeMap;
 use std::io::ErrorKind;
 use std::net::{Shutdown, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{
     mpsc::{sync_channel, Receiver, SyncSender, TryRecvError, TrySendError},
     Arc, Mutex,
@@ -26,6 +25,10 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 /// 连接线程读一条客户端消息最多等这么久，等完才回头发广播：等得越久，名册和化身状态晚到得越多、
 /// 越不均匀（原来 50 毫秒，每拍的位置随机晚到 0–50 毫秒，玩家自己的小人一走一顿）。
 const READ_WAIT: Duration = Duration::from_millis(5);
+/// 握手阶段读一次最多等这么久。客户端连上以后才发握手请求，机器忙时这两步会隔开几十毫秒以上；
+/// 握手也只等 READ_WAIT 的那阵子，请求晚到 6 毫秒连接就被丢掉，管理服务开镇时报「无法连接世界服务」，
+/// 还会关掉刚启动的世界。
+const HANDSHAKE_WAIT: Duration = Duration::from_secs(5);
 /// 每个连接最多攒这么多条还没交给模拟循环的方向输入（客户端 0.1 秒一条，模拟循环 0.1 秒取一次）。
 const INPUT_QUEUE: usize = 32;
 
@@ -113,45 +116,49 @@ pub(crate) fn listen(
         .port();
     println!("[host] ws://127.0.0.1:{actual_port}/");
     let accepted = peers.clone();
-    let ids = AtomicU64::new(1);
+    let welcome = Arc::new((token, greeting));
     thread::spawn(move || {
-        for stream in listener.incoming().flatten() {
-            let Ok(socket) = stream.try_clone() else {
-                continue;
-            };
-            let Some(ws) = handshake(stream, token.as_deref(), greeting.as_deref()) else {
-                continue;
-            };
-            let (tx, rx) = sync_channel::<String>(OUTBOUND_QUEUE);
-            let id = ids.fetch_add(1, Ordering::Relaxed);
-            accepted.lock().unwrap().insert(
-                id,
-                Peer {
-                    sender: tx,
-                    socket,
-                    inputs: Vec::new(),
-                },
-            );
-            let to_sim = to_sim.clone();
-            let peers = accepted.clone();
-            thread::spawn(move || {
+        for (id, stream) in (1..).zip(listener.incoming().flatten()) {
+            let (welcome, peers, to_sim) = (welcome.clone(), accepted.clone(), to_sim.clone());
+            // 从握手起，每条连接都在自己的线程里：握手慢的客户端只占着自己，不挡住后面来的连接。
+            let spawned = thread::Builder::new().spawn(move || {
+                let (token, greeting) = &*welcome;
+                let Ok(socket) = stream.try_clone() else {
+                    return;
+                };
+                let Some(ws) = handshake(stream, token.as_deref(), greeting.as_deref()) else {
+                    return;
+                };
+                let (tx, rx) = sync_channel::<String>(OUTBOUND_QUEUE);
+                peers.lock().unwrap().insert(
+                    id,
+                    Peer {
+                        sender: tx,
+                        socket,
+                        inputs: Vec::new(),
+                    },
+                );
                 serve_connection(ws, rx, to_sim.clone(), id, &peers);
                 peers.lock().unwrap().remove(&id);
                 let _ = to_sim.send(NetworkEvent::Disconnected(id));
             });
+            if let Err(error) = spawned {
+                eprintln!("[host] 开不了连接线程，丢掉一条新连接：{error}");
+            }
         }
     });
     Ok((Clients { peers, tape }, from_net, actual_port))
 }
 
 /// 握手：校验会话标识，成功后先发世界身份。任何一步失败都丢弃这条连接。
+/// 握手请求照 HANDSHAKE_WAIT 等；握完把读等待换成 READ_WAIT，再交给 serve_connection。
 fn handshake(
     stream: TcpStream,
     token: Option<&str>,
     greeting: Option<&str>,
 ) -> Option<WebSocket<TcpStream>> {
     stream.set_nodelay(true).ok();
-    stream.set_read_timeout(Some(READ_WAIT)).ok();
+    stream.set_read_timeout(Some(HANDSHAKE_WAIT)).ok();
     stream.set_write_timeout(Some(WRITE_TIMEOUT)).ok();
     let expected = token.map(|t| format!("session={t}"));
     let mut ws = tungstenite::accept_hdr(stream, |request: &Request, response: Response| {
@@ -172,6 +179,8 @@ fn handshake(
         }
     })
     .ok()?;
+    // 换不回短等待的连接不能用：往后每读一次都要等满握手的时限，广播跟着晚到。
+    ws.get_ref().set_read_timeout(Some(READ_WAIT)).ok()?;
     if let Some(greeting) = greeting {
         if ws.send(Message::Text(greeting.into())).is_err() {
             return None;

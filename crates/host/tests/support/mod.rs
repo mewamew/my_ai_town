@@ -12,7 +12,7 @@ use std::{
 };
 use tungstenite::{Message, WebSocket};
 
-const WAIT: Duration = Duration::from_secs(8);
+pub const WAIT: Duration = Duration::from_secs(8);
 
 /// 起子进程时串行：并行的用例会选到同一个临时端口；子进程创建时还会短暂继承本进程打开的文件，
 /// 在进程内开关存档锁的用例要拿着它，否则刚关掉的锁可能还挂在子进程上。
