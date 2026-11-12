@@ -1,5 +1,5 @@
 // 一句话规划：交给模型的地点表，以及把模型的回复整理成合规的建镇参数。
-// 电脑版建镇服务和手机页面（localCreation.ts）共用，不依赖 Node 专有接口。
+// 建镇页（localCreation.ts）在网页里用，不依赖 Node 专有接口。
 import { OFFERED_KINDS } from '../../frontend/town-2d/src/launcher/placeGroups.ts'
 import { APPEARANCE_SET } from './budget.mjs'
 import { limits, maxPlacesForKind, resources, validateSpec } from './spec.mjs'

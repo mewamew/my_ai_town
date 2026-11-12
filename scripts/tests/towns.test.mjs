@@ -1,13 +1,13 @@
+// 管理服务（crates/manager）带着真的世界进程：小镇的保存、打开、互相隔离、重启后接着来、删除，和只开一个小镇的规矩。
+// 建镇要求、预览改名、建镇说明的校验在 crates/manager/tests/http.rs，不在这里重复。
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { createManager } from '../town-manager.mjs'
-import { worldQuery } from '../towns/hosts.mjs'
 import { seal } from '../mapgen/document.mjs'
-import { BUILTIN_TOWNS } from '../towns/storage.mjs'
-import { root as source } from './support.mjs'
+import { createTown, draftTown, root as source, startManager, worldQuery } from './support.mjs'
+const BUILTIN_TOWNS = ['default-town', 'spring-valley', 'broken-towers']
 const spec = {
   name: '隔离地图',
   seed: 51,
@@ -20,7 +20,15 @@ const spec = {
   constraints: [],
   resources: 'normal-life',
 }
-test('preview/save/open/reopen/reset/isolation work with actual hosts and persistent positions', async () => {
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+test('saved towns open in isolated worlds, come back after a restart, and are deleted only with their world closed', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'town-manager-test-'))
   let m
   try {
@@ -36,24 +44,15 @@ test('preview/save/open/reopen/reset/isolation work with actual hosts and persis
     const oldSave = '{"legacy":"preserve resident memories"}'
     await fs.writeFile(path.join(retired, 'map.json'), oldMap)
     await fs.writeFile(path.join(retired, 'world.json'), oldSave)
+    // 访达复制文件夹的默认名：编号不合规的目录不进列表，也不挡住别的小镇
+    await fs.mkdir(path.join(root, 'towns/default-town 2'))
     // 这一段同时开两个小镇，验证两个世界互相隔离；产品里同时只运行一个
-    m = await createManager({ root, port: 0, mockLlm: true, maxRunning: 2 })
-    let base = `http://127.0.0.1:${m.server.address().port}/api/towns`
-    const api = async (route, body) => {
-      const r = await fetch(base + route, {
-        method: body === undefined ? 'GET' : 'POST',
-        headers:
-          body === undefined ? {} : { 'content-type': 'application/json', 'x-town-client': '1' },
-        body: body === undefined ? undefined : JSON.stringify(body),
-      })
-      const data = await r.json()
-      if (!r.ok) throw Error(data.error)
-      return data
-    }
+    m = await startManager(root, { maxRunning: 2 })
+    const { api } = m
     // 随应用发的内置小镇第一次运行就都在，排在最前；旧 3D 存档不进列表
     assert.deepEqual(
       (await api('')).towns.map((t) => [t.id, t.deletable]),
-      BUILTIN_TOWNS.map(({ id }) => [id, false])
+      BUILTIN_TOWNS.map((id) => [id, false])
     )
     assert.deepEqual((await api('')).towns[0].views, ['2d'])
     for (const [route, body] of [
@@ -62,56 +61,23 @@ test('preview/save/open/reopen/reset/isolation work with actual hosts and persis
       ['/old-3d-town/delete', {}],
     ])
       await assert.rejects(api(route, body), /3D 版本/)
-
     assert((await api('')).towns.every((town) => town.running === false))
-    // 2D 建镇只限地点总数、住宅数和每组数量。
-    const { limits } = await api('/options')
-    assert.deepEqual(
-      {
-        mode: limits.capacity_mode,
-        places: limits.max_places,
-        homes: limits.max_homes,
-        sameKind: limits.max_same_kind,
-      },
-      { mode: 'count', places: 36, homes: 20, sameKind: 20 }
-    )
-    assert.equal(m.hosts.running.size, 0)
-    const draft = await api('/preview', { spec })
-    assert.equal(m.hosts.running.size, 0)
-    // 预览后改的名字随保存提交：只换名字、重算摘要，布局就是预览的那一版，开镇时照样通过校验
+
+    // 保存的就是页面生成、交上来的那一版；同一次保存同时到两遍只建一个小镇
+    const { document, draft } = await draftTown(m, spec)
     const body = {
       draft_id: draft.id,
       expected_version: draft.version,
       request_id: 'save-exact-preview',
-      name: '改过名的小镇',
-      creation: {
-        description: '海边的小渔村，村口有一家小酒馆',
-        worldview: '这里的人想靠海吃饭。',
-        residents: ['在村口酒馆当老板娘的寡妇'],
-        prefab: 'battle-royale',
-      },
+      creation: { description: '海边的小渔村', worldview: '这里的人想靠海吃饭。', residents: [] },
     }
-    await assert.rejects(api('/save', { ...body, expected_version: 'wrong' }), /版本/)
     const [saved, repeated] = await Promise.all([api('/save', body), api('/save', body)])
     assert.equal(saved.id, repeated.id)
-    const savedMap = await api(`/${saved.id}/map`)
-    assert.equal(savedMap.name, '改过名的小镇')
-    assert.equal(savedMap.generation.spec.name, '改过名的小镇')
-    assert.equal(saved.mapHash, savedMap.content_hash)
-    assert.deepEqual(savedMap.layout, draft.document.layout)
+    assert.equal(saved.mapHash, document.content_hash)
     const [a, aa] = await Promise.all([api(`/${saved.id}/open`, {}), api(`/${saved.id}/open`, {})])
     assert.equal(a.endpoint, aa.endpoint)
-    // 一句话建镇的说明和小镇存在一起：列表简介是玩家那句话，进镇时带着世界观建议和适合住进来的人
+    // 进镇时带着一句话建镇的世界观建议
     assert.equal(a.creation.worldview, '这里的人想靠海吃饭。')
-    const listed = (await api('')).towns.find((town) => town.id === saved.id)
-    assert.equal(listed.description, '海边的小渔村，村口有一家小酒馆')
-    assert.deepEqual(listed.creation.residents, ['在村口酒馆当老板娘的寡妇'])
-    // 从预制小镇开的一局记着是哪个预制小镇，进镇时据此出开局设置
-    assert.equal(listed.creation.prefab, 'battle-royale')
-    await assert.rejects(
-      api('/save', { ...body, request_id: 'bad-prefab', creation: { prefab: '../x' } }),
-      /建镇说明无效/
-    )
     assert.equal((await api('')).towns.find((town) => town.id === a.id).running, true)
     const b = await api('/default-town/open', {})
     assert.notEqual(a.worldId, b.worldId)
@@ -207,14 +173,11 @@ test('preview/save/open/reopen/reset/isolation work with actual hosts and persis
       reordered.positions.find((p) => p.id === 'user:map-book')
     )
     const filesBefore = await fs.readFile(path.join(root, 'towns', a.id, 'map.json'), 'utf8')
-    const children = [...m.hosts.running.values()].map(({ child }) => child)
-    await m.stop()
-    for (const child of children)
-      assert.equal(child.exitCode, 0, '关闭小镇必须让 host 保存后正常退出')
-    m = await createManager({ root, port: 0, mockLlm: true })
-    base = `http://127.0.0.1:${m.server.address().port}/api/towns`
-    assert.equal((await api('')).towns.length, BUILTIN_TOWNS.length + 1)
-    let restored = await api(`/${a.id}/open`, {})
+    // 管理服务退出前让两个世界都保存退出，没有一个超时被强制结束
+    assert.equal(await m.stop(), 0, m.output())
+    m = await startManager(root)
+    assert.equal((await m.api('')).towns.length, BUILTIN_TOWNS.length + 1)
+    let restored = await m.api(`/${a.id}/open`, {})
     assert.equal(restored.worldId, a.worldId)
     assert.equal(
       (await query(restored, { type: 'get_population' }, 'population')).population.residents[0].id,
@@ -225,22 +188,18 @@ test('preview/save/open/reopen/reset/isolation work with actual hosts and persis
         (p) => p.id === 'user:map-book'
       )
     )
-    await api(`/${a.id}/close`, {})
-    const closed = (await api('')).towns.find((town) => town.id === a.id)
+    await m.api(`/${a.id}/close`, {})
+    const closed = (await m.api('')).towns.find((town) => town.id === a.id)
     assert.equal(closed.running, false)
     // 列表带着存档停在哪：选镇页据此画时钟牌、头像和那一刻的天色
     assert.equal(closed.progress.residents, 1)
     assert.equal(closed.progress.cast[0].template_id, 'builtin_ashu')
     assert.equal(closed.progress.minutes, Math.floor(closed.progress.minutes))
     assert.equal(typeof closed.progress.weather, 'string')
-    restored = await api(`/${a.id}/open`, {})
-    const oldEndpoint = restored.endpoint
-    const closing = m.hosts.close(a.id)
-    const reopening = m.hosts.open(a.id)
-    await closing
-    restored = await reopening
-    assert.equal(restored.worldId, a.worldId)
-    assert.notEqual(restored.endpoint, oldEndpoint)
+    const reopened = await m.api(`/${a.id}/open`, {})
+    assert.equal(reopened.worldId, a.worldId)
+    assert.notEqual(reopened.endpoint, restored.endpoint)
+    restored = reopened
     await query(restored, { type: 'reset_world', request_id: 'reset-world' }, 'world_reset')
     const afterReset = (await query(restored, { type: 'get_world_settings' }, 'world_settings'))
       .state
@@ -251,7 +210,7 @@ test('preview/save/open/reopen/reset/isolation work with actual hosts and persis
       0
     )
     assert.equal(await fs.readFile(path.join(root, 'towns', a.id, 'map.json'), 'utf8'), filesBefore)
-    await assert.rejects(api(`/${a.id}/map?hash=wrong`), /地图已变化/)
+    await assert.rejects(m.api(`/${a.id}/map?hash=wrong`), /地图已变化/)
     await assert.rejects(
       worldQuery(
         restored.endpoint.replace(/session=.*/, 'session=incorrect'),
@@ -260,28 +219,26 @@ test('preview/save/open/reopen/reset/isolation work with actual hosts and persis
         2000
       )
     )
-    // 删除运行中的生成地图：失败保留、内置保护、其他存档不变、重启不复现。
+    // 删除运行中的生成地图：先关掉它的世界再删目录；内置的删不掉，别的存档不变，重启后也不再出现
     const protectedFile = path.join(root, 'towns/default-town/map.json')
     const protectedBefore = await fs.readFile(protectedFile, 'utf8')
-    await assert.rejects(api('/default-town/delete', {}), /内置地图/)
-    const originalClose = m.hosts.close.bind(m.hosts)
-    m.hosts.close = async () => {
-      throw Error('测试关闭失败')
-    }
-    await assert.rejects(api(`/${a.id}/delete`, {}), /测试关闭失败/)
-    assert.equal(await fs.readFile(path.join(root, 'towns', a.id, 'map.json'), 'utf8'), filesBefore)
-    m.hosts.close = originalClose
-    const child = m.hosts.running.get(a.id).child
-    await api(`/${a.id}/delete`, {})
-    assert(child.exitCode !== null || child.signalCode !== null)
-    assert.equal(m.hosts.running.has(a.id), false)
+    await assert.rejects(m.api('/default-town/delete', {}), /内置地图/)
+    const { pid } = JSON.parse(
+      await fs.readFile(path.join(root, 'towns', a.id, 'host-ready.json'), 'utf8')
+    )
+    assert(alive(pid))
+    await m.api(`/${a.id}/delete`, {})
+    assert(!alive(pid), '删除前要先关掉这个小镇的世界')
+    assert.equal(
+      (await m.api('')).towns.some((town) => town.id === a.id),
+      false
+    )
     await assert.rejects(fs.access(path.join(root, 'towns', a.id)), { code: 'ENOENT' })
-    await assert.rejects(api(`/${a.id}/open`, {}), /不存在/)
+    await assert.rejects(m.api(`/${a.id}/open`, {}), /不存在/)
     assert.equal(await fs.readFile(protectedFile, 'utf8'), protectedBefore)
-    await m.stop()
-    m = await createManager({ root, port: 0, mockLlm: true })
-    base = `http://127.0.0.1:${m.server.address().port}/api/towns`
-    assert.equal((await api('')).towns.length, BUILTIN_TOWNS.length)
+    assert.equal(await m.stop(), 0, m.output())
+    m = await startManager(root)
+    assert.equal((await m.api('')).towns.length, BUILTIN_TOWNS.length)
     assert.equal(await fs.readFile(path.join(retired, 'map.json'), 'utf8'), oldMap)
     assert.equal(await fs.readFile(path.join(retired, 'world.json'), 'utf8'), oldSave)
   } finally {
@@ -299,9 +256,8 @@ test('the built-in town shows the shipped name while its stored map stays untouc
     await fs.mkdir(dir, { recursive: true })
     await fs.writeFile(path.join(dir, 'map.json'), stored)
     await fs.writeFile(path.join(dir, 'receipt.json'), '{"origin":"builtin"}')
-    m = await createManager({ root, port: 0, mockLlm: true })
-    const origin = `http://127.0.0.1:${m.server.address().port}`
-    const { towns } = await (await fetch(origin + '/api/towns')).json()
+    m = await startManager(root)
+    const { towns } = await m.api('')
     assert.deepEqual([towns[0].name, towns[0].description], [shipped.name, shipped.description])
     // 地图摘要是存档的身份，更新显示名不能改动已有的副本。
     assert.equal(await fs.readFile(path.join(dir, 'map.json'), 'utf8'), stored)
@@ -315,19 +271,8 @@ test('only one town runs at a time: entering another town closes the open one, t
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'town-manager-limit-'))
   let m
   try {
-    m = await createManager({ root, port: 0, mockLlm: true })
-    const base = `http://127.0.0.1:${m.server.address().port}/api/towns`
-    const api = async (route, body) => {
-      const r = await fetch(base + route, {
-        method: body === undefined ? 'GET' : 'POST',
-        headers:
-          body === undefined ? {} : { 'content-type': 'application/json', 'x-town-client': '1' },
-        body: body === undefined ? undefined : JSON.stringify(body),
-      })
-      const data = await r.json()
-      if (!r.ok) throw Error(data.error)
-      return data
-    }
+    m = await startManager(root)
+    const { api } = m
     const settings = async (town) =>
       (
         await worldQuery(
@@ -336,12 +281,7 @@ test('only one town runs at a time: entering another town closes the open one, t
           (msg) => msg.type === 'world_settings'
         )
       ).state
-    const draft = await api('/preview', { spec })
-    const town = await api('/save', {
-      draft_id: draft.id,
-      expected_version: draft.version,
-      request_id: 'save-second-town',
-    })
+    const town = await createTown(m, spec)
     const first = await api('/default-town/open', {})
     const state = await settings(first)
     const saved = await worldQuery(
@@ -392,19 +332,8 @@ test('home settings save a key only into the data root config, read back only it
   const before = await Promise.all(repoConfig.map((p) => fs.readFile(p, 'utf8').catch(() => null)))
   let m
   try {
-    m = await createManager({ root, port: 0, mockLlm: true })
-    const base = `http://127.0.0.1:${m.server.address().port}/api/towns`
-    const api = async (route, body) => {
-      const r = await fetch(base + route, {
-        method: body === undefined ? 'GET' : 'POST',
-        headers:
-          body === undefined ? {} : { 'content-type': 'application/json', 'x-town-client': '1' },
-        body: body === undefined ? undefined : JSON.stringify(body),
-      })
-      const data = await r.json()
-      if (!r.ok) throw Error(data.error)
-      return data
-    }
+    m = await startManager(root)
+    const { api } = m
     const key = 'sk-home-settings-0123456789'
     const kept = (await api('/models')).providers.map(({ id, name, base_url }) => ({
       id,

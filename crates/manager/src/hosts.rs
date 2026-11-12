@@ -1,4 +1,4 @@
-//! 按需启动的世界进程：一个小镇一个 host。与 scripts/towns/hosts.mjs 同构。
+//! 按需启动的世界进程：一个小镇一个 host。
 use crate::error::ApiError;
 use crate::storage::{read_json, Storage};
 use crate::ws;

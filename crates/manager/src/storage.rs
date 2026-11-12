@@ -1,11 +1,11 @@
-//! 小镇目录：每个小镇一份地图副本与它的存档与日志。与 scripts/towns/storage.mjs 同构。
+//! 小镇目录：每个小镇一份地图副本与它的存档与日志。
 use crate::error::ApiError;
 use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 /// 随应用发的内置小镇：（编号, 应用自带的地图）。第一次运行时放进用户目录，不能删；名称和简介跟随应用版本。
-/// 列表里按这个顺序排在最前。电脑版（scripts/towns/storage.mjs 的 BUILTIN_TOWNS）是同一份名单。
+/// 列表里按这个顺序排在最前。
 pub const BUILTIN_TOWNS: [(&str, &str); 3] = [
     ("default-town", "data/maps/2d-town/map.json"),
     ("spring-valley", "data/maps/spring-valley/map.json"),
@@ -79,8 +79,8 @@ pub fn check_identity(document: &Value) -> Result<(), ApiError> {
 }
 
 /// 一句话建镇时的描述、世界观建议和推荐的居民，和小镇放在一起（creation.json）：换设备、换成电脑版
-/// 打开也还在。逐步设置的小镇没有这个文件。从预制小镇开的一局另记 prefab（预制小镇的编号），进镇时按它
-/// 出开局设置。规则与电脑版（scripts/towns/storage.mjs 的 townCreation）相同。
+/// 打开也还在。逐步设置的小镇没有这个文件。从预制小镇开的一局另记 prefab（预制小镇的编号，见
+/// frontend/town-shared/src/prefabs），进镇时按它出开局设置。
 pub fn town_creation(value: &Value) -> Result<Option<Value>, ApiError> {
     if value.is_null() {
         return Ok(None);
@@ -319,7 +319,6 @@ impl Storage {
 
     /// 小镇列表上的进度：玩到第几天、住了几个人，停在几点、什么天气，住着谁（按入住先后，最多 8 位，
     /// 带名字和长相，选镇页画头像用）。读存档 world.json，还没开始过的小镇是 null。
-    /// 电脑上的管理服务（scripts/towns/storage.mjs）按同样的规则算，两边的 /api/towns 保持一致。
     fn progress(&self, id: &str) -> Value {
         #[derive(serde::Deserialize)]
         struct Save {

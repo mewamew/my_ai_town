@@ -3,9 +3,9 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { createManager } from '../town-manager.mjs'
 import { APPEARANCE_SET } from '../mapgen/budget.mjs'
 import { walkingHarness } from './avatar-input-support.mjs'
+import { createTown, startManager } from './support.mjs'
 
 test('rotated view maps WASD and stick input to world directions while click routes stay in world space', () => {
   const sent = []
@@ -62,40 +62,23 @@ test('rotated view maps WASD and stick input to world directions while click rou
 
 test('actual WASD input adapter drives a generated world and saves its stopped position', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'town-avatar-runtime-'))
-  const m = await createManager({ root, port: 0, mockLlm: true })
+  const m = await startManager(root)
   let ws, input
   try {
-    const api = async (p, body) => {
-      const r = await fetch(`http://127.0.0.1:${m.server.address().port}/api/towns${p}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-town-client': '1' },
-        body: JSON.stringify(body),
-      })
-      const v = await r.json()
-      assert.ok(r.ok, JSON.stringify(v))
-      return v
-    }
-    const d = await api('/preview', {
-      spec: {
-        schema_version: 2,
-        name: '化身输入验收',
-        seed: 94,
-        appearance_set: APPEARANCE_SET,
-        environment: { preset: 'coastal-village', vegetation: 'medium' },
-        places: [
-          { kind: 'cafe', count: 1, size: 'medium' },
-          { kind: 'plaza', count: 1, size: 'small' },
-        ],
-        resources: 'normal-life',
-        constraints: [],
-      },
+    const saved = await createTown(m, {
+      schema_version: 2,
+      name: '化身输入验收',
+      seed: 94,
+      appearance_set: APPEARANCE_SET,
+      environment: { preset: 'coastal-village', vegetation: 'medium' },
+      places: [
+        { kind: 'cafe', count: 1, size: 'medium' },
+        { kind: 'plaza', count: 1, size: 'small' },
+      ],
+      resources: 'normal-life',
+      constraints: [],
     })
-    const saved = await api('/save', {
-      draft_id: d.id,
-      expected_version: d.version,
-      request_id: 'avatar-wasd',
-    })
-    const town = await api(`/${saved.id}/open`, {})
+    const town = await m.api(`/${saved.id}/open`, {})
     ws = new WebSocket(town.endpoint)
     await new Promise((resolve, reject) => {
       ws.onopen = resolve
@@ -215,7 +198,7 @@ test('actual WASD input adapter drives a generated world and saves its stopped p
     assert.equal(leave.state.actor.present, false)
     input.abort.abort()
     ws.close()
-    await api(`/${saved.id}/close`, {})
+    await m.api(`/${saved.id}/close`, {})
     const disk = JSON.parse(await fs.readFile(path.join(root, 'towns', saved.id, 'world.json')))
     assert.equal(disk.world.actors.player_avatar.locus.at.kind, 'offstage')
     assert.deepEqual(disk.world.actors.player_avatar.avatar.last_locus.at.position, p)

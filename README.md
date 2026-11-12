@@ -194,7 +194,7 @@ Windows 可运行 `node scripts/windows/build-local-launcher.mjs`，在根目录
 git clone https://github.com/mewamew/my_ai_town.git
 cd my_ai_town
 corepack pnpm install --frozen-lockfile
-cargo +1.88.0 build --locked -p host --bins
+cargo +1.88.0 build --locked -p host -p manager --bins
 corepack pnpm build
 corepack pnpm preview
 ```

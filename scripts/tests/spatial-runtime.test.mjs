@@ -3,9 +3,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { createManager } from '../town-manager.mjs'
-import { worldQuery } from '../towns/hosts.mjs'
 import { APPEARANCE_SET } from '../mapgen/budget.mjs'
+import { createTown, startManager, worldQuery } from './support.mjs'
 import { position } from '../../frontend/town-shared/src/spatial.ts'
 
 test('residents at runtime prop stations remain visible and possessable after removal and reload', async () => {
@@ -49,7 +48,7 @@ test('residents at runtime prop stations remain visible and possessable after re
     const resident = joined.outcome.resident_id
     const file = path.join(root, 'towns', town.id, 'world.json')
     const map = JSON.parse(await fs.readFile(started.map, 'utf8'))
-    await m.hosts.close(town.id)
+    await m.api(`/${town.id}/close`, {})
     // 复现旧存档里 NPC 已走到后来摆放的道具旁的合法站位；测试全程暂停，模型不安排动作。
     const saved = JSON.parse(await fs.readFile(file, 'utf8'))
     saved.world.actors[resident].locus = {
@@ -58,7 +57,7 @@ test('residents at runtime prop stations remain visible and possessable after re
     }
     await fs.writeFile(file, JSON.stringify(saved))
     for (const removed of [false, true]) {
-      town = await m.hosts.open(town.id)
+      town = await m.api(`/${town.id}/open`, {})
       if (removed) {
         assert.ok(
           (
@@ -69,8 +68,8 @@ test('residents at runtime prop stations remain visible and possessable after re
           ).ok
         )
         // 墓碑和历史站位经保存、重启后仍必须可用。
-        await m.hosts.close(town.id)
-        town = await m.hosts.open(town.id)
+        await m.api(`/${town.id}/close`, {})
+        town = await m.api(`/${town.id}/open`, {})
       }
       const catalog = (await query({ type: 'get_props' }, 'props')).catalog
       const override = catalog.spatial.overrides.find((v) => v.prop.id === prop)
@@ -109,7 +108,7 @@ test('residents at runtime prop stations remain visible and possessable after re
         override.prop.anchor[0],
         override.prop.anchor[2],
       ])
-      await m.hosts.close(town.id)
+      await m.api(`/${town.id}/close`, {})
       const after = JSON.parse(await fs.readFile(file, 'utf8'))
       assert.equal(after.world.minutes, saved.world.minutes, '附身与读档不能推进暂停中的世界')
       // 下一轮仍从历史站位出发，不能用第一次附身转换出的自由坐标掩盖问题。
@@ -163,8 +162,8 @@ test('one world commits dynamic book geometry and removals together across resta
     catalog = (await query({ type: 'get_props' }, 'props')).catalog
     assert.equal(catalog.spatial.overrides.length, 1)
     assert.ok(!catalog.instances.some((p) => p.id === 'user:invalid'))
-    await m.hosts.close(town.id)
-    town = await m.hosts.open(town.id)
+    await m.api(`/${town.id}/close`, {})
+    town = await m.api(`/${town.id}/open`, {})
     assert.deepEqual((await query({ type: 'get_props' }, 'props')).catalog.spatial, spatial)
     const removed = await query(
       {
@@ -180,8 +179,8 @@ test('one world commits dynamic book geometry and removals together across resta
     assert.ok(!after.instances.some((p) => p.id === 'user:spatial-book'))
     assert.ok(after.spatial.removed.includes('user:spatial-book'))
     assert.ok(after.spatial.revision > spatial.revision)
-    await m.hosts.close(town.id)
-    town = await m.hosts.open(town.id)
+    await m.api(`/${town.id}/close`, {})
+    town = await m.api(`/${town.id}/open`, {})
     assert.deepEqual((await query({ type: 'get_props' }, 'props')).catalog.spatial, after.spatial)
     assert.ok(
       !(await query({ type: 'get_props' }, 'props')).catalog.instances.some(
@@ -200,17 +199,7 @@ test('one world commits dynamic book geometry and removals together across resta
 
 /** 起管理服务，用生成器建一座海边小镇并打开，设好世界观 */
 async function startTown(root, places, extra = {}) {
-  const m = await createManager({ root, port: 0, mockLlm: true })
-  const api = async (route, body) => {
-    const r = await fetch(`http://127.0.0.1:${m.server.address().port}/api/towns${route}`, {
-      method: body === undefined ? 'GET' : 'POST',
-      headers: { 'content-type': 'application/json', 'x-town-client': '1' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    })
-    const v = await r.json()
-    assert.ok(r.ok, JSON.stringify(v))
-    return v
-  }
+  const m = await startManager(root)
   const spec = {
     schema_version: 2,
     name: '空间持久化',
@@ -222,13 +211,8 @@ async function startTown(root, places, extra = {}) {
     constraints: [],
     ...extra,
   }
-  const draft = await api('/preview', { spec }),
-    saved = await api('/save', {
-      draft_id: draft.id,
-      expected_version: draft.version,
-      request_id: 'space-save',
-    })
-  const town = await api(`/${saved.id}/open`, {})
+  const saved = await createTown(m, spec)
+  const town = await m.api(`/${saved.id}/open`, {})
   const query = (command, type) => worldQuery(town.endpoint, command, (m) => m.type === type)
   const state = (await query({ type: 'get_world_settings' }, 'world_settings')).state
   assert.ok(

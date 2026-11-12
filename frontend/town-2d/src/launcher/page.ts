@@ -884,7 +884,7 @@ reset.onclick = async () => {
     deleting = false
   }
 }
-// 建镇：电脑版由管理服务生成，手机应用在页面里生成（见 localCreation.ts）
+// 建镇：地图在页面里生成，管理服务校验成品后保存（见 localCreation.ts）
 initCreator(
   (id, problem) => {
     // 刚建好的小镇先看整张图，不停在开场的近景；保存后没能进镇时在这里说原因

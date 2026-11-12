@@ -1,8 +1,8 @@
 use serde_json::{json, Value};
 use std::io;
 
-/// 接口错误：状态码与给玩家看的说明。与 scripts/towns/http.mjs 的 describe 对应：
-/// 文件不存在是 404；其他系统错误是 500，且不把路径发给客户端；输入或状态不允许是 400。
+/// 接口错误：状态码与给玩家看的说明。文件不存在是 404；其他系统错误是 500，且不把路径发给客户端；
+/// 输入或状态不允许是 400。
 #[derive(Debug)]
 pub struct ApiError {
     pub status: u16,

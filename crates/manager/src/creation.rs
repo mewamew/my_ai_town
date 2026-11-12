@@ -1,7 +1,6 @@
-//! 手机应用的建镇。生成器是 JS（scripts/mapgen），应用里没有 Node，所以生成放到网页的工作线程里做；
-//! 这里只做网页做不了的事：让模型理解小镇描述、按 host 的规则校验生成好的地图、暂存草稿、保存成小镇。
-//! 接口与电脑版（scripts/towns/creation.mjs）同名，/options 多回答 generation: 'client'，
-//! 网页据此改走 /drafts 交成品（见 frontend/town-2d/src/launcher/localCreation.ts）。
+//! 建镇。生成器是 JS（scripts/mapgen），在网页的工作线程里跑（应用里没有 Node）；这里只做网页做不了的事：
+//! 让模型理解小镇描述、按 host 的规则校验生成好的地图、暂存草稿、保存成小镇。/options 回答
+//! generation: 'client'，网页据此自己生成、走 /drafts 交成品（frontend/town-2d/src/launcher/localCreation.ts）。
 use crate::error::ApiError;
 use crate::storage::{check_identity, safe_id, town_creation, Storage};
 use host::application::Application;
@@ -171,7 +170,6 @@ impl Drafts {
 }
 
 /// 预览后改的名字：只换名字、重算摘要，布局不变，不用重新生成。
-/// 规则与电脑版（scripts/towns/creation.mjs 的 renamed）相同，两边保存出的地图一致。
 fn renamed(mut document: Value, name: &Value) -> Result<Value, ApiError> {
     if name.is_null() {
         return Ok(document);

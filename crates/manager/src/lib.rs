@@ -1,6 +1,5 @@
-//! 本机小镇管理服务（Rust 版）：页面、小镇列表、按需启动世界进程。
-//! 手机版由应用壳启动；桌面版目前仍是 scripts/town-manager.mjs，两边的接口一致，
-//! 建镇（地图生成）暂时只在桌面版。
+//! 本机小镇管理服务：页面、小镇列表、按需启动世界进程。只有这一份：安卓、mac、Windows 的应用壳启动它，
+//! 电脑上 pnpm dev / preview 也是它（scripts/start-client.mjs）。建镇的生成器在网页里跑，这里校验成品、保存。
 mod builtin;
 mod creation;
 pub mod error;
@@ -131,7 +130,7 @@ impl App {
     }
 
     /// 页面断线后自动重开（automatic）：这个小镇是被另一个页面进的小镇挤掉的、那个还开着，
-    /// 就不抢回来，告诉页面原因；不然两个页面会来回互相挤。电脑版管理服务按同样的规则。
+    /// 就不抢回来，告诉页面原因；不然两个页面会来回互相挤。
     fn refuse_displaced(&self, id: &str, automatic: bool) -> Result<(), ApiError> {
         let by = self.displaced.lock().unwrap().get(id).cloned();
         let taken =
@@ -207,8 +206,9 @@ pub fn token() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// 一个数据目录只允许一个管理服务；上一个进程已退出时接管它留下的锁。
-fn acquire_lock(root: &std::path::Path) -> Result<PathBuf, ApiError> {
+/// 一个数据目录只允许一个管理服务；上一个进程已退出时接管它留下的锁。锁里记着进程号和用的是哪份应用数据
+/// （电脑上是仓库目录）：Windows 本地启动器据此认出 5174 上的服务用的是不是这份源码和这个数据目录。
+fn acquire_lock(root: &std::path::Path, app: &std::path::Path) -> Result<PathBuf, ApiError> {
     let lock = root.join("manager.lock");
     std::fs::create_dir_all(root)?;
     if std::fs::create_dir(&lock).is_err() {
@@ -225,7 +225,7 @@ fn acquire_lock(root: &std::path::Path) -> Result<PathBuf, ApiError> {
     }
     storage::write_json(
         &lock.join("owner.json"),
-        &json!({ "pid": std::process::id() }),
+        &json!({ "pid": std::process::id(), "source": app.to_string_lossy() }),
     )?;
     Ok(lock)
 }
@@ -245,7 +245,7 @@ fn bind(port: u16) -> Result<TcpListener, String> {
 pub fn run(options: Options) -> Result<(), String> {
     let storage = Storage::new(options.root.clone(), options.app.clone());
     storage.init().map_err(|e| e.message)?;
-    let lock = acquire_lock(&options.root).map_err(|e| e.message)?;
+    let lock = acquire_lock(&options.root, &options.app).map_err(|e| e.message)?;
     let served = serve(options, storage);
     let _ = std::fs::remove_dir_all(&lock);
     served

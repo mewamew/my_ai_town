@@ -23,8 +23,8 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - run: cargo test --locked --workspace
-      # node 测试直接调用 target/debug 下的 host 与 town-map。
-      - run: cargo build --locked -p host --bins
+      # node 测试直接调用 target/debug 下的 host、town-map 与管理服务 town-manager。
+      - run: cargo build --locked -p host -p manager --bins
 
       - uses: actions/setup-node@v4
         with:

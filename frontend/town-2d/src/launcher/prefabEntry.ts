@@ -5,7 +5,7 @@ import { creationRequest } from './localCreation'
 
 // 预制小镇在选择小镇页上和「我的小镇」一样是内置小镇：固定编号 prefab-<编号>，不能删，只能重新开始。
 // 第一次选中时按固定的建镇参数生成这座岛存好；进镇后第一次出开局设置（town-shared/prefabs/setup.ts）。
-// 建镇和「创建小镇」走同一条路：电脑版由管理服务生成，手机应用在页面里生成（localCreation.ts）。
+// 建镇和「创建小镇」走同一条路：在页面里生成，交管理服务校验后保存（localCreation.ts）。
 
 export const prefabTownId = (prefab: Prefab) => `prefab-${prefab.id}`
 

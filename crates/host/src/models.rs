@@ -1,5 +1,5 @@
-//! 模型服务的读、存与连通测试。世界进程的设定中心、town-map（电脑版管理服务调它）和手机上的
-//! 管理服务共用这一份，读写的都是 providers.json 与 credentials.json 这一对文件。
+//! 模型服务的读、存与连通测试。世界进程的设定中心和管理服务（首页的「设定」）共用这一份，
+//! 读写的都是 providers.json 与 credentials.json 这一对文件。
 //! 回读只给密钥掩码；存密钥前先读一遍磁盘上的，别处刚存的密钥不会被旧内容盖掉。
 use crate::{application::Application, builtin, config, llm, HostError};
 use protocol::{ActiveModelChoice, ProviderConfigMsg, ProviderKeyMsg, ProviderView};
@@ -98,7 +98,7 @@ pub fn test(
     }
 }
 
-// ---------- 首页「设定」用的接口：电脑版经 town-map，手机上的管理服务直接调 ----------
+// ---------- 首页「设定」用的接口：管理服务直接调 ----------
 
 #[derive(Deserialize)]
 struct SaveRequest {

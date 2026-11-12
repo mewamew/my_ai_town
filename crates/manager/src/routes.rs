@@ -1,4 +1,4 @@
-//! 接口与页面路由。路径与 scripts/towns/*-routes.mjs 一致；建镇（地图生成）暂时只有桌面版。
+//! 接口与页面路由。
 use crate::error::ApiError;
 use crate::http::{Request, Response};
 use crate::positions::positions;
@@ -120,7 +120,7 @@ fn api(app: &App, req: &Request, rest: &str, get: bool) -> Result<Response, ApiE
         (false, "/preview") => {
             return Err(ApiError::bad("请更新应用：建镇预览在页面里生成"));
         }
-        // 首页「设定」的模型服务：读、存、连通测试。逻辑在 host::models，电脑版经 town-map 调同一份
+        // 首页「设定」的模型服务：读、存、连通测试。逻辑在 host::models，和世界进程的设定中心共用
         (true, "/models") => {
             return ok(host::models::read(&crate::creation::load_app(
                 &app.config,
@@ -134,7 +134,7 @@ fn api(app: &App, req: &Request, rest: &str, get: bool) -> Result<Response, ApiE
             let app = crate::creation::load_app(&app.config)?;
             return ok(host::models::check(&app, &body(req)?)?);
         }
-        // 内置模型的状态、看有没有新版本、下载暂停删除（host::builtin_store），电脑版经 town-map 调同一份
+        // 内置模型的状态、看有没有新版本、下载暂停删除（host::builtin_store）
         (true, "/builtin-model") => {
             let config = crate::creation::load_app(&app.config)?;
             return ok(host::builtin_store::status(&config)?);

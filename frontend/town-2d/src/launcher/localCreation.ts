@@ -1,6 +1,6 @@
-// 手机应用的建镇：应用里的管理服务（Rust）跑不了生成器，/options 回答 generation: 'client'。
-// 这时生成在网页的工作线程里做，管理服务只负责理解描述（调模型）、校验成品地图、暂存草稿和保存。
-// 对建镇页来说接口不变：还是 /options、/parse、/preview、/generation/编号、/save。
+// 建镇：管理服务（crates/manager，电脑上和应用里都是它）跑不了 JS 写的生成器，
+// /options 回答 generation: 'client'。这时生成在网页的工作线程里做，管理服务只负责理解描述（调模型）、
+// 校验成品地图、暂存草稿和保存。对建镇页来说接口不变：还是 /options、/parse、/preview、/generation/编号、/save。
 import { PARAMETERS } from '../../../../scripts/mapgen/budget.mjs'
 import { plannerKinds, tidyPlan } from '../../../../scripts/mapgen/plan.mjs'
 import library from '../../../../data/mapgen/templates.json'

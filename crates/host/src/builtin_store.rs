@@ -1,5 +1,5 @@
 //! 内置模型的下载与更新。模型不随应用带：发布在魔搭（application::BUILTIN_SOURCE），应用自己下到用户数据
-//! 目录，有新版本时再下。手机和 mac 的管理服务直接调这里，电脑版管理服务经 town-map 调同一份。
+//! 目录，有新版本时再下。管理服务（crates/manager）直接调这里。
 //!
 //! 发布处的 manifest.json 列出所有版本（新版本在训练环境里发布，先传模型文件、最后传清单）：
 //!   { "models": [ { "date": "2026-10-08", "format": 1, "file": "2026-10-08/model.gguf",
@@ -234,7 +234,7 @@ pub fn status(app: &Application) -> Result<Value, HostError> {
 pub fn check(app: &Application) -> Result<Value, HostError> {
     let store = Store::of(app);
     let url = format!("{}/manifest.json", store.source);
-    // 原因只给玩家看人话：电脑版经 town-map 调用时，标准错误输出会拼进回给页面的说明
+    // 原因只给玩家看人话，回给页面的就是这一句，不带底层的网络错误
     let manifest: Manifest = ureq::get(&url)
         .timeout(Duration::from_secs(20))
         .call()

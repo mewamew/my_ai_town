@@ -5,7 +5,7 @@ use std::io::{self, Read, Write};
 use std::net::TcpStream;
 
 const MAX_HEAD: usize = 64 * 1024;
-/// 请求体上限。建镇时网页把整张生成好的地图交上来，有一两兆，所以比 Node 版的 1 MB 大；与 town-map 的输入上限相同
+/// 请求体上限。建镇时网页把整张生成好的地图交上来，有一两兆；与 town-map 的输入上限相同
 pub const MAX_BODY: usize = 16_000_000;
 
 pub struct Request {

@@ -1,11 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { seal, checkIdentity } from '../mapgen/document.mjs'
-import { runGeneration } from '../mapgen/worker.mjs'
 import { distances } from '../mapgen/graph.mjs'
 import { APPEARANCE_SET } from '../mapgen/budget.mjs'
 import { tidyPlan } from '../mapgen/plan.mjs'
-import { gen, gate, read, rejected, library, contours, definitions } from './support.mjs'
+import { gen, gate, read, rejected, library, definitions } from './support.mjs'
 
 const spec = {
   name: '生成回归',
@@ -167,7 +166,7 @@ test('default and generated maps are valid, connected, deterministic and obey co
   }
 })
 
-test('invalid inputs and tampered maps are rejected; cancelled generation can restart', async () => {
+test('invalid inputs and tampered maps are rejected', () => {
   for (const bad of [
     { ...spec, seed: -1 },
     { ...spec, places: [] },
@@ -187,15 +186,6 @@ test('invalid inputs and tampered maps are rejected; cancelled generation can re
   rejected(seal(brokenSpatial))
   assert.throws(() => gen(spec, { max_ms: 0 }), { code: 'GENERATION_TIMEOUT' })
   assert.throws(() => gen(spec, { total_route_states: 0 }), { code: 'GENERATION_BUDGET_EXCEEDED' })
-  const controller = new AbortController()
-  await assert.rejects(
-    runGeneration(spec, library, contours, definitions, {
-      signal: controller.signal,
-      onStage: () => controller.abort(),
-    }),
-    { code: 'GENERATION_CANCELLED' }
-  )
-  assert.deepEqual(await runGeneration(spec, library, contours, definitions), gen(spec))
 })
 
 // 模型的回复常有下架的地点、对不上的名字和位置要求、不认识的风格：整理后只剩能生成的参数

@@ -1,5 +1,5 @@
 // 准备内置模型的推理程序：把固定版本的 llama.cpp 编成单个、不依赖其他库的 llama-server，放进 target/：
-//   默认（Mac）：target/builtin-model/，用 Metal；网页版的管理服务看到它，设定里就有「内置模型」。
+//   默认（Mac）：target/builtin-model/，用 Metal；pnpm dev、preview 的管理服务看到它，设定里就有「内置模型」。
 //   --android：target/builtin-model-android/，arm64 CPU；scripts/android/build.mjs 看到它就打进 APK。
 //   --windows：target/builtin-model-windows/llama-server.exe，用 mingw 交叉编译、x86_64 CPU；
 //              scripts/windows/build.mjs 看到它就打进 zip。
@@ -15,7 +15,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { MIN_API, ndkDir, sdkDir } from '../android/toolchain.mjs'
-import { dataRoot } from '../towns/storage.mjs'
+import { dataRoot } from '../data-root.mjs'
 import { MINGW, windowsDlls, windowsSystemDll } from '../windows/dlls.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))

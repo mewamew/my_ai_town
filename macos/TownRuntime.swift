@@ -26,7 +26,7 @@ final class TownRuntime {
 
     var running: Bool { process?.isRunning ?? false }
 
-    /// 数据目录与电脑版相同（scripts/towns/storage.mjs）：两边看到同一批小镇和村民库。
+    /// 数据目录与电脑版相同（scripts/data-root.mjs）：两边看到同一批小镇和村民库。
     /// 同一个目录同时只能有一个管理服务，另一个在跑时这边启动会失败并说明原因。
     static var dataRoot: URL {
         if let home = ProcessInfo.processInfo.environment["AI_TOWN_HOME"], !home.isEmpty {

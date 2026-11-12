@@ -365,7 +365,7 @@ const PLANNER_PROMPT: &str = concat!(
     "\n用户描述："
 );
 
-/// 一句话规划能用的一种地点。地点表由跑生成器的一方随请求给出（电脑版建镇服务、手机页面），
+/// 一句话规划能用的一种地点。地点表由跑生成器的建镇页随请求给出，
 /// 和建镇页的卡片是同一份名单，下架的地标不在里面。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlanKind {

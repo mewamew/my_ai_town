@@ -1,5 +1,5 @@
 //! 内置模型的下载线程：玩家点了下载（或页面自己接着下）时起一个，下完、暂停或停在出错上就结束。
-//! 下载本身在 host::builtin_store，电脑版管理服务起的是 town-map 子进程，做法一样。
+//! 下载本身在 host::builtin_store。
 use crate::creation::load_app;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};

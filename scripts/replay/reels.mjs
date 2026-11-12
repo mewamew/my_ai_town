@@ -3,7 +3,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
-import { dataRoot } from '../towns/storage.mjs'
+import { dataRoot } from '../data-root.mjs'
 import { FORMATS, createRosterState, messages, parseSegment, segmentFiles } from './reel.mjs'
 
 /** 小镇目录：AI_TOWN_HOME（或系统默认的数据目录）下的 towns/<小镇> */

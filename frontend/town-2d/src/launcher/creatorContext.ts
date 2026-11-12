@@ -48,7 +48,7 @@ export class CreatorContext<D extends Draft = Draft> {
 
   constructor(readonly panel: HTMLElement) {}
 
-  /** 电脑版直接请求管理服务；手机应用里生成换到网页里做，见 localCreation.ts */
+  /** 请求管理服务；地图在网页里生成，见 localCreation.ts */
   readonly request = creationRequest()
 
   el<T extends HTMLElement = HTMLElement>(id: string) {

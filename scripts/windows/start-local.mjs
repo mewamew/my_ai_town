@@ -167,9 +167,9 @@ async function main() {
   // 不覆盖系统 Ollama 的模型目录；便携安装可显式指定，已有 OLLAMA_MODELS 也继续生效。
   const modelDir = config.modelDir ? path.resolve(root, config.modelDir) : undefined
   const host = path.join(root, 'target/debug/host.exe')
-  const map = path.join(root, 'target/debug/town-map.exe')
-  if (!(await exists(host)) || !(await exists(map)))
-    throw Error('缺少 host.exe 或 town-map.exe。请先按 docs/README.md 构建 Rust 内核。')
+  const manager = path.join(root, 'target/debug/town-manager.exe')
+  if (!(await exists(host)) || !(await exists(manager)))
+    throw Error('缺少 host.exe 或 town-manager.exe。请先按 docs/README.md 构建 Rust 内核。')
 
   let health = await jsonAt(appUrl + 'api/towns/health')
   if (health) await checkManager(health, dataDir)
@@ -213,7 +213,7 @@ async function main() {
     const server = await startServer(
       process.execPath,
       ['scripts/start-client.mjs', 'preview'],
-      { AI_TOWN_HOME: dataDir, TOWN_HOST_BINARY: host, TOWN_MAP_BINARY: map },
+      { AI_TOWN_HOME: dataDir, TOWN_HOST_BINARY: host },
       'manager'
     )
     health = await waitReady(appUrl + 'api/towns/health', server, '小镇服务')

@@ -1,4 +1,4 @@
-// 手机应用建镇：生成器在网页的工作线程里跑，不卡住页面（电脑版在管理服务的 Node 线程里跑，见 scripts/mapgen/worker.mjs）。
+// 建镇：生成器在网页的工作线程里跑，不卡住页面（见 localCreation.ts）。
 // 收到 { spec }，生成过程中发 { stage }，最后发 { result } 或 { error }。
 import { generate } from '../../../../scripts/mapgen/generate.mjs'
 import library from '../../../../data/mapgen/templates.json'

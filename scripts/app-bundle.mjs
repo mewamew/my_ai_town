@@ -27,11 +27,14 @@ export function stageAppBundle(dest) {
     'config/providers.json',
   ])
     fs.cpSync(path.join(root, file), path.join(dest, 'app', file))
-  // 仓库里的配置让 Agent 轨迹记完整题面（开发、复盘用）；安装包不记，玩家要时在设定 → 日志里打开
+  // 仓库里的配置让 Agent 轨迹记完整题面（开发、复盘用）；安装包不记，玩家要时在设定 → 日志里打开。
+  // 内置模型的推理程序在仓库里是 target/builtin-model（scripts/builtin-model/build.mjs 编的），
+  // 安装包里在 app/builtin-model，管理服务没读到这一项时就指那里
   const application = JSON.parse(
     fs.readFileSync(path.join(root, 'config/application.json'), 'utf8')
   )
   delete application.trace_full_prompts
+  delete application.builtin_model_path
   fs.writeFileSync(
     path.join(dest, 'app/config/application.json'),
     JSON.stringify(application, null, 2) + '\n'

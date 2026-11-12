@@ -8,18 +8,20 @@ Node.js 用 `.nvmrc` 的版本（最低 22.18），Rust 用 `rust-toolchain.toml
 
 ```sh
 corepack pnpm install --frozen-lockfile
-cargo +1.88.0 build --locked -p host --bins
+cargo +1.88.0 build --locked -p host -p manager --bins
 corepack pnpm build
 corepack pnpm preview   # http://127.0.0.1:5174
 ```
 
-开发时用 `corepack pnpm dev`；管理服务默认端口 8788。preview 会检查构建摘要，源码变更后需重新构建。`/api/towns/health` 的 `source` 字段可确认实际运行的工作区。
+开发时用 `corepack pnpm dev`。两种方式都启动 Rust 管理服务 `target/debug/town-manager`（`crates/manager`，安装包里也是它），由它按需启动各小镇的世界进程：dev 另起 Vite 热更新页面，`/api/towns` 由 Vite 代理到管理服务（默认端口 8788）；preview 由管理服务直接发构建好的页面，会检查构建摘要，前端源码变更后需重新构建。改了 Rust 代码要重新 `cargo build` 再重启。`AI_TOWN_HOME` 指定数据目录，`TOWN_MANAGER_PORT` 换管理服务端口，`TOWN_HOST_BINARY` 换世界进程（跑长局用 release 版），`TOWN_MOCK_LLM=1` 让世界用固定回复模型。`/api/towns/health` 的 `source` 字段可确认实际运行的工作区。
+
+建镇时生成器（`scripts/mapgen`）在页面的工作线程里运行，管理服务只理解描述、校验成品地图并保存；生成器因此不能依赖 Node 专有接口。
 
 ## 内置模型
 
 用村民真实请求微调的小模型，玩家在请村民和「使用模型」里直接选「内置模型」，不填地址和密钥。它只给村民过日子用，一句话建镇和写人设仍走在线模型。模型训练在仓库外进行；这里只放接入代码：llama.cpp 的 `llama-server` 由世界进程按需启动，题面按训练时的模板逐字渲染（`crates/agent/src/builtin.rs`）。
 
-推理程序随安装包带，模型文件不带：发布在魔搭（发布处见 `crates/host/src/application.rs` 的 `BUILTIN_SOURCE`），游戏第一次用时下载到用户数据目录的 `builtin-model/`，之后按 `manifest.json` 自动更新——下载、续传、核对和换上都在 `crates/host/src/builtin_store.rs`，三个管理服务共用。游戏只取格式号（`builtin.rs` 的 `FORMAT`）和自己一样的版本；题面模板、工具定义的写法或推理程序改得旧模型用不了时，把格式号加一。
+推理程序随安装包带，模型文件不带：发布在魔搭（发布处见 `crates/host/src/application.rs` 的 `BUILTIN_SOURCE`），游戏第一次用时下载到用户数据目录的 `builtin-model/`，之后按 `manifest.json` 自动更新——下载、续传、核对和换上都在 `crates/host/src/builtin_store.rs`，管理服务直接调它。游戏只取格式号（`builtin.rs` 的 `FORMAT`）和自己一样的版本；题面模板、工具定义的写法或推理程序改得旧模型用不了时，把格式号加一。
 
 ```sh
 node scripts/builtin-model/build.mjs [--llama <llama.cpp 源码目录>]            # 电脑：target/builtin-model/llama-server
@@ -28,7 +30,7 @@ node scripts/builtin-model/build.mjs [--llama <llama.cpp 源码目录>] --window
 node scripts/builtin-model/build.mjs --gguf <模型.gguf>                        # 另外把没发布的模型装进本机，当作今天的测试版
 ```
 
-`build.mjs` 把固定版本的 llama.cpp 编成单个 `llama-server`（电脑用 Metal，手机用 CPU，Windows 用 CPU 且要求 AVX2）。电脑版管理服务重启后设定里就有「内置模型」；安卓、mac、Windows 打包时看到它就带上。新版本在训练环境里发布，这里不放发布工具。想换成自己的模型：照 `builtin_store.rs` 开头写的清单格式放一份 `manifest.json` 和模型文件，设 `AI_TOWN_MODEL_SOURCE=<它的地址>` 再启动管理服务。服务日志在各小镇的 `logs/builtin-model.log`。
+`build.mjs` 把固定版本的 llama.cpp 编成单个 `llama-server`（电脑用 Metal，手机用 CPU，Windows 用 CPU 且要求 AVX2）。重启 `pnpm dev` 或 `preview` 后设定里就有「内置模型」；安卓、mac、Windows 打包时看到它就带上。新版本在训练环境里发布，这里不放发布工具。想换成自己的模型：照 `builtin_store.rs` 开头写的清单格式放一份 `manifest.json` 和模型文件，设 `AI_TOWN_MODEL_SOURCE=<它的地址>` 再启动管理服务。服务日志在各小镇的 `logs/builtin-model.log`。
 
 ## 安卓版
 
@@ -41,11 +43,9 @@ node scripts/android/build.mjs --debug  # 调试包；页面可在 chrome://insp
 
 第一次打包会生成发布签名 `android/release.jks` 与 `android/keystore.properties`（不入库）。签名换了，新包就不能覆盖安装旧包。
 
-手机上建镇时生成器（`scripts/mapgen`）在页面的工作线程里运行，管理服务只理解描述、校验成品地图并保存；生成器因此不能依赖 Node 专有接口。
-
 ## mac 版
 
-应用壳（`macos/`）和安卓一样启动 Rust 管理服务与世界进程，在窗口里打开同一套页面，建镇也在页面里生成。数据目录与电脑版共用（`~/Library/Application Support/MyAiTown`，可用 `AI_TOWN_HOME` 改），两边不能同时打开；服务日志在 `~/Library/Logs/AI小镇/`。只支持 Apple 芯片，需要 Xcode 和钥匙串里的 Developer ID Application 证书。
+应用壳（`macos/`）和安卓一样启动 Rust 管理服务与世界进程，在窗口里打开同一套页面。数据目录与电脑版共用（`~/Library/Application Support/MyAiTown`，可用 `AI_TOWN_HOME` 改），两边不能同时打开；服务日志在 `~/Library/Logs/AI小镇/`。只支持 Apple 芯片，需要 Xcode 和钥匙串里的 Developer ID Application 证书。
 
 ```sh
 node scripts/macos/build.mjs                             # 签名的 DMG：target/macos/ai-town-<版本>.dmg
@@ -65,7 +65,7 @@ node scripts/macos/build.mjs --no-sign                   # 不签名，只在本
 node scripts/windows/build-local-launcher.mjs
 ```
 
-构建使用 Windows 自带 .NET Framework 的 C# 编译器；运行需要 Node.js 22.18+、`target/debug/host.exe`、`target/debug/town-map.exe` 和已安装的前端依赖。双击后隐藏启动 Ollama 与 5174 端口的小镇服务，等待就绪后打开默认浏览器；前端构建过期时自动重新构建。端口被其他项目或不同存档的服务占用时会报错，不会强制终止进程。此入口使用浏览器，不依赖 WebView2。
+构建使用 Windows 自带 .NET Framework 的 C# 编译器；运行需要 Node.js 22.18+、`target/debug/host.exe`、`target/debug/town-manager.exe` 和已安装的前端依赖。双击后隐藏启动 Ollama 与 5174 端口的小镇服务，等待就绪后打开默认浏览器；前端构建过期时自动重新构建。端口被其他项目或不同存档的服务占用时会报错，不会强制终止进程。此入口使用浏览器，不依赖 WebView2。
 
 本机设置位于被忽略的 `.local/windows-launcher.json`，字段为 `ollamaExe`、`modelDir`、`model`、`dataDir`，路径可相对项目根目录。默认从 `%LOCALAPPDATA%\Programs\Ollama` 或 `PATH` 查找已安装的 Ollama，沿用它的模型目录（包括 `OLLAMA_MODELS` 环境变量）；便携安装可用前两个字段指定路径。默认模型名 `qwen3.5:2b`，存档 `.local/run-data`；不会下载模型或修改居民的模型绑定。可用环境变量 `AI_TOWN_NODE` 指定 `node.exe`。
 
@@ -104,7 +104,7 @@ node scripts/replay/shoot.mjs 镜头单.json                       # 成片：�
 cargo +1.88.0 fmt --all -- --check
 cargo +1.88.0 clippy --locked --workspace --all-targets -- -D warnings
 cargo +1.88.0 test --locked --workspace
-cargo +1.88.0 build --locked -p host --bins
+cargo +1.88.0 build --locked -p host -p manager --bins
 corepack pnpm build
 corepack pnpm typecheck
 corepack pnpm test

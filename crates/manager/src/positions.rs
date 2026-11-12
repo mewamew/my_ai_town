@@ -1,4 +1,4 @@
-//! 新道具在二维图上的位置：跟在世界旁边保存，不写进不可变的地图。与 scripts/towns/positions.mjs 同构。
+//! 新道具在二维图上的位置：跟在世界旁边保存，不写进不可变的地图。
 use crate::error::ApiError;
 use crate::storage::{read_json, write_json};
 use serde_json::{json, Map, Value};
