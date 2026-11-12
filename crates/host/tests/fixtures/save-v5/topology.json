@@ -1,0 +1,136 @@
+{
+  "locales": [
+    {
+      "id": "loc_a",
+      "kind": "dwell",
+      "name": "甲地"
+    },
+    {
+      "id": "loc_b",
+      "kind": "dwell",
+      "name": "乙地"
+    },
+    {
+      "from_node": "n_a",
+      "id": "edge_ab",
+      "kind": "transit",
+      "minutes": 2.0,
+      "name": "甲乙路",
+      "to_node": "n_b"
+    }
+  ],
+  "passages": [
+    {
+      "a": "edge_ab",
+      "b": "loc_a",
+      "capabilities": [
+        "通行"
+      ],
+      "id": "p_ab_a",
+      "minutes": 0.0,
+      "node_a": "n_a",
+      "node_b": "n_a"
+    },
+    {
+      "a": "edge_ab",
+      "b": "loc_b",
+      "capabilities": [
+        "通行"
+      ],
+      "id": "p_ab_b",
+      "minutes": 0.0,
+      "node_a": "n_b",
+      "node_b": "n_b"
+    }
+  ],
+  "places": [
+    {
+      "arrival_station": "st_a",
+      "locale": "loc_a",
+      "name": "甲地",
+      "summary": "",
+      "type": "t"
+    },
+    {
+      "arrival_station": "st_b",
+      "locale": "loc_b",
+      "name": "乙地",
+      "summary": "",
+      "type": "t"
+    }
+  ],
+  "props": [
+    {
+      "board": "fixture-board",
+      "id": "board",
+      "locale": "loc_a",
+      "name": "公告栏",
+      "readable": {
+        "author": "佚名",
+        "kind": "bulletin",
+        "origin": {
+          "kind": "builtin"
+        },
+        "text": "图书馆今天开放",
+        "title": "公告",
+        "version": 1,
+        "work_id": "b1"
+      },
+      "verbs": [
+        {
+          "action": {
+            "completion": "read_bulletin",
+            "duration_minutes": 1,
+            "id": "read_bulletin",
+            "label": "阅读公告"
+          },
+          "duration_minutes": 1,
+          "verb": "阅读公告"
+        },
+        {
+          "duration_minutes": 1,
+          "verb": "查看公告栏"
+        }
+      ]
+    },
+    {
+      "id": "bench",
+      "locale": "loc_b",
+      "name": "工作台",
+      "verbs": [
+        {
+          "duration_minutes": 2,
+          "verb": "制作器物"
+        }
+      ]
+    },
+    {
+      "bulletin_board": true,
+      "id": "fixture-board",
+      "locale": "loc_a",
+      "name": "公告栏支架",
+      "verbs": [
+        {
+          "duration_minutes": 1,
+          "verb": "查看支架"
+        }
+      ]
+    }
+  ],
+  "stations": [
+    {
+      "id": "st_a",
+      "kind": "arrival",
+      "locale": "loc_a",
+      "name": "甲",
+      "node": "n_a"
+    },
+    {
+      "id": "st_b",
+      "kind": "arrival",
+      "locale": "loc_b",
+      "name": "乙",
+      "node": "n_b"
+    }
+  ]
+}

@@ -28,6 +28,8 @@ pub(crate) struct Args {
     pub connection_token: Option<String>,
     /// 管理进程启动时传入：stdin 关闭即视为父进程退出，保存后退出。
     pub stop_on_stdin_close: bool,
+    /// 周期存盘隔多久一次；缺省用存档的 `AUTOSAVE_INTERVAL`。
+    pub autosave: Option<Duration>,
 }
 
 impl Args {
@@ -46,6 +48,7 @@ impl Args {
             ready_file: None,
             connection_token: None,
             stop_on_stdin_close: false,
+            autosave: None,
         };
         let mut save_enabled = true;
         let mut mock_delay = Duration::from_secs(3);
@@ -82,6 +85,15 @@ impl Args {
                     mock_delay = Duration::from_secs_f64(parse_number(&arg, &value()?)?)
                 }
                 "--stop-on-stdin-close" => a.stop_on_stdin_close = true,
+                "--autosave-seconds" => {
+                    let seconds: f64 = parse_number(&arg, &value()?)?;
+                    if !(seconds.is_finite() && (0.0..=3600.0).contains(&seconds)) {
+                        return Err(HostError::Runtime(
+                            "--autosave-seconds 必须在 0–3600 内".into(),
+                        ));
+                    }
+                    a.autosave = Some(Duration::from_secs_f64(seconds));
+                }
                 other => return Err(HostError::Runtime(format!("未知参数 {other}"))),
             }
         }

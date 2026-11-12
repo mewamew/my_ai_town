@@ -1,12 +1,13 @@
 //! 存档格式迁移与兼容标识表。版本：v1 记忆内嵌在会话里；v2 记忆拆成外部文件；
-//! v3 加人口登记。读取时逐级升到当前版本，需要留原档的步骤记为 Backup，由调用方落盘。
+//! v3 加人口登记；v4 加玩家化身；v5 加天气；v6 把只增不改的历史拆成流水（history.rs）。
+//! 读取时逐级升到当前版本，需要留原档的步骤记为 Backup，由调用方落盘。
 //! 兼容标识表是数据文件，由 SaveStore 在需要时按配置路径读入。
 use super::{retired_commissions, SaveFile};
 use crate::fnv::fnv1a;
 use crate::HostError;
 use serde_json::Value;
 
-pub(super) const SCHEMA_VERSION: u32 = 5;
+pub(super) const SCHEMA_VERSION: u32 = 6;
 
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Backup {
@@ -16,6 +17,8 @@ pub(super) enum Backup {
     Weather,
     /// 委托功能已移除，清理前留原档
     CommissionRemoval,
+    /// 历史还都在 world.json 和记忆文件里（v5 及以前）；拆成流水前留原档，旧版本只读得了它
+    History,
 }
 
 impl Backup {
@@ -25,6 +28,7 @@ impl Backup {
             Backup::Avatar => ".before-avatar-v1",
             Backup::Physiology => ".before-physiology-v1",
             Backup::CommissionRemoval => ".before-commission-removal",
+            Backup::History => ".before-history-v1",
         }
     }
     pub(super) fn label(&self) -> &'static str {
@@ -33,13 +37,14 @@ impl Backup {
             Backup::Avatar => "化身加入前的原始存档",
             Backup::Physiology => "生理状态升级备份",
             Backup::CommissionRemoval => "旧委托已迁出运行状态，原始存档备份",
+            Backup::History => "历史拆成流水前的原始存档",
         }
     }
     /// 备份目录里附带的说明文件名；内容是兼容标识表本身。
     pub(super) fn extra_file(&self) -> Option<&'static str> {
         match self {
             Backup::Physiology => Some("physiology-content-versions.json"),
-            Backup::CommissionRemoval | Backup::Avatar | Backup::Weather => None,
+            Backup::CommissionRemoval | Backup::Avatar | Backup::Weather | Backup::History => None,
         }
     }
 }
@@ -94,6 +99,13 @@ pub(super) fn migrate(mut value: Value) -> Result<Migration, HostError> {
         return Err(HostError::Save(
             "v5 存档缺少天气状态或内核版本不一致，原文件已保留".into(),
         ));
+    }
+    // v5 及以前没有流水：历史照旧从 world.json 和记忆文件读，第一次存盘时拆出去。
+    if from_version < 6 {
+        backups.push(Backup::History);
+        value["schema_version"] = Value::from(6);
+    } else if !value["history"].is_object() {
+        return Err(HostError::Save("v6 存档缺少流水清单，原文件已保留".into()));
     }
     let file: SaveFile = serde_json::from_value(value)
         .map_err(|e| HostError::Save(format!("存档格式不兼容，原文件已保留：{e}")))?;

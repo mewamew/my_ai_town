@@ -9,7 +9,7 @@ use agent::{
     runtime::{AgentRequest, ResidentRuntime},
     session::Session,
 };
-use host::{agent_worker::AgentSave, persistence::SaveStore};
+use host::persistence::SaveStore;
 use kernel::{Topology, World};
 use serde_json::{json, Value};
 use std::{fs, path::PathBuf};
@@ -163,14 +163,9 @@ fn populated() -> (World, ResidentRuntime) {
     let restored = ResidentRuntime::restore(state, &w).unwrap();
     (w, restored)
 }
-fn bundle(r: &ResidentRuntime) -> Option<AgentSave> {
-    Some(AgentSave {
-        runtime: r.state().clone(),
-    })
-}
 fn checkpoint(store: &mut SaveStore, w: &World, r: &ResidentRuntime) {
     store
-        .checkpoint_bundle(w, 0.0, &Default::default(), None, || bundle(r), true)
+        .checkpoint_bundle(w, 0.0, &Default::default(), None, Some(r.state()), true)
         .unwrap();
 }
 
@@ -278,14 +273,31 @@ fn context_sources_restore_from_committed_files_and_http_overflow_is_classified_
     server.join().unwrap();
 }
 
+/// 存档提交失败：world.json 不动，没提交成的历史只是挂在流水文件的尾巴上；再读档，世界和记忆
+/// 都停在上次提交的地方，尾巴截掉，损坏的可读文件按清单重建。接着过，新的经历接着往流水后面写。
 #[test]
-fn failed_world_commit_cannot_publish_future_memory_and_restore_repairs_projection() {
+fn failed_world_commit_cannot_bring_the_future_back_and_restore_repairs_projection() {
     let d = Scratch::new();
     let (mut w, r) = populated();
     let mut store = d.store();
     checkpoint(&mut store, &w, &r);
     let committed = fs::read(d.save()).unwrap();
-    let original = fs::read(d.dir.join("residents/r1/events/D001.jsonl")).unwrap();
+    let before = json!(w.snapshot());
+    let journal = d.dir.join("history/000001.jsonl");
+    let written = fs::read(&journal).unwrap();
+    let page = d.dir.join("residents/r1/places/library.md");
+    let original = fs::read(&page).unwrap();
+    // world.json 只留当前状态：事件和记忆记录在流水里
+    let disk: Value = serde_json::from_slice(&committed).unwrap();
+    assert_eq!(
+        disk["world"]["actors"]["r1"]["journal"]["events"],
+        json!([])
+    );
+    let memory = &disk["resident_agent"]["runtime"]["sessions"]["r1"]["memory"];
+    assert_eq!(memory["records"], json!([]));
+    let lines = String::from_utf8_lossy(&written).into_owned();
+    assert!(lines.contains("{\"event\":{\"actor\":\"r1\"") && lines.contains("{\"memory\":"));
+
     fs::create_dir(d.dir.join("world.json.tmp")).unwrap();
     read_board(&mut w, "r1", "future", "这是尚未提交的未来经历。");
     let mut state = r.state().clone();
@@ -296,29 +308,45 @@ fn failed_world_commit_cannot_publish_future_memory_and_restore_repairs_projecti
         .memory
         .consolidate(&w, "r1");
     let future = ResidentRuntime::restore(state, &w).unwrap();
-    assert!(store
-        .checkpoint_bundle(&w, 0.0, &Default::default(), None, || bundle(&future), true)
-        .is_err());
+    let failed = store.checkpoint_bundle(
+        &w,
+        0.0,
+        &Default::default(),
+        None,
+        Some(future.state()),
+        true,
+    );
+    assert!(failed.is_err());
     assert_eq!(fs::read(d.save()).unwrap(), committed);
-    assert_eq!(
-        fs::read(d.dir.join("residents/r1/events/D001.jsonl")).unwrap(),
-        original
-    );
+    let tail = fs::read(&journal).unwrap();
+    assert!(tail.len() > written.len() && tail.starts_with(&written));
     drop(store);
+
     fs::remove_dir(d.dir.join("world.json.tmp")).unwrap();
-    fs::write(d.dir.join("residents/r1/events/D001.jsonl"), "投影损坏").unwrap();
-    let mut fresh = world();
-    let saved = d.store().restore_bundle(&mut fresh).unwrap().unwrap().agent;
-    assert_eq!(json!(saved.unwrap().runtime), json!(r.state()));
-    assert_eq!(
-        fs::read(d.dir.join("residents/r1/events/D001.jsonl")).unwrap(),
-        original
-    );
+    fs::write(&page, "投影损坏").unwrap();
+    let mut store = d.store();
+    let mut restored = world();
+    let saved = store.restore_bundle(&mut restored).unwrap().unwrap().agent;
+    assert_eq!(json!(restored.snapshot()), before);
+    assert_eq!(json!(saved.as_ref().unwrap().runtime), json!(r.state()));
+    assert_eq!(fs::read(&page).unwrap(), original);
+    assert_eq!(fs::read(&journal).unwrap(), written);
     for p in fs::read_dir(d.dir.join("residents/.objects")).unwrap() {
         assert!(!fs::read_to_string(p.unwrap().path())
             .unwrap()
             .contains("尚未提交的未来经历"));
     }
+
+    let r = ResidentRuntime::restore(saved.unwrap().runtime, &restored).unwrap();
+    read_board(&mut restored, "r1", "later", "后来真的发生的事。");
+    checkpoint(&mut store, &restored, &r);
+    let grown = fs::read(&journal).unwrap();
+    assert!(grown.len() > written.len() && grown.starts_with(&written));
+    assert!(!String::from_utf8_lossy(&grown).contains("尚未提交的未来经历"));
+    drop(store);
+    let mut again = world();
+    d.store().restore_bundle(&mut again).unwrap().unwrap();
+    assert_eq!(json!(again.snapshot()), json!(restored.snapshot()));
 }
 
 #[cfg(unix)]
@@ -341,26 +369,132 @@ fn resident_projection_cannot_escape_through_a_symlink() {
     );
 }
 
+/// 可读目录写不成不算存盘失败：世界、流水和记忆文件照样提交，下一次检查点把欠着的补上。
 #[test]
 fn committed_world_survives_readable_projection_failure_and_repairs_on_retry() {
     let d = Scratch::new();
     let (mut w, r) = populated();
     let mut store = d.store();
     checkpoint(&mut store, &w, &r);
-    let projection = d.dir.join("residents/r1/events/D001.jsonl");
-    fs::remove_file(&projection).unwrap();
-    fs::create_dir(&projection).unwrap();
+    // 下一份上下文来源的可读文件被一个目录占住
+    let mut state = r.state().clone();
+    let session = state.sessions.get_mut("r1").unwrap();
+    let source = session.input.source(&json!({"text":"后来才有的来源"}));
+    let path = format!(".state/context/S{source:06}.json");
+    let projection = d.dir.join("residents/r1").join(&path);
+    fs::create_dir_all(&projection).unwrap();
+    let r = ResidentRuntime::restore(state, &w).unwrap();
     read_board(&mut w, "r1", "committed", "这条经历必须随世界保存。");
     checkpoint(&mut store, &w, &r);
+    // 上下文来源写过就不再变：它的清单条目记在流水里，不在 world.json
     let saved: Value = serde_json::from_slice(&fs::read(d.save()).unwrap()).unwrap();
-    assert_eq!(saved["world"], json!(w.snapshot()));
+    assert!(saved["resident_files"]["r1"].get(&path).is_none());
+    let journal = fs::read_to_string(d.dir.join("history/000001.jsonl")).unwrap();
+    let entry = journal
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .find(|line| line["file"]["path"] == path.as_str())
+        .unwrap();
+    let hash = entry["file"]["version"]["hash"].as_str().unwrap();
+    assert!(projection.is_dir());
     fs::remove_dir(&projection).unwrap();
     checkpoint(&mut store, &w, &r);
-    let hash = saved["resident_files"]["r1"]["events/D001.jsonl"]["hash"]
-        .as_str()
-        .unwrap();
     assert_eq!(
         fs::read(projection).unwrap(),
         fs::read(d.dir.join("residents/.objects").join(hash)).unwrap()
     );
+    drop(store);
+    let mut restored = world();
+    let agent = d
+        .store()
+        .restore_bundle(&mut restored)
+        .unwrap()
+        .unwrap()
+        .agent;
+    assert_eq!(json!(restored.snapshot()), json!(w.snapshot()));
+    assert_eq!(json!(agent.unwrap().runtime), json!(r.state()));
+}
+
+/// 夹具 save-v5 是 0.5.0 的世界进程写的存档（v5：全部历史都在 world.json 和记忆文件里），
+/// 连同存它时的拓扑。新版本打开它：原档留一份备份；第一次存盘把历史搬进流水，world.json 只剩
+/// 当前状态；再读回来，世界和会话都和搬之前一字不差。
+#[test]
+fn a_v5_save_moves_its_history_into_the_journal_and_keeps_the_original() {
+    let fixture = crate::support::fixture("save-v5");
+    let town = || {
+        let topology = fs::read_to_string(fixture.join("topology.json")).unwrap();
+        World::new(
+            Topology::from_json(&topology, &kernel::props::Catalog::default()).unwrap(),
+            420.0,
+            crate::support::need_rules(),
+        )
+    };
+    let d = Scratch::new();
+    let objects = "residents/.objects";
+    fs::create_dir_all(d.dir.join(objects)).unwrap();
+    for entry in fs::read_dir(fixture.join(objects)).unwrap() {
+        let path = entry.unwrap().path();
+        fs::copy(&path, d.dir.join(objects).join(path.file_name().unwrap())).unwrap();
+    }
+    let original = fs::read(fixture.join("world.json")).unwrap();
+    fs::write(d.save(), &original).unwrap();
+    let old: Value = serde_json::from_slice(&original).unwrap();
+    assert_eq!(old["schema_version"], 5);
+
+    let mut store = d.store();
+    let mut w = town();
+    let restored = store.restore_bundle(&mut w).unwrap().unwrap();
+    assert_eq!(json!(w.snapshot()), old["world"]);
+    // 读档不改原档；原档和它引用的记忆文件另留一份，旧版本用它还能打开
+    assert_eq!(fs::read(d.save()).unwrap(), original);
+    let backup = d.dir.join("world.json.before-history-v1");
+    assert_eq!(fs::read(backup.join("world.json")).unwrap(), original);
+    for version in old["resident_files"]["r1"].as_object().unwrap().values() {
+        let name = version["hash"].as_str().unwrap();
+        assert_eq!(
+            fs::read(backup.join(objects).join(name)).unwrap(),
+            fs::read(fixture.join(objects).join(name)).unwrap()
+        );
+    }
+
+    let r = ResidentRuntime::restore(restored.agent.unwrap().runtime, &w).unwrap();
+    checkpoint(&mut store, &w, &r);
+    let new: Value = serde_json::from_slice(&fs::read(d.save()).unwrap()).unwrap();
+    assert_eq!(new["schema_version"], 6);
+    for actor in ["r1", "r2"] {
+        let a = &new["world"]["actors"][actor];
+        assert_eq!(a["journal"]["events"], json!([]));
+        assert_eq!(a["journal"]["days"], json!([]));
+        assert_eq!(a["actions"]["groups"], json!({}));
+    }
+    assert_eq!(new["world"]["interactions"], json!({}));
+    let memory = &new["resident_agent"]["runtime"]["sessions"]["r1"]["memory"];
+    assert_eq!(memory["records"], json!([]));
+    // 事件和记忆记录不再是记忆目录里的整份文件；world.json 的清单只列会反复改写的文件，
+    // 折叠归档这类写过就不再变的，文件还在记忆目录里，清单条目在流水里
+    let files = new["resident_files"]["r1"].as_object().unwrap();
+    let listed: Vec<_> = files.keys().map(String::as_str).collect();
+    assert!(listed.contains(&"places/library.md") && listed.contains(&"INDEX.md"));
+    let moved = ["events/", ".state/records/", "conversations/"];
+    assert!(!listed
+        .iter()
+        .any(|path| moved.iter().any(|folder| path.starts_with(folder))));
+    assert!(!d.dir.join("residents/r1/events").exists());
+    assert!(d
+        .dir
+        .join("residents/r1/conversations/C000001.jsonl")
+        .is_file());
+    let journal = fs::read_to_string(d.dir.join("history/000001.jsonl")).unwrap();
+    for kind in ["event", "day", "actions", "interaction", "memory", "file"] {
+        assert!(
+            journal.contains(&format!("{{\"{kind}\":")),
+            "流水里没有 {kind}"
+        );
+    }
+    drop(store);
+
+    let mut again = town();
+    let saved = d.store().restore_bundle(&mut again).unwrap().unwrap().agent;
+    assert_eq!(json!(again.snapshot()), old["world"]);
+    assert_eq!(json!(saved.unwrap().runtime), json!(r.state()));
 }

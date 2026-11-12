@@ -48,7 +48,7 @@ fn weather_control_is_durable_idempotent_and_world_scoped() {
         "world_mismatch"
     );
     let saved = t.saved(|s| s["world"]["weather"]["weather"]["view"] == rain);
-    assert_eq!(saved["schema_version"], 5);
+    assert_eq!(saved["schema_version"], 6);
     assert_eq!(saved["world"]["schema_version"], 5);
     assert_eq!(saved["speed"], 0.0);
     let rng = saved["world"]["weather"]["weather"]["rng"].clone();
@@ -130,7 +130,7 @@ fn legacy_v4_migration_preserves_world_and_backs_up_original() {
     let mut ws = t.start();
     let migrated = environment(&mut ws);
     assert_eq!(migrated["kind"], "clear");
-    let new = t.saved(|s| s["schema_version"] == 5);
+    let new = t.saved(|s| s["schema_version"] == 6);
     assert_eq!(new["world"]["actors"], old["world"]["actors"]);
     assert_eq!(new["world"]["minutes"], old["world"]["minutes"]);
     assert_eq!(new["population"], old["population"]);

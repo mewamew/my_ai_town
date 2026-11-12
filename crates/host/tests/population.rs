@@ -152,7 +152,7 @@ fn joining_while_running_keeps_the_first_resident_and_survives_restart() {
     );
     assert_eq!(join_receipts(&mut ws, &id), 1, "入村记录只写一次");
     let disk: Value = serde_json::from_slice(&fs::read(town.save()).unwrap()).unwrap();
-    assert_eq!(disk["schema_version"], 5);
+    assert_eq!(disk["schema_version"], 6);
     assert_eq!(
         disk["population"]["residents"].as_object().unwrap().len(),
         3

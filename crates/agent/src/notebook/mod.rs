@@ -9,7 +9,8 @@ use std::collections::BTreeMap;
 mod documents;
 mod reflection;
 pub use documents::{
-    documents, read_in, search_in, Documents, DocumentsCache, ReadQuery, SearchQuery,
+    archive_document, documents, overview, page_document, read_in, revision_document, search_in,
+    Documents, DocumentsCache, ReadQuery, SearchQuery,
 };
 pub use reflection::{apply_reflection, ReflectionUpdate};
 

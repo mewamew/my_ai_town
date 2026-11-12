@@ -3,7 +3,7 @@
 //! cargo run -p host -- [--mock-llm [--mock-delay 3]]
 //!   [--port 8787] [--speed 1.0] [--map-document data/maps/2d-town/map.json]
 //!   [--save-file 路径 | --no-save] [--town-id ID] [--ready-file 路径] [--connection-token 标识]
-//!   [--stop-on-stdin-close]
+//!   [--stop-on-stdin-close] [--autosave-seconds 30]
 //!
 //! 村民由 Agent 会话驱动；旧的无会话存档由 Agent 接续。
 //! 模型和玩家的动作都走内核命令校验。
@@ -178,6 +178,9 @@ fn build_runtime(
             )
         })
         .transpose()?;
+    if let (Some(store), Some(interval)) = (&mut store, args.autosave) {
+        store.set_autosave(interval);
+    }
     let saved = restore(&mut store, &mut world)?;
     host::maps::walk::restore_prop_positions(&mut world, args.save_file.as_deref())?;
     world.avatar_leave()?;

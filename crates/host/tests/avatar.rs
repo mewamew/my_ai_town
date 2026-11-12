@@ -140,7 +140,7 @@ fn authoritative_input_single_controller_save_failure_and_restart() {
     assert_eq!(s["actor"]["present"], false);
     assert_eq!(s["actor"]["name"], "aya 新名字");
     assert_eq!(s["actor"]["locus"]["at"]["kind"], "offstage");
-    let saved = town.saved(|v| v["schema_version"] == 5);
+    let saved = town.saved(|v| v["schema_version"] == 6);
     assert!(saved["population"]["residents"]
         .as_object()
         .unwrap()

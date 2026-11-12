@@ -1,0 +1,27 @@
+{"event_id":1,"at":421.0,"kind":"readable","text":"读完《公告first》版本 2，作者 佚名，实例 board；可用 read_content 查看本次正文，是否记忆自行决定","objects":["loc_a","board"],"action_id":null,"readable":{"id":"board","version":"d5ff0ddf137e4350b97b8a991f807c92d9dd1a9686794959bd6c3d4d188a5758","previously_read":false,"previous_version":null}}
+{"event_id":2,"at":421.0,"kind":"action","text":"读完《公告first》版本 2，作者 佚名，实例 board；可用 read_content 查看本次正文，是否记忆自行决定","objects":["loc_a","board","board"],"action_id":"first/0","readable":{"id":"board","version":"d5ff0ddf137e4350b97b8a991f807c92d9dd1a9686794959bd6c3d4d188a5758","previously_read":false,"previous_version":null}}
+{"event_id":3,"at":423.0,"kind":"readable","text":"读完《公告second》版本 3，作者 佚名，实例 board；可用 read_content 查看本次正文，是否记忆自行决定","objects":["loc_a","board"],"action_id":null,"readable":{"id":"board","version":"d07943d52b81bb5fc4102f7b1a2d8aa581d47e8f1ef749395e33eb83297a3193","previously_read":true,"previous_version":"d5ff0ddf137e4350b97b8a991f807c92d9dd1a9686794959bd6c3d4d188a5758"}}
+{"event_id":4,"at":423.0,"kind":"action","text":"读完《公告second》版本 3，作者 佚名，实例 board；可用 read_content 查看本次正文，是否记忆自行决定","objects":["loc_a","board","board"],"action_id":"second/0","readable":{"id":"board","version":"d07943d52b81bb5fc4102f7b1a2d8aa581d47e8f1ef749395e33eb83297a3193","previously_read":true,"previous_version":"d5ff0ddf137e4350b97b8a991f807c92d9dd1a9686794959bd6c3d4d188a5758"}}
+{"event_id":5,"at":424.0,"kind":"interaction","text":"阿树 邀请 小禾 一起交谈","objects":["r1","r2","loc_a","chat"],"action_id":null}
+{"event_id":6,"at":424.0,"kind":"speech","text":"阿树 说：图书馆的事你听说了吗？","objects":["r1","chat","loc_a","chat:chat:1"],"action_id":null}
+{"event_id":7,"at":424.0,"kind":"speech","text":"小禾 说：说来听听","objects":["r2","chat","loc_a","chat:chat:2"],"action_id":null}
+{"event_id":8,"at":424.0,"kind":"interaction","text":"小禾：加入交谈","objects":["r2","chat","loc_a","chat:chat:3"],"action_id":null}
+{"event_id":9,"at":424.0,"kind":"speech","text":"阿树 说：公告说明天维修关闭，后天再开。","objects":["r1","chat","loc_a","chat:chat:4"],"action_id":null}
+{"event_id":10,"at":424.0,"kind":"speech","text":"小禾 说：知道了，我先走","objects":["r2","chat","loc_a","chat:chat:5"],"action_id":null}
+{"event_id":11,"at":424.0,"kind":"interaction","text":"小禾：主动告辞","objects":["r2","chat","loc_a","chat:chat:6"],"action_id":null}
+{"event_id":12,"at":424.0,"kind":"interaction","text":"阿树：小禾走开了，交谈结束","objects":["r1","chat","loc_a","chat:chat:7"],"action_id":null}
+{"event_id":13,"at":424.0,"kind":"interaction","text":"小禾 邀请 阿树 一起交谈","objects":["r2","r1","loc_a","pending"],"action_id":null}
+{"event_id":14,"at":424.0,"kind":"speech","text":"小禾 说：明早再聊？","objects":["r2","pending","loc_a","chat:pending:1"],"action_id":null}
+{"event_id":15,"at":424.0,"kind":"notice","text":"收到 小禾 的交谈邀请","objects":["pending","r2","r1"],"action_id":null}
+{"event_id":16,"at":1024.0,"kind":"interaction","text":"交谈未完成：邀请超过 600 分钟未回应；已发生的时间、身体变化和已听到的话保留","objects":["r2","r1","loc_a","pending"],"action_id":null}
+{"event_id":17,"at":1024.0,"kind":"notice","text":"交谈未完成：邀请超过 600 分钟未回应；已发生的时间、身体变化和已听到的话保留","objects":["pending"],"action_id":null}
+{"event_id":18,"at":1086.6666666666663,"kind":"observation","text":"水分降低，需要关注身体状态","objects":[],"action_id":null}
+{"event_id":19,"at":1086.6666666666663,"kind":"notice","text":"D1 18:06 水分降低，需要关注身体状态","objects":[],"action_id":null}
+{"event_id":20,"at":1219.9999999999982,"kind":"observation","text":"饱腹降低，需要关注身体状态","objects":[],"action_id":null}
+{"event_id":21,"at":1219.9999999999982,"kind":"notice","text":"D1 20:19 饱腹降低，需要关注身体状态","objects":[],"action_id":null}
+{"event_id":22,"at":1353.3333333333317,"kind":"observation","text":"水分极低，再不补充就撑不住了","objects":[],"action_id":null}
+{"event_id":23,"at":1353.3333333333317,"kind":"notice","text":"D1 22:33 水分极低，再不补充就撑不住了","objects":[],"action_id":null}
+{"event_id":24,"at":1353.3333333333317,"kind":"observation","text":"身体低值，不能劳作；仍可进食、饮水、休息和求助","objects":[],"action_id":null}
+{"event_id":25,"at":1353.3333333333317,"kind":"notice","text":"D1 22:33 身体低值，不能劳作；仍可进食、饮水、休息和求助","objects":[],"action_id":null}
+{"event_id":26,"at":1413.3333333333317,"kind":"observation","text":"持续缺水已达到损害时长","objects":[],"action_id":null}
+{"event_id":27,"at":1413.3333333333317,"kind":"notice","text":"D1 23:33 持续缺水已达到损害时长","objects":[],"action_id":null}

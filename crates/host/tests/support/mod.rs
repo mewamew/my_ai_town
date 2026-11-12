@@ -36,6 +36,9 @@ pub struct Town {
     pub persistent: bool,
     /// 起进程的额外参数。
     pub args: Vec<String>,
+    /// 周期存盘每拍都到点。缺省和正式运行一样 30 秒一次：命令和退出当场存，用例一般等不到周期
+    /// 那一次；要看世界自己往前走的进度有没有存下来的用例打开它。
+    pub autosave: bool,
     child: Option<Child>,
     stdin: Option<ChildStdin>,
 }
@@ -120,6 +123,7 @@ impl Town {
             mock_delay: Some("0.01".into()),
             persistent: true,
             args: Vec::new(),
+            autosave: false,
             child: None,
             stdin: None,
         }
@@ -184,6 +188,9 @@ impl Town {
         }
         if !self.persistent {
             command.arg("--no-save");
+        }
+        if self.autosave {
+            command.args(["--autosave-seconds", "0"]);
         }
         let mut child = command.spawn().unwrap();
         self.stdin = child.stdin.take();
@@ -252,6 +259,22 @@ impl Town {
     pub fn shutdown(&mut self) {
         self.close_stdin();
         assert!(self.wait_exit().success(), "stdin 关闭后未完成保存退出");
+    }
+
+    /// 存档 `saved` 提交时流水里的全部内容，一行一条，按写入的先后。只取清单记着的长度：
+    /// 文件里多出来的是后来才写的，不属于这一次提交。
+    #[track_caller]
+    pub fn history(&self, saved: &Value) -> Vec<Value> {
+        let mut lines = Vec::new();
+        for segment in saved["history"]["segments"].as_array().unwrap() {
+            let name = format!("{:06}.jsonl", segment["id"].as_u64().unwrap());
+            let bytes = fs::read(self.save().with_file_name("history").join(name)).unwrap();
+            let committed = &bytes[..segment["bytes"].as_u64().unwrap() as usize];
+            for line in committed.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
+                lines.push(serde_json::from_slice(line).unwrap());
+            }
+        }
+        lines
     }
 
     /// 轮询存档直到满足条件。

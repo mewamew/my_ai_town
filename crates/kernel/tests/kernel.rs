@@ -7,6 +7,7 @@ mod exploration;
 mod force;
 mod game_mode;
 mod harm;
+mod history;
 mod interactions;
 mod inventory;
 mod island;

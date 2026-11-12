@@ -3,6 +3,8 @@
 //! 存档直接序列化运行期的类型（Actor、protocol::Interaction、背包表、作品表、天气状态等），
 //! 存档格式就是这些类型的 serde 形状：改字段名或 serde 属性就是改存档格式，要升 SCHEMA_VERSION
 //! 并保证旧档能读。这里负责把各子系统的状态收拢成一份存档，以及读档时的整体校验与装回。
+//! 只增不改的历史（事件、过完的日子、做完的动作组、结束了的互动）存盘时另拆成流水，见 history.rs；
+//! 快照的形状不变，拆出去的部分在快照里是空的，读档时先装回来再校验。
 use crate::error::{KernelError, Result};
 use crate::{
     activity::{ActKind, TravelStage},
@@ -47,13 +49,13 @@ pub struct WorldSnapshot {
     #[serde(default)]
     inventory: Option<crate::inventory::Inventory>,
     minutes: f64,
-    actors: BTreeMap<String, Actor>,
+    pub(crate) actors: BTreeMap<String, Actor>,
     contents: ContentState,
     /// 旧存档的规划请求表；对应机制已删，读入即丢弃，新存档不写。
     #[serde(default, skip_serializing, rename = "replans")]
     _replans: Option<serde_json::Value>,
     #[serde(default)]
-    interactions: BTreeMap<String, protocol::Interaction>,
+    pub(crate) interactions: BTreeMap<String, protocol::Interaction>,
     #[serde(default)]
     placed_props: BTreeMap<String, crate::props::Placement>,
     #[serde(default)]
@@ -79,6 +81,15 @@ pub struct WorldSnapshot {
 
 impl World {
     pub fn snapshot(&self) -> WorldSnapshot {
+        self.snapshot_with(self.actors.clone(), self.interactions.items.clone())
+    }
+
+    /// 快照里的人物和互动由调用方给：完整快照给全部，存盘只给当前状态（history.rs）。
+    pub(crate) fn snapshot_with(
+        &self,
+        actors: BTreeMap<String, Actor>,
+        interactions: BTreeMap<String, protocol::Interaction>,
+    ) -> WorldSnapshot {
         WorldSnapshot {
             weather: Some(match &self.weather {
                 Some(weather) => crate::weather::WeatherSnapshot::Enabled {
@@ -98,10 +109,10 @@ impl World {
             schema_version: SCHEMA_VERSION,
             inventory: Some(self.inventory.clone()),
             minutes: self.minutes,
-            actors: self.actors.clone(),
+            actors,
             contents: self.contents.clone(),
             _replans: None,
-            interactions: self.interactions.items.clone(),
+            interactions,
             placed_props: self.props.placed.clone(),
             supplies: self.props.supplies.clone(),
             physiology: self.physiology,

@@ -64,6 +64,28 @@ fn bytes_per_token_default() -> f64 {
     3.5
 }
 
+impl RuntimeState {
+    /// 存进 world.json 的样子：各会话不带另存成文件的部分（见 `Session::without_files`）。
+    pub fn without_files(&self) -> Self {
+        Self {
+            schema_version: self.schema_version,
+            epoch: self.epoch,
+            next_request: self.next_request,
+            next_session: self.next_session,
+            sessions: self
+                .sessions
+                .iter()
+                .map(|(actor, session)| (actor.clone(), session.without_files()))
+                .collect(),
+            limits: self.limits.clone(),
+            lifetime: self.lifetime.clone(),
+            last_dispatched: self.last_dispatched.clone(),
+            bytes_per_token: self.bytes_per_token,
+            requests: self.requests.clone(),
+        }
+    }
+}
+
 fn digest(parts: &[&str]) -> u64 {
     let mut hasher = DefaultHasher::new();
     for part in parts {

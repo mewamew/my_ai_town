@@ -1,0 +1,8 @@
+{"event_id":28,"at":1553.3333333333317,"kind":"observation","text":"水分耗尽，无法自主活动，需要他人补水","objects":[],"action_id":null}
+{"event_id":29,"at":1553.3333333333317,"kind":"notice","text":"D2 01:53 水分耗尽，无法自主活动，需要他人补水","objects":[],"action_id":null}
+{"event_id":30,"at":1619.9999999999982,"kind":"observation","text":"饱腹极低，再不补充就撑不住了","objects":[],"action_id":null}
+{"event_id":31,"at":1619.9999999999982,"kind":"notice","text":"D2 02:59 饱腹极低，再不补充就撑不住了","objects":[],"action_id":null}
+{"event_id":32,"at":1739.9999999999982,"kind":"observation","text":"持续饥饿已达到损害时长","objects":[],"action_id":null}
+{"event_id":33,"at":1739.9999999999982,"kind":"notice","text":"D2 04:59 持续饥饿已达到损害时长","objects":[],"action_id":null}
+{"event_id":34,"at":1793.0555555555538,"kind":"observation","text":"健康降低，需要关注身体状态","objects":[],"action_id":null}
+{"event_id":35,"at":1793.0555555555538,"kind":"notice","text":"D2 05:53 健康降低，需要关注身体状态","objects":[],"action_id":null}

@@ -170,6 +170,8 @@ fn join_first(ws: &mut WebSocket<TcpStream>) -> String {
 fn sessions_resume_in_the_formal_host_without_repeating_actions() {
     let endpoint = Endpoint::start();
     let mut town = town(&endpoint.url);
+    // 模型回复和世界自己往前走的进度不再当场存，靠周期存盘落到盘上
+    town.autosave = true;
     let mut ws = town.start();
     let id = join_first(&mut ws);
     assert_eq!(id, "resident_001");
@@ -219,11 +221,16 @@ fn sessions_resume_in_the_formal_host_without_repeating_actions() {
         v.pointer("/resident_agent/runtime/sessions/resident_001/pending/0/kind")
             == Some(&json!("wait"))
     });
-    let groups = complete["world"]["actors"]["resident_001"]["actions"]["groups"]
-        .as_object()
-        .unwrap();
+    // 做完的动作组不在 world.json 里了，在流水里：只有一组，没有重做
+    let running = &complete["world"]["actors"]["resident_001"]["actions"]["groups"];
+    assert_eq!(running, &json!({}));
+    let history = town.history(&complete);
+    let groups: Vec<_> = history
+        .iter()
+        .filter(|line| line["actions"]["actor"] == "resident_001")
+        .collect();
     assert_eq!(groups.len(), 1);
-    assert_eq!(groups.values().next().unwrap()["status"], "succeeded");
+    assert_eq!(groups[0]["actions"]["group"]["status"], "succeeded");
     let messages = complete["resident_agent"]["runtime"]["sessions"]["resident_001"]["messages"]
         .as_array()
         .unwrap();

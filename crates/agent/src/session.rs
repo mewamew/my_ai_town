@@ -372,6 +372,62 @@ impl Session {
             retry_tools: Default::default(),
         }
     }
+    /// 存进 world.json 的样子：记忆记录、笔记页和旧版本、折叠归档、上下文来源由 host 另存
+    /// （记忆目录和流水），这里不带，也就不用为了存盘把它们整份克隆一遍。
+    /// 每个字段都写出来：以后给会话加字段，编译器会要求在这里决定它跟不跟着 world.json 走。
+    pub fn without_files(&self) -> Self {
+        Self {
+            invitation_reply_failure: self.invitation_reply_failure.clone(),
+            input: crate::context::input::InputState {
+                ceiling: self.input.ceiling,
+                rejections: self.input.rejections,
+                next_source: self.input.next_source,
+                summary_source: self.input.summary_source,
+                sources: BTreeMap::new(),
+            },
+            id: self.id,
+            actor_id: self.actor_id.clone(),
+            instructions: self.instructions.clone(),
+            goals: self.goals.clone(),
+            messages: self.messages.clone(),
+            chat: self.chat.clone(),
+            pending: self.pending.clone(),
+            in_flight: self.in_flight.clone(),
+            last_request_id: self.last_request_id,
+            pause: self.pause.clone(),
+            tally: self.tally.clone(),
+            cursors: self.cursors.clone(),
+            daily: self.daily.clone(),
+            memory: crate::memory::MemoryStore {
+                records: Vec::new(),
+                ingested_cursor: self.memory.ingested_cursor,
+                consolidated_cursor: self.memory.consolidated_cursor,
+                revision: self.memory.revision,
+            },
+            notebook: crate::notebook::Notebook {
+                through_event: self.notebook.through_event,
+                last_reflection_at: self.notebook.last_reflection_at,
+                retry_after: self.notebook.retry_after,
+                failures: self.notebook.failures,
+                revision: self.notebook.revision,
+                pages: BTreeMap::new(),
+                history: Vec::new(),
+                legacy_archives: BTreeMap::new(),
+                request: self.notebook.request.clone(),
+                reading_dialogue: self.notebook.reading_dialogue.clone(),
+            },
+            wake: self.wake.clone(),
+            streaks: self.streaks.clone(),
+            folded: Folded {
+                compacted: self.folded.compacted.clone(),
+                compactions: self.folded.compactions,
+                known_tokens: self.folded.known_tokens.clone(),
+                archives: BTreeMap::new(),
+            },
+            shown: self.shown.clone(),
+            retry_tools: self.retry_tools.clone(),
+        }
+    }
     /// 记下这一轮当场被退回的工具，下一轮据此判断回复是不是只在改正调用。
     pub(crate) fn remember_retry_tools(&mut self, names: BTreeSet<String>) {
         self.retry_tools = names;
@@ -436,10 +492,6 @@ impl Session {
     /// 折叠归档的旧会话（存档目录按折叠编号写成文件）。
     pub fn archives(&self) -> &BTreeMap<u64, Vec<Message>> {
         &self.folded.archives
-    }
-    /// 存档写出后清空内嵌副本。
-    pub fn take_archives(&mut self) -> BTreeMap<u64, Vec<Message>> {
-        std::mem::take(&mut self.folded.archives)
     }
     /// 从存档目录读回一份折叠归档；同一编号出现两次视为目录损坏。
     pub fn restore_archive(

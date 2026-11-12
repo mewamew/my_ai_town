@@ -1,10 +1,15 @@
-//! world.json 中的内容哈希清单是提交点；可读目录是已提交文件的投影。
+//! 村民的记忆目录。world.json 里的内容摘要清单是提交点；可读目录是已提交文件的投影。
 //! 新文件先写不可变版本，最后提交世界；中途退出不会把未来记忆带入旧世界。
+//! 暂存（`ResidentStore`，主线程）只看上次提交之后变了的：笔记页按版本，旧版本、折叠归档和
+//! 上下文来源按编号（只增不改），所以存盘的花费不随记忆变多而变大。事件和记忆记录不在这个
+//! 目录里，它们进流水（history.rs）；旧版本、归档、来源这些写过就不再变的文件还在这个目录里，
+//! 只是清单条目也记在流水里，world.json 的清单只列会反复改写的那几份（索引、当前事务、笔记页）。
+//! 落到文件上的动作在 `ResidentFiles`，可以在后台线程做。
+use super::history::Line;
 use super::{atomic_write, SAVE_FILE_NAME};
 use crate::agent_worker::AgentSave;
 use crate::HostError;
-use agent::{memory::MemoryRecord, notebook::Page};
-use kernel::World;
+use agent::{memory::MemoryRecord, notebook::Page, runtime::RuntimeState, session::Session};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -22,16 +27,8 @@ pub(super) struct FileVersion {
     hash: String,
     bytes: u64,
 }
-pub(super) struct ResidentStore {
-    root: PathBuf,
-    verified: BTreeSet<String>,
-    published: Option<Residents>,
-    /// 上次暂存的每份文件（村民、路径）的正文与版本。存档每秒一次，记忆一多就是上千份、十几兆，
-    /// 正文没变就沿用版本，不再整份重算 SHA-256；调试版里重算能占满主循环，世界时间跟着变慢。
-    staged: BTreeMap<(String, String), (String, FileVersion)>,
-}
 
-fn hash(bytes: &[u8]) -> String {
+pub(super) fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 fn component(s: &str) -> String {
@@ -52,17 +49,17 @@ fn relative(path: &str) -> Result<(), HostError> {
     }
     Ok(())
 }
-fn directory(path: &Path) -> Result<(), HostError> {
+pub(super) fn directory(path: &Path) -> Result<(), HostError> {
     match fs::symlink_metadata(path) {
         Ok(m) if m.is_dir() && !m.file_type().is_symlink() => Ok(()),
         Ok(_) => Err(HostError::Save(format!(
-            "记忆目录不是实际目录：{}",
+            "存档目录不是实际目录：{}",
             path.display()
         ))),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => fs::create_dir(path)
-            .map_err(|e| HostError::Save(format!("创建记忆目录 {} 失败：{e}", path.display()))),
+            .map_err(|e| HostError::Save(format!("创建存档目录 {} 失败：{e}", path.display()))),
         Err(e) => Err(HostError::Save(format!(
-            "检查记忆目录 {} 失败：{e}",
+            "检查存档目录 {} 失败：{e}",
             path.display()
         ))),
     }
@@ -100,45 +97,357 @@ fn parse<T: serde::de::DeserializeOwned>(path: &str, bytes: &[u8]) -> Result<T, 
     serde_json::from_slice(bytes)
         .map_err(|e| HostError::Save(format!("记忆文件 {path} 解析失败：{e}")))
 }
+
+/// 写过就不再变的文件：折叠归档、上下文来源、笔记的旧版本。清单条目记在流水里。
+fn settled(path: &str) -> bool {
+    [
+        "conversations/",
+        "revisions/",
+        ".state/history/",
+        ".state/context/",
+    ]
+    .iter()
+    .any(|folder| path.starts_with(folder))
+}
+
+/// 记忆目录：缺省存档旁边的 residents/，别的存档名用 `<存档名>.residents`。
+fn root_for(save: &Path) -> PathBuf {
+    let folder = if save.file_name().is_some_and(|n| n == SAVE_FILE_NAME) {
+        "residents".into()
+    } else {
+        format!("{}.residents", save.file_name().unwrap().to_string_lossy())
+    };
+    save.parent().unwrap().join(folder)
+}
+
+/// 一位村民已经暂存到哪。
+#[derive(Clone, Default)]
+struct Staged {
+    /// 会话编号：换了会话就从头暂存
+    session: u64,
+    files: Files,
+    /// 各笔记页已暂存的版本
+    pages: BTreeMap<String, u64>,
+    /// 笔记旧版本暂存了几条
+    history: usize,
+    /// 折叠归档、上下文来源各暂存到了第几号
+    archives: u64,
+    sources: u64,
+    /// 记忆记录写进流水的版本：比它新的才要再写
+    memory: u64,
+}
+
+impl Staged {
+    /// 这份会话是接着上次暂存的那份往下走的：编号没换，各样只增的东西没有变少。
+    fn continues(&self, s: &Session) -> bool {
+        self.session == s.id
+            && self.history <= s.notebook.history.len()
+            && self.archives <= last_key(s.archives())
+            && self.sources <= last_key(&s.input.sources)
+            && self.memory <= s.memory.revision
+    }
+}
+
+/// 按编号只增的表里最大的编号；空表是 0。
+fn last_key<T>(map: &BTreeMap<u64, T>) -> u64 {
+    map.keys().next_back().copied().unwrap_or(0)
+}
+
+/// 一次暂存的结果：新的清单、盘上还没有的文件版本，和提交成功后要记下的进度。
+pub(super) struct Stage {
+    /// 全部文件的清单：可读目录和旧版本的清理照它来
+    pub manifest: Residents,
+    /// 写进 world.json 的那部分清单：不含条目记在流水里的文件
+    pub listed: Residents,
+    pub objects: Vec<(String, Vec<u8>)>,
+    staged: BTreeMap<String, Staged>,
+}
+
+pub(super) struct ResidentStore {
+    /// 盘上已有、内容核对过的文件版本（按摘要）
+    known: BTreeSet<String>,
+    staged: BTreeMap<String, Staged>,
+}
+
 impl ResidentStore {
-    pub(super) fn new(save: &Path) -> Self {
-        let folder = if save.file_name().is_some_and(|n| n == SAVE_FILE_NAME) {
-            "residents".into()
-        } else {
-            format!("{}.residents", save.file_name().unwrap().to_string_lossy())
-        };
+    pub(super) fn new() -> Self {
         Self {
-            root: save.parent().unwrap().join(folder),
-            verified: BTreeSet::new(),
-            published: None,
+            known: BTreeSet::new(),
             staged: BTreeMap::new(),
+        }
+    }
+
+    /// 有人的记忆已经写进过流水，现在的会话却不是接着那份往下走的：流水得另起一份，
+    /// 否则旧会话的记忆会在读档时混进新会话。
+    pub(super) fn diverged(&self, state: Option<&RuntimeState>) -> bool {
+        self.staged.iter().any(|(actor, staged)| {
+            staged.memory > 0
+                && !state
+                    .and_then(|state| state.sessions.get(actor))
+                    .is_some_and(|s| staged.continues(s))
+        })
+    }
+
+    /// 暂存各位村民变了的记忆文件，新的记忆记录和清单条目排进流水。`fresh` 表示流水另起了
+    /// 一份：全部从头暂存，记录和条目重新写一遍。
+    pub(super) fn stage<'a>(
+        &self,
+        state: Option<&'a RuntimeState>,
+        journal: &mut Vec<Line<'a>>,
+        fresh: bool,
+    ) -> Result<Stage, HostError> {
+        let mut stage = Stage {
+            manifest: BTreeMap::new(),
+            listed: BTreeMap::new(),
+            objects: Vec::new(),
+            staged: BTreeMap::new(),
+        };
+        let mut queued = BTreeSet::new();
+        for (actor, s) in state.iter().flat_map(|state| &state.sessions) {
+            let mut next = match self.staged.get(actor) {
+                Some(old) if !fresh && old.continues(s) => old.clone(),
+                _ => Staged {
+                    session: s.id,
+                    ..Staged::default()
+                },
+            };
+            let mut put = |next: &mut Staged, path: String, text: String| {
+                let version = FileVersion {
+                    hash: hash(text.as_bytes()),
+                    bytes: text.len() as u64,
+                };
+                if !self.known.contains(&version.hash) && queued.insert(version.hash.clone()) {
+                    stage
+                        .objects
+                        .push((version.hash.clone(), text.into_bytes()));
+                }
+                if next.files.get(&path) == Some(&version) {
+                    return;
+                }
+                if settled(&path) {
+                    journal.push(Line::File {
+                        actor,
+                        path: path.clone(),
+                        version: version.clone(),
+                    });
+                }
+                next.files.insert(path, version);
+            };
+            for (path, text) in agent::notebook::overview(s) {
+                put(&mut next, path, text);
+            }
+            for page in s.notebook.pages.values() {
+                if next.pages.get(&page.path) == Some(&page.revision) {
+                    continue;
+                }
+                let (path, text) = agent::notebook::page_document(page);
+                put(&mut next, path, text);
+                let state_path = format!(".state/pages/{}.json", hash(page.path.as_bytes()));
+                put(&mut next, state_path, json(page)?);
+                next.pages.insert(page.path.clone(), page.revision);
+            }
+            for page in &s.notebook.history[next.history..] {
+                let (path, text) = agent::notebook::revision_document(page);
+                put(&mut next, path, text);
+                let state_path = format!(".state/history/R{:06}.json", page.revision);
+                put(&mut next, state_path, json(page)?);
+            }
+            next.history = s.notebook.history.len();
+            for (id, messages) in s.archives().range(next.archives + 1..) {
+                let (path, text) = agent::notebook::archive_document(*id, messages);
+                put(&mut next, path, text);
+            }
+            next.archives = last_key(s.archives());
+            for (id, value) in s.input.sources.range(next.sources + 1..) {
+                put(
+                    &mut next,
+                    format!(".state/context/S{id:06}.json"),
+                    json(value)?,
+                );
+            }
+            next.sources = last_key(&s.input.sources);
+            for record in &s.memory.records {
+                if record.revision > next.memory {
+                    journal.push(Line::Memory { actor, record });
+                }
+            }
+            next.memory = s.memory.revision;
+            let listed = next.files.iter().filter(|(path, _)| !settled(path));
+            stage.listed.insert(
+                actor.clone(),
+                listed.map(|(path, v)| (path.clone(), v.clone())).collect(),
+            );
+            stage.manifest.insert(actor.clone(), next.files.clone());
+            stage.staged.insert(actor.clone(), next);
+        }
+        Ok(stage)
+    }
+
+    /// 暂存的东西已经随 world.json 提交：盘上现有的版本就是清单里的那些。
+    pub(super) fn commit(&mut self, stage: Stage) {
+        self.known = stage
+            .manifest
+            .values()
+            .flat_map(|files| files.values().map(|v| v.hash.clone()))
+            .collect();
+        self.staged = stage.staged;
+    }
+
+    /// 读档：按清单把各位村民的记忆文件读回会话。旧存档（v5 及以前）的记忆记录也在清单里，
+    /// 照旧读回；v6 起记录在流水里，由调用方装上。
+    pub(super) fn hydrate(
+        &mut self,
+        files: &ResidentFiles,
+        manifest: &Residents,
+        saved: &mut Option<AgentSave>,
+    ) -> Result<(), HostError> {
+        let Some(saved) = saved else {
+            if manifest.is_empty() {
+                return Ok(());
+            }
+            return Err(HostError::Save("记忆清单缺少对应 Agent".into()));
+        };
+        if manifest.len() != saved.runtime.sessions.len() {
+            return Err(HostError::Save("村民记忆目录与世界人口不一致".into()));
+        }
+        for (actor, s) in &mut saved.runtime.sessions {
+            let listed = manifest
+                .get(actor)
+                .ok_or_else(|| HostError::Save("村民记忆清单缺失".into()))?;
+            if !s.memory.records.is_empty()
+                || !s.notebook.pages.is_empty()
+                || !s.archives().is_empty()
+                || !s.notebook.history.is_empty()
+                || !s.input.sources.is_empty()
+            {
+                return Err(HostError::Save(
+                    "v2 存档混入内嵌记忆，拒绝混用两个版本".into(),
+                ));
+            }
+            for required in ["INDEX.md", "current.md", "self.md"] {
+                if !listed.contains_key(required) {
+                    return Err(HostError::Save("村民目录缺少必要索引文件".into()));
+                }
+            }
+            for (path, version) in listed {
+                relative(path)?;
+                let bytes = files.read(version)?;
+                self.known.insert(version.hash.clone());
+                if path.starts_with(".state/context/S") {
+                    let id = path
+                        .trim_start_matches(".state/context/S")
+                        .trim_end_matches(".json")
+                        .parse::<u64>()
+                        .map_err(|e| HostError::Save(format!("上下文来源 {path} 编号无效：{e}")))?;
+                    if id == 0
+                        || id > s.input.next_source
+                        || s.input.sources.insert(id, parse(path, &bytes)?).is_some()
+                    {
+                        return Err(HostError::Save(format!(
+                            "上下文来源 {path} 编号重复或超出范围"
+                        )));
+                    }
+                } else if path.starts_with(".state/records/") {
+                    s.memory
+                        .records
+                        .extend(lines::<MemoryRecord>(path, &bytes)?);
+                } else if path.starts_with(".state/pages/") {
+                    let p: Page = parse(path, &bytes)?;
+                    if s.notebook.pages.insert(p.path.clone(), p).is_some() {
+                        return Err(HostError::Save(format!("主题路径重复：{path}")));
+                    }
+                } else if path.starts_with(".state/history/") {
+                    s.notebook.history.push(parse(path, &bytes)?);
+                } else if path.starts_with("conversations/C") {
+                    let id = path
+                        .trim_start_matches("conversations/C")
+                        .trim_end_matches(".jsonl")
+                        .parse::<u64>()
+                        .map_err(|e| HostError::Save(format!("对话归档 {path} 编号无效：{e}")))?;
+                    s.restore_archive(id, lines(path, &bytes)?)?;
+                }
+            }
+            s.memory.records.sort_by_key(|r| r.memory_id);
+            s.notebook.history.sort_by_key(|p| p.revision);
+        }
+        Ok(())
+    }
+
+    /// 读回来的是流水另存的存档（v6 起）：各人的记忆记录和 `recorded` 里的清单条目都已经在
+    /// 盘上，从这里接着往下写。笔记页、归档这些不记进度：开镇后第一次存盘重拼一遍，内容没变就
+    /// 什么也不写；该记在流水里却没记上的条目，那一次补记。
+    pub(super) fn adopt(&mut self, recorded: &Residents, state: Option<&RuntimeState>) {
+        self.staged = state
+            .iter()
+            .flat_map(|state| &state.sessions)
+            .map(|(actor, s)| {
+                let staged = Staged {
+                    session: s.id,
+                    files: recorded.get(actor).cloned().unwrap_or_default(),
+                    memory: s.memory.revision,
+                    ..Staged::default()
+                };
+                (actor.clone(), staged)
+            })
+            .collect();
+    }
+
+    /// 存档清单里条目该记在流水里的文件先拿掉：只有流水里读到的才算记过。
+    pub(super) fn unsettled(manifest: &Residents) -> Residents {
+        let keep = |files: &Files| {
+            let listed = files.iter().filter(|(path, _)| !settled(path));
+            listed.map(|(path, v)| (path.clone(), v.clone())).collect()
+        };
+        manifest
+            .iter()
+            .map(|(actor, files)| (actor.clone(), keep(files)))
+            .collect()
+    }
+
+    /// 读回来的是没有流水的旧存档：下一次存盘把全部记忆文件重新暂存，记录全部写进流水。
+    pub(super) fn forget(&mut self) {
+        self.staged.clear();
+    }
+
+    /// 不知道上一次写到了哪一步：暂存进度作废，盘上有哪些文件版本也不作数，下一次逐个核对。
+    pub(super) fn distrust(&mut self) {
+        self.staged.clear();
+        self.known.clear();
+    }
+}
+
+/// 记忆目录里落到文件上的那一半：读写不可变版本、对齐可读目录。
+pub(super) struct ResidentFiles {
+    root: PathBuf,
+    published: Option<Residents>,
+}
+
+impl ResidentFiles {
+    pub(super) fn new(save: &Path) -> Self {
+        Self {
+            root: root_for(save),
+            published: None,
         }
     }
     fn prepare(&self) -> Result<(), HostError> {
         directory(&self.root)?;
         directory(&self.root.join(OBJECTS_DIR))
     }
-    fn put(&mut self, bytes: &[u8]) -> Result<FileVersion, HostError> {
-        let key = hash(bytes);
-        let path = self.root.join(OBJECTS_DIR).join(&key);
-        if !self.verified.contains(&key) {
-            if path.exists() {
-                let old = self.read(&FileVersion {
-                    hash: key.clone(),
-                    bytes: bytes.len() as u64,
-                })?;
-                if old != bytes {
-                    return Err(HostError::Save("记忆内容校验不一致".into()));
-                }
-            } else {
-                atomic_write(&path, bytes)?;
-            }
-            self.verified.insert(key.clone());
+    /// 写一个不可变版本；已经有了就核对内容。
+    pub(super) fn put(&self, key: &str, bytes: &[u8]) -> Result<(), HostError> {
+        self.prepare()?;
+        let path = self.root.join(OBJECTS_DIR).join(key);
+        if !path.exists() {
+            return atomic_write(&path, bytes);
         }
-        Ok(FileVersion {
-            hash: key,
+        let version = FileVersion {
+            hash: key.into(),
             bytes: bytes.len() as u64,
-        })
+        };
+        if self.read(&version)? != bytes {
+            return Err(HostError::Save("记忆内容校验不一致".into()));
+        }
+        Ok(())
     }
     fn read(&self, version: &FileVersion) -> Result<Vec<u8>, HostError> {
         if version.hash.len() != 64 || !version.hash.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -206,135 +515,6 @@ impl ResidentStore {
         atomic_write(&target, world)
     }
 
-    pub(super) fn stage(
-        &mut self,
-        world: &World,
-        saved: &mut Option<AgentSave>,
-    ) -> Result<Residents, HostError> {
-        let Some(saved) = saved else {
-            return Ok(BTreeMap::new());
-        };
-        self.prepare()?;
-        let mut manifest = BTreeMap::new();
-        let mut staged = BTreeMap::new();
-        for (actor, s) in &mut saved.runtime.sessions {
-            let mut docs = agent::notebook::documents(world, s);
-            for record in std::mem::take(&mut s.memory.records) {
-                let path = format!(
-                    ".state/records/D{:03}.jsonl",
-                    kernel::calendar::day_index(record.at) + 1
-                );
-                let body = docs.entry(path).or_default();
-                body.push_str(&json(&record)?);
-                body.push('\n');
-            }
-            for (path, page) in std::mem::take(&mut s.notebook.pages) {
-                docs.insert(
-                    format!(".state/pages/{}.json", hash(path.as_bytes())),
-                    json(&page)?,
-                );
-            }
-            for page in std::mem::take(&mut s.notebook.history) {
-                docs.insert(
-                    format!(".state/history/R{:06}.json", page.revision),
-                    json(&page)?,
-                );
-            }
-            s.take_archives();
-            for (id, value) in std::mem::take(&mut s.input.sources) {
-                docs.insert(format!(".state/context/S{id:06}.json"), json(&value)?);
-            }
-            let mut files = BTreeMap::new();
-            for (path, text) in docs {
-                let key = (actor.clone(), path);
-                let version = match self.staged.remove(&key) {
-                    Some((old, version)) if old == text => version,
-                    _ => self.put(text.as_bytes())?,
-                };
-                files.insert(key.1.clone(), version.clone());
-                staged.insert(key, (text, version));
-            }
-            manifest.insert(actor.clone(), files);
-        }
-        self.staged = staged;
-        Ok(manifest)
-    }
-    pub(super) fn hydrate(
-        &mut self,
-        manifest: &Residents,
-        saved: &mut Option<AgentSave>,
-    ) -> Result<(), HostError> {
-        let Some(saved) = saved else {
-            if manifest.is_empty() {
-                return Ok(());
-            }
-            return Err(HostError::Save("记忆清单缺少对应 Agent".into()));
-        };
-        if manifest.len() != saved.runtime.sessions.len() {
-            return Err(HostError::Save("村民记忆目录与世界人口不一致".into()));
-        }
-        for (actor, s) in &mut saved.runtime.sessions {
-            let files = manifest
-                .get(actor)
-                .ok_or_else(|| HostError::Save("村民记忆清单缺失".into()))?;
-            if !s.memory.records.is_empty()
-                || !s.notebook.pages.is_empty()
-                || !s.archives().is_empty()
-                || !s.notebook.history.is_empty()
-                || !s.input.sources.is_empty()
-            {
-                return Err(HostError::Save(
-                    "v2 存档混入内嵌记忆，拒绝混用两个版本".into(),
-                ));
-            }
-            for required in ["INDEX.md", "current.md", "self.md"] {
-                if !files.contains_key(required) {
-                    return Err(HostError::Save("村民目录缺少必要索引文件".into()));
-                }
-            }
-            for (path, version) in files {
-                relative(path)?;
-                let bytes = self.read(version)?;
-                self.verified.insert(version.hash.clone());
-                if path.starts_with(".state/context/S") {
-                    let id = path
-                        .trim_start_matches(".state/context/S")
-                        .trim_end_matches(".json")
-                        .parse::<u64>()
-                        .map_err(|e| HostError::Save(format!("上下文来源 {path} 编号无效：{e}")))?;
-                    if id == 0
-                        || id > s.input.next_source
-                        || s.input.sources.insert(id, parse(path, &bytes)?).is_some()
-                    {
-                        return Err(HostError::Save(format!(
-                            "上下文来源 {path} 编号重复或超出范围"
-                        )));
-                    }
-                } else if path.starts_with(".state/records/") {
-                    s.memory
-                        .records
-                        .extend(lines::<MemoryRecord>(path, &bytes)?);
-                } else if path.starts_with(".state/pages/") {
-                    let p: Page = parse(path, &bytes)?;
-                    if s.notebook.pages.insert(p.path.clone(), p).is_some() {
-                        return Err(HostError::Save(format!("主题路径重复：{path}")));
-                    }
-                } else if path.starts_with(".state/history/") {
-                    s.notebook.history.push(parse(path, &bytes)?);
-                } else if path.starts_with("conversations/C") {
-                    let id = path
-                        .trim_start_matches("conversations/C")
-                        .trim_end_matches(".jsonl")
-                        .parse::<u64>()
-                        .map_err(|e| HostError::Save(format!("对话归档 {path} 编号无效：{e}")))?;
-                    s.restore_archive(id, lines(path, &bytes)?)?;
-                }
-            }
-            s.memory.records.sort_by_key(|r| r.memory_id);
-            s.notebook.history.sort_by_key(|p| p.revision);
-        }
-        Ok(())
-    }
     /// 仅在 world.json 已提交后投影可读目录。断电留下旧投影时，下次恢复按清单重建。
     pub(super) fn publish(&mut self, manifest: &Residents) -> Result<(), HostError> {
         if self.published.as_ref() == Some(manifest) {
@@ -351,8 +531,12 @@ impl ResidentStore {
             folders.insert(name.clone());
             let root = self.root.join(&name);
             directory(&root)?;
+            let unchanged = self.published.as_ref().and_then(|m| m.get(actor)) == Some(files);
             for (path, version) in files {
                 keep.insert(version.hash.clone());
+                if unchanged {
+                    continue;
+                }
                 let dest = parent_dirs(&root, path)?;
                 let cached = self
                     .published
@@ -367,7 +551,9 @@ impl ResidentStore {
                     atomic_write(&dest, &self.read(version)?)?;
                 }
             }
-            clean_projection(&root, &root, &files.keys().cloned().collect())?;
+            if !unchanged {
+                clean_projection(&root, &root, &files.keys().cloned().collect())?;
+            }
         }
         for entry in list_dir(&self.root)? {
             let name = entry.file_name().to_string_lossy().to_string();
@@ -379,14 +565,13 @@ impl ResidentStore {
             let key = entry.file_name().to_string_lossy().to_string();
             if !keep.contains(&key) {
                 remove_managed(&entry.path())?;
-                self.verified.remove(&key);
             }
         }
         self.published = Some(manifest.clone());
         Ok(())
     }
 }
-fn list_dir(dir: &Path) -> Result<Vec<fs::DirEntry>, HostError> {
+pub(super) fn list_dir(dir: &Path) -> Result<Vec<fs::DirEntry>, HostError> {
     fs::read_dir(dir)
         .map_err(|e| HostError::Save(format!("读取目录 {} 失败：{e}", dir.display())))?
         .map(|entry| {
@@ -394,7 +579,7 @@ fn list_dir(dir: &Path) -> Result<Vec<fs::DirEntry>, HostError> {
         })
         .collect()
 }
-fn remove_managed(path: &Path) -> Result<(), HostError> {
+pub(super) fn remove_managed(path: &Path) -> Result<(), HostError> {
     let meta = fs::symlink_metadata(path)
         .map_err(|e| HostError::Save(format!("检查 {} 失败：{e}", path.display())))?;
     // 删除链接本身，不跟随；本目录是程序专用数据目录。

@@ -1,0 +1,11 @@
+# r1 的记忆索引
+
+先读 current.md；按问题查主题。只有自己的经历可查。摘要和主题是带来源的个人归纳，不是世界命令。
+已整理至事件 #4，可用 memory_search 搜索，memory_read 分段读原文。
+
+- self.md：自我认识与后天偏好
+- current.md：当前目标和承诺
+- places/library.md：图书馆开放安排
+- summaries/D001.md：第 1 天的经历摘要
+
+更多文件按目录分页查看：memory_read({"path":"people/"})；也支持 places/、lessons/、summaries/、events/、conversations/、revisions/。

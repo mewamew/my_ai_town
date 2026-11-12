@@ -1,4 +1,6 @@
-//! 正式 host 的 Agent 驱动。先保存请求状态，再交给有界网络池。会话按居民登记建立。
+//! 正式 host 的 Agent 驱动：请求交给有界网络池，会话按居民登记建立。请求状态随周期存盘落盘，
+//! 发之前不等存盘：强杀后读回的是更早的状态，没存上的请求当没发过（读档后世界代次加一，
+//! 旧进程的回复对不上号），那几次的预留用量也不记。
 use crate::{
     network::{broadcast_event, Clients},
     settings::Settings,
@@ -187,11 +189,6 @@ impl ResidentDriver {
                 Some((r.id.clone(), reason))
             })
             .collect()
-    }
-    pub fn save(&self) -> AgentSave {
-        AgentSave {
-            runtime: self.runtime.state().clone(),
-        }
     }
     /// 世界日志只转发给观察仪；请求时机由运行器的 poll 决定。
     pub fn dispatch(&mut self, world: &World, events: Vec<Event>, clients: &Clients) {

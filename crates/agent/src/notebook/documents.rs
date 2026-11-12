@@ -89,14 +89,30 @@ fn append_events(world: &World, s: &Session, docs: &mut Documents, after: u64) {
     }
 }
 
-/// 与落盘目录使用同一份文件视图；工具只能读当前村民的快照，不接受操作系统路径。
-/// 每次调用整份重建；运行器内部用 DocumentsCache。
+/// 工具能读到的文件视图；只能读当前村民的快照，不接受操作系统路径。落盘的记忆目录里是同样的
+/// 文件（事件除外，它们在存档的流水里）。每次调用整份重建；运行器内部用 DocumentsCache。
 pub fn documents(world: &World, s: &Session) -> Documents {
     build(world, s)
 }
 
 fn build(world: &World, s: &Session) -> Documents {
-    let mut docs = BTreeMap::new();
+    let mut docs: Documents = overview(s).into_iter().collect();
+    docs.extend(s.notebook.pages.values().map(page_document));
+    docs.extend(s.notebook.history.iter().map(revision_document));
+    append_events(world, s, &mut docs, 0);
+    docs.extend(
+        s.archives()
+            .iter()
+            .map(|(id, messages)| archive_document(*id, messages)),
+    );
+    docs
+}
+
+// 下面四个函数是文件视图里各类文件的路径和正文的唯一出处：工具读的内存视图（build）和 host
+// 落盘的记忆目录都用它们。事件不在其中：内存视图按天拼（append_events），落盘走存档的流水。
+
+/// 每次都重拼的小文件：索引、当前事务，以及还没写过自述页时的缺省自述。
+pub fn overview(s: &Session) -> Vec<(String, String)> {
     let mut index = prompts::index_header(&s.actor_id, s.notebook.through_event);
     let mut topics: Vec<_> = s.notebook.pages.values().collect();
     topics.sort_by(|a, b| b.updated_at.total_cmp(&a.updated_at));
@@ -104,8 +120,6 @@ fn build(world: &World, s: &Session) -> Documents {
         index.push_str(&format!("- {}：{}\n", page.path, page.title));
     }
     index.push_str(prompts::INDEX_FOOTER);
-    docs.insert("INDEX.md".into(), index);
-    docs.insert("self.md".into(), prompts::SELF_DEFAULT.into());
     let mut current = prompts::CURRENT_HEADER.to_string();
     for goal in s.context_goals() {
         current.push_str(&format!(
@@ -120,25 +134,33 @@ fn build(world: &World, s: &Session) -> Documents {
     if s.goals.is_empty() {
         current.push_str(prompts::NO_GOALS);
     }
-    docs.insert("current.md".into(), current);
-    for page in s.notebook.pages.values() {
-        docs.insert(page.path.clone(), render_page(page));
-    }
-    for page in &s.notebook.history {
-        docs.insert(
-            format!("revisions/R{:06}.md", page.revision),
-            render_page(page),
-        );
-    }
-    append_events(world, s, &mut docs, 0);
-    for (id, messages) in s.archives() {
-        let text = messages
-            .iter()
-            .map(|m| serde_json::to_string(m).expect("message is serializable") + "\n")
-            .collect();
-        docs.insert(format!("conversations/C{id:06}.jsonl"), text);
+    let mut docs = vec![("INDEX.md".into(), index), ("current.md".into(), current)];
+    if !s.notebook.pages.contains_key("self.md") {
+        docs.push(("self.md".into(), prompts::SELF_DEFAULT.into()));
     }
     docs
+}
+
+/// 一页笔记。
+pub fn page_document(page: &Page) -> (String, String) {
+    (page.path.clone(), render_page(page))
+}
+
+/// 笔记被改写前的一个旧版本。
+pub fn revision_document(page: &Page) -> (String, String) {
+    (
+        format!("revisions/R{:06}.md", page.revision),
+        render_page(page),
+    )
+}
+
+/// 一份折叠归档的旧会话原文。
+pub fn archive_document(id: u64, messages: &[crate::conversation::Message]) -> (String, String) {
+    let text = messages
+        .iter()
+        .map(|m| serde_json::to_string(m).expect("message is serializable") + "\n")
+        .collect();
+    (format!("conversations/C{id:06}.jsonl"), text)
 }
 
 #[derive(Deserialize)]

@@ -84,11 +84,14 @@ pub fn finish(w: &mut World, actor: &str, id: &str) -> ActionResult {
     panic!("动作未结束：{:?}", w.action_group(actor, id));
 }
 
-/// 存档再读进一个同样拓扑的新世界。
+/// 存档再读进一个同样拓扑的新世界。和 host 存盘走同一条路：历史拆成流水，读回来再装上；
+/// 装回去的快照得和完整快照一字不差。
 pub fn restore(w: &World, mut fresh: World) -> World {
-    let save = serde_json::to_string(&w.snapshot()).unwrap();
-    fresh
-        .restore_snapshot(serde_json::from_str(&save).unwrap())
-        .unwrap();
+    let detached = w.detach(&Default::default()).unwrap();
+    let save = serde_json::to_string(&detached.snapshot).unwrap();
+    let mut snapshot: kernel::WorldSnapshot = serde_json::from_str(&save).unwrap();
+    snapshot.attach(detached.records).unwrap();
+    assert_eq!(json!(snapshot), json!(w.snapshot()));
+    fresh.restore_snapshot(snapshot).unwrap();
     fresh
 }
