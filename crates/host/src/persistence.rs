@@ -236,7 +236,7 @@ impl SaveStore {
         }
         let lock = private_file(&sidecar(&path, ".lock"), false)
             .map_err(|e| HostError::Save(format!("打开存档锁失败：{e}")))?;
-        crate::process::lock_save(&lock).map_err(|e| {
+        crate::process::lock_file(&lock, false).map_err(|e| {
             HostError::Save(format!(
                 "无法独占存档 {}，可能有另一个 host 正在使用：{e}",
                 path.display()
@@ -655,7 +655,7 @@ fn attach_memories(
     Ok(())
 }
 
-fn private_file(path: &Path, truncate: bool) -> io::Result<File> {
+pub(crate) fn private_file(path: &Path, truncate: bool) -> io::Result<File> {
     let mut options = OpenOptions::new();
     options.create(true).write(true).truncate(truncate);
     #[cfg(unix)]
@@ -667,7 +667,8 @@ fn private_file(path: &Path, truncate: bool) -> io::Result<File> {
 }
 
 /// 全 host 唯一的原子写入：临时文件 + fsync + rename，再 fsync 目录；不跟随符号链接，
-/// 文件权限 0600。父目录不存在时创建。
+/// 文件权限 0600。父目录不存在时创建。临时文件名是固定的（目标后加 .tmp），同一个文件不能
+/// 两处同时写：存档靠存档锁，模型配置靠 models.rs 的锁。
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), HostError> {
     match replace(path, bytes) {
         Ok(None) => Ok(()),

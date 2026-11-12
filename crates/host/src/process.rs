@@ -40,14 +40,27 @@ pub fn install_shutdown_handler() -> io::Result<()> {
     Ok(())
 }
 
+/// 独占一个锁文件，别的进程和本进程的其他线程（各自打开的句柄）都要等它放开。wait 为假时，
+/// 别人占着就马上报错。
 #[cfg(unix)]
-pub(crate) fn lock_save(file: &File) -> io::Result<()> {
+pub(crate) fn lock_file(file: &File, wait: bool) -> io::Result<()> {
     use std::os::fd::AsRawFd;
+    let operation = if wait {
+        libc::LOCK_EX
+    } else {
+        libc::LOCK_EX | libc::LOCK_NB
+    };
     // flock 随文件句柄释放；进程崩溃后不会留下无法恢复的占用。
-    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-        return Err(io::Error::last_os_error());
+    loop {
+        if unsafe { libc::flock(file.as_raw_fd(), operation) } == 0 {
+            return Ok(());
+        }
+        let error = io::Error::last_os_error();
+        // 等锁的时候收到信号会提前返回，接着等
+        if error.kind() != io::ErrorKind::Interrupted {
+            return Err(error);
+        }
     }
-    Ok(())
 }
 
 #[cfg(not(unix))]
@@ -56,14 +69,19 @@ pub fn install_shutdown_handler() -> io::Result<()> {
 }
 
 #[cfg(windows)]
-pub(crate) fn lock_save(file: &File) -> io::Result<()> {
+pub(crate) fn lock_file(file: &File, wait: bool) -> io::Result<()> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
         LockFileEx, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY,
     };
-    // 和 flock 一样随文件句柄释放。锁的是存档旁边的 .lock 文件，不挡读写存档本身。
+    // 和 flock 一样随文件句柄释放。锁的是旁边单独的 .lock 文件，不挡读写存档和配置本身。
+    // 句柄不是异步打开的，不带 LOCKFILE_FAIL_IMMEDIATELY 时一直等到拿到锁。
     let mut overlapped = unsafe { std::mem::zeroed() };
-    let flags = LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY;
+    let flags = if wait {
+        LOCKFILE_EXCLUSIVE_LOCK
+    } else {
+        LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY
+    };
     let handle = file.as_raw_handle() as isize;
     if unsafe { LockFileEx(handle, flags, 0, u32::MAX, u32::MAX, &mut overlapped) } == 0 {
         return Err(io::Error::last_os_error());

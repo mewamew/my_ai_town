@@ -85,7 +85,8 @@ impl Hosts {
     }
 
     /// 打开小镇：已在运行就核对身份后直接返回，否则启动 host 并等它写就绪文件。
-    /// 同一小镇的开关由调用方串行；跑满时由调用方先腾出位置。
+    /// 调用方把各次打开排成一个接一个（App::opening），正在启动的小镇不在 running 里，
+    /// 并排着启动的话这里的名额检查拦不住；同一小镇的开关也由调用方串行，跑满时由调用方先腾出位置。
     pub fn open(&self, storage: &Storage, id: &str) -> Result<Value, ApiError> {
         let map = storage.map(id)?;
         let existing = self.is_running(id).then(|| self.endpoint(id)).flatten();

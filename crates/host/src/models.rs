@@ -1,11 +1,13 @@
 //! 模型服务的读、存与连通测试。世界进程的设定中心和管理服务（首页的「设定」）共用这一份，
 //! 读写的都是 providers.json 与 credentials.json 这一对文件。
 //! 回读只给密钥掩码；存密钥前先读一遍磁盘上的，别处刚存的密钥不会被旧内容盖掉。
+//! 管理服务的几个请求、开着的各个小镇可能同时来存，存的时候锁着 providers.json 旁边的
+//! providers.json.lock，一个存完下一个再读再存。
 use crate::{application::Application, builtin, config, llm, HostError};
 use protocol::{ActiveModelChoice, ProviderConfigMsg, ProviderKeyMsg, ProviderView};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::time::Instant;
+use std::{fs::File, path::Path, time::Instant};
 
 /// 配置回读：密钥只给掩码。应用带着内置模型时排在最后（请人时先用玩家自己连的服务），
 /// 它不在配置文件里，也没有地址和密钥。
@@ -39,6 +41,32 @@ pub fn views(
 
 /// 写入服务商表与工具模型；keys 里空密钥表示删掉那个服务商的密钥。返回写好后的密钥表。
 pub fn save(
+    providers_path: &str,
+    credentials_path: &str,
+    file: &config::ProvidersFile,
+    keys: Vec<ProviderKeyMsg>,
+) -> Result<config::Credentials, HostError> {
+    let _lock = lock(providers_path)?;
+    store(providers_path, credentials_path, file, keys)
+}
+
+/// 等到别处存完再占住这对文件，返回的句柄关掉就放开；跨进程有效。读、改、写不锁的话，
+/// 两次保存交错时会同时写同一个临时文件把配置写坏，只带改动项的密钥也会被后存的盖掉。
+/// 拿着锁时不能再调 save，同一个线程再锁一次会一直等下去。
+fn lock(providers_path: &str) -> Result<File, HostError> {
+    let path = format!("{providers_path}.lock");
+    let path = Path::new(&path);
+    let locked = match path.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => std::fs::create_dir_all(dir),
+        _ => Ok(()),
+    }
+    .and_then(|()| crate::persistence::private_file(path, false))
+    .and_then(|file| crate::process::lock_file(&file, true).map(|()| file));
+    locked.map_err(|e| HostError::Io(format!("锁定模型配置 {} 失败：{e}", path.display())))
+}
+
+/// save 去掉锁的部分，调用方先拿着 lock。
+fn store(
     providers_path: &str,
     credentials_path: &str,
     file: &config::ProvidersFile,
@@ -141,6 +169,8 @@ pub fn write(app: &Application, body: &Value) -> Result<Value, HostError> {
     {
         return Err(HostError::Rejected("模型服务缺少编号或地址".into()));
     }
+    // 查有没有少带服务商和写入要在同一把锁里：查完之后小镇里刚添的服务商，也得算在里面
+    let guard = lock(&app.providers_path)?;
     let existing = config::load_providers(&app.providers_path)?;
     if let Some(gone) = existing
         .providers
@@ -156,12 +186,13 @@ pub fn write(app: &Application, body: &Value) -> Result<Value, HostError> {
         active: request.active,
         providers: request.providers,
     };
-    save(
+    store(
         &app.providers_path,
         &app.credentials_path,
         &file,
         request.keys,
     )?;
+    drop(guard);
     read(app)
 }
 

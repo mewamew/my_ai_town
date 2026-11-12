@@ -169,8 +169,8 @@ fn api(app: &App, req: &Request, rest: &str, get: bool) -> Result<Response, ApiE
         }
         (false, "open") => {
             let automatic = body(req)?["automatic"].as_bool().unwrap_or(false);
+            let _opening = app.opening();
             app.refuse_displaced(id, automatic)?;
-            let _claim = app.claim(id);
             app.make_room(id)?;
             let _serial = app.town_lock(id);
             ok(app.hosts.open(&app.storage, id)?)

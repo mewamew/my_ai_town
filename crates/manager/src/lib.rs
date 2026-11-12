@@ -17,7 +17,7 @@ use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 use storage::Storage;
 
@@ -102,8 +102,8 @@ pub struct App {
     downloads: builtin::Downloads,
     /// 被挤掉的小镇 → 挤掉它的小镇：另一个页面进了别的小镇时，这个页面断线后不自动抢回来
     displaced: std::sync::Mutex<std::collections::BTreeMap<String, String>>,
-    /// 正在被页面打开的小镇：关掉旧的、启动新的这段时间里它还不在运行，也算占着
-    claiming: std::sync::Mutex<std::collections::BTreeSet<String>>,
+    /// 打开小镇一个接一个地办，见 opening()
+    opening: Mutex<()>,
 }
 
 impl App {
@@ -130,13 +130,12 @@ impl App {
     }
 
     /// 页面断线后自动重开（automatic）：这个小镇是被另一个页面进的小镇挤掉的、那个还开着，
-    /// 就不抢回来，告诉页面原因；不然两个页面会来回互相挤。
+    /// 就不抢回来，告诉页面原因；不然两个页面会来回互相挤。在 opening() 里查，
+    /// 挤掉它的那次打开要是还没办完，会先等它办完。
     fn refuse_displaced(&self, id: &str, automatic: bool) -> Result<(), ApiError> {
         let by = self.displaced.lock().unwrap().get(id).cloned();
-        let taken =
-            |by: &str| self.hosts.is_running(by) || self.claiming.lock().unwrap().contains(by);
         match by {
-            Some(by) if automatic && taken(&by) => {
+            Some(by) if automatic && self.hosts.is_running(&by) => {
                 let name = self.storage.name(&by);
                 Err(ApiError::new(
                     409,
@@ -147,13 +146,12 @@ impl App {
         }
     }
 
-    /// 页面正在打开这个小镇，直到这次打开结束（成功或失败都放开）。
-    fn claim(&self, id: &str) -> Claim<'_> {
-        self.claiming.lock().unwrap().insert(id.to_owned());
-        Claim {
-            claiming: &self.claiming,
-            id: id.to_owned(),
-        }
+    /// 打开小镇一个接一个地办，查名额、腾位置、启动世界连成一步，办完（成功或失败）才轮到下一个。
+    /// 世界启动要好几秒，这段时间里它还不算在运行：两个小镇同时打开时，要是各办各的，两边都以为
+    /// 还有空位，就会超过同时运行的上限。同一个小镇的开关另有 town_lock。
+    fn opening(&self) -> MutexGuard<'_, ()> {
+        // 守着的没有数据，前一个请求中途出错退出也不影响后面的
+        self.opening.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// 同一个小镇的开关、删除与道具摆放串行执行。
@@ -174,17 +172,6 @@ impl App {
 struct TownLocks {
     busy: Mutex<HashSet<String>>,
     freed: Condvar,
-}
-
-/// 正在打开的标记，打开结束时（离开作用域）放开。
-struct Claim<'a> {
-    claiming: &'a std::sync::Mutex<std::collections::BTreeSet<String>>,
-    id: String,
-}
-impl Drop for Claim<'_> {
-    fn drop(&mut self) {
-        self.claiming.lock().unwrap().remove(&self.id);
-    }
 }
 
 struct TownGuard<'a> {
@@ -281,7 +268,7 @@ fn serve(options: Options, storage: Storage) -> Result<(), String> {
         drafts: creation::Drafts::default(),
         downloads: builtin::Downloads::default(),
         displaced: Default::default(),
-        claiming: Default::default(),
+        opening: Mutex::new(()),
     });
     while !host::process::stopping() {
         match listener.accept() {

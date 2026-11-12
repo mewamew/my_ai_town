@@ -266,7 +266,7 @@ test('the built-in town shows the shipped name while its stored map stays untouc
     await fs.rm(root, { recursive: true, force: true })
   }
 })
-test('only one town runs at a time: entering another town closes the open one, the displaced page does not take it back by itself, a stale close from a reloaded page does not', async () => {
+test('only one town runs at a time: entering another town closes the open one, the displaced page does not take it back by itself, a stale close from a reloaded page does not, two towns opened at once leave one running', async () => {
   // 上次没正常退出、小镇还开着时，进另一个小镇不能报「请关闭其他小镇」，而是先把开着的那个存档关掉再换过去
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'town-manager-limit-'))
   let m
@@ -319,6 +319,10 @@ test('only one town runs at a time: entering another town closes the open one, t
     assert.equal((await running())['default-town'], true)
     assert.equal((await api('/default-town/close', { lease: reloaded.lease })).closed, true)
     assert.equal((await running())['default-town'], false)
+    // 两个页面同时进两个小镇：正在启动的也占着名额，两个请求一个接一个地办，后办的把先开的关掉
+    await Promise.all([api('/default-town/open', {}), api(`/${town.id}/open`, {})])
+    const open = Object.entries(await running()).filter(([, on]) => on)
+    assert.equal(open.length, 1, JSON.stringify(open))
   } finally {
     await m?.stop()
     await fs.rm(root, { recursive: true, force: true })
@@ -364,4 +368,61 @@ test('home settings save a key only into the data root config, read back only it
   }
   const after = await Promise.all(repoConfig.map((p) => fs.readFile(p, 'utf8').catch(() => null)))
   assert.deepEqual(after, before)
+})
+test('model settings saved at the same moment from the home page and an open town keep a readable file and every key', async () => {
+  // 首页的设定和小镇里的设定存的是同一对文件：几次保存同时到，配置不能写坏，每次带来的密钥都要留下
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'town-models-race-'))
+  let m
+  try {
+    m = await startManager(root)
+    const { api } = m
+    const town = await api('/default-town/open', {})
+    const kept = (await api('/models')).providers
+      .filter((p) => p.id !== 'builtin')
+      .map(({ id, name, base_url }) => ({ id, name, base_url }))
+    const config = path.join(root, 'config')
+    const ids = Array.from({ length: 8 }, (_, i) => `race-${i}`)
+    for (let round = 0; round < 5; round++) {
+      const key = (i) => `sk-race-${round}-${i}-0123456789`
+      // 服务商表都一样，只有自己那一项的名字长短不同，写出的文件长短跟着变；密钥只带自己那一项
+      const body = (i) => ({
+        active: null,
+        providers: [
+          ...kept,
+          ...ids.map((id, j) => ({
+            id,
+            name: j === i ? 'x'.repeat(4 + 9 * i) : id,
+            base_url: 'http://127.0.0.1:9/v1',
+          })),
+        ],
+        keys: [{ provider: ids[i], api_key: key(i) }],
+      })
+      // 双数从首页存，单数从开着的小镇里存
+      await Promise.all(
+        ids.map(async (_, i) => {
+          if (i % 2 === 0) return api('/models', body(i))
+          const request_id = `race-${round}-${i}`
+          const ack = await worldQuery(
+            town.endpoint,
+            { type: 'set_model_config', request_id, ...body(i) },
+            (msg) => msg.type === 'config_saved' && msg.request_id === request_id
+          )
+          assert.equal(ack.ok, true, ack.message)
+        })
+      )
+      const saved = JSON.parse(await fs.readFile(path.join(config, 'providers.json'), 'utf8'))
+      assert.deepEqual(
+        saved.providers.map((p) => p.id),
+        [...kept.map((p) => p.id), ...ids]
+      )
+      const keys = JSON.parse(await fs.readFile(path.join(config, 'credentials.json'), 'utf8'))
+      assert.deepEqual(
+        ids.map((id) => keys[id]),
+        ids.map((_, i) => key(i))
+      )
+    }
+  } finally {
+    await m?.stop()
+    await fs.rm(root, { recursive: true, force: true })
+  }
 })
