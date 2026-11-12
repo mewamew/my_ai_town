@@ -14,10 +14,9 @@ export function stageAppBundle(dest) {
     throw Error('前端还没有构建：去掉 --skip-web 再试')
   for (const dir of ['web', 'app'])
     fs.rmSync(path.join(dest, dir), { recursive: true, force: true })
-  // 预压缩的 .br/.gz 只给桌面服务用；本机服务直接发原文件
   fs.cpSync(dist, path.join(dest, 'web'), {
     recursive: true,
-    filter: (src) => !/\.(br|gz)$/.test(src) && path.basename(src) !== 'build-source.json',
+    filter: (src) => path.basename(src) !== 'build-source.json',
   })
   for (const dir of ['data/maps', 'data/props', 'data/scene-assets', 'config/resident-library'])
     fs.cpSync(path.join(root, dir), path.join(dest, 'app', dir), { recursive: true })

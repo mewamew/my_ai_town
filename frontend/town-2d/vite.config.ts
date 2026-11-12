@@ -1,4 +1,3 @@
-import { compressedAssetsPlugin } from '../../scripts/performance/compressed-assets-plugin.mjs'
 import { defineConfig } from 'vite'
 import { writeClientBuildState } from '../../scripts/client-build-state.mjs'
 import { fileURLToPath } from 'node:url'
@@ -9,7 +8,6 @@ const proxy = {
 export default defineConfig({
   publicDir: false,
   plugins: [
-    compressedAssetsPlugin(),
     {
       name: 'formal-client-build-state',
       apply: 'build',
