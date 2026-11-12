@@ -1,0 +1,18 @@
+/* 设定 → 日志（settings/trace.ts）：日志目录的路径可能很长，整段可选、随处折行 */
+.trace-page .trace-dir {
+  display: block;
+  max-width: 640px;
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  font:
+    11.5px/1.5 ui-monospace,
+    Menlo,
+    monospace;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.trace-page .hint {
+  max-width: 640px;
+}

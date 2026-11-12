@@ -1,5 +1,5 @@
 //! 配置持久化：服务商与模型选择（providers.json，可进 git）+
-//! 密钥（credentials.json，0600、gitignore）。**两个文件，密钥永不混入前者**
+//! 密钥（credentials.json，0600、gitignore）+ 这台设备的偏好（preferences.json）。**密钥永不混入前者**
 //! ——保存前扫描整份配置拒绝明文密钥字段（参照老项目 TownProviderConfigStore
 //! 的扫描器与隔离导出测试）。文件不存在等于空配置；存在但损坏时读取报错、写入拒绝覆盖。
 
@@ -72,6 +72,26 @@ pub fn save_providers(path: &str, f: &ProvidersFile) -> Result<(), HostError> {
 
 pub fn load_credentials(path: &str) -> Result<Credentials, HostError> {
     load_json(path)
+}
+
+/// 跟着这台设备的偏好（preferences.json，路径见 Application::preferences_path）。没拨过的项不写，
+/// 按应用配置的缺省；不认识的项原样留着。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Preferences {
+    /// Agent 轨迹日志记不记完整题面（见 agent_trace.rs）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trace_full_prompts: Option<bool>,
+    #[serde(flatten)]
+    pub other: serde_json::Map<String, serde_json::Value>,
+}
+
+pub fn load_preferences(path: &str) -> Result<Preferences, HostError> {
+    load_json(path)
+}
+
+pub fn save_preferences(path: &str, p: &Preferences) -> Result<(), HostError> {
+    load_preferences(path)?;
+    write_json(path, p)
 }
 
 pub fn save_credentials(path: &str, c: &Credentials) -> Result<(), HostError> {

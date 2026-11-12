@@ -12,6 +12,7 @@ use agent::{
     runtime::{AgentRequest, ResidentRuntime},
 };
 use host::{
+    agent_trace::{self, TraceLog},
     agent_worker::{AgentSave, Work, WorkerPool},
     config,
     llm::LlmTarget,
@@ -22,12 +23,7 @@ use host::{
 use kernel::{Event, World};
 use protocol::{AgentLimits, EventInfo, ResidentUsage, ServerMsg};
 use serde_json::json;
-use std::{
-    collections::BTreeMap,
-    fs::{self, File},
-    io::{BufWriter, Write},
-    time::Duration,
-};
+use std::{collections::BTreeMap, time::Duration};
 
 pub(crate) struct ResidentDriver {
     pub runtime: ResidentRuntime,
@@ -35,7 +31,8 @@ pub(crate) struct ResidentDriver {
     /// 固定回复池：不要求配置模型服务
     pub mock: bool,
     pool: WorkerPool,
-    log: BufWriter<File>,
+    /// 轨迹日志（host::agent_trace）：记不记完整题面由设定里的日志开关改
+    pub trace: TraceLog,
 }
 impl ResidentDriver {
     /// 同一世界共享运行器和工作池；每条请求在入队时解析模型目标。
@@ -58,7 +55,12 @@ impl ResidentDriver {
             ),
             Mode::Llm => (target(&settings.providers, &settings.credentials), None),
         };
-        Self::new(world, population, common, target, mock, saved)
+        let trace = TraceLog::open(
+            host::application::log_dir(),
+            settings.trace_full_prompts(),
+            agent_trace::Limits::DEFAULT,
+        );
+        Self::new(world, population, common, target, mock, saved, trace)
     }
     /// 存档里的会话在这里恢复成运行器，整个启动流程只恢复这一次。
     pub fn new(
@@ -68,6 +70,7 @@ impl ResidentDriver {
         target: LlmTarget,
         mock: Option<Duration>,
         saved: Option<AgentSave>,
+        trace: TraceLog,
     ) -> Result<Self, HostError> {
         let mut runtime = match saved {
             Some(saved) => ResidentRuntime::restore(saved.runtime, world)?,
@@ -80,24 +83,14 @@ impl ResidentDriver {
                 &instructions(&resident.persona, common),
             )?;
         }
-        let log_dir = host::application::log_dir();
-        fs::create_dir_all(&log_dir)
-            .map_err(|e| HostError::Io(format!("创建日志目录 {} 失败：{e}", log_dir.display())))?;
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| HostError::Io(e.to_string()))?
-            .as_millis();
-        let path = log_dir.join(format!(
-            "resident-agent-{stamp}-{}.jsonl",
-            std::process::id()
-        ));
-        let log =
-            BufWriter::new(File::create(&path).map_err(|e| {
-                HostError::Io(format!("创建 Agent 轨迹 {} 失败：{e}", path.display()))
-            })?);
         println!(
-            "[host] 村民 Agent 已接入；完整工具轨迹 → {}",
-            path.display()
+            "[host] 村民 Agent 已接入；轨迹日志在 {}（{}）",
+            trace.dir().display(),
+            if trace.full_prompts() {
+                "记完整题面"
+            } else {
+                "不记完整题面"
+            }
         );
         let is_mock = mock.is_some();
         let pool = WorkerPool::new(runtime.state().limits.max_concurrent, mock);
@@ -106,7 +99,7 @@ impl ResidentDriver {
             target,
             mock: is_mock,
             pool,
-            log,
+            trace,
         })
     }
     pub fn receive(&mut self, world: &mut World, clients: &Clients) -> Result<bool, HostError> {
@@ -291,36 +284,25 @@ impl ResidentDriver {
         self.flush_trace_with_targets(&BTreeMap::new())
     }
 
+    /// 轨迹每拍都取走；写不进去只报这一次，之后不再写（拨一下设定里的日志开关再试），世界照常跑。
     fn flush_trace_with_targets(
         &mut self,
         request_targets: &BTreeMap<u64, LlmTarget>,
     ) -> Result<(), HostError> {
         let records = self.runtime.drain_trace();
-        if records.is_empty() {
-            return Ok(());
-        }
-        for record in records {
-            let model_snapshot = (record.event == "request")
-                .then(|| record.request_id.and_then(|id| request_targets.get(&id)))
-                .flatten()
-                .map(|target| {
-                    json!({
-                        "provider": target.provider,
-                        "model": target.model,
+        self.trace
+            .write(records, |record| {
+                (record.event == "request")
+                    .then(|| record.request_id.and_then(|id| request_targets.get(&id)))
+                    .flatten()
+                    .map(|target| {
+                        json!({
+                            "provider": target.provider,
+                            "model": target.model,
+                        })
                     })
-                });
-            serde_json::to_writer(
-                &mut self.log,
-                &json!({"trace":record,"model_snapshot":model_snapshot}),
-            )
-            .map_err(|e| HostError::Io(format!("写 Agent 轨迹失败：{e}")))?;
-            self.log
-                .write_all(b"\n")
-                .map_err(|e| HostError::Io(format!("写 Agent 轨迹失败：{e}")))?;
-        }
-        self.log
-            .flush()
-            .map_err(|e| HostError::Io(format!("写 Agent 轨迹失败：{e}")))
+            })
+            .map_err(|e| HostError::Io(format!("{e}；轨迹日志先不写了")))
     }
 }
 

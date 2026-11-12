@@ -4,5 +4,6 @@
   "topology_path": "data/maps/2d-town/map.json",
   "providers_path": "config/providers.json",
   "credentials_path": "config/credentials.json",
-  "prop_catalog_path": "data/props/core/definitions.json"
+  "prop_catalog_path": "data/props/core/definitions.json",
+  "trace_full_prompts": true
 }

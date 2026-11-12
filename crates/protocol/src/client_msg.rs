@@ -349,6 +349,13 @@ pub enum ClientMsg {
         request_id: String,
         limits: AgentLimits,
     },
+    /// 读 Agent 轨迹日志的开关和这个小镇的日志用了多少（回 AgentTrace）
+    GetAgentTrace,
+    /// 轨迹日志记不记完整题面：跟着这台设备，即时生效；回执是 ConfigSaved，随后广播 AgentTrace
+    SetAgentTrace {
+        request_id: String,
+        full_prompts: bool,
+    },
 }
 
 impl ClientMsg {
@@ -389,7 +396,8 @@ impl ClientMsg {
             | ArchiveResidentTemplate { request_id, .. }
             | GetNotebook { request_id, .. }
             | GetNotebookDetail { request_id, .. }
-            | SetAgentLimits { request_id, .. } => Some(request_id),
+            | SetAgentLimits { request_id, .. }
+            | SetAgentTrace { request_id, .. } => Some(request_id),
             JoinResident { op_id, .. } | GetResidentJoinResult { op_id, .. } => Some(op_id),
             AvatarInput { .. }
             | GetWorldSettings
@@ -405,7 +413,8 @@ impl ClientMsg {
             | PreviewTemplatePersona { .. }
             | PreviewResidentJoin { .. }
             | GetDiary { .. }
-            | GetAgentLimits => None,
+            | GetAgentLimits
+            | GetAgentTrace => None,
         }
     }
 }

@@ -2,7 +2,7 @@
 // 录像由世界进程写进小镇目录（crates/host/src/recording.rs）：录的是名册和事件，事后照着它把画面
 // 重演一遍、换角度拍成视频（scripts/replay）。开关跟着存档走，切换就保存，世界不暂停。
 import { button, el } from '../dom'
-import { displayClock } from '../format'
+import { displayClock, fileSize } from '../format'
 import { pixelIcon } from '../game/pixel'
 import type { ReelView } from '../protocol'
 import type { WorldSettingsController } from '../worldSettings'
@@ -60,7 +60,7 @@ export function createRecordingSection(world: WorldSettingsController) {
     what.append(el('b', when(reel, live)), el('small', span))
     const size = el(
       'span',
-      live ? '● 录像中' : bytes(reel.bytes),
+      live ? '● 录像中' : fileSize(reel.bytes),
       live ? 'rec-size live' : 'rec-size'
     )
     const del = button(armed?.id === reel.id ? '确定删除？' : '删除', () => {
@@ -101,7 +101,7 @@ export function createRecordingSection(world: WorldSettingsController) {
           : '开着：世界运行时就录'
     const reels = recordings?.reels ?? []
     const sum = reels.reduce((n, r) => n + r.bytes, 0)
-    total.textContent = reels.length ? `${reels.length} 卷 · 共 ${bytes(sum)}` : ''
+    total.textContent = reels.length ? `${reels.length} 卷 · 共 ${fileSize(sum)}` : ''
     list.replaceChildren(...reels.slice(0, SHOWN).map((r) => reelRow(r, r.id === live)))
     const rest = reels.slice(SHOWN)
     older.hidden = rest.length === 0
@@ -162,9 +162,3 @@ function dayLabel(d: Date) {
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
-
-function bytes(n: number) {
-  if (n >= 1024 * 1024 * 1024) return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`
-  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
-  return `${Math.max(1, Math.round(n / 1024))} KB`
-}

@@ -66,6 +66,7 @@ fn server_variants() -> Vec<String> {
         Notebook,
         NotebookDetail,
         AgentLimits,
+        AgentTrace,
         Population,
         ResidentAppearanceSaved,
         Usage,
@@ -133,6 +134,8 @@ fn client_variants() -> Vec<String> {
         GetNotebookDetail,
         GetAgentLimits,
         SetAgentLimits,
+        GetAgentTrace,
+        SetAgentTrace,
     })
 }
 

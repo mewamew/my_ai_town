@@ -855,6 +855,16 @@ pub fn server_samples() -> Vec<ServerMsg> {
                 residents: vec![usage_row()],
             },
         },
+        ServerMsg::AgentTrace {
+            state: AgentTraceView {
+                bytes: 41_000_000,
+                dir: "/data/towns/t1/logs".into(),
+                file_bytes: 32 << 20,
+                files: 3,
+                full_prompts: false,
+                keep_bytes: 256 << 20,
+            },
+        },
         ServerMsg::Population {
             population: population(2),
         },
@@ -1895,6 +1905,11 @@ pub fn client_samples() -> Vec<ClientMsg> {
         ClientMsg::SetAgentLimits {
             request_id: "req-1".into(),
             limits: limits(),
+        },
+        ClientMsg::GetAgentTrace,
+        ClientMsg::SetAgentTrace {
+            request_id: "req-1".into(),
+            full_prompts: true,
         },
     ]
 }

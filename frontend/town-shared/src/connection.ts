@@ -17,6 +17,7 @@ export type SaveCommand = DistributiveOmit<
         | 'set_model_config'
         | 'restart_builtin_model'
         | 'set_agent_limits'
+        | 'set_agent_trace'
         | 'set_resident_appearance'
         | 'set_resident_body'
     }

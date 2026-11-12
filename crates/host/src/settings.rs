@@ -1,5 +1,5 @@
 //! 模型配置与村民设定命令；返回待发送的消息，模拟循环负责发送。村民一律按居民登记查找。
-//! 村民设定（含身体数值）的写操作回 AgentSaved，模型服务与额度回 ConfigSaved，都带命令的请求编号、只发给发出者；
+//! 村民设定（含身体数值）的写操作回 AgentSaved，模型服务、额度与日志开关回 ConfigSaved，都带命令的请求编号、只发给发出者；
 //! 读取失败回通用 Error。
 use crate::{
     network::{send_to, Clients},
@@ -20,9 +20,25 @@ pub(crate) struct Settings {
     credentials_path: String,
     /// 应用带着内置模型的推理程序。
     builtin: bool,
+    preferences_path: String,
+    /// 轨迹日志记不记完整题面：这台设备拨过就按拨的（preferences.json），没拨过按应用配置的缺省。
+    trace_full_prompts: bool,
 }
 
 impl Settings {
+    pub(crate) fn trace_full_prompts(&self) -> bool {
+        self.trace_full_prompts
+    }
+
+    /// 存进 preferences.json：先从磁盘重读，别的进程写进去的其他项照旧留着。
+    fn save_trace_full_prompts(&mut self, on: bool) -> Result<(), HostError> {
+        let mut preferences = config::load_preferences(&self.preferences_path)?;
+        preferences.trace_full_prompts = Some(on);
+        config::save_preferences(&self.preferences_path, &preferences)?;
+        self.trace_full_prompts = on;
+        Ok(())
+    }
+
     /// 村民要用的模型能不能选：模型名不空、服务在配置里。入住时选和设定里换都按它。
     pub(crate) fn check_choice(&self, model: &ModelChoice) -> Result<(), String> {
         if model.model.trim().is_empty() {
@@ -116,12 +132,18 @@ impl Settings {
 
     /// 文件不存在等于空配置；存在但损坏时报错，由启动流程退出。
     pub(crate) fn load(app: &Application) -> Result<Self, HostError> {
+        let preferences_path = app.preferences_path();
+        let preferences = config::load_preferences(&preferences_path)?;
         Ok(Self {
             providers: config::load_providers(&app.providers_path)?,
             credentials: config::load_credentials(&app.credentials_path)?,
             providers_path: app.providers_path.clone(),
             credentials_path: app.credentials_path.clone(),
             builtin: builtin::configure(app),
+            preferences_path,
+            trace_full_prompts: preferences
+                .trace_full_prompts
+                .unwrap_or(app.trace_full_prompts),
         })
     }
 
@@ -419,6 +441,39 @@ impl Runtime {
                     .and_all(self.world_settings_msg())
             }
             Err(error) => Outcome::reply(config_saved(request_id, Err(error), "")),
+        }
+    }
+
+    /// 设定 → 日志：轨迹记不记完整题面。跟着这台设备存进 preferences.json，开着的这个小镇马上照办，
+    /// 别的小镇下次打开时照办。回执后广播新的日志状态。
+    pub(crate) fn save_agent_trace(&mut self, request_id: String, full_prompts: bool) -> Outcome {
+        let result = self.settings.save_trace_full_prompts(full_prompts);
+        if result.is_ok() {
+            self.driver.trace.set_full_prompts(full_prompts);
+        }
+        let success = if full_prompts {
+            "已打开：之后每次请求的完整题面都记下"
+        } else {
+            "已关掉：之后只记每轮新给的内容和模型的回复"
+        };
+        Outcome::reply(config_saved(request_id, result, success)).and_all(self.agent_trace_msg())
+    }
+
+    pub(crate) fn agent_trace_msg(&self) -> ServerMsg {
+        let trace = &self.driver.trace;
+        let (files, bytes) = trace.usage();
+        ServerMsg::AgentTrace {
+            state: protocol::AgentTraceView {
+                full_prompts: trace.full_prompts(),
+                dir: std::path::absolute(trace.dir())
+                    .unwrap_or_else(|_| trace.dir().to_path_buf())
+                    .display()
+                    .to_string(),
+                files,
+                bytes,
+                file_bytes: host::agent_trace::FILE_BYTES,
+                keep_bytes: host::agent_trace::KEEP_BYTES,
+            },
         }
     }
 

@@ -36,6 +36,23 @@ pub struct WorldSettingsView {
     pub worldview: String,
 }
 
+/// Agent 轨迹日志（host 的 agent_trace.rs）：开关跟着这台设备，日志按小镇放在小镇目录的 logs/ 里。
+/// 字段按字母序声明。
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentTraceView {
+    /// 这个小镇的轨迹日志现有多少字节、几份，连正在写的一份
+    pub bytes: u64,
+    /// 日志目录（绝对路径）
+    pub dir: String,
+    /// 一份写到这么大换下一份
+    pub file_bytes: u64,
+    pub files: usize,
+    /// 记不记每次请求的完整题面（整份 messages 和工具表）；不记时只记每轮新给的那条
+    pub full_prompts: bool,
+    /// 每个小镇最多留这么大，超了先删最早的
+    pub keep_bytes: u64,
+}
+
 /// host 只发送、不解析这些消息，所以只实现 Serialize。
 /// 改成结构体之前由 `serde_json::json!` 拼出的几个字段经 `crate::sorted` 输出，键按字母序，线上 JSON 不变。
 #[derive(Debug, Clone, Serialize)]
@@ -225,6 +242,8 @@ pub enum ServerMsg {
         ranges: crate::AgentLimitRanges,
         usage: AgentUsage,
     },
+    /// Agent 轨迹日志的开关和这个小镇的日志用了多少（设定中心「日志」页用）
+    AgentTrace { state: AgentTraceView },
     /// 当前人口：世界标识、人口版本、居民登记与住宅占用
     Population { population: PopulationView },
     /// 已入住居民外观的保存结果；总是带当前人口，前端可据此处理版本冲突。

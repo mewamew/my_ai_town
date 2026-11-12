@@ -1,6 +1,7 @@
 //! host 库侧：配置持久化与 LLM 调用通道（可被集成测试引用）。
 //! 服务进程入口在 main.rs。
 
+pub mod agent_trace;
 pub mod application;
 pub mod builtin;
 pub mod builtin_store;

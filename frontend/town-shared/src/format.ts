@@ -89,6 +89,13 @@ export function playerText(text: string): string {
   )
 }
 
+/** 文件大小：1.2 GB、36.5 MB、80 KB（按 1024 进位，不到 1 KB 也写 1 KB） */
+export function fileSize(n: number): string {
+  if (n >= 1024 * 1024 * 1024) return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+  return `${Math.max(1, Math.round(n / 1024))} KB`
+}
+
 /** 抛出的东西不一定是 Error；给用户看的文字只要 message。 */
 export function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)

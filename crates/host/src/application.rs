@@ -2,7 +2,7 @@
 //! 没有种子村民：人口只来自存档，居民只能从村民库加入。
 use crate::HostError;
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// AI_TOWN_CONFIG 未设置时的应用配置文件。
 pub const CONFIG_PATH: &str = "config/application.json";
@@ -53,6 +53,10 @@ pub struct Application {
     /// 内置模型的发布处：这个地址下有 manifest.json 和各版本的模型文件（见 builtin_store.rs）。
     #[serde(default = "builtin_source_default")]
     builtin_model_source: String,
+    /// Agent 轨迹日志（agent_trace.rs）缺省记不记完整题面。仓库里的配置写着 true，开发和复盘时记；
+    /// 打包时 scripts/app-bundle.mjs 去掉这一项，安装包缺省不记。玩家在设定里拨过就按拨的（preferences.json）。
+    #[serde(default)]
+    pub trace_full_prompts: bool,
 }
 fn weather_rules_default() -> String {
     "config/weather_rules.json".into()
@@ -93,6 +97,15 @@ impl Application {
             .map_err(|e| HostError::Config(format!("读取应用配置 {path} 失败：{e}")))?;
         serde_json::from_str(&json)
             .map_err(|e| HostError::Config(format!("解析应用配置 {path} 失败：{e}")))
+    }
+
+    /// 跟着这台设备的偏好（config.rs 的 Preferences），和密钥放在同一个目录：管理服务把密钥设在
+    /// 用户数据目录的 config/ 下，所有小镇、电脑版和 mac 版共用一份。
+    pub fn preferences_path(&self) -> String {
+        Path::new(&self.credentials_path)
+            .with_file_name("preferences.json")
+            .to_string_lossy()
+            .into_owned()
     }
 
     /// 内置模型文件和下载记录的目录。

@@ -95,7 +95,7 @@ pub use roster::{
     ActivityKind, MemberKind, MovementPhase, MovementView, PlanView, RosterLocale, RosterMember,
     VerbKind,
 };
-pub use server_msg::{ServerMsg, WorldSettingsView};
+pub use server_msg::{AgentTraceView, ServerMsg, WorldSettingsView};
 pub use spatial::{PlaceGrid, Point3, PropPosition, Route, SpatialOverride, SpatialOverridesView};
 
 /// 把值当作 `serde_json::Value` 输出：对象的键按字母序排列。

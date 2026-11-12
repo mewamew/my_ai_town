@@ -536,6 +536,20 @@ export interface AgentLimits {
   stale_replies_before_pause: number
   model_failures_before_pause: number
 }
+/** Agent 轨迹日志：开关跟着这台设备，日志按小镇放在小镇目录的 logs/ 里（host 的 agent_trace.rs） */
+export interface AgentTraceState {
+  /** 记不记每次请求的完整题面（整份 messages 和工具表）；不记时只记每轮新给的那条 */
+  full_prompts: boolean
+  /** 日志目录（绝对路径） */
+  dir: string
+  /** 这个小镇现有几份、共多少字节，连正在写的一份 */
+  files: number
+  bytes: number
+  /** 一份写到这么大换下一份 */
+  file_bytes: number
+  /** 每个小镇最多留这么大，超了先删最早的 */
+  keep_bytes: number
+}
 export interface ResidentUsage {
   id: string
   name: string
@@ -969,6 +983,7 @@ export type ServerMsg =
       error: string | null
     }
   | { type: 'agent_limits'; limits: AgentLimits; ranges: AgentLimitRanges; usage: AgentUsage }
+  | { type: 'agent_trace'; state: AgentTraceState }
   | { type: 'population'; population: PopulationView }
   | {
       type: 'resident_appearance_saved'
@@ -1116,7 +1131,10 @@ export type ClientMsg =
       near?: { space: string; position: [number, number] }
     }
   | { type: 'set_speed'; request_id: string; speed: number }
-  | { type: 'get_model_config' | 'get_agent_limits' | 'get_population' | 'get_usage' }
+  | {
+      type:
+        'get_model_config' | 'get_agent_limits' | 'get_agent_trace' | 'get_population' | 'get_usage'
+    }
   | { type: 'reset_world'; request_id: string }
   | { type: 'get_resident_library'; filter: LibraryFilter }
   | {
@@ -1196,6 +1214,7 @@ export type ClientMsg =
     }
   | { type: 'set_persona'; request_id: string; resident: string; text: string }
   | { type: 'set_agent_limits'; request_id: string; limits: AgentLimits }
+  | { type: 'set_agent_trace'; request_id: string; full_prompts: boolean }
 
 type Life = 'alive' | 'dead'
 /** 生命历史里一条记录的来源 */

@@ -238,7 +238,9 @@ impl Runtime {
             | ClientMsg::GetNotebook { .. }
             | ClientMsg::GetNotebookDetail { .. }
             | ClientMsg::GetAgentLimits
-            | ClientMsg::SetAgentLimits { .. } => error_msg(message),
+            | ClientMsg::SetAgentLimits { .. }
+            | ClientMsg::GetAgentTrace
+            | ClientMsg::SetAgentTrace { .. } => error_msg(message),
         }
     }
 
@@ -451,6 +453,11 @@ impl Runtime {
             GetAgentLimits => Outcome::reply(self.driver.limits_view(&self.world)),
             GetUsage => Outcome::reply(self.driver.usage_view(&self.world)),
             SetAgentLimits { request_id, limits } => self.set_agent_limits(request_id, limits),
+            GetAgentTrace => Outcome::reply(self.agent_trace_msg()),
+            SetAgentTrace {
+                request_id,
+                full_prompts,
+            } => self.save_agent_trace(request_id, full_prompts),
         }
     }
 
@@ -776,7 +783,9 @@ fn world_id_of(msg: &ClientMsg) -> Option<&str> {
         | ClientMsg::GetNotebook { .. }
         | ClientMsg::GetNotebookDetail { .. }
         | ClientMsg::GetAgentLimits
-        | ClientMsg::SetAgentLimits { .. } => None,
+        | ClientMsg::SetAgentLimits { .. }
+        | ClientMsg::GetAgentTrace
+        | ClientMsg::SetAgentTrace { .. } => None,
     }
 }
 
@@ -833,6 +842,8 @@ fn requires_ready(msg: &ClientMsg) -> bool {
         | ClientMsg::GetNotebook { .. }
         | ClientMsg::GetNotebookDetail { .. }
         | ClientMsg::GetAgentLimits
-        | ClientMsg::SetAgentLimits { .. } => false,
+        | ClientMsg::SetAgentLimits { .. }
+        | ClientMsg::GetAgentTrace
+        | ClientMsg::SetAgentTrace { .. } => false,
     }
 }
