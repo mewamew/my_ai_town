@@ -1,11 +1,12 @@
 import { providerTemplate } from './providerTemplate'
 import { providerTestCommand, type ProviderEdit } from './providerCommands'
-// 一个服务商的编辑表单：服务地址 / 密钥 / 测试用的模型名 / 测试连接。
+// 一个服务商的编辑表单：服务地址 / 密钥 / 模型名 / 测试连接。
 // 表单挂在「模型服务」页的表格行下面，保存由那一页把各表单的修改合成一条命令发出。
+// 模型名跟着服务存下来：别处选这个服务时自动填上它，自定义、本机服务就不用每次再输一遍。
 // 纪律：密钥只往服务端送，回读永远只有掩码；输入框留空 = 保持已存密钥。
 
 import type { ActiveModelChoice, ProviderView, ServerMsg } from '../protocol'
-import { needsKey, type ProviderPreset } from '../providers'
+import { modelCandidates, needsKey, providerModel, type ProviderPreset } from '../providers'
 import { newId } from '../ids'
 import { $, type PageDeps } from './page'
 
@@ -36,11 +37,12 @@ export function createProviderForm(preset: ProviderPreset, deps: PageDeps): Prov
   const testStatus = $<HTMLElement>(el, '.p-test-status')
 
   let conf: ProviderView | undefined // 服务端已存的该服务商配置
-  let active: ActiveModelChoice | null = null // 工具模型用的服务商与模型，只用来给测试模型名一个默认值
+  let active: ActiveModelChoice | null = null // 工具模型用的服务商与模型，没存过模型名时给它一个默认值
   let dirty = false
 
   const savedUrl = () => conf?.base_url || preset.baseUrl
-  const savedModel = () => (active?.provider === preset.id ? active.model : preset.defaultModel)
+  /** 框里先显示什么：存过的模型名；没存过时默认模型用着这个服务就填它，再不然填预置的缺省 */
+  const savedModel = () => providerModel(preset.id, conf, active)
 
   /** 密钥框的占位跟着地址走：地址改成本机的，就不用密钥 */
   function keyHint() {
@@ -60,18 +62,22 @@ export function createProviderForm(preset: ProviderPreset, deps: PageDeps): Prov
     url.value = savedUrl()
     model.value = savedModel()
     fillKey()
-    datalist.replaceChildren(...preset.models.map((m) => new Option(m)))
+    datalist.replaceChildren(...modelCandidates(preset.id, conf).map((m) => new Option(m)))
   }
 
   function markDirty() {
-    dirty = url.value !== savedUrl() || key.value !== ''
+    dirty = url.value !== savedUrl() || key.value !== '' || model.value.trim() !== savedModel()
     deps.onDirty()
   }
-  // 测试用的模型名不保存，改它不算未保存的修改
-  for (const inp of [url, key]) inp.addEventListener('input', markDirty)
+  for (const inp of [url, key, model]) inp.addEventListener('input', markDirty)
   url.addEventListener('input', keyHint)
 
-  const providerMsg = () => ({ id: preset.id, name: preset.name, base_url: url.value.trim() })
+  const providerMsg = () => ({
+    id: preset.id,
+    name: preset.name,
+    base_url: url.value.trim(),
+    model: model.value.trim(),
+  })
 
   /** 正在等结果的连接测试的请求编号 */
   let testing: string | null = null
@@ -97,6 +103,7 @@ export function createProviderForm(preset: ProviderPreset, deps: PageDeps): Prov
       const out: string[] = []
       if (url.value !== savedUrl()) out.push('服务地址')
       if (key.value !== '') out.push('API 密钥')
+      if (model.value.trim() !== savedModel()) out.push('模型名')
       return out
     },
     draft() {

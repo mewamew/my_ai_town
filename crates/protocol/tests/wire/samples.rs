@@ -684,6 +684,7 @@ pub fn server_samples() -> Vec<ServerMsg> {
                 name: "服务商".into(),
                 base_url: "https://example.invalid/v1".into(),
                 key_mask: "sk-a…7890".into(),
+                model: "m1".into(),
             }],
             builtin_stale: true,
         },
@@ -1598,6 +1599,7 @@ pub fn client_samples() -> Vec<ClientMsg> {
         id: "p1".into(),
         name: "服务商".into(),
         base_url: "https://example.invalid/v1".into(),
+        model: "m1".into(),
     };
     vec![
         ClientMsg::Avatar {

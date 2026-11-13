@@ -1,6 +1,6 @@
-import type { ModelChoice, ProviderView, ServerMsg } from '../protocol'
+import type { ActiveModelChoice, ModelChoice, ProviderView, ServerMsg } from '../protocol'
 import { statusLine } from '../dom'
-import { BUILTIN, PRESETS, needsKey } from '../providers'
+import { BUILTIN, PRESETS, modelCandidates, needsKey, providerModel } from '../providers'
 import { displayClock } from '../format'
 import { $, htmlText } from '../settings/page'
 import { residentModelProblem } from './residentModelValidation'
@@ -11,7 +11,8 @@ const sameChoice = (a: ModelChoice, b: ModelChoice | null) =>
   a?.provider === b?.provider && a?.model === b?.model
 
 // 角色卡 → 模型：每位村民单独绑定模型，没有默认值；没绑定时下拉框停在「请选择」，不预选任何服务。
-// 服务和密钥本身在右上角的「设定 → 模型服务」里配。
+// 服务和密钥本身在右上角的「设定 → 模型服务」里配；选了服务，模型名自动填那里给它填的。
+// 下面的按钮把这里选的模型也给其他村民用上：都还没选时只管没选的，有人用着别的模型时连他们一起换。
 export function createResidentModelPage(deps: CardPageDeps): TabPage {
   const el = document.createElement('section')
   el.className = 'spage'
@@ -49,6 +50,8 @@ export function createResidentModelPage(deps: CardPageDeps): TabPage {
   const others = trackOtherResidents(deps.resident.id, deps.send)
 
   let configured: ProviderView[] = []
+  /** 小镇的默认模型：服务没记模型名时，选了默认模型用的那个服务就填它的模型名 */
+  let active: ActiveModelChoice | null = null
   let saved: ModelChoice | null = null
   let dirty = false
   let applying = false
@@ -64,8 +67,12 @@ export function createResidentModelPage(deps: CardPageDeps): TabPage {
     showStatus(displayClock(text), cls)
   }
 
+  const confOf = (id: string) => configured.find((item) => item.id === id)
+
   function fillModels() {
-    models.replaceChildren(...(presetOf(provider.value)?.models ?? []).map((id) => new Option(id)))
+    models.replaceChildren(
+      ...modelCandidates(provider.value, confOf(provider.value)).map((id) => new Option(id))
+    )
   }
 
   /** 没选服务时模型名不能填，占位写「先选服务」 */
@@ -97,10 +104,18 @@ export function createResidentModelPage(deps: CardPageDeps): TabPage {
     current.className = 'form-status rm-current ' + (saved ? 'ok' : 'drop')
   }
 
+  /** 要跟着换的其他村民：用的模型和框里选的不一样的（还没选的也算） */
+  function otherTargets() {
+    const choice = edited()
+    return choice.provider && choice.model ? others.differ(choice) : []
+  }
+
   function renderApplyOthers() {
-    const count = others.unbound().length
-    applyOthers.hidden = count === 0
-    applyOthers.textContent = `保存，并套用到其他 ${count} 位还没选的村民`
+    const targets = otherTargets()
+    applyOthers.hidden = targets.length === 0
+    applyOthers.textContent = targets.every((t) => t.unbound)
+      ? `保存，并套用到其他 ${targets.length} 位还没选的村民`
+      : `保存，并让其他 ${targets.length} 位村民也换成这个模型`
     applyOthers.disabled = applying
   }
 
@@ -119,17 +134,22 @@ export function createResidentModelPage(deps: CardPageDeps): TabPage {
     fillModels()
     renderProviderState()
     renderCurrent()
+    renderApplyOthers()
   }
 
   function onInput() {
     dirty = !sameChoice(edited(), saved)
     renderProviderState()
+    renderApplyOthers()
     deps.onDirty()
   }
 
   provider.addEventListener('change', () => {
-    const preset = presetOf(provider.value)
-    model.value = preset?.defaultModel ?? ''
+    // 换回已存的服务用已存的模型名，否则用「模型服务」里给这个服务填的
+    model.value =
+      saved?.provider === provider.value
+        ? saved.model
+        : providerModel(provider.value, confOf(provider.value), active)
     fillModels()
     onInput()
   })
@@ -163,7 +183,7 @@ export function createResidentModelPage(deps: CardPageDeps): TabPage {
   applyOthers.onclick = () => {
     const choice = checkedChoice()
     if (!choice || applying) return
-    const targets = [{ id: deps.resident.id, name: deps.resident.name }, ...others.unbound()]
+    const targets = [{ id: deps.resident.id, name: deps.resident.name }, ...otherTargets()]
     applying = true
     renderApplyOthers()
     setStatus('保存中…')
@@ -227,6 +247,7 @@ export function createResidentModelPage(deps: CardPageDeps): TabPage {
         saved = msg.model_binding ?? null
       } else if (msg.type === 'model_config') {
         configured = msg.providers
+        active = msg.active
       } else return
       if (!dirty) fill()
       else renderCurrent()

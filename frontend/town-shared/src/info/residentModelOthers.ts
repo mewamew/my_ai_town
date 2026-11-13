@@ -1,14 +1,17 @@
 import type { ClientMsg, ModelChoice, ServerMsg } from '../protocol'
 import type { Receipt, SaveCommand } from '../connection'
 
-// 角色卡「模型」页的「套用到其他还没选的村民」：从名册认出其他在世村民，
-// 逐个读取他们的 agent_config 看是否已绑定模型，套用时逐个发 set_resident_model。
+// 角色卡「模型」页的「套用到其他村民」：从名册认出其他在世村民，逐个读取他们的 agent_config
+// 看用的是哪个模型，套用时逐个发 set_resident_model。
 
 interface Other {
   name: string
-  /** undefined 表示还没读到这位村民的 agent_config */
-  bound?: boolean
+  /** undefined 表示还没读到这位村民的 agent_config；null 是还没选模型 */
+  binding?: ModelChoice | null
 }
+
+const same = (a: ModelChoice | null, b: ModelChoice | null) =>
+  a?.provider === b?.provider && a?.model === b?.model
 
 export function trackOtherResidents(selfId: string, send: (msg: ClientMsg) => void) {
   const others = new Map<string, Other>()
@@ -33,9 +36,9 @@ export function trackOtherResidents(selfId: string, send: (msg: ClientMsg) => vo
       }
       if (msg.type === 'agent_config' && others.has(msg.resident_id)) {
         const other = others.get(msg.resident_id)
-        const bound = !!msg.model_binding
-        if (!other || other.bound === bound) return false
-        other.bound = bound
+        const binding = msg.model_binding ?? null
+        if (!other || (other.binding !== undefined && same(other.binding, binding))) return false
+        other.binding = binding
         return true
       }
       return false
@@ -43,12 +46,15 @@ export function trackOtherResidents(selfId: string, send: (msg: ClientMsg) => vo
     /** 读取其他村民的绑定情况：页面显示时全部重读，名册新来的人只读没读过的 */
     refresh(onlyUnknown = false) {
       for (const [id, other] of others)
-        if (!onlyUnknown || other.bound === undefined)
+        if (!onlyUnknown || other.binding === undefined)
           send({ type: 'get_agent_config', resident: id })
     },
-    unbound() {
+    /** 用的模型和 choice 不一样的其他村民，还没选的也算；unbound 标出还没选的 */
+    differ(choice: ModelChoice) {
       return [...others].flatMap(([id, other]) =>
-        other.bound === false ? [{ id, name: other.name }] : []
+        other.binding === undefined || same(other.binding, choice)
+          ? []
+          : [{ id, name: other.name, unbound: other.binding === null }]
       )
     },
   }

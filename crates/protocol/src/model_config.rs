@@ -24,6 +24,10 @@ pub struct ProviderConfigMsg {
     #[serde(default)]
     pub name: String,
     pub base_url: String,
+    /// 玩家在「模型服务」里给这个服务填的模型名：给村民或默认模型选这个服务时自动填上它。
+    /// 没填过的为空；页面整表保存时原样带回来，只改别处时不会丢。
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub model: String,
 }
 
 /// 密钥提交（仅客户端→服务端；空串 = 删除该服务商的密钥）
@@ -41,4 +45,7 @@ pub struct ProviderView {
     pub base_url: String,
     /// 掩码（如 sk-a…7890）；无密钥为空串
     pub key_mask: String,
+    /// 这个服务记着的模型名（见 ProviderConfigMsg::model）；没填过为空串
+    #[serde(default)]
+    pub model: String,
 }

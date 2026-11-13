@@ -4,7 +4,7 @@
 import type { Receipt, SaveCommand } from '../connection'
 import { newId } from '../ids'
 import type { ClientMsg, ModelChoice, ServerMsg } from '../protocol'
-import { PRESETS, quickModelNames } from '../providers'
+import { PRESETS, providerRow, quickModelNames } from '../providers'
 import type { ShellPanel } from '../shell/panel'
 import {
   connectModel,
@@ -81,6 +81,7 @@ export function createModelSession(deps: {
         active: command.active,
         providers: command.providers.map((p) => ({
           ...p,
+          model: p.model ?? '',
           key_mask: keyed.has(p.id)
             ? '已保存'
             : (config?.providers.find((c) => c.id === p.id)?.key_mask ?? ''),
@@ -101,7 +102,7 @@ export function createModelSession(deps: {
       list.push({ ...active, name: providerName(active.provider) })
     for (const p of usable) {
       const current = active?.provider === p.id ? active.model : undefined
-      for (const model of quickModelNames(p.id, current)) {
+      for (const model of quickModelNames(p.id, current, p.model)) {
         if (!list.some((o) => o.provider === p.id && o.model === model))
           list.push({ provider: p.id, model, name: providerName(p.id) })
       }
@@ -161,7 +162,7 @@ export function createModelSession(deps: {
       if (active?.provider === choice.provider && active.model === choice.model) return
       await transport.save({
         active: { provider: choice.provider, model: choice.model },
-        providers: config.providers.map(({ id, name, base_url }) => ({ id, name, base_url })),
+        providers: config.providers.map(providerRow),
         keys: [],
       })
     },

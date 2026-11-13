@@ -35,7 +35,7 @@ import {
 } from 'town-shared/models/builtin'
 import { createBuiltinRows } from 'town-shared/models/builtinRows'
 import { onBack } from 'town-shared/platform'
-import { BUILTIN, PRESETS, quickModelNames } from 'town-shared/providers'
+import { BUILTIN, PRESETS, providerRow, quickModelNames } from 'town-shared/providers'
 import type { ModelChoice } from 'town-shared/protocol'
 import { settingRow } from 'town-shared/settings/controls'
 import { createDisplayPage } from 'town-shared/settings/display'
@@ -237,7 +237,7 @@ export function installHomeSettings(deps: { music: { enabled(): boolean; toggle(
     const choices: ModelChoice[] = []
     for (const p of usable) {
       const current = config?.active?.provider === p.id ? config.active.model : undefined
-      for (const model of quickModelNames(p.id, current)) {
+      for (const model of quickModelNames(p.id, current, p.model)) {
         const selected = config?.active?.provider === p.id && config.active.model === model
         choose.append(new Option(`${p.name} · ${model}`, String(choices.length), false, selected))
         choices.push({ provider: p.id, model })
@@ -257,7 +257,7 @@ export function installHomeSettings(deps: { music: { enabled(): boolean; toggle(
     try {
       await transport.save({
         active: choice,
-        providers: config.providers.map(({ id, name, base_url }) => ({ id, name, base_url })),
+        providers: config.providers.map(providerRow),
         keys: [],
       })
       status.textContent = '已保存'

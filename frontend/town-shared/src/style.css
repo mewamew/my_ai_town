@@ -1385,6 +1385,10 @@ body.resizing-column {
   margin-top: 0;
   min-height: 0;
 }
+.prov-form .p-model-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
 @media (max-width: 719px) {
   .prov-row {
     grid-template-columns: 1fr auto;

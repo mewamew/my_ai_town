@@ -146,6 +146,7 @@ mod tests {
             id: "deepseek".into(),
             name: "DeepSeek".into(),
             base_url: "sk-abcdef1234567890".into(), // 误把密钥填进端点
+            model: String::new(),
         });
         let dir = std::env::temp_dir().join(format!("ai-town-cfg-{}", std::process::id()));
         let path = dir.join("providers.json");

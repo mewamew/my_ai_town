@@ -1,6 +1,8 @@
 // 服务商预置目录：参照老项目 ModelProviderCatalog（内容权威 ~/dev/my_ai_town）。
 // 全部走 OpenAI 兼容传输——base_url 不含 /chat/completions 后缀（host 拼接）。
 // 模型清单 = 老目录预置 + 常用官方名；页面上模型可自由输入，清单只是候选。
+// 玩家在「模型服务」里给一个服务填的模型名存在配置里（ProviderView.model），选这个服务时先填它。
+import type { ActiveModelChoice, ProviderConfig, ProviderView } from './protocol'
 
 export interface ProviderPreset {
   id: string
@@ -140,12 +142,42 @@ export const PRESETS: ProviderPreset[] = [
   },
 ]
 
-/** 首页和请村民时共用候选，保留玩家手填的当前模型。 */
-export function quickModelNames(provider: string, current?: string): string[] {
+/** 首页和请村民时共用候选：保留玩家手填的当前模型；服务在「模型服务」里记着模型名的，没有当前模型时列它。
+ *  自定义、本机服务没有预置的缺省模型，记着的模型名是它们出现在候选里的唯一来由。 */
+export function quickModelNames(provider: string, current?: string, saved?: string): string[] {
   const preset = PRESETS.find((p) => p.id === provider)
-  return [
-    ...new Set([current, ...(preset?.quickModels ?? [current ?? preset?.defaultModel])]),
-  ].filter((model): model is string => !!model)
+  const rest = preset?.quickModels
+    ? [saved, ...preset.quickModels]
+    : [current ?? (saved || preset?.defaultModel)]
+  return [...new Set([current, ...rest])].filter((model): model is string => !!model)
+}
+
+/** 选了这个服务时模型名先填什么：「模型服务」里给它填过的；没填过时默认模型用着这个服务就用它的，
+ *  再不然用预置的缺省；都没有为空串 */
+export function providerModel(
+  id: string,
+  conf?: Pick<ProviderView, 'model'>,
+  active?: ActiveModelChoice | null
+): string {
+  return (
+    conf?.model ||
+    (active?.provider === id ? active.model : '') ||
+    PRESETS.find((p) => p.id === id)?.defaultModel ||
+    ''
+  )
+}
+
+/** 模型名输入框的候选：这个服务记着的排最前，再列预置的 */
+export function modelCandidates(id: string, conf?: Pick<ProviderView, 'model'>): string[] {
+  const preset = PRESETS.find((p) => p.id === id)
+  return [...new Set([conf?.model, ...(preset?.models ?? [])])].filter(
+    (model): model is string => !!model
+  )
+}
+
+/** 服务端按整表保存：没改的服务原样写回去的那一行。记着的模型名要一起带上，不带就清掉了 */
+export function providerRow(p: ProviderView): ProviderConfig {
+  return { id: p.id, name: p.name, base_url: p.base_url, ...(p.model ? { model: p.model } : {}) }
 }
 
 /** 内置模型：不用地址和密钥，只给村民过日子用，不写人设、不建镇 */

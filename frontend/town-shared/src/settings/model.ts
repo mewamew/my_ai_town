@@ -1,6 +1,13 @@
 import type { ActiveModelChoice, ProviderView, ServerMsg } from '../protocol'
 import { statusLine } from '../dom'
-import { BUILTIN, PRESETS, needsKey } from '../providers'
+import {
+  BUILTIN,
+  PRESETS,
+  modelCandidates,
+  needsKey,
+  providerModel,
+  providerRow,
+} from '../providers'
 import type { SettingsPage } from '../settingsCenter'
 import { $, type PageDeps } from './page'
 
@@ -38,6 +45,7 @@ export function createModelPage(deps: PageDeps): SettingsPage {
 
   const setStatus = statusLine(status)
   const presetOf = (id: string) => PRESETS.find((p) => p.id === id)
+  const confOf = (id: string) => configured.find((p) => p.id === id)
 
   function renderProvState() {
     const id = sel.value
@@ -54,8 +62,10 @@ export function createModelPage(deps: PageDeps): SettingsPage {
         : '该服务尚未配置密钥'
   }
 
-  function fillModels(models: string[]) {
-    datalist.replaceChildren(...models.map((m) => new Option(m)))
+  function fillModels() {
+    datalist.replaceChildren(
+      ...modelCandidates(sel.value, confOf(sel.value)).map((m) => new Option(m))
+    )
   }
 
   function fill() {
@@ -67,7 +77,7 @@ export function createModelPage(deps: PageDeps): SettingsPage {
         ? chosen.provider
         : (configured[0]?.id ?? '')
     model.value = active?.model ?? ''
-    fillModels(presetOf(sel.value)?.models ?? [])
+    fillModels()
     renderProvState()
     renderCurrent()
   }
@@ -91,11 +101,11 @@ export function createModelPage(deps: PageDeps): SettingsPage {
     deps.onDirty()
   }
   sel.addEventListener('change', () => {
-    const preset = presetOf(sel.value)
-    // 换服务商时模型名跟着换：换回已保存的服务商用已存的名字，否则用缺省候选（可再手改）；
-    // 本机服务这类没有缺省的留空，不能沿用上一家的模型名
-    model.value = sel.value === active?.provider ? active.model : (preset?.defaultModel ?? '')
-    fillModels(preset?.models ?? [])
+    // 换服务商时模型名跟着换：换回已保存的服务商用已存的名字，否则用「模型服务」里给它填的、
+    // 再没有用预置的缺省（可再手改）；都没有的留空，不能沿用上一家的模型名
+    model.value =
+      sel.value === active?.provider ? active.model : providerModel(sel.value, confOf(sel.value))
+    fillModels()
     onInput()
   })
   model.addEventListener('input', onInput)
@@ -124,8 +134,8 @@ export function createModelPage(deps: PageDeps): SettingsPage {
         provider: sel.value,
         model: model.value.trim(),
       }
-      // providers 原样保留，只改 active；密钥不碰
-      const providers = configured.map((p) => ({ id: p.id, name: p.name, base_url: p.base_url }))
+      // providers 原样保留（连同各服务记着的模型名），只改 active；密钥不碰
+      const providers = configured.map(providerRow)
       // 先写「保存中…」：没连上时回执立刻回来，结果不能被它盖掉
       setStatus('保存中…')
       deps.save(

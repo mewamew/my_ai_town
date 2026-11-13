@@ -30,7 +30,7 @@ import {
   progressText,
 } from '../models/builtin'
 import { isCompact } from '../platform'
-import { BUILTIN, PRESETS, type ProviderPreset } from '../providers'
+import { BUILTIN, PRESETS, providerModel, type ProviderPreset } from '../providers'
 import { peopleCount, PICKS, recommendReason, roomLeft } from '../residents/recommend'
 import type { Receipt, SaveCommand } from '../connection'
 import type { ShellPanel } from '../shell/panel'
@@ -161,7 +161,7 @@ export function createGuide(d: GuideDeps) {
     if (active && usable.some((p) => p.id === active.provider))
       return { ...active, name: providerName(active.provider) }
     for (const p of usable) {
-      const model = PRESETS.find((x) => x.id === p.id)?.defaultModel
+      const model = providerModel(p.id, p)
       if (model) return { provider: p.id, model, name: providerName(p.id) }
     }
     return null

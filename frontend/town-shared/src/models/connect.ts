@@ -3,7 +3,13 @@
 // 手机上从底部升起，电脑上居中。它是模态对话框，从别的对话框里打开也盖在最上面。
 // 有默认模型的服务可以直接连；要手填模型名、地址的服务进小镇后在「设定 · 模型服务」里配。
 import type { ActiveModelChoice, ProviderConfig, ProviderView } from '../protocol'
-import { PRESETS, localEndpoint, type ProviderPreset } from '../providers'
+import {
+  PRESETS,
+  localEndpoint,
+  providerModel,
+  providerRow,
+  type ProviderPreset,
+} from '../providers'
 import { hourRange, priceOf } from '../pricing'
 import { button, el } from '../dom'
 import { errorText } from '../format'
@@ -214,16 +220,16 @@ export function connectModel(
         id: preset.id,
         name: existing?.name ?? preset.name,
         base_url: existing?.base_url || preset.baseUrl,
+        ...(existing?.model ? { model: existing.model } : {}),
       }
-      const model =
-        config?.active?.provider === preset.id ? config.active.model : preset.defaultModel
+      const model = providerModel(preset.id, existing, config?.active)
       state = 'testing'
       render()
       try {
         const tested = await t.test(provider, model, typed)
         if (!tested.ok) throw Error(tested.message || '连接失败')
-        const all = (config?.providers ?? []).map(({ id, name, base_url }) =>
-          id === provider.id ? provider : { id, name, base_url }
+        const all = (config?.providers ?? []).map((p) =>
+          p.id === provider.id ? provider : providerRow(p)
         )
         await t.save({
           active: config?.active ?? { provider: provider.id, model },

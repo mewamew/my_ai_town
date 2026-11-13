@@ -258,7 +258,7 @@ fn residents_use_independent_models_and_the_binding_survives_restart() {
             "active":null,
             "providers":[
                 {"id":"fixture-a","name":"Resident A","base_url":endpoint.url},
-                {"id":"fixture-b","name":"Resident B","base_url":endpoint.url}
+                {"id":"fixture-b","name":"Resident B","base_url":endpoint.url,"model":"resident-b"}
             ]
         }),
     );
@@ -351,6 +351,17 @@ fn residents_use_independent_models_and_the_binding_survives_restart() {
     );
     assert_eq!(first_config["model_binding"]["provider"], "fixture-a");
     assert_eq!(first_config["model_binding"]["model"], "resident-a");
+
+    // 服务记着的模型名：被拒的保存没动配置，重开后回读里还带着，页面选这个服务时靠它自动填上
+    let config = reply(&mut ws, json!({"type":"get_model_config"}), "model_config");
+    let models: Vec<_> = config["providers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| (p["id"].as_str().unwrap(), p["model"].as_str().unwrap()))
+        .collect();
+    assert!(models.contains(&("fixture-a", "")), "{config}");
+    assert!(models.contains(&("fixture-b", "resident-b")), "{config}");
 }
 
 /// 没选模型不算故障：不暂停全镇、不发请求，也不悄悄改用小镇的工具模型；谁都还不能思考时时间停着。
