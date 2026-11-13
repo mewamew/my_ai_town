@@ -13,9 +13,14 @@ export const prefabTownId = (prefab: Prefab) => `prefab-${prefab.id}`
 export const isBuiltinTown = (map: MapEntry) =>
   map.origin === 'builtin' || map.id.startsWith('prefab-')
 
-/** 还没生成的预制小镇 */
-export const missingPrefabs = (maps: MapEntry[]) =>
-  PREFABS.filter((p) => !maps.some((m) => m.id === prefabTownId(p)))
+/** 「剧本」那一排：固定按登记的顺序，生成过的换成存好的小镇，第一次选中生成后不挪位置
+ *  （管理服务按名字的编码排，生成前后会换位置，鼠标下面的那张就变了）；登记里已经没有的剧本小镇排在最后 */
+export const prefabRow = (maps: MapEntry[]): (MapEntry | Prefab)[] => [
+  ...PREFABS.map((prefab) => maps.find((m) => m.id === prefabTownId(prefab)) ?? prefab),
+  ...maps.filter(
+    (m) => m.id.startsWith('prefab-') && !PREFABS.some((p) => prefabTownId(p) === m.id)
+  ),
+]
 
 /** 生成预制小镇的岛并存成内置小镇，返回小镇编号 */
 export async function generatePrefab(prefab: Prefab) {
