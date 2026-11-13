@@ -21,9 +21,14 @@ pub(crate) struct ReelSource {
 const NOT_SAVED: &str = "这个世界不存档，录不了像";
 
 impl Runtime {
-    /// 世界打开时：录像开着就开新的一卷。开不了只记日志，世界照常跑。
+    /// 世界打开时：先补上上次世界进程意外退出时没收尾的几卷，录像开着就开新的一卷。
+    /// 开不了只记日志，世界照常跑。
     pub(crate) fn resume_recording(&self) {
-        if self.world_settings.recording && self.reels.is_some() {
+        let Some(source) = &self.reels else {
+            return;
+        };
+        recording::seal_unfinished(&source.town_dir);
+        if self.world_settings.recording {
             if let Err(error) = self.start_reel() {
                 eprintln!("[host] 录像开不了：{error}");
             }

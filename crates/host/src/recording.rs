@@ -376,6 +376,135 @@ pub fn list(town_dir: &Path, live: Option<ReelView>) -> Vec<ReelView> {
     reels
 }
 
+/// 上次世界进程没来得及收尾就没了（崩溃、被强行结束、断电、手机上在后台被系统杀掉）的几卷：
+/// 打开世界、开新的一卷之前补上收尾。存档锁保证同一个小镇同时只有一个世界进程，这时还没写结束时刻的
+/// 都是上次留下的。从录下的行里找回时间范围，结束时刻按最后一行算；没压的段截掉没写完的最后一行再压好。
+/// 读不出的段当作到那里为止，有多少算多少；补不上的那一卷原样留着，下次打开再补。
+pub fn seal_unfinished(town_dir: &Path) {
+    let root = town_dir.join(RECORDINGS_DIR);
+    for entry in fs::read_dir(&root).into_iter().flatten().flatten() {
+        let dir = entry.path();
+        if entry.file_name() == MAPS_DIR || !dir.is_dir() {
+            continue;
+        }
+        let Some(mut header) = fs::read(dir.join(HEADER))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Header>(&bytes).ok())
+        else {
+            continue;
+        };
+        if header.ended_at.is_some() {
+            continue;
+        }
+        match seal(&dir, &mut header) {
+            Ok(()) => println!("[host] 补上了上次没收尾的录像：{}", header.id),
+            Err(error) => eprintln!("[host] 上次没收尾的录像补不上：{}：{error}", header.id),
+        }
+    }
+}
+
+/// 补一卷的收尾：逐段读完，没压的段只留完整的行再压；最后写说明。中途又断了，下次照样从头补。
+fn seal(dir: &Path, header: &mut Header) -> Result<(), HostError> {
+    let mut indices = BTreeSet::new();
+    for entry in fs::read_dir(dir).map_err(|e| io_error(dir, e))?.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.ends_with(".gz.tmp") {
+            // 压到一半的临时文件：原文还在，重新压
+            let _ = fs::remove_file(entry.path());
+        } else if let Some(index) = name
+            .strip_suffix(".jsonl.gz")
+            .or_else(|| name.strip_suffix(".jsonl"))
+            .and_then(|stem| stem.parse::<u32>().ok())
+        {
+            indices.insert(index);
+        }
+    }
+    // 压缩会改文件时刻，先记下最后写入的时刻：一行都读不到时按它算结束
+    let written = last_write(dir);
+    // 换过段的卷，说明里已经有开头的时钟，换段前的几段不用再读（长录像意外退出后开镇不用多等）
+    let known = !header.from_clock.is_empty();
+    let current = header.segments.saturating_sub(1);
+    let mut span = Span::default();
+    for &index in &indices {
+        let packed = segment_path(dir, index, true);
+        let plain = segment_path(dir, index, false);
+        if packed.is_file() {
+            // 压好、改完名还没来得及删原文
+            if plain.is_file() {
+                let _ = fs::remove_file(&plain);
+            }
+            if known && index < current {
+                continue;
+            }
+            let mut text = Vec::new();
+            // 读不完的压缩段：读出多少算多少
+            let source = File::open(&packed).map_err(|e| io_error(&packed, e))?;
+            let _ = io::Read::read_to_end(&mut flate2::read::GzDecoder::new(source), &mut text);
+            span.read(&text);
+        } else {
+            let text = fs::read(&plain).map_err(|e| io_error(&plain, e))?;
+            let whole = span.read(&text);
+            compress_from(whole.as_slice(), &packed)
+                .and_then(|()| fs::remove_file(&plain))
+                .map_err(|e| io_error(&packed, e))?;
+        }
+    }
+    header.ended_at = Some(match span.last_t {
+        Some(t) => header.started_at + t,
+        None => written.unwrap_or(header.started_at),
+    });
+    if let Some((clock, minutes)) = span.first.filter(|_| !known) {
+        header.from_clock = clock;
+        header.from_minutes = minutes;
+    }
+    if let Some((clock, minutes)) = span.last {
+        header.to_clock = clock;
+        header.to_minutes = minutes;
+    }
+    header.segments = indices.last().map_or(header.segments, |last| last + 1);
+    let bytes = serde_json::to_vec_pretty(&header)
+        .map_err(|e| HostError::Runtime(format!("录像说明编码失败：{e}")))?;
+    crate::persistence::atomic_write(&dir.join(HEADER), &bytes)
+}
+
+/// 补收尾时从录下的行里找回的：最后一行的时刻、第一份和最后一份名册上的时钟。
+#[derive(Default)]
+struct Span {
+    last_t: Option<u64>,
+    first: Option<(String, Option<f64>)>,
+    last: Option<(String, Option<f64>)>,
+}
+
+impl Span {
+    /// 读一段的原文，返回其中完整的行（每行带换行）。到第一行读不出的为止：进程意外退出时
+    /// 最后一行可能没写完，和读的一方（scripts/replay/reel.mjs）一样丢掉它和之后的。
+    fn read(&mut self, text: &[u8]) -> Vec<u8> {
+        let mut whole = Vec::with_capacity(text.len());
+        for line in text.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
+            let Ok(value) = serde_json::from_slice::<Value>(line) else {
+                break;
+            };
+            whole.extend_from_slice(line);
+            whole.push(b'\n');
+            if let Some(t) = value["t"].as_u64() {
+                self.last_t = Some(t);
+            }
+            // 时钟在完整名册（k）里，或在名册变化里变了的顶层字段（d.s）里
+            let roster = if value["k"].is_object() {
+                &value["k"]
+            } else {
+                &value["d"]["s"]
+            };
+            if let Some(clock) = roster["clock"].as_str() {
+                let at = (clock.to_owned(), roster["sim_minutes"].as_f64());
+                self.first.get_or_insert_with(|| at.clone());
+                self.last = Some(at);
+            }
+        }
+        whole
+    }
+}
+
 /// 删掉录完的一卷，再清掉没有哪一卷还用着的地图。编号只认得 `unused_id` 起的那种名字。
 pub fn delete(town_dir: &Path, id: &str) -> Result<(), HostError> {
     let valid = !id.is_empty()
@@ -560,28 +689,35 @@ fn state_kind(msg: &ServerMsg) -> Option<&'static str> {
 }
 
 fn reel_view(header: &Header, dir: &Path) -> ReelView {
-    let files: Vec<fs::Metadata> = fs::read_dir(dir)
+    ReelView {
+        id: header.id.clone(),
+        started_at: header.started_at,
+        // 意外退出、还没补上收尾的，按最后写入的时刻算
+        ended_at: header.ended_at.or_else(|| last_write(dir)),
+        from_clock: header.from_clock.clone(),
+        to_clock: header.to_clock.clone(),
+        bytes: files(dir).iter().map(fs::Metadata::len).sum(),
+    }
+}
+
+fn files(dir: &Path) -> Vec<fs::Metadata> {
+    fs::read_dir(dir)
         .into_iter()
         .flatten()
         .flatten()
         .filter_map(|entry| entry.metadata().ok())
         .filter(fs::Metadata::is_file)
-        .collect();
-    // 意外退出没写结束时刻的，按最后写入的时刻算
-    let last_write = files
+        .collect()
+}
+
+/// 一卷里最后写入文件的时刻（毫秒）
+fn last_write(dir: &Path) -> Option<u64> {
+    files(dir)
         .iter()
         .filter_map(|m| m.modified().ok())
         .max()
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_millis() as u64);
-    ReelView {
-        id: header.id.clone(),
-        started_at: header.started_at,
-        ended_at: header.ended_at.or(last_write),
-        from_clock: header.from_clock.clone(),
-        to_clock: header.to_clock.clone(),
-        bytes: files.iter().map(fs::Metadata::len).sum(),
-    }
+        .map(|d| d.as_millis() as u64)
 }
 
 fn segment_path(dir: &Path, index: u32, packed: bool) -> PathBuf {
@@ -614,12 +750,17 @@ fn open_segment(dir: &Path, index: u32) -> Result<BufWriter<File>, HostError> {
 }
 
 fn compress(plain: &Path, packed: &Path) -> io::Result<()> {
+    compress_from(File::open(plain)?, packed)?;
+    fs::remove_file(plain)
+}
+
+/// 压成 `packed`：先写临时文件再改名，压到一半断了不会留下坏的压缩段
+fn compress_from(mut source: impl io::Read, packed: &Path) -> io::Result<()> {
     let temporary = packed.with_extension("gz.tmp");
     let mut encoder = GzEncoder::new(File::create(&temporary)?, Compression::default());
-    io::copy(&mut File::open(plain)?, &mut encoder)?;
+    io::copy(&mut source, &mut encoder)?;
     encoder.finish()?.sync_all()?;
-    fs::rename(&temporary, packed)?;
-    fs::remove_file(plain)
+    fs::rename(&temporary, packed)
 }
 
 /// 地图按摘要存一份；已经有了就不再存。
