@@ -651,13 +651,16 @@ export class HdScene {
         this.trail.add(this.footprints())
         this.trail.update(renderer, this.weather.snowFalling)
       })
+      // 第一帧主画面还没画过阴影贴图：这时画倒影（倒影里不更新阴影），带阴影的材质采样到的是空贴图，
+      // 整批绘制被丢掉，Chrome 报几百条“纹理格式和采样器类型对不上”，报满上限后后面真的 WebGL 错误也不报了。
+      // 这一帧先不画倒影，下一帧照常
       this.gpu.time('倒影', () =>
         this.reflection.render(
           renderer,
           this.scene,
           this.camera,
           this.viewTarget,
-          this.waterVisible || this.weather.wetLevel > 0.05
+          !!this.sun.shadow.map && (this.waterVisible || this.weather.wetLevel > 0.05)
         )
       )
     }
