@@ -45,6 +45,12 @@ export function createMixer(base: number, release: (audio: HTMLAudioElement) => 
   }
 
   return {
+    /** 改整体音量不重启淡化；正在淡出的旧声部也立即采用新值。 */
+    setBaseVolume(value: number) {
+      if (!Number.isFinite(value)) return
+      base = Math.min(1, Math.max(0, value))
+      kick()
+    },
     /** 新的一首，从 gain 起步 */
     add(audio: HTMLAudioElement, gain: number) {
       voices.set(audio, { ...still(gain), drop: false })

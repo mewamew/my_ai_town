@@ -5,6 +5,7 @@ mod agent_actions;
 mod avatar;
 mod exploration;
 mod force;
+mod frostlight;
 mod game_mode;
 mod harm;
 mod history;

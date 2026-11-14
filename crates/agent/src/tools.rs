@@ -860,8 +860,18 @@ fn mode_action(ctx: &mut ToolContext, call: &ToolCall) -> Result<ToolOutcome, To
         args["target"] = json!(n.to_string());
     }
     let action = decode::<protocol::GameModeAction>(&args)?;
+    require_idle(ctx, "先等待当前动作或事件结果，再提交玩法行动")?;
     let actor = ctx.session.actor_id.clone();
     let result = ctx.world.game_mode_act(&actor, &action)?;
+    // 有些玩法把选择落实为真实行走与劳动；沿用普通身体动作的等待/恢复链路，
+    // 避免模型还没到目的地就再次规划、替换掉自己刚接下的工作。
+    if let Some(group_id) = ctx.world.game_mode_pending_group(&actor) {
+        return Ok(ToolOutcome::Pending(PendingTool::Actions {
+            call: call.clone(),
+            group_id,
+            reported_running: false,
+        }));
+    }
     complete(json!({ "result": result }))
 }
 fn wait_for(ctx: &mut ToolContext, call: &ToolCall) -> Result<ToolOutcome, ToolError> {

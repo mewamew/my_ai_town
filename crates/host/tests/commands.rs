@@ -7,6 +7,93 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// 玩家玩法控制走正式命令、世界门槛和存盘事务；失败既不改变内存，也不消耗一次性援助。
+#[test]
+fn frostlight_controls_are_world_scoped_transactional_and_survive_restart() {
+    let mut town = Town::new();
+    let mut topology = read_json(&town.dir.join("topology.json"));
+    for locale in topology["locales"].as_array_mut().unwrap() {
+        match locale["id"].as_str() {
+            Some("square") => locale["name"] = json!("热源广场诊所"),
+            Some("gate") => locale["name"] = json!("林场粮仓工坊"),
+            _ => {}
+        }
+    }
+    town.write("topology.json", topology);
+    let mut ws = town.start();
+    join_id(&mut ws, "tpl_a");
+    join_id(&mut ws, "tpl_b");
+    let world_id = reply(
+        &mut ws,
+        json!({"type":"get_world_settings"}),
+        "world_settings",
+    )["state"]["world_id"]
+        .clone();
+    let opened = reply(
+        &mut ws,
+        json!({"type":"set_game_mode", "request_id":"open-frostlight", "world_id":world_id,
+        "game_mode":{"kind":"frostlight","seed":7,"duration_hours":6}}),
+        "world_settings_saved",
+    );
+    assert_eq!(opened["ok"], true, "{opened}");
+    let original = until(&mut ws, |m| {
+        m["type"] == "roster" && m["game_mode"]["kind"] == "frostlight"
+    })["game_mode"]
+        .clone();
+    let control = |request: &str, id: Value, action: &str, target: Option<&str>| {
+        let mut command = json!({"action":action});
+        if let Some(target) = target {
+            command["target"] = json!(target);
+        }
+        json!({"type":"game_mode_control","request_id":request,"world_id":id,"command":command})
+    };
+    let stale = reply(
+        &mut ws,
+        control("stale", json!("old-world"), "relief", None),
+        "world_settings_saved",
+    );
+    assert_eq!(stale["ok"], false, "{stale}");
+    assert!(stale["message"].as_str().unwrap().contains("世界已重置"));
+
+    let blocked = town.save().with_file_name("world.json.tmp");
+    fs::create_dir(&blocked).unwrap();
+    let failed = reply(
+        &mut ws,
+        control("blocked", world_id.clone(), "relief", None),
+        "world_settings_saved",
+    );
+    assert_eq!(failed["ok"], false, "{failed}");
+    assert!(
+        failed["message"].as_str().unwrap().contains("撤回"),
+        "{failed}"
+    );
+    let rolled_back = until(&mut ws, |m| m["type"] == "roster")["game_mode"].clone();
+    for key in ["fuel", "food", "aid_used", "hope", "discontent"] {
+        assert_eq!(rolled_back[key], original[key], "存盘失败却改变了 {key}");
+    }
+    fs::remove_dir(&blocked).unwrap();
+
+    let applied = reply(
+        &mut ws,
+        control("relief", world_id.clone(), "relief", None),
+        "world_settings_saved",
+    );
+    assert_eq!(applied["ok"], true, "{applied}");
+    let after = until(&mut ws, |m| m["type"] == "roster")["game_mode"].clone();
+    assert_eq!(after["aid_used"], true);
+    assert!(after["fuel"].as_f64().unwrap() > original["fuel"].as_f64().unwrap());
+    let repeated = reply(
+        &mut ws,
+        control("again", world_id, "relief", None),
+        "world_settings_saved",
+    );
+    assert_eq!(repeated["ok"], false, "{repeated}");
+    town.shutdown();
+    let mut restarted = town.start();
+    let restored = until(&mut restarted, |m| m["type"] == "roster")["game_mode"].clone();
+    assert_eq!(restored, after, "恢复后的库存、政策、时钟和事件应一致");
+}
+
 /// 两个页面同时保存人设：回执各回各的连接，带各自的请求编号；读不懂的命令回错误，带上编号，
 /// 也只回发出它的连接。
 #[test]

@@ -46,6 +46,8 @@ export interface Atlas {
      *  rubble 碎水泥块撒了一地的废墟地（这两种都不长树）。
      *  有 decor 的区域不摆这类地点自带的标志物（凉亭、花拱门）；没有名字的区域不标名字 */
     decor?: 'woods' | 'allee' | 'lawn' | 'meadow' | 'clearing' | 'asphalt' | 'rubble'
+    /** 地面积雪的保留比例（0～1，缺省 1）：清扫或压实的路面能露出底材，不改变天气与通行。 */
+    snow_cover?: number
     /** 港口朝海的方向（横竖之一）；不给时从镇子中心指向港口算。看台（court）敞开的一面朝哪，不给朝南 */
     facing?: [number, number]
     /** 这处户外地点立什么地标：风格包 landmarks.plans 里的名字（如冰雪的 icefishing 冰钓场、sledding 雪橇坡），

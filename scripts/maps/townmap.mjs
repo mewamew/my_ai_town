@@ -368,9 +368,15 @@ export function townMap({
      *  到达点就落在路上；from 是来源地图里搬道具和落脚点的地点（only 给了就只搬这几件道具），at 按编号指定其中几件的位置，
      *  rename 为 true 时道具名字里原来的地名换成新地名；
      *  props 是新添的道具 { id, definition, name, at }，stations 是新添的落脚点 { id, name, at, activity, pose, role }；
+     *  snow_cover 是清扫后保留的积雪比例（0～1，缺省 1），只影响地面材质；
      *  landmark 指定立什么地标（风格包 plans 里的名字），不给按 kind；label 是地名标在哪（地图坐标），
      *  不给标在离区域边最远的格子上 */
-    region(rid, rname, kind, shape, { decor, facing, landmark, label, place } = {}) {
+    region(rid, rname, kind, shape, { decor, snow_cover, facing, landmark, label, place } = {}) {
+      if (
+        snow_cover !== undefined &&
+        (!Number.isFinite(snow_cover) || snow_cover < 0 || snow_cover > 1)
+      )
+        throw Error(`区域 ${rid} 的 snow_cover 必须在 0～1 之间`)
       const cells = cellsOf(shape, taken)
       if (!cells.length) throw Error(`区域 ${rid} 一格也没占到`)
       regions.push({
@@ -381,6 +387,7 @@ export function townMap({
         kind,
         ...(label ? { label_anchor: round(label) } : {}),
         ...(decor ? { decor } : {}),
+        ...(snow_cover === undefined ? {} : { snow_cover }),
         ...(facing ? { facing } : {}),
         ...(landmark ? { landmark } : {}),
       })

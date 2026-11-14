@@ -44,7 +44,12 @@ test('Rust 发出的每种消息样本都符合 protocol.ts 的类型', () => {
       files: ['samples.ts'],
     })
   )
-  const tsc = path.join(root, 'frontend/town-shared/node_modules/.bin/tsc')
-  const result = spawnSync(tsc, ['-p', dir], { encoding: 'utf8' })
+  // 直接交给 Node，避免 Windows 不能执行 .bin 中的 POSIX 包装脚本。
+  const tsc = path.join(root, 'frontend/town-shared/node_modules/typescript/bin/tsc')
+  const result = spawnSync(process.execPath, [tsc, '-p', dir], {
+    encoding: 'utf8',
+    windowsHide: true,
+  })
+  assert.ifError(result.error)
   assert.equal(result.status, 0, `${result.stdout}${result.stderr}`)
 })

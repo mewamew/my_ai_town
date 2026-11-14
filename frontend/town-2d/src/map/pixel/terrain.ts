@@ -73,6 +73,8 @@ export interface Ground {
   wet: Uint8Array
   open: Uint8Array
   path: Uint8Array
+  /** 可选的地面积雪保留比例（0～255），与 base 同尺寸；没有自定义区域时不分配。 */
+  snowCover?: Uint8Array
   depth: Uint8Array
   shore: Uint8Array
   calm: Uint8Array
@@ -90,6 +92,15 @@ export function groundOf(atlas: Atlas, theme: MapTheme, seed = TERRAIN_SEED): Gr
   const pw = Math.ceil((atlas.canvas.width + 2 * MARGIN) / PIXEL)
   const ph = Math.ceil((atlas.canvas.height + 2 * MARGIN) / PIXEL)
   const { region, wet } = rasterRegions(atlas, decor, pw, ph, seed)
+  // 与地面着色共用区域栅格，避免清扫边界和石路边界错位；旧地图完全沿用原积雪行为。
+  const snowCover = atlas.regions.some((r) => r.snow_cover !== undefined)
+    ? Uint8Array.from(region, (r) => {
+        const value = r < 0 ? undefined : atlas.regions[r].snow_cover
+        return value === undefined || !Number.isFinite(value)
+          ? 255
+          : Math.round(Math.max(0, Math.min(1, value)) * 255)
+      })
+    : undefined
   const kindAt = (i: number) => (region[i] < 0 ? '' : atlas.regions[region[i]].kind)
   const decorAt = (i: number) => (region[i] < 0 ? undefined : atlas.regions[region[i]].decor)
   const path = tracePaths(atlas, pw, ph, seed)
@@ -168,6 +179,7 @@ export function groundOf(atlas: Atlas, theme: MapTheme, seed = TERRAIN_SEED): Gr
     open,
     path,
     depth,
+    snowCover,
     shore,
     calm,
     docks,

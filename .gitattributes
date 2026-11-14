@@ -8,3 +8,6 @@
 
 # Git 中统一换行，Windows 检出时保留批处理需要的 CRLF。
 *.bat text eol=crlf
+
+# 存档对象以原始字节的长度和 SHA-256 寻址，检出时不能转换换行。
+crates/host/tests/fixtures/**/residents/.objects/* -text

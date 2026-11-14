@@ -126,6 +126,13 @@ impl Runtime {
                 seed: roll(seed),
                 day_hours,
             },
+            GameModeChoice::Frostlight {
+                seed,
+                duration_hours,
+            } => GameModeChoice::Frostlight {
+                seed: roll(seed),
+                duration_hours,
+            },
         });
         let result = self
             .transact(|rt| {
@@ -150,9 +157,31 @@ impl Runtime {
                         "执剑人之夜已打开：天亮开局，16:30 敲钟、17:00 演说和投票，19:00 交接"
                             .into()
                     }
+                    Some(GameModeChoice::Frostlight { .. }) => {
+                        "霜灯镇已开局：安排燃料与粮食，维持热源，带着居民熬过风暴".into()
+                    }
                     None => "玩法已关掉，世界恢复原样".into(),
                 }),
             })
+    }
+
+    /// 玩法管理与普通世界操作使用同一存盘事务；失败不会留下已扣物资或已生效的法令。
+    pub(crate) fn control_game_mode(
+        &mut self,
+        request_id: String,
+        command: &protocol::GameModeAction,
+    ) -> Outcome {
+        let result = self
+            .transact(|rt| rt.world.game_mode_control(command).map_err(HostError::from))
+            .map_err(|aborted| aborted.to_string());
+        let ok = result.is_ok();
+        let message = result.unwrap_or_else(|error| error);
+        Outcome::reply(ServerMsg::WorldSettingsSaved {
+            request_id,
+            ok,
+            message,
+        })
+        .and_all(self.roster())
     }
 
     /// 打开或关掉陌生环境：世界暂停，居民的旧安排作废、重新观察（已知地图变了）。

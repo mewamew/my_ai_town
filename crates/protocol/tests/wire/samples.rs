@@ -1433,11 +1433,77 @@ fn swordholder_roster() -> ServerMsg {
     roster
 }
 
+fn frostlight_roster() -> ServerMsg {
+    let mut roster = server_samples()
+        .into_iter()
+        .find(|m| matches!(m, ServerMsg::Roster { .. }))
+        .expect("有名册样本");
+    if let ServerMsg::Roster { game_mode, .. } = &mut roster {
+        *game_mode = Some(GameModeView::Frostlight(FrostlightView {
+            phase: FrostlightPhase::Over,
+            now: 720.0,
+            until: 720.0,
+            storm_at: 600.0,
+            ends_at: 720.0,
+            temperature: -50.0,
+            shelter_temperature: 4.0,
+            cold_minutes: 0.0,
+            hunger_minutes: 0.0,
+            unrest_minutes: 0.0,
+            fuel: 12.5,
+            food: 8.0,
+            materials: 3.0,
+            heat: 2,
+            stress: 20.0,
+            hope: 65.0,
+            discontent: 23.0,
+            insulation: 1,
+            generator: "gen:town-square".into(),
+            stations: vec![FrostlightStation {
+                id: "fuel".into(),
+                name: "采煤站".into(),
+                locale: "gen:forest".into(),
+                available: 40.0,
+            }],
+            policies: FrostlightPolicies {
+                extended_shift: true,
+                soup: false,
+                mutual_aid: true,
+            },
+            aid_used: true,
+            people: vec![FrostlightPerson {
+                id: "resident_001".into(),
+                name: "林霜".into(),
+                role: "司炉员".into(),
+                contribution: 3,
+                gone: false,
+                work: Some(FrostlightWork {
+                    kind: "fuel".into(),
+                    locale: "gen:forest".into(),
+                    ends_at: 725.0,
+                }),
+            }],
+            news: vec![FrostlightNews {
+                at: 719.0,
+                text: "最后一批煤送到了中央热源".into(),
+            }],
+            ending: Some(FrostlightEnding {
+                kind: "warm_dawn".into(),
+                title: "灯火迎来黎明".into(),
+                text: "六个人一起挺过了风暴".into(),
+                survivors: 6,
+            }),
+        }));
+    }
+    roster
+}
+
 pub fn shape_samples() -> (Vec<ServerMsg>, Vec<ClientMsg>) {
     (
         vec![
             werewolf_roster(),
             swordholder_roster(),
+            frostlight_roster(),
             // 玩法里说的一段话：日志正文照旧，另带发言人、座号、场合和原话
             ServerMsg::Event {
                 sim_minutes: 2588.0,
@@ -1480,6 +1546,11 @@ pub fn shape_samples() -> (Vec<ServerMsg>, Vec<ClientMsg>) {
             },
         ],
         vec![
+            ClientMsg::SetGameMode {
+                request_id: "mode-frostlight".into(),
+                world_id: "w1".into(),
+                game_mode: Some(GameModeChoice::Frostlight { seed: Some(7), duration_hours: Some(6) }),
+            },
             ClientMsg::SetGameMode {
                 request_id: "mode-2".into(),
                 world_id: "w1".into(),
@@ -1674,6 +1745,16 @@ pub fn client_samples() -> Vec<ClientMsg> {
             request_id: "mode-1".into(),
             world_id: "w1".into(),
             game_mode: Some(GameModeChoice::Tide { seed: Some(51) }),
+        },
+        ClientMsg::GameModeControl {
+            request_id: "heat-1".into(),
+            world_id: "w1".into(),
+            command: GameModeAction {
+                action: "heat".into(),
+                target: Some("2".into()),
+                text: None,
+                reason: None,
+            },
         },
         ClientMsg::SetPhysiology {
             request_id: "r1".into(),

@@ -598,6 +598,7 @@ export class TownMap {
         const container = this.svg.parentElement
         if (this.disposed || !container || !this.ground) return
         this.hd = new HdScene(atlas, this.ground, container, this.svg, this.furnished)
+        if (this.lastRoster) this.hd.setGameMode(this.lastRoster.game_mode ?? null, this.walkUnit)
         this.ground = undefined
         this.svg.classList.add('hd2d')
         this.applyMarkerScale()
@@ -1449,7 +1450,8 @@ export class TownMap {
         DEV_CLOCK?.weather ?? msg.environment?.kind,
       ]
       if (!this.scenery) this.hd?.setClock(...this.clock)
-      if (this.metre) this.hd?.setGameMode(msg.game_mode ?? null, this.metre)
+      // 平面图集同样可以开玩法；米制比例沿用行走坐标，不以旧三维 spatial 数据作为门槛。
+      this.hd?.setGameMode(msg.game_mode ?? null, this.walkUnit)
     }
     if (msg.type === 'population') {
       this.templates = new Map(msg.population.residents.map((r) => [r.id, r.template_id]))

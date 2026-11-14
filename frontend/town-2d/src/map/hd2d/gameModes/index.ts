@@ -5,6 +5,7 @@ import type { Badge } from '../villagerSigns'
 import { SwordholderLook } from './swordholder'
 import { TideLook } from './tide'
 import { WerewolfLook } from './werewolf'
+import { FrostlightLook } from './frostlight'
 
 // 玩法的画面：场景在固定的几处把材质交给玩法（地面、海面、立在地上的东西、村民），
 // 名册来了把玩法此刻的状态交给它；要在地图上画自己界面的玩法，场景建好时给它一层；
@@ -40,5 +41,5 @@ export interface GameModeLook {
 
 /** 所有玩法的画面，场景建好时装上 */
 export function gameModeLooks(theme: MapTheme): GameModeLook[] {
-  return [new TideLook(theme), new WerewolfLook(), new SwordholderLook()]
+  return [new TideLook(theme), new WerewolfLook(), new SwordholderLook(), new FrostlightLook()]
 }
