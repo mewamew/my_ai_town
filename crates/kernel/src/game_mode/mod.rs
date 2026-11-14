@@ -7,6 +7,7 @@
 //!
 //! 加一个玩法：在这个目录写一个文件，实现 `Rules`；再在下面的 `GameMode`、`each!` 和
 //! `World::set_game_mode` 里各加一项，协议那边在 protocol 的 game_mode 里加对应的类型。
+mod frostlight;
 mod swordholder;
 mod tide;
 mod werewolf;
@@ -51,6 +52,16 @@ trait Rules {
     ) -> Result<String> {
         Err(KernelError::action("这个玩法没有要交的动作"))
     }
+    /// 玩家对整场玩法的管理指令，和居民的选择分开授权。
+    fn control(&mut self, _world: &mut World, _action: &GameModeAction) -> Result<String> {
+        Err(KernelError::action("这个玩法没有玩家管理指令"))
+    }
+    /// 玩法安排了真实身体动作时，Agent 沿用动作工具的等待和完成回执。
+    fn pending_group(&self, _world: &World, _actor: &str) -> Option<String> {
+        None
+    }
+    /// 关闭或成功切换玩法时，撤回仍由这个玩法持有的身体任务。
+    fn close(&mut self, _world: &mut World) {}
     /// 有人对人动了手（推搡、抢、偷、搜身、拿道具伤人），text 是一句写好的经过，
     /// 比如「骆川用鱼叉刺白鸦，健康 −40」；玩法可以记进自己的战报。
     fn clash(&mut self, _world: &World, _actor: &str, _target: &str, _text: &str) {}
@@ -61,6 +72,7 @@ trait Rules {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GameMode {
+    Frostlight(frostlight::Frostlight),
     Tide(tide::Tide),
     Werewolf(werewolf::Werewolf),
     Swordholder(swordholder::Swordholder),
@@ -70,6 +82,7 @@ pub enum GameMode {
 macro_rules! each {
     ($mode:expr, $m:ident => $body:expr) => {
         match $mode {
+            GameMode::Frostlight($m) => $body,
             GameMode::Tide($m) => $body,
             GameMode::Werewolf($m) => $body,
             GameMode::Swordholder($m) => $body,
@@ -90,12 +103,16 @@ impl World {
     /// 打开或关掉玩法（`None` 是关掉）。已经开着同一个玩法时不重来；换玩法时旧的直接关掉。
     pub fn set_game_mode(&mut self, choice: Option<&GameModeChoice>) -> Result<()> {
         let Some(choice) = choice else {
-            self.game_mode = None;
+            self.close_game_mode();
             return Ok(());
         };
         let same = matches!(
             (choice, &self.game_mode),
             (GameModeChoice::Tide { .. }, Some(GameMode::Tide(_)))
+                | (
+                    GameModeChoice::Frostlight { .. },
+                    Some(GameMode::Frostlight(_))
+                )
                 | (GameModeChoice::Werewolf { .. }, Some(GameMode::Werewolf(_)))
                 | (
                     GameModeChoice::Swordholder { .. },
@@ -107,6 +124,14 @@ impl World {
         }
         // 先建好新玩法再换上：打不开时原来的玩法不受影响
         let mode = match choice {
+            GameModeChoice::Frostlight {
+                seed,
+                duration_hours,
+            } => GameMode::Frostlight(frostlight::Frostlight::open(
+                self,
+                seed.unwrap_or(1).max(1),
+                *duration_hours,
+            )?),
             GameModeChoice::Tide { seed } => {
                 GameMode::Tide(tide::Tide::open(self, seed.unwrap_or(1).max(1))?)
             }
@@ -117,8 +142,15 @@ impl World {
                 swordholder::Swordholder::open(self, seed.unwrap_or(1).max(1), *day_hours)?,
             ),
         };
+        self.close_game_mode();
         self.game_mode = Some(mode);
         Ok(())
+    }
+
+    fn close_game_mode(&mut self) {
+        if let Some(mut mode) = self.game_mode.take() {
+            each!(&mut mode, m => m.close(self));
+        }
     }
 
     pub(crate) fn game_mode_boundary(&self) -> f64 {
@@ -175,6 +207,21 @@ impl World {
         let result = each!(&mut mode, m => m.act(self, actor, action));
         self.game_mode = Some(mode);
         result
+    }
+
+    pub fn game_mode_control(&mut self, action: &GameModeAction) -> Result<String> {
+        let Some(mut mode) = self.game_mode.take() else {
+            return Err(KernelError::action("现在没有开着的玩法"));
+        };
+        let result = each!(&mut mode, m => m.control(self, action));
+        self.game_mode = Some(mode);
+        result
+    }
+
+    pub fn game_mode_pending_group(&self, actor: &str) -> Option<String> {
+        self.game_mode
+            .as_ref()
+            .and_then(|g| each!(g, m => m.pending_group(self, actor)))
     }
 
     /// 有人对人动了手：告诉开着的玩法（见 `Rules::clash`）。

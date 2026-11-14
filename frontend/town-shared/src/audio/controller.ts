@@ -78,7 +78,7 @@ export function createGameAudio(
 
   return {
     /** 菜单与设定中心「声音与按键」页共用的开关 */
-    music: { enabled: music.enabled, toggle: music.toggle },
+    music,
     effects: { enabled: effects.enabled, toggle: effects.toggle },
     story: {
       enabled: () => story,

@@ -25,7 +25,9 @@ export async function clientSourceHash(root) {
       hash.update(await fs.readFile(full))
     }
   }
-  for (const relative of ['frontend/town-2d', 'frontend/town-shared']) await visit(relative)
+  // 手绘预制地图会作为 JSON 分块进入客户端；地图改变也必须重建，避免启动器放行旧布局。
+  for (const relative of ['frontend/town-2d', 'frontend/town-shared', 'data/maps'])
+    await visit(relative)
   return hash.digest('hex')
 }
 

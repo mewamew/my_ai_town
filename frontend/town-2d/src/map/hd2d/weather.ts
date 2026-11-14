@@ -224,6 +224,8 @@ ${hashNoise('weather')}`
 export interface SurfaceWeather {
   /** 积雪程度的倍数：朝上的面才积，树冠只积一半 */
   snow: number
+  /** 可选的积雪比例纹理（R 通道，沿材质贴图 UV）；由调用方管理生命周期。 */
+  snowMap?: THREE.Texture
   /** 变湿变深的倍数 */
   wet: number
   /** 随风摇摆（树） */
@@ -471,6 +473,7 @@ export class Weather3D {
         uWetFactor: { value: surface.wet },
         uSway: { value: surface.sway ? 1 : 0 },
       })
+      if (surface.snowMap) shader.uniforms.uSnowMap = { value: surface.snowMap }
       shader.vertexShader = (SHADE_VERTEX_HEAD + '\n' + shader.vertexShader)
         .replace(
           '#include <begin_vertex>',
@@ -484,7 +487,12 @@ export class Weather3D {
           vWeatherPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
           vWeatherUp = normalize(mat3(modelMatrix) * objectNormal).y;`
         )
-      shader.fragmentShader = (SHADE_FRAGMENT_HEAD + '\n' + shader.fragmentShader)
+      shader.fragmentShader = (
+        SHADE_FRAGMENT_HEAD +
+        (surface.snowMap ? '\nuniform sampler2D uSnowMap;' : '') +
+        '\n' +
+        shader.fragmentShader
+      )
         .replace(
           '#include <map_fragment>',
           `#include <map_fragment>
@@ -501,6 +509,14 @@ export class Weather3D {
             snowUp = mix(snowUp, smoothstep(0.55, 0.75, vMapUv.y), uSway);
           #endif
           float snowed = step(snowLevel, uSnow * 1.05 - 0.05) * snowUp * uSnowFactor;
+          ${
+            surface.snowMap
+              ? `#ifdef USE_MAP
+          // 清扫程度只乘积雪层，湿润、脚印与云影照常叠加。
+          snowed *= texture2D(uSnowMap, vMapUv).r;
+          #endif`
+              : ''
+          }
           // 雪地上踩出的脚印露出底下（踩踏图的 G，按像素格取）
           snowed *= 1.0 - step(0.3, texture2D(uTrail, ((snowP + 0.5) * ${f(PIXEL)} - uTrailOrigin) / uTrailSize).g);
           float under = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
@@ -523,7 +539,7 @@ export class Weather3D {
         )
     }
     material.customProgramCacheKey = () =>
-      `${beforeKey}|weather:${surface.snow}:${surface.wet}:${surface.sway ? 1 : 0}`
+      `${beforeKey}|weather:${surface.snow}:${surface.wet}:${surface.sway ? 1 : 0}:${surface.snowMap ? 1 : 0}`
   }
 
   /** 风和时间的 uniform：草丛和别的随风东西共用同一份 */

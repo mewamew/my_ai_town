@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 import { stageAppBundle } from '../app-bundle.mjs'
 import { draftTown, startManager } from './support.mjs'
 test('built app creates and runs a map with a read-only resource tree and no preconfigured map files', async () => {
@@ -12,6 +13,21 @@ test('built app creates and runs a map with a read-only resource tree and no pre
     bundle = path.join(temp, 'application'),
     data = path.join(temp, 'user-data')
   let m
+  async function contents(dir) {
+    const files = []
+    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+      const p = path.join(dir, entry.name)
+      if (entry.isDirectory()) files.push(...(await contents(p)))
+      else
+        files.push([
+          p,
+          createHash('sha256')
+            .update(await fs.readFile(p))
+            .digest('hex'),
+        ])
+    }
+    return files.sort(([a], [b]) => a.localeCompare(b))
+  }
   async function permissions(dir, mode) {
     for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
       const p = path.join(dir, entry.name)
@@ -23,10 +39,13 @@ test('built app creates and runs a map with a read-only resource tree and no pre
   try {
     stageAppBundle(bundle)
     const app = path.join(bundle, 'app')
+    const before = await contents(app)
     await permissions(bundle, 0o555)
-    await assert.rejects(fs.writeFile(path.join(app, 'data/maps/another-map.json'), '{}'), (e) =>
-      ['EACCES', 'EPERM'].includes(e.code)
-    )
+    // Windows chmod 不限制目录创建；仍校验完整发布资源树未被运行流程写入。
+    if (process.platform !== 'win32')
+      await assert.rejects(fs.writeFile(path.join(app, 'data/maps/another-map.json'), '{}'), (e) =>
+        ['EACCES', 'EPERM'].includes(e.code)
+      )
     m = await startManager(data, { app, web: path.join(bundle, 'web') })
     assert.match(await (await fetch(m.origin + '/')).text(), /AI小镇/)
     assert.equal((await fetch(m.origin + '/game.html')).status, 200)
@@ -51,11 +70,12 @@ test('built app creates and runs a map with a read-only resource tree and no pre
     assert.equal(opened.mapHash, document.content_hash)
     assert.equal(
       (await fs.readdir(path.join(app, 'data/maps'))).sort().join(','),
-      '2d-town,broken-towers,spring-valley'
+      '2d-town,broken-towers,frostlight,spring-valley'
     )
     const actual = JSON.parse(await fs.readFile(path.join(data, 'towns', saved.id, 'map.json')))
     assert.deepEqual(actual, document)
     await m.api(`/${saved.id}/close`, {})
+    assert.deepEqual(await contents(app), before, '运行小镇不能改写发布资源')
   } catch (error) {
     if (m) console.error(m.output())
     for (const id of await fs.readdir(path.join(data, 'towns')).catch(() => [])) {

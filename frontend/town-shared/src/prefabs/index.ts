@@ -6,9 +6,11 @@ import type {
   TemplateFields,
   VillagerLook,
 } from '../protocol'
+import type { WeatherKind } from '../weather/types'
 import { battleRoyale } from './battleRoyale'
 import { swordholder } from './swordholder'
 import { werewolf } from './werewolf'
+import { frostlight } from './frostlight'
 
 // 预制小镇：选它就是玩某个玩法，开局前只改几项设置，不用自己建岛、写世界观、一个个请人。
 // 建镇参数是固定的，同一版建镇生成器出来的岛都一样；每开一局都走建镇流程存成一个新小镇，
@@ -26,6 +28,8 @@ export interface Prefab {
   worldview: string
   /** 建镇参数，交给建镇流程生成地图 */
   spec: Record<string, unknown>
+  /** 独立设计的地图按需加载，成品仍交管理服务 /drafts 校验；不挤进首页主包。 */
+  document?: () => Promise<unknown>
   /** 开局时打开的玩法；种子由开局设置决定 */
   gameMode: GameModeChoice
   /** 选手：村民库里的模板，按号码排，人数从头取；有 cast 时只借它们入住（长相也借，除非 cast 自己捏了） */
@@ -34,6 +38,8 @@ export interface Prefab {
   cast?: PrefabPersona[]
   /** 开局时定的气候（荒岛是热带：不下雪、雷暴少、淋雨湿得慢）；没写时照小镇原样 */
   climate?: Climate
+  /** 开局锁定的天气；未指定的剧本沿用世界自然天气。 */
+  weather?: WeatherKind
   /** 开局时调的额度（每人每天、全镇总量……）；没写的项不动 */
   limits?: Partial<AgentLimits>
   /** 开局时布置地图上的道具：先按实例编号撤掉建镇生成器放的几件，再放这一局要的 */
@@ -87,7 +93,7 @@ export function seedOption(label: string, randomHint: string): PrefabOption {
   }
 }
 
-export const PREFABS: Prefab[] = [battleRoyale, werewolf, swordholder]
+export const PREFABS: Prefab[] = [battleRoyale, werewolf, swordholder, frostlight]
 
 export function prefabOf(id: string | null | undefined): Prefab | null {
   return PREFABS.find((p) => p.id === id) ?? null

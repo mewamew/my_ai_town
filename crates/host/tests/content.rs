@@ -7,11 +7,12 @@ use host::application::{
 use kernel::avatar::WalkMap;
 use serde_json::{json, Value};
 
-/// 随应用发的内置地图（管理服务的 BUILTIN_TOWNS）
-const PUBLISHED_MAPS: [&str; 3] = [
+/// 随应用发布的内置地图和独立玩法地图。
+const PUBLISHED_MAPS: [&str; 4] = [
     "data/maps/2d-town/map.json",
     "data/maps/spring-valley/map.json",
     "data/maps/broken-towers/map.json",
+    "data/maps/frostlight/map.json",
 ];
 const LIBRARY: &str = "config/resident-library";
 

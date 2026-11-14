@@ -137,6 +137,13 @@ pub enum ClientMsg {
         #[serde(default)]
         game_mode: Option<crate::GameModeChoice>,
     },
+    /// 玩家管理正在进行的玩法；与居民的 mode_action 分开鉴权和结算。
+    /// 回 WorldSettingsSaved，成功后广播名册；不打开新玩法，也不冒充居民。
+    GameModeControl {
+        request_id: String,
+        world_id: String,
+        command: crate::GameModeAction,
+    },
     GetProps,
     Content {
         request_id: String,
@@ -374,6 +381,7 @@ impl ClientMsg {
             | DeleteRecording { request_id, .. }
             | SetStrangers { request_id, .. }
             | SetGameMode { request_id, .. }
+            | GameModeControl { request_id, .. }
             | Content { request_id, .. }
             | ValidateProp { request_id, .. }
             | SaveProp { request_id, .. }

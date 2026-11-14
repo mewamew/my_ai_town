@@ -7,6 +7,253 @@ use agent::{
 };
 use serde_json::json;
 
+/// 玩法交出的身体工作必须进入普通 pending 链路；存读档后继续等同一组动作，
+/// 不能把「已接受工作」当成完成回执，让下一次模型回复打断刚安排的行走。
+#[test]
+fn frostlight_model_work_waits_for_its_action_group_across_restart() {
+    use agent::completion::{local_tool_request_body, parse_local_tool_reply};
+    let wire_reply = |arguments: serde_json::Value| {
+        json!({
+            "choices":[{"finish_reason":"stop","message":{"role":"assistant","content":json!({
+                "thought":"先承担一轮实际运输。", "calls":[{"name":"mode_action","arguments":arguments}]
+            }).to_string()}}]
+        })
+    };
+    fn town() -> kernel::World {
+        let mut w = world();
+        w.topo.locales.get_mut("loc_a").unwrap().name = "热源广场诊所".into();
+        w.topo.locales.get_mut("loc_b").unwrap().name = "林场粮仓工坊".into();
+        w.spawn("r2", "邻居", "loc_a").unwrap();
+        w.set_physiology(protocol::PhysiologySwitches {
+            fullness: false,
+            energy: false,
+            water: false,
+            health: false,
+            weather: false,
+        });
+        w
+    }
+    let mut w = town();
+    let mut runtime = runtime(&mut w, Limits::default());
+    w.set_game_mode(Some(&protocol::GameModeChoice::Frostlight {
+        seed: Some(1),
+        duration_hours: Some(2),
+    }))
+    .unwrap();
+    // 先接收开局和寒潮公告，让这轮运输跨过第80分钟的风暴边界。
+    w.step(65.0);
+    let q = life_request(&mut runtime, &mut w);
+    let body = local_tool_request_body(&q, "qwen3.5:2b");
+    let tail: serde_json::Value = serde_json::from_str(
+        body["messages"].as_array().unwrap().last().unwrap()["content"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        tail["decision_state"]["frostlight"]["actions"]
+            .as_array()
+            .is_some_and(|a| !a.is_empty()),
+        "本地尾部摘要必须保留真实玩法规则，不能只重列普通地图"
+    );
+    assert!(tail["decision_state"]["mode_action_tool"]["description"]
+        .as_str()
+        .unwrap()
+        .contains("fuel"));
+    let rejected = parse_local_tool_reply(
+        &wire_reply(json!({"action":"work","target":"imaginary_coal_shed"})),
+        &q,
+    );
+    assert!(runtime.on_reply(&mut w, "r1", q.stamp.id, q.stamp.epoch, rejected, 1));
+    assert!(
+        w.game_mode_pending_group("r1").is_none(),
+        "解析成功不等于世界执行成功"
+    );
+    let q = life_request(&mut runtime, &mut w);
+    let body = local_tool_request_body(&q, "qwen3.5:2b");
+    let tail: serde_json::Value = serde_json::from_str(
+        body["messages"].as_array().unwrap().last().unwrap()["content"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        tail["decision_state"]["latest_tool_result"]["receipt"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("fuel"),
+        "世界拒绝原因必须留在当前决策摘要供下一轮纠正"
+    );
+    assert!(tail["decision_state"].get("frostlight").is_some());
+    let accepted =
+        parse_local_tool_reply(&wire_reply(json!({"action":"work","target":"fuel"})), &q);
+    assert!(runtime.on_reply(&mut w, "r1", q.stamp.id, q.stamp.epoch, accepted, 1));
+    let group = w
+        .game_mode_pending_group("r1")
+        .expect("真实工作应已排入动作组");
+    assert!(runtime
+        .session("r1")
+        .unwrap()
+        .pending
+        .iter()
+        .any(|p| matches!(p,
+        agent::session::PendingTool::Actions { group_id, .. } if *group_id == group)));
+    w.step(1.0);
+    // 正常管理指令必须更新玩法状态，但不能把全镇在途工作打断。
+    for command in [
+        json!({"action":"heat", "target":"2"}),
+        json!({"action":"law", "target":"soup"}),
+    ] {
+        w.game_mode_control(&serde_json::from_value(command).unwrap())
+            .unwrap();
+    }
+    let _ = runtime.poll(&mut w, true);
+    assert_eq!(
+        w.action_group("r1", &group).unwrap().status,
+        protocol::GroupStatus::Running,
+        "调温和法令公告不能取消已接受的运输"
+    );
+    let protocol::GameModeContext::Frostlight(context) = w.game_mode_context("r1").unwrap() else {
+        panic!("expected frostlight context");
+    };
+    assert!(context.resources.contains("0.455"));
+    assert!(context.resources.contains("节粮汤"));
+    let saved_world = w.snapshot();
+    let saved_runtime = serde_json::to_value(runtime.state()).unwrap();
+    let mut recovered = town();
+    recovered.restore_snapshot(saved_world).unwrap();
+    let mut runtime =
+        ResidentRuntime::restore(serde_json::from_value(saved_runtime).unwrap(), &recovered)
+            .unwrap();
+    assert!(runtime
+        .session("r1")
+        .unwrap()
+        .pending
+        .iter()
+        .any(|p| matches!(p,
+        agent::session::PendingTool::Actions { group_id, .. } if *group_id == group)));
+    recovered.step(15.0);
+    let _ = runtime.poll(&mut recovered, true);
+    assert_eq!(
+        recovered.action_group("r1", &group).unwrap().status,
+        protocol::GroupStatus::Running,
+        "风暴阶段公告不能取消仍在劳动或返程的任务"
+    );
+    let protocol::GameModeView::Frostlight(mode) = recovered.game_mode_view().unwrap() else {
+        panic!("expected frostlight");
+    };
+    assert_eq!(mode.phase, protocol::FrostlightPhase::Storm);
+    recovered.step(25.0);
+    let _ = runtime.poll(&mut recovered, true);
+    assert_eq!(
+        recovered.action_group("r1", &group).unwrap().status,
+        protocol::GroupStatus::Succeeded
+    );
+    assert!(!runtime
+        .session("r1")
+        .unwrap()
+        .pending
+        .iter()
+        .any(|p| matches!(p,
+        agent::session::PendingTool::Actions { group_id, .. } if *group_id == group)));
+    let protocol::GameModeView::Frostlight(mode) = recovered.game_mode_view().unwrap() else {
+        panic!("expected frostlight");
+    };
+    assert_eq!(
+        mode.people
+            .iter()
+            .find(|p| p.id == "r1")
+            .unwrap()
+            .contribution,
+        1
+    );
+    let protocol::GameModeContext::Frostlight(context) = recovered.game_mode_context("r1").unwrap()
+    else {
+        panic!("expected frostlight context");
+    };
+    assert!(context.actions.iter().any(|s| s.contains("来不及")));
+    assert!(!context
+        .actions
+        .iter()
+        .any(|s| s.starts_with("mode_action(")));
+    assert!(context.actions.iter().any(|s| s.contains("wait_for(")));
+}
+
+#[test]
+fn local_decision_summary_preserves_each_existing_modes_authoritative_context() {
+    use agent::completion::local_tool_request_body;
+    use kernel::{
+        avatar::{Spot, WalkMap},
+        navigation::space::Terrain,
+    };
+    use protocol::GameModeChoice;
+    for choice in [
+        GameModeChoice::Tide { seed: Some(7) },
+        GameModeChoice::Werewolf {
+            seed: Some(7),
+            day_hours: Some(6),
+        },
+        GameModeChoice::Swordholder {
+            seed: Some(7),
+            day_hours: Some(6),
+        },
+    ] {
+        let mut w = world();
+        for n in 2..=9 {
+            w.spawn(&format!("r{n}"), &format!("居民{n}"), "loc_a")
+                .unwrap();
+        }
+        w.walk_map = Some(std::sync::Arc::new(WalkMap {
+            terrain: Some(Terrain {
+                origin: [0.0, 0.0],
+                step: 1.0,
+                columns: 3,
+                rows: 3,
+                heights: vec![2.0; 9],
+            }),
+            stations: [(
+                "st_a".into(),
+                Spot {
+                    locale: "loc_a".into(),
+                    space: "town_outdoor".into(),
+                    position: [1.0, 1.0],
+                },
+            )]
+            .into(),
+            ..Default::default()
+        }));
+        let mut r = runtime(&mut w, Limits::default());
+        w.set_game_mode(Some(&choice)).unwrap();
+        w.step(0.1);
+        let context = w.game_mode_context("r1").unwrap();
+        let request = life_request(&mut r, &mut w);
+        let observed = request
+            .messages
+            .iter()
+            .rev()
+            .find_map(|message| {
+                serde_json::from_str::<serde_json::Value>(&message.content)
+                    .ok()?
+                    .get("observation")?
+                    .get(context.key())
+                    .cloned()
+            })
+            .expect("真实观察包含当前玩法，空字段已经由题面层省略");
+        let body = local_tool_request_body(&request, "qwen3.5:2b");
+        let tail: serde_json::Value = serde_json::from_str(
+            body["messages"].as_array().unwrap().last().unwrap()["content"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            tail["decision_state"][context.key()],
+            observed,
+            "{choice:?}"
+        );
+    }
+}
+
 #[test]
 fn outdated_replies_are_counted_and_two_revision_conflicts_in_a_row_stop_only_this_resident() {
     let mut w = world();

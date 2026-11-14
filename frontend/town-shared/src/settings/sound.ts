@@ -2,6 +2,8 @@ import type { SettingsPage } from '../settingsCenter'
 import { el } from '../dom'
 import { isTouch } from '../platform'
 import { settingRow, switchControl } from './controls'
+import type { MusicControls } from '../audio/music'
+import { musicVolumeControl } from '../audio/player'
 
 // 声音与按键：音乐/音效开关和菜单里的两个开关是同一个状态（走同一份 localStorage），
 // HD-2D 按键说明是静态内容，不需要保存；触屏上换成手势和屏幕按钮的说明。
@@ -63,14 +65,14 @@ interface SoundSwitch {
 
 export function createSoundPage(
   game: boolean,
-  audio: { music: SoundSwitch; story: SoundSwitch; effects: SoundSwitch }
+  audio: { music: MusicControls; story: SoundSwitch; effects: SoundSwitch }
 ): SettingsPage {
   const page = el('section', '', 'spage')
   page.append(el('h2', '声音与按键'))
   const rows = el('div', '', 'set-rows')
   const toggles = (
     [
-      [audio.music, '音乐', '按地图风格、时段和天气换曲，大逃杀按潮水的进度换'],
+      [audio.music, '音乐', '自动配乐随小镇、天气和剧情变化；在音乐播放器中也可手选曲目'],
       [
         audio.story,
         '剧情音乐',
@@ -83,9 +85,12 @@ export function createSoundPage(
       sound.toggle()
       sync()
     })
+    if (sound === audio.music) control.el.setAttribute('data-music-control', '')
     rows.append(settingRow(label, description, control.el))
     return { control, on: sound.enabled }
   })
+  const volume = musicVolumeControl(audio.music)
+  rows.append(settingRow('音乐音量', '即时生效，记住这台设备的音量；0% 为静音', volume.el))
   page.append(rows)
   const keys = isTouch() ? TOUCH_2D : KEYS_2D
   for (const [caption, list] of keys) {
@@ -96,7 +101,10 @@ export function createSoundPage(
   }
   const sync = () => {
     for (const toggle of toggles) toggle.control.set(toggle.on())
+    volume.sync(audio.music.state().volume)
   }
+  const unsubscribe = audio.music.subscribe(sync)
+  window.addEventListener('pagehide', unsubscribe, { once: true })
   return {
     id: 'sound',
     group: 'game',

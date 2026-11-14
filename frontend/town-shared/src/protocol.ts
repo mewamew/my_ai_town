@@ -658,6 +658,7 @@ export type GameModeView =
   | ({ kind: 'tide' } & TideView)
   | ({ kind: 'werewolf' } & WerewolfView)
   | ({ kind: 'swordholder' } & SwordholderView)
+  | ({ kind: 'frostlight' } & FrostlightView)
 /** 打开哪个玩法、带什么设置；set_game_mode 不带它就是关掉 */
 export type GameModeChoice =
   | { kind: 'tide'; seed?: number }
@@ -665,6 +666,76 @@ export type GameModeChoice =
   | { kind: 'werewolf'; seed?: number; day_hours?: number }
   /** 执剑人之夜：seed 定下演说和表态的先后、平票时抽签；day_hours 是白天自由活动几小时（天亮到 16:30 敲钟） */
   | { kind: 'swordholder'; seed?: number; day_hours?: number }
+  | { kind: 'frostlight'; seed?: number; duration_hours?: number }
+
+export interface GameModeAction {
+  action: string
+  target?: string
+  text?: string
+  reason?: string
+}
+export type FrostlightPhase = 'preparation' | 'cold' | 'storm' | 'over'
+export interface FrostlightPolicies {
+  extended_shift: boolean
+  soup: boolean
+  mutual_aid: boolean
+}
+export interface FrostlightStation {
+  id: string
+  name: string
+  locale: string
+  available: number
+}
+export interface FrostlightWork {
+  kind: string
+  locale: string
+  ends_at: number
+}
+export interface FrostlightPerson {
+  id: string
+  name: string
+  role: string
+  contribution: number
+  work?: FrostlightWork
+  gone: boolean
+}
+export interface FrostlightNews {
+  at: number
+  text: string
+}
+export interface FrostlightEnding {
+  kind: string
+  title: string
+  text: string
+  survivors: number
+}
+export interface FrostlightView {
+  phase: FrostlightPhase
+  now: number
+  until: number
+  storm_at: number
+  ends_at: number
+  temperature: number
+  shelter_temperature: number
+  cold_minutes: number
+  hunger_minutes: number
+  unrest_minutes: number
+  fuel: number
+  food: number
+  materials: number
+  heat: number
+  stress: number
+  hope: number
+  discontent: number
+  insulation: number
+  generator: string
+  stations: FrostlightStation[]
+  policies: FrostlightPolicies
+  aid_used: boolean
+  people: FrostlightPerson[]
+  news: FrostlightNews[]
+  ending?: FrostlightEnding
+}
 
 /** 潮水圈里的一个圈：圆心和半径都是行走地图上的米（x 和地面上的 z） */
 export interface TideCircle {
@@ -1107,6 +1178,12 @@ export type ClientMsg =
       request_id: string
       world_id: string
       game_mode?: GameModeChoice | null
+    }
+  | {
+      type: 'game_mode_control'
+      request_id: string
+      world_id: string
+      command: GameModeAction
     }
   | { type: 'get_props' }
   | {

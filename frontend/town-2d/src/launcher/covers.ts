@@ -20,6 +20,7 @@ const SIGNATURE: Record<string, Scenery> = {
   'prefab-battle-royale': { minutes: 10 * 60 + 30, weather: 'clear' },
   'prefab-swordholder': { minutes: 21 * 60, weather: 'clear' },
   'prefab-werewolf': { minutes: 22 * 60, weather: 'clear' },
+  'prefab-frostlight': { minutes: 17 * 60 + 30, weather: 'snow' },
 }
 /** 这个小镇最好看的时刻和天气；玩家自己建的小镇没有 */
 export const signatureOf = (id: string): Scenery | undefined => SIGNATURE[id]

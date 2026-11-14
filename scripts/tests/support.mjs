@@ -21,6 +21,7 @@ export function townMap(document) {
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
     timeout: 60000,
+    windowsHide: true,
   })
 }
 export function gate(document) {
@@ -41,7 +42,14 @@ export function rejected(document) {
  */
 export async function startManager(
   home,
-  { app = root, web = path.join(root, 'frontend/town-2d/dist'), maxRunning = 1 } = {}
+  {
+    app = root,
+    web = path.join(root, 'frontend/town-2d/dist'),
+    maxRunning = 1,
+    mock = true,
+    managerBinary = binary('town-manager'),
+    hostBinary = binary('host'),
+  } = {}
 ) {
   await fs.mkdir(path.join(home, 'config'), { recursive: true })
   await fs
@@ -52,14 +60,14 @@ export async function startManager(
   const ready = path.join(home, 'manager-ready.json')
   await fs.rm(ready, { force: true })
   const child = spawn(
-    binary('town-manager'),
+    managerBinary,
     [
-      ...['--root', home, '--app', app, '--web', web, '--host-bin', binary('host')],
+      ...['--root', home, '--app', app, '--web', web, '--host-bin', hostBinary],
       ...['--port', '0', '--ready-file', ready, '--max-running', String(maxRunning)],
-      '--mock-llm',
+      ...(mock ? ['--mock-llm'] : []),
       '--stop-on-stdin-close',
     ],
-    { stdio: ['pipe', 'pipe', 'pipe'] }
+    { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true }
   )
   let output = ''
   for (const stream of [child.stdout, child.stderr]) stream.on('data', (b) => (output += b))

@@ -25,10 +25,17 @@ export const prefabRow = (maps: MapEntry[]): (MapEntry | Prefab)[] => [
 /** 生成预制小镇的岛并存成内置小镇，返回小镇编号 */
 export async function generatePrefab(prefab: Prefab) {
   const request = creationRequest()
-  const draft = await request<{ id: string; version: string }>('/preview', {
-    request_id: newId(),
-    spec: prefab.spec,
-  })
+  // 手绘剧本使用随客户端分包的独立地图，也必须经过管理服务同一套校验和草稿保存。
+  // 每次新开一局都提交新的草稿，不改写已有小镇或跳过 content_hash 校验。
+  const draft = prefab.document
+    ? await request<{ id: string; version: string }>('/drafts', {
+        request_id: newId(),
+        document: await prefab.document(),
+      })
+    : await request<{ id: string; version: string }>('/preview', {
+        request_id: newId(),
+        spec: prefab.spec,
+      })
   const saved = await request<{ id: string }>('/save', {
     draft_id: draft.id,
     expected_version: draft.version,

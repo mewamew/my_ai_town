@@ -97,6 +97,7 @@ fn client_variants() -> Vec<String> {
         DeleteRecording,
         SetStrangers,
         SetGameMode,
+        GameModeControl,
         GetProps,
         Content,
         ValidateProp,

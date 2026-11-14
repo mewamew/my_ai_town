@@ -172,6 +172,12 @@ impl Town {
         let port = listener.local_addr().unwrap().port();
         drop(listener);
         let mut command = Command::new(env!("CARGO_BIN_EXE_host"));
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            // 验收会多次启动隔离世界，和桌面管理服务一样不为子进程弹控制台。
+            command.creation_flags(0x0800_0000);
+        }
         command
             .current_dir(&self.dir)
             .args(["--speed", "0", "--port", &port.to_string()])

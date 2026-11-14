@@ -2,6 +2,7 @@ import type {
   ClientMsg,
   Climate,
   GameModeChoice,
+  GameModeAction,
   PhysiologySwitches,
   ReelView,
   ServerMsg,
@@ -202,6 +203,17 @@ export function createWorldSettings(
   return {
     state: () => state,
     online: () => online,
+    controlGameMode(command: GameModeAction, done: Done) {
+      submit(
+        (current, id) => ({
+          type: 'game_mode_control',
+          world_id: current.world_id,
+          request_id: id,
+          command,
+        }),
+        done
+      )
+    },
     /** 开局向导保存世界观；回执同首次对话框 */
     saveWorldview(text: string, done: Done) {
       if (!state) done(false, '还没读到世界设定')

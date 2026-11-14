@@ -524,11 +524,13 @@ fn decision_state(request: &AgentRequest) -> Option<Value> {
                         observation = fields.clone();
                         observation_stale = false;
                     }
-                } else if (call.name == "run_actions" && value.get("group").is_some())
+                } else if (matches!(call.name.as_str(), "run_actions" | "mode_action")
+                    && value.get("group").is_some())
                     || (value["ok"] == true
                         && matches!(
                             call.name.as_str(),
                             "run_actions"
+                                | "mode_action"
                                 | "wait_for"
                                 | "interact"
                                 | "offer_invitation"
@@ -588,6 +590,29 @@ fn decision_state(request: &AgentRequest) -> Option<Value> {
             put(key, value.clone());
         }
     }
+    // 按协议登记的玩法名字识别权威观察，不反序列化无标签的上下文：
+    // 狼人杀和执剑人字段形状相近，反序列化可能把后者认成前者。
+    // 不在本地模型适配器维护另一份玩法名单。
+    // 先于道具与完整地图预留空间，避免小上下文只看到一般生活设施而丢掉本局规则。
+    for (key, value) in &observation {
+        if serde_json::from_value::<protocol::GameModeChoice>(json!({"kind": key})).is_ok() {
+            put(key, value.clone());
+        }
+    }
+    if let Some(tool) = request
+        .tools
+        .iter()
+        .find(|tool| tool["function"]["name"] == "mode_action")
+    {
+        put(
+            "mode_action_tool",
+            selected(&tool["function"], &["description", "parameters"]),
+        );
+    }
+    // 把最近一次真实拒绝原因放在可选地图/道具详情之前，模型才能纠正下一次调用。
+    if let Some(result) = last_result {
+        put("latest_tool_result", result);
+    }
     for key in ["identity", "goals", "goals_source", "pending_operations"] {
         if let Some(value) = state.get(key) {
             put(key, value.clone());
@@ -616,9 +641,6 @@ fn decision_state(request: &AgentRequest) -> Option<Value> {
         if let Some(value) = observation.get(key) {
             put(key, value.clone());
         }
-    }
-    if let Some(result) = last_result {
-        put("latest_tool_result", result);
     }
     // 静态地图由系统提示追加的完整 JSON 提供；不从角色自述或工具自由文本推断地点。
     if offers_actions(request) {
