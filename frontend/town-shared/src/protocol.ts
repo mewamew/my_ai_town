@@ -614,6 +614,41 @@ export interface PhysiologySwitches {
 }
 /** 气候：温带照天气规则的转移表；热带不下雪，转到雷暴的机会减半，淋雨湿得慢一半 */
 export type Climate = 'temperate' | 'tropical'
+/** 选择和执行计划随世界保存；恢复时不重新生成道具、居民或玩法配置。 */
+export interface PrefabSetupSelection {
+  players: number
+  models: (ModelChoice | null)[]
+  needs: boolean
+  picks: [string, string][]
+  seeds: [string, number][]
+}
+export type PrefabSetupStep =
+  | { kind: 'worldview'; text: string }
+  | { kind: 'physiology'; switches: PhysiologySwitches }
+  | { kind: 'climate'; climate: Climate }
+  | { kind: 'weather'; weather: WeatherKind }
+  | { kind: 'remove_prop'; id: string }
+  | { kind: 'place_prop'; instance: Instance; near?: { space: string; position: [number, number] } }
+  | { kind: 'limits'; limits: Partial<AgentLimits> }
+  | {
+      kind: 'join'
+      template_id: string
+      model?: ModelChoice
+      persona?: Omit<TemplateFields, 'appearance'> & { appearance?: Appearance }
+      look?: VillagerLook
+    }
+  | { kind: 'game_mode'; choice: GameModeChoice }
+export interface PrefabSetupPlan {
+  prefab: string
+  selection: PrefabSetupSelection
+  steps: PrefabSetupStep[]
+}
+export interface PrefabSetupState {
+  id: string
+  plan: PrefabSetupPlan
+  next_step: number
+  joined: string[]
+}
 export interface WorldSettingsState {
   world_id: string
   revision: number
@@ -636,6 +671,7 @@ export interface WorldSettingsState {
   strangers: boolean
   /** 开着的玩法（如 'tide'）；没开时没有这一项。随存档保存 */
   game_mode?: GameModeId
+  prefab_setup?: PrefabSetupState
 }
 
 /** 录下来的一卷：从开始录到停的一段。现实时刻是 Unix 毫秒，小镇时间写成时钟 */
@@ -957,6 +993,13 @@ export type ServerMsg =
       environment: WeatherView | null
     }
   | { type: 'world_settings'; state: WorldSettingsState }
+  | {
+      type: 'prefab_setup_saved'
+      request_id: string
+      ok: boolean
+      message: string
+      state: PrefabSetupState | null
+    }
   | { type: 'world_settings_saved'; request_id: string; ok: boolean; message: string }
   | { type: 'props'; catalog: PropCatalog }
   | {
@@ -1148,6 +1191,21 @@ export type ClientMsg =
       kind?: WeatherKind
     }
   | { type: 'get_world_settings' }
+  | {
+      type: 'begin_prefab_setup'
+      request_id: string
+      world_id: string
+      setup_id: string
+      expected_revision: number
+      plan: PrefabSetupPlan
+    }
+  | {
+      type: 'advance_prefab_setup'
+      request_id: string
+      world_id: string
+      setup_id: string
+      next_step: number
+    }
   | {
       type: 'set_worldview'
       request_id: string

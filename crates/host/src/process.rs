@@ -7,20 +7,56 @@ use std::{
 };
 
 static STOP: AtomicBool = AtomicBool::new(false);
+static PARENT_GONE: AtomicBool = AtomicBool::new(false);
 
 pub fn stopping() -> bool {
     STOP.load(Ordering::Relaxed)
 }
 
+pub fn parent_gone() -> bool {
+    PARENT_GONE.load(Ordering::Relaxed)
+}
+
+/// 仅 host 消费信号请求；保存失败后仍可接收新的退出信号。
+pub fn take_stop_request() -> bool {
+    STOP.swap(false, Ordering::Relaxed)
+}
+
 /// 由管理进程启动时使用：管理进程握着本进程 stdin 的写端且从不写入，它一旦退出（包括被
 /// SIGKILL），管道关闭、这里读到 EOF，走与 SIGTERM 相同的保存退出流程，不留孤儿进程。
 pub fn stop_when_stdin_closes() {
-    std::thread::spawn(|| {
+    watch_stdin(false);
+}
+
+/// 只有父进程真的消失才启用兜底期限。API 关闭失败不能启动此计时器，也不能断开 stdin。
+/// 独立线程保证主线程卡在写盘时也不留下无限存活的隐藏世界；强退无法保证未保存进度。
+pub fn stop_with_parent() {
+    watch_stdin(true);
+}
+
+fn watch_stdin(bounded: bool) {
+    std::thread::spawn(move || {
         let mut sink = [0u8; 256];
         let mut stdin = io::stdin().lock();
-        while matches!(stdin.read(&mut sink), Ok(n) if n > 0) {}
-        eprintln!("[host] 标准输入已关闭，按父进程退出处理：保存后退出");
+        loop {
+            match stdin.read(&mut sink) {
+                Ok(0) => break,
+                Ok(_) => {}
+                // 信号可能打断阻塞读，不能把一次 SIGTERM 误认成父进程消失并启动强退倒计时。
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
+            }
+        }
+        if bounded {
+            PARENT_GONE.store(true, Ordering::Relaxed);
+            std::thread::spawn(|| {
+                std::thread::sleep(std::time::Duration::from_secs(15));
+                // 此处不写日志：磁盘或日志管道卡住也必须能退出。
+                std::process::exit(1);
+            });
+        }
         STOP.store(true, Ordering::Relaxed);
+        eprintln!("[host] 标准输入已关闭，按父进程退出处理：保存后退出");
     });
 }
 

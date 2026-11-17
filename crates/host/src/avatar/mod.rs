@@ -111,14 +111,29 @@ impl Runtime {
         };
     }
 
-    /// 每拍给在线的控制者发一次化身状态。
-    pub(crate) fn avatar_publish(&self, clients: &Clients) {
-        if let Some(lease) = self.avatar_control.lease.as_ref().filter(|l| l.online()) {
+    /// 每拍给在线的控制者发一次化身状态；世界已让目标离场时，撤销租约并补发最后一次退出状态。
+    pub(crate) fn avatar_publish(&mut self, clients: &Clients) {
+        let connection = self
+            .avatar_control
+            .lease
+            .as_ref()
+            .filter(|l| l.online())
+            .map(|l| l.connection);
+        if !self
+            .world
+            .actor(self.world.player_id())
+            .is_some_and(|a| a.present())
+        {
+            // depart 在本拍的世界推进或动作结算里已清掉附身；租约和方向输入不落盘，直接作废。
+            // 必须保留原连接来发这一次消息，不能清完租约后让页面永远等不到 controlled=false。
+            self.avatar_control = Control::default();
+        }
+        if let Some(connection) = connection {
             network::send_to(
                 clients,
-                lease.connection,
+                connection,
                 &ServerMsg::AvatarState {
-                    state: self.avatar_session(lease.connection),
+                    state: self.avatar_session(connection),
                 },
             );
         }

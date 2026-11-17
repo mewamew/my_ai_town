@@ -627,7 +627,7 @@ fn werewolf_judge_runs_a_whole_game_through_turns_deadlines_and_a_reload() {
         .collect();
     // 吃喝睡关着（预制小镇的默认），四天里没人饿死渴死
     let fresh = || {
-        let mut w = common::world_with(common::tiny_topology(), 7.0 * HOUR, &people);
+        let mut w = island_with(&people);
         w.set_physiology(PhysiologySwitches {
             fullness: false,
             energy: false,
@@ -718,6 +718,7 @@ fn werewolf_judge_runs_a_whole_game_through_turns_deadlines_and_a_reload() {
     let mut told_to_stay = false;
     let mut died_at_night = false;
     let mut heard_reason = false;
+    let mut possessed_exile = None;
     // 世界日志：中途读档换了世界，边走边收
     let mut logged = vec![];
     for _ in 0..5000 {
@@ -725,6 +726,11 @@ fn werewolf_judge_runs_a_whole_game_through_turns_deadlines_and_a_reload() {
         let v = werewolf(&w);
         if v.phase == WerewolfPhase::Over {
             break;
+        }
+        if v.phase == WerewolfPhase::LastWords && possessed_exile.is_none() {
+            let id = id_of(v.turn.unwrap());
+            w.possess(&id).unwrap();
+            possessed_exile = Some(id);
         }
         // 发言、投票这些有期限的回合照常速；发言记下了交的时候写的打算（只给旁观的人看）
         if v.phase == WerewolfPhase::Speech {
@@ -826,6 +832,10 @@ fn werewolf_judge_runs_a_whole_game_through_turns_deadlines_and_a_reload() {
         }
     }
     assert!(skipped && abstained && reloaded && told_to_stay && died_at_night && heard_reason);
+    let exiled = w.actor(possessed_exile.as_deref().unwrap()).unwrap();
+    assert!(!exiled.present());
+    assert!(!exiled.needs.body.dead);
+    assert!(w.possessed().is_none(), "被放逐的人不能继续占用玩家控制");
     let v = werewolf(&w);
     // 议事、遗言、狼人频道写进日志时都带着「一段话」：发言人、座号、场合和原话，正文还是原来那一行
     logged.extend(w.take_events());
@@ -881,6 +891,167 @@ fn werewolf_judge_runs_a_whole_game_through_turns_deadlines_and_a_reload() {
 
     w.set_game_mode(None).unwrap();
     no_trace(&w);
+}
+
+/// 同一个刀口：仅被刀的猎人天亮后仍能开枪，同夜被毒则当晚倒下，不能获得开枪回合。
+#[test]
+fn werewolf_hunter_cannot_shoot_when_killed_and_poisoned_the_same_night() {
+    let ids: Vec<String> = (1..=9).map(|n| format!("r{n}")).collect();
+    let people: Vec<(&str, &str, &str)> = ids
+        .iter()
+        .map(|id| (id.as_str(), id.as_str(), "loc_a"))
+        .collect();
+    for poisoned in [false, true] {
+        let mut w = common::world_with(common::tiny_topology(), 7.0 * HOUR, &people);
+        w.set_physiology(PhysiologySwitches {
+            fullness: false,
+            energy: false,
+            water: false,
+            health: false,
+            weather: false,
+        });
+        w.set_game_mode(Some(&GameModeChoice::Werewolf {
+            seed: Some(11),
+            day_hours: Some(6),
+        }))
+        .unwrap();
+        let v = werewolf(&w);
+        let hunter = v
+            .seats
+            .iter()
+            .find(|s| s.role == WerewolfRole::Hunter)
+            .unwrap();
+        let (hunter_seat, hunter_id) = (hunter.seat, hunter.id.clone());
+        let witch = v
+            .seats
+            .iter()
+            .find(|s| s.role == WerewolfRole::Witch)
+            .unwrap();
+        let witch_seat = witch.seat;
+
+        // 从开局、逐人发言推进到第一夜。只交题面当前允许的动作，不直接改玩法状态。
+        for _ in 0..1000 {
+            let v = werewolf(&w);
+            let mut acted = false;
+            for id in &ids {
+                let c = wolf_context(&w, id);
+                let Some(first) = c.actions.first() else {
+                    continue;
+                };
+                let (action, target) = match first.as_str() {
+                    "speak" => ("pass", None),
+                    "kill" => ("kill", Some(hunter_seat)),
+                    "check" => ("check", Some(witch_seat)),
+                    "poison" | "save" | "pass" if v.phase == WerewolfPhase::Night => {
+                        if poisoned {
+                            ("poison", Some(hunter_seat))
+                        } else {
+                            ("pass", None)
+                        }
+                    }
+                    other => panic!("第一夜前不该有 {other}"),
+                };
+                mode_act(&mut w, id, action, target, None);
+                acted = true;
+                break;
+            }
+            if !acted {
+                w.step(0.1);
+                if v.phase == WerewolfPhase::Night {
+                    break;
+                }
+                w.step(5.0);
+            }
+        }
+        let v = werewolf(&w);
+        assert_eq!((v.phase, v.day, v.winner), (WerewolfPhase::Night, 1, None));
+        let night = v.night.as_ref().unwrap();
+        assert_eq!(night.kill, Some(hunter_seat));
+        assert_eq!(night.poison, poisoned.then_some(hunter_seat));
+        assert!(!night.save);
+        assert_eq!(
+            w.actor(&hunter_id).unwrap().needs.body.dead,
+            poisoned,
+            "同夜被毒的猎人必须当晚倒下，不能推迟到天亮开枪"
+        );
+        assert!(v.seats.iter().all(|s| s.out.is_none()));
+        assert!(v.dawn.is_empty(), "夜里倒下的名字须等天亮公布");
+
+        // 到次日 10:30 才公布。被毒不能开枪；仅被刀的猎人先获得回合，放弃后才倒下。
+        let events = w.step(DAY + 10.5 * HOUR - w.minutes());
+        let v = werewolf(&w);
+        assert_eq!(
+            v.phase,
+            if poisoned {
+                WerewolfPhase::Day
+            } else {
+                WerewolfPhase::Shot
+            }
+        );
+        assert_eq!(v.winner, None);
+        assert_eq!(v.dawn, [hunter_seat], "同一个人只公布一次");
+        let hunter = &v.seats[hunter_seat as usize - 1];
+        assert_eq!(
+            hunter.out,
+            Some(if poisoned {
+                WerewolfOut::Poisoned
+            } else {
+                WerewolfOut::Killed
+            })
+        );
+        assert_eq!(hunter.out_day, Some(1));
+        let dawn_lines: Vec<_> = logs(&events)
+            .into_iter()
+            .filter(|text| text.starts_with("【狼人杀】天亮了，第 2 天。"))
+            .collect();
+        assert_eq!(dawn_lines.len(), 1);
+        let announced = format!("昨晚倒下的是 {hunter_seat} 号 {hunter_id}。");
+        assert!(dawn_lines[0].contains(&announced));
+        assert!(!dawn_lines[0].contains("毒") && !dawn_lines[0].contains("猎人"));
+        let actions = wolf_context(&w, &hunter_id).actions;
+        if poisoned {
+            assert_eq!(v.turn, None);
+            assert!(actions.is_empty());
+            assert!(w.game_mode_tool(&hunter_id).is_none());
+            assert!(w
+                .game_mode_act(
+                    &hunter_id,
+                    &GameModeAction {
+                        action: "shoot".into(),
+                        target: Some(witch_seat.to_string()),
+                        text: None,
+                        reason: None,
+                    }
+                )
+                .is_err());
+        } else {
+            assert_eq!(v.turn, Some(hunter_seat));
+            assert!(actions.iter().any(|a| a == "shoot"));
+            mode_act(&mut w, &hunter_id, "pass", None, None);
+        }
+        w.step(1.0);
+        let v = werewolf(&w);
+        assert_eq!((v.phase, v.winner), (WerewolfPhase::Day, None));
+        assert_eq!(v.seats.iter().filter(|s| s.out.is_some()).count(), 1);
+        let body = &w.actor(&hunter_id).unwrap().needs.body;
+        assert!(body.dead);
+        assert_eq!(
+            body.killed.as_ref().unwrap().by.name,
+            if poisoned {
+                "女巫的毒药"
+            } else {
+                "狼人"
+            }
+        );
+        assert_eq!(
+            body.history
+                .iter()
+                .filter(|e| e.kind == protocol::BodyEventKind::Death)
+                .count(),
+            1,
+            "从夜里结算到天亮、继续推进只记一次死亡"
+        );
+    }
 }
 
 fn swordholder(w: &World) -> SwordholderView {

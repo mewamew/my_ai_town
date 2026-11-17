@@ -1,5 +1,7 @@
 //! 存档格式迁移与兼容标识表。版本：v1 记忆内嵌在会话里；v2 记忆拆成外部文件；
 //! v3 加人口登记；v4 加玩家化身；v5 加天气；v6 把只增不改的历史拆成流水（history.rs）。
+//! v7 不再保存离场居民的附身；仅旧档在装回历史后按离场事实修复，修复前留完整原档。
+//! v8 记下预制开局计划与提交进度；旧世界不猜测是否为半成品。
 //! 读取时逐级升到当前版本，需要留原档的步骤记为 Backup，由调用方落盘。
 //! 兼容标识表是数据文件，由 SaveStore 在需要时按配置路径读入。
 use super::{retired_commissions, SaveFile};
@@ -7,7 +9,7 @@ use crate::fnv::fnv1a;
 use crate::HostError;
 use serde_json::Value;
 
-pub(super) const SCHEMA_VERSION: u32 = 6;
+pub(super) const SCHEMA_VERSION: u32 = 8;
 
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Backup {
@@ -19,32 +21,45 @@ pub(super) enum Backup {
     CommissionRemoval,
     /// 历史还都在 world.json 和记忆文件里（v5 及以前）；拆成流水前留原档，旧版本只读得了它
     History,
+    /// 旧 depart 遗留了附身；修复不改变历史，只移除已经结束的控制状态。
+    DepartedPossession,
+    /// 预制开局加入持久化计划，升级前完整保留原档。
+    PrefabSetup,
 }
 
 impl Backup {
     pub(super) fn suffix(&self) -> &'static str {
         match self {
+            Backup::PrefabSetup => ".before-prefab-setup-v1",
             Backup::Weather => ".before-weather-v1",
             Backup::Avatar => ".before-avatar-v1",
             Backup::Physiology => ".before-physiology-v1",
             Backup::CommissionRemoval => ".before-commission-removal",
             Backup::History => ".before-history-v1",
+            Backup::DepartedPossession => ".before-departed-possession-v1",
         }
     }
     pub(super) fn label(&self) -> &'static str {
         match self {
+            Backup::PrefabSetup => "预制开局恢复加入前的原始存档",
             Backup::Weather => "天气加入前的原始存档",
             Backup::Avatar => "化身加入前的原始存档",
             Backup::Physiology => "生理状态升级备份",
             Backup::CommissionRemoval => "旧委托已迁出运行状态，原始存档备份",
             Backup::History => "历史拆成流水前的原始存档",
+            Backup::DepartedPossession => "离场附身修复前的原始存档",
         }
     }
     /// 备份目录里附带的说明文件名；内容是兼容标识表本身。
     pub(super) fn extra_file(&self) -> Option<&'static str> {
         match self {
             Backup::Physiology => Some("physiology-content-versions.json"),
-            Backup::CommissionRemoval | Backup::Avatar | Backup::Weather | Backup::History => None,
+            Backup::CommissionRemoval
+            | Backup::Avatar
+            | Backup::Weather
+            | Backup::History
+            | Backup::DepartedPossession
+            | Backup::PrefabSetup => None,
         }
     }
 }
@@ -106,6 +121,15 @@ pub(super) fn migrate(mut value: Value) -> Result<Migration, HostError> {
         value["schema_version"] = Value::from(6);
     } else if !value["history"].is_object() {
         return Err(HostError::Save("v6 存档缺少流水清单，原文件已保留".into()));
+    }
+    if from_version < 7 {
+        // 此步需读回流水中的离场事实才能做；正常旧档也保留一份，仍能由旧版本打开。
+        backups.push(Backup::DepartedPossession);
+        value["schema_version"] = Value::from(7);
+    }
+    if from_version < 8 {
+        backups.push(Backup::PrefabSetup);
+        value["schema_version"] = Value::from(8);
     }
     let file: SaveFile = serde_json::from_value(value)
         .map_err(|e| HostError::Save(format!("存档格式不兼容，原文件已保留：{e}")))?;

@@ -247,7 +247,7 @@ impl Runtime {
     }
 
     /// 页面发来的实例配上道具库里的定义；新实例编号须带玩家前缀。
-    fn library_placement(&self, instance: Value) -> Result<Placement, String> {
+    pub(crate) fn library_placement(&self, instance: Value) -> Result<Placement, String> {
         let instance: Instance =
             serde_json::from_value(instance).map_err(|e| format!("实例格式错误：{e}"))?;
         if !instance.id.starts_with(USER_PREFIX) {

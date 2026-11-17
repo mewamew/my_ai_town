@@ -118,12 +118,12 @@ impl App {
             let Some(oldest) = self.hosts.least_recent(id) else {
                 break;
             };
+            let _serial = self.town_lock(&oldest);
+            self.hosts.close(&oldest)?;
             self.displaced
                 .lock()
                 .unwrap()
                 .insert(oldest.clone(), id.to_owned());
-            let _serial = self.town_lock(&oldest);
-            self.hosts.close(&oldest)?;
         }
         self.displaced.lock().unwrap().remove(id);
         Ok(())
@@ -282,15 +282,17 @@ fn serve(options: Options, storage: Storage) -> Result<(), String> {
             Err(e) => eprintln!("[town-manager] {e}"),
         }
     }
-    // 让各世界保存退出。
+    // 等已经开始的开镇完成登记；否则退出清单可能漏掉仍在启动的 host。锁顺序与 open 相同。
+    let _opening = app.opening();
     let mut failed = Vec::new();
     for id in app.hosts.ids() {
+        let _serial = app.town_lock(&id);
         if let Err(e) = app.hosts.close(&id) {
             failed.push(e.message);
         }
     }
-    println!("[town-manager] 已退出");
     if failed.is_empty() {
+        println!("[town-manager] 已保存并退出");
         Ok(())
     } else {
         Err(failed.join("；"))

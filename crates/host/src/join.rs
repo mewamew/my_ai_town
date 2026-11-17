@@ -35,6 +35,31 @@ pub(crate) struct JoinRequest {
     pub persona: Option<TemplateFields>,
 }
 
+impl JoinRequest {
+    fn fingerprint(&self) -> u64 {
+        let version = self.template_version.to_string();
+        let mut parts = vec![
+            self.world_id.as_str(),
+            &self.template_id,
+            &version,
+            self.name.trim(),
+            self.home.as_deref().unwrap_or(""),
+        ];
+        // 不带模型、人设时摘要和以前一样，旧操作记录照样能认出同一次加入
+        if let Some(model) = &self.model {
+            parts.extend([model.provider.as_str(), &model.model]);
+        }
+        let persona = self
+            .persona
+            .as_ref()
+            .map(|p| serde_json::to_string(p).unwrap_or_default());
+        if let Some(persona) = &persona {
+            parts.push(persona);
+        }
+        fingerprint(&parts)
+    }
+}
+
 /// 检查通过、尚未安置的新人：编号、姓名、住宅、出生位置与采用的模板。
 struct JoinPlan {
     id: String,
@@ -343,29 +368,50 @@ impl Runtime {
         }
     }
 
+    /// 预制开局的一步：调用者把安置、长相和开局游标一起提交，不在这里另存盘或发广播。
+    pub(crate) fn admit_prefab(
+        &mut self,
+        op_id: String,
+        template_id: String,
+        model: Option<ModelChoice>,
+        persona: Option<Box<TemplateFields>>,
+        look: Option<protocol::VillagerLook>,
+    ) -> Result<String, String> {
+        let preview = self.preview(
+            &template_id,
+            None,
+            persona.as_ref().map(|p| p.name.as_str()),
+            None,
+        );
+        if !preview.ok {
+            return Err(preview.problems.join("；"));
+        }
+        if let Some(look) = &look {
+            look.check()?;
+        }
+        let req = JoinRequest {
+            op_id,
+            world_id: self.population.world_id.clone(),
+            template_id,
+            template_version: preview.template_version,
+            name: preview.name,
+            home: preview.home,
+            model,
+            persona: persona.map(|p| *p),
+        };
+        let plan = self.plan_join(&req)?;
+        self.admit(&plan, &req, req.fingerprint())
+            .map_err(|e| e.to_string())?;
+        if look.is_some() {
+            self.population.set_look(&plan.id, look);
+        }
+        Ok(plan.id)
+    }
+
     /// 加入事务：检查 → 安置、登记会话与人口、保存检查点 → 发布。安置之后任一步失败整体回退，
     /// 不报告成功、不出现在名册、不发新人请求。同号同内容返回原结果，同号不同内容拒绝。
     pub(crate) fn join(&mut self, req: JoinRequest, clients: &Clients) -> Outcome {
-        let version = req.template_version.to_string();
-        let mut parts = vec![
-            req.world_id.as_str(),
-            &req.template_id,
-            &version,
-            req.name.trim(),
-            req.home.as_deref().unwrap_or(""),
-        ];
-        // 不带模型、人设时摘要和以前一样，旧操作记录照样能认出同一次加入
-        if let Some(model) = &req.model {
-            parts.extend([model.provider.as_str(), &model.model]);
-        }
-        let persona = req
-            .persona
-            .as_ref()
-            .map(|p| serde_json::to_string(p).unwrap_or_default());
-        if let Some(persona) = &persona {
-            parts.push(persona);
-        }
-        let print = fingerprint(&parts);
+        let print = req.fingerprint();
         if let Some(record) = self.population.joins.get(&req.op_id) {
             let outcome = if record.fingerprint == print {
                 record.outcome.clone()

@@ -2,32 +2,68 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 
+const BUILD_STATE_VERSION = 2
+// 只遍历客户端的源码/素材和明确的构建依赖，不扫整个仓库（尤其是存档与 config/credentials.json）。
+// 生成器经 worker、localCreation 和 creatorOptions 打包；budget 还会引入空间清单。
+const INPUTS = [
+  'frontend/town-2d',
+  'frontend/town-shared',
+  'frontend/tsconfig.base.json',
+  'scripts/mapgen',
+  'scripts/replay/reel.mjs',
+  'data/maps',
+  'data/mapgen',
+  'data/props/core/definitions.json',
+  'data/scene-assets/pr10-village-v1/manifest.json',
+  'config/needs_rules.json',
+  'package.json',
+  'pnpm-lock.yaml',
+  'pnpm-workspace.yaml',
+  'scripts/client-build-state.mjs',
+]
+const IGNORED = new Set([
+  'node_modules',
+  'dist',
+  'dist-ssr',
+  '.local',
+  '.vite',
+  '.vite-temp',
+  '.cache',
+  '.tmp',
+  '.DS_Store',
+])
+
 export async function clientSourceHash(root) {
   const hash = createHash('sha256')
   async function visit(relative) {
     const full = path.join(root, relative)
+    const key = relative.split(path.sep).join('/')
     let stat
     try {
       stat = await fs.stat(full)
     } catch (error) {
       if (error.code === 'ENOENT') {
-        hash.update(relative + ':missing')
+        hash.update(`missing\0${key}\0`)
         return
       }
       throw error
     }
     if (stat.isDirectory()) {
       for (const name of (await fs.readdir(full)).sort())
-        if (!['node_modules', 'dist', '.local'].includes(name))
+        if (
+          !IGNORED.has(name) &&
+          !/^\.env(?:\.|$)/.test(name) &&
+          !/(?:\.local|\.tmp|\.sw[op]|\.log|\.tsbuildinfo|~)$/.test(name)
+        )
           await visit(path.join(relative, name))
-    } else if (/\.(?:[cm]?js|tsx?|css|html|json)$/.test(relative)) {
-      hash.update(relative.split(path.sep).join('/'))
-      hash.update(await fs.readFile(full))
+    } else if (stat.isFile()) {
+      // Vite 的 URL/glob 会打包图片、音频等二进制文件，不能只摘要 JS/JSON 等文本扩展名。
+      const bytes = await fs.readFile(full)
+      hash.update(`file\0${key}\0${bytes.length}\0`)
+      hash.update(bytes)
     }
   }
-  // 手绘预制地图会作为 JSON 分块进入客户端；地图改变也必须重建，避免启动器放行旧布局。
-  for (const relative of ['frontend/town-2d', 'frontend/town-shared', 'data/maps'])
-    await visit(relative)
+  for (const relative of INPUTS) await visit(relative)
   return hash.digest('hex')
 }
 
@@ -35,7 +71,7 @@ export async function writeClientBuildState(root, directory) {
   await fs.writeFile(
     path.join(directory, 'build-source.json'),
     JSON.stringify({
-      version: 1,
+      version: BUILD_STATE_VERSION,
       sourceHash: await clientSourceHash(root),
     }) + '\n'
   )
@@ -53,6 +89,6 @@ export async function verifyClientBuild(root) {
       '正式客户端未构建或缺少游戏入口，请在当前工作区执行 corepack pnpm build 后重新启动。'
     )
   }
-  if (state.version !== 1 || state.sourceHash !== (await clientSourceHash(root)))
+  if (state.version !== BUILD_STATE_VERSION || state.sourceHash !== (await clientSourceHash(root)))
     throw Error('正式客户端构建已过期，请在当前工作区执行 corepack pnpm build，避免运行旧版界面。')
 }

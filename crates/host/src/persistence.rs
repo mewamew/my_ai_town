@@ -367,6 +367,9 @@ impl SaveStore {
         }
         attach_memories(&mut saved.resident_agent, memories)?;
         let archived = saved.world.attach(records)?;
+        if migrated.from_version < 7 {
+            saved.world.migrate_departed_possession();
+        }
         let weather_id = saved
             .population
             .as_ref()

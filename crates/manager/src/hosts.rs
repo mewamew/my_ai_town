@@ -5,6 +5,7 @@ use crate::ws;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
+use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
@@ -15,14 +16,21 @@ const CLOSE_TIMEOUT: Duration = Duration::from_secs(15);
 
 struct Record {
     child: Child,
-    /// 只握着不写：本进程无论怎样退出，管道关闭，host 读到 EOF 后保存并退出。Windows 上关小镇也靠它。
-    #[cfg_attr(unix, allow(dead_code))]
-    stdin: Option<ChildStdin>,
+    /// 只握着不写：只有管理服务真正退出才关闭，API 关闭/切镇失败必须保留父子关系。
+    _stdin: Option<ChildStdin>,
+    shutdown_port: u16,
+    shutdown_token: String,
+    closing: Option<Closing>,
     endpoint: String,
     /// 最近一次有人进这个小镇的时间：跑满了先关最久没进过的
     used: Instant,
     /// 最近一次打开的凭证：每次打开都换一个，关闭时拿它核对，刷新后旧页面晚到的关闭就不算数
     lease: String,
+}
+
+struct Closing {
+    stream: TcpStream,
+    saved: bool,
 }
 
 pub struct Hosts {
@@ -60,26 +68,31 @@ impl Hosts {
 
     pub fn is_running(&self, id: &str) -> bool {
         let mut running = self.running.lock().unwrap();
-        let alive = running.get_mut(id).map(|record| alive(&mut record.child));
-        if alive == Some(false) {
-            running.remove(id);
-        }
-        alive == Some(true)
+        // 已退出的记录保留到显式重开：列表查询不能吞掉异常退出，让稍后的 close 伪报成功。
+        running
+            .get_mut(id)
+            .is_some_and(|record| alive(&mut record.child))
     }
 
     /// 同时运行的小镇已经跑满（不算已经退出的）
     pub fn full(&self) -> bool {
         let mut running = self.running.lock().unwrap();
-        running.retain(|_, record| alive(&mut record.child));
-        running.len() >= self.max_running
+        running
+            .values_mut()
+            .map(|record| alive(&mut record.child))
+            .filter(|alive| *alive)
+            .count()
+            >= self.max_running
     }
 
     /// 除了 except 之外最久没人进过的运行中小镇
     pub fn least_recent(&self, except: &str) -> Option<String> {
-        let running = self.running.lock().unwrap();
+        let mut running = self.running.lock().unwrap();
         running
-            .iter()
-            .filter(|(id, _)| id.as_str() != except)
+            .iter_mut()
+            .filter_map(|(id, record)| {
+                (id.as_str() != except && alive(&mut record.child)).then_some((id, record))
+            })
             .min_by_key(|(_, record)| record.used)
             .map(|(id, _)| id.clone())
     }
@@ -93,13 +106,16 @@ impl Hosts {
         if let Some(endpoint) = existing {
             let lease = crate::token();
             if let Some(record) = self.running.lock().unwrap().get_mut(id) {
+                if record.closing.is_some() {
+                    return Err(ApiError::bad("世界仍在保存关闭，请稍后重试关闭"));
+                }
                 record.used = Instant::now();
                 record.lease = lease.clone();
             }
             verify(&endpoint, id, &map.hash)?;
             return info(storage, id, &map.document, &map.hash, &endpoint, &lease);
         }
-        if self.running.lock().unwrap().len() >= self.max_running {
+        if self.full() {
             return Err(ApiError::bad(format!(
                 "同时运行的小镇已达 {} 个，请关闭其他小镇",
                 self.max_running
@@ -108,6 +124,7 @@ impl Hosts {
         let dir = storage.town(id)?;
         let ready = dir.join("host-ready.json");
         let token = crate::token();
+        let shutdown_token = crate::token();
         let lease = crate::token();
         let _ = fs::remove_file(&ready);
         let log = OpenOptions::new()
@@ -123,7 +140,13 @@ impl Hosts {
             .arg(dir.join("world.json"))
             .arg("--ready-file")
             .arg(&ready)
-            .args(["--connection-token", &token, "--stop-on-stdin-close"]);
+            .args([
+                "--connection-token",
+                &token,
+                "--shutdown-token",
+                &shutdown_token,
+                "--stop-on-stdin-close",
+            ]);
         if self.mock_llm {
             command.args(["--mock-llm", "--mock-delay", "0.01"]);
         }
@@ -138,7 +161,7 @@ impl Hosts {
         let stdin = child.stdin.take();
         let pid = child.id();
         let deadline = Instant::now() + START_TIMEOUT;
-        let endpoint = loop {
+        let (endpoint, shutdown_port) = loop {
             if !alive(&mut child) {
                 return Err(ApiError::bad("世界启动失败，请查看该小镇的 host.log"));
             }
@@ -153,8 +176,15 @@ impl Hosts {
                     && identity["town_id"] == id
                     && identity["map_hash"] == map.hash.as_str()
                 {
-                    if let Some(port) = result["port"].as_u64() {
-                        break format!("ws://127.0.0.1:{port}/?session={token}");
+                    if let (Some(port), Some(shutdown_port)) =
+                        (result["port"].as_u64(), result["shutdown_port"].as_u64())
+                    {
+                        if let Ok(shutdown_port) = u16::try_from(shutdown_port) {
+                            break (
+                                format!("ws://127.0.0.1:{port}/?session={token}"),
+                                shutdown_port,
+                            );
+                        }
                     }
                 }
             }
@@ -164,7 +194,10 @@ impl Hosts {
             id.to_owned(),
             Record {
                 child,
-                stdin,
+                _stdin: stdin,
+                shutdown_port,
+                shutdown_token,
+                closing: None,
                 endpoint: endpoint.clone(),
                 used: Instant::now(),
                 lease: lease.clone(),
@@ -195,46 +228,70 @@ impl Hosts {
             .map(|r| r.endpoint.clone())
     }
 
-    /// 先让 host 保存后退出（见 terminate）；超时则强制结束并报错，让调用方知道保存可能不完整。
+    /// 仅「本次最终存档已确认」并且「正常退出」才算关闭成功。等待期间保留登记、stdin 和
+    /// 控制连接；超时只报错，不杀世界，后续 close 继续等同一次请求，不能把晚到的回执误配给新请求。
     pub fn close(&self, id: &str) -> Result<(), ApiError> {
-        let Some(mut record) = self.running.lock().unwrap().remove(id) else {
-            return Ok(());
-        };
-        if !alive(&mut record.child) {
-            return Ok(());
-        }
-        terminate(&mut record);
         let deadline = Instant::now() + CLOSE_TIMEOUT;
-        while Instant::now() < deadline {
-            if !alive(&mut record.child) {
+        loop {
+            let mut running = self.running.lock().unwrap();
+            let Some(record) = running.get_mut(id) else {
                 return Ok(());
+            };
+            if record.closing.is_none() {
+                if record.child.try_wait()?.is_some() {
+                    return Err(ApiError::bad(
+                        "世界已意外退出，无法确认最后进度已保存，请查看该小镇的 host.log",
+                    ));
+                }
+                let stream = host::shutdown::request(record.shutdown_port, &record.shutdown_token)
+                    .map_err(|e| {
+                        eprintln!("[town-manager] 请求关闭 {id} 失败：{e}");
+                        ApiError::bad("无法请求世界保存关闭，未强制结束，请重试")
+                    })?;
+                record.closing = Some(Closing {
+                    stream,
+                    saved: false,
+                });
             }
-            std::thread::sleep(Duration::from_millis(50));
+            let closing = record.closing.as_mut().unwrap();
+            if !closing.saved {
+                match host::shutdown::receive(&mut closing.stream) {
+                    Ok(Some(true)) => closing.saved = true,
+                    Ok(Some(false)) => {
+                        record.closing = None;
+                        return Err(ApiError::bad("保存失败，世界仍在运行，最新进度保留在内存中；请修复存储问题后重试关闭"));
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        eprintln!("[town-manager] 关闭 {id} 未收到保存确认：{e}");
+                        record.closing = None;
+                        return Err(ApiError::bad("关闭未收到保存确认，世界可能意外退出；未强制结束，请重试或查看 host.log"));
+                    }
+                }
+            }
+            if let Some(status) = record.child.try_wait()? {
+                if closing.saved && status.success() {
+                    running.remove(id);
+                    return Ok(());
+                }
+                return Err(ApiError::bad(format!(
+                    "世界异常退出（{status}），无法确认完整关闭，请查看该小镇的 host.log"
+                )));
+            }
+            if Instant::now() >= deadline {
+                return Err(ApiError::bad(format!(
+                    "世界在 {} 秒内未确认保存并退出；仍保留世界进程，请勿退出应用，稍后重试关闭",
+                    CLOSE_TIMEOUT.as_secs()
+                )));
+            }
+            drop(running);
+            std::thread::sleep(Duration::from_millis(20));
         }
-        let _ = record.child.kill();
-        let _ = record.child.wait();
-        Err(ApiError::bad(format!(
-            "世界在 {} 秒内没有完成保存，已强制结束",
-            CLOSE_TIMEOUT.as_secs()
-        )))
     }
 
     pub fn ids(&self) -> Vec<String> {
         self.running.lock().unwrap().keys().cloned().collect()
     }
-}
-
-/// 让 host 保存后退出：unix 上发 SIGTERM；Windows 没有这个信号，关掉它的标准输入，效果一样。
-#[cfg(unix)]
-fn terminate(record: &mut Record) {
-    unsafe {
-        libc::kill(record.child.id() as libc::pid_t, libc::SIGTERM);
-    }
-}
-
-#[cfg(not(unix))]
-fn terminate(record: &mut Record) {
-    record.stdin.take();
 }
 
 fn verify(endpoint: &str, id: &str, hash: &str) -> Result<(), ApiError> {

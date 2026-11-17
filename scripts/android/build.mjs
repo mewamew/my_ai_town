@@ -3,12 +3,12 @@
 // 产物：target/android/ai-town-<版本>.apk。签名密钥第一次打包时生成在 android/（不入库，丢了就不能覆盖安装）。
 // 用 scripts/builtin-model/build.mjs --android 编过内置模型的推理程序时一起打进包；模型文件不进包，用到时下载。
 import { execFileSync } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { stageAppBundle } from '../app-bundle.mjs'
 import { MIN_API, ndkDir, sdkDir } from './toolchain.mjs'
+import { ensureReleaseKeystore } from './signing.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const android = path.join(root, 'android')
@@ -81,37 +81,6 @@ function stageBundle() {
   return files.length
 }
 
-/** 第一次打包时生成发布签名；密码只写在被忽略的 android/keystore.properties。 */
-function ensureKeystore(java) {
-  const properties = path.join(android, 'keystore.properties')
-  if (fs.existsSync(properties)) return
-  const password = randomBytes(18).toString('base64url')
-  run(path.join(java, 'bin/keytool'), [
-    '-genkeypair',
-    '-keystore',
-    path.join(android, 'release.jks'),
-    '-alias',
-    'aitown',
-    '-keyalg',
-    'RSA',
-    '-keysize',
-    '2048',
-    '-validity',
-    '10000',
-    '-storepass',
-    password,
-    '-keypass',
-    password,
-    '-dname',
-    'CN=AI Town, O=AI Town',
-  ])
-  fs.writeFileSync(
-    properties,
-    `storeFile=release.jks\nstorePassword=${password}\nkeyAlias=aitown\nkeyPassword=${password}\n`,
-    { mode: 0o600 }
-  )
-}
-
 function main() {
   const sdk = sdkDir()
   const java = javaHome()
@@ -127,7 +96,7 @@ function main() {
   )
   fs.writeFileSync(path.join(android, 'local.properties'), `sdk.dir=${sdk}\n`)
   const debug = options.has('--debug')
-  if (!debug) ensureKeystore(java)
+  ensureReleaseKeystore({ android, java, debug })
   // 版本号按分钟递增，新包可以直接覆盖安装旧包
   const versionCode = Math.floor(Date.now() / 60000) - 29_000_000
   run(

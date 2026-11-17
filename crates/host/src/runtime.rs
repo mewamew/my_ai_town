@@ -133,6 +133,25 @@ impl Runtime {
         if world_id_of(msg).is_some_and(|id| id != self.population.world_id) {
             return Some(self.rejection(msg, "世界已重置，请刷新页面后重试"));
         }
+        if self
+            .world_settings
+            .prefab_setup
+            .as_ref()
+            .is_some_and(|s| !s.complete())
+            && matches!(
+                msg,
+                ClientMsg::SetWorldview { .. }
+                    | ClientMsg::SetPhysiology { .. }
+                    | ClientMsg::SetClimate { .. }
+                    | ClientMsg::SetGameMode { .. }
+                    | ClientMsg::SetStrangers { .. }
+                    | ClientMsg::SetAgentLimits { .. }
+                    | ClientMsg::SetPersona { .. }
+                    | ClientMsg::SetResidentModel { .. }
+            )
+        {
+            return Some(self.rejection(msg, "预制开局尚未完成，请先继续开局设置"));
+        }
         if requires_ready(msg) && !self.world_settings.ready() {
             return Some(self.rejection(msg, "请先设置世界观"));
         }
@@ -155,6 +174,13 @@ impl Runtime {
                 };
                 self.weather_failed(request_id.clone(), code, message)
             }
+            ClientMsg::BeginPrefabSetup { request_id, .. }
+            | ClientMsg::AdvancePrefabSetup { request_id, .. } => ServerMsg::PrefabSetupSaved {
+                request_id: request_id.clone(),
+                ok: false,
+                message,
+                state: self.world_settings.prefab_setup.clone(),
+            },
             ClientMsg::SetWorldview { request_id, .. }
             | ClientMsg::SetPhysiology { request_id, .. }
             | ClientMsg::SetMiracles { request_id, .. }
@@ -265,6 +291,19 @@ impl Runtime {
                 Outcome::reply(error_msg("化身命令走专门的入口".into()))
             }
             GetWorldSettings => Outcome::reply(self.world_settings_msg()),
+            BeginPrefabSetup {
+                request_id,
+                setup_id,
+                expected_revision,
+                plan,
+                ..
+            } => self.begin_prefab_setup(request_id, setup_id, expected_revision, plan),
+            AdvancePrefabSetup {
+                request_id,
+                setup_id,
+                next_step,
+                ..
+            } => self.advance_prefab_setup(request_id, setup_id, next_step, clients),
             SetWorldview {
                 request_id,
                 expected_revision,
@@ -740,6 +779,8 @@ fn world_id_of(msg: &ClientMsg) -> Option<&str> {
     match msg {
         ClientMsg::SetWeather { world_id, .. }
         | ClientMsg::Content { world_id, .. }
+        | ClientMsg::BeginPrefabSetup { world_id, .. }
+        | ClientMsg::AdvancePrefabSetup { world_id, .. }
         | ClientMsg::SetWorldview { world_id, .. }
         | ClientMsg::SetPhysiology { world_id, .. }
         | ClientMsg::SetMiracles { world_id, .. }
@@ -812,6 +853,8 @@ fn requires_ready(msg: &ClientMsg) -> bool {
         | ClientMsg::AvatarInput { .. }
         | ClientMsg::GetChatHistory { .. }
         | ClientMsg::GetWorldSettings
+        | ClientMsg::BeginPrefabSetup { .. }
+        | ClientMsg::AdvancePrefabSetup { .. }
         | ClientMsg::SetWorldview { .. }
         | ClientMsg::SetPhysiology { .. }
         | ClientMsg::SetMiracles { .. }

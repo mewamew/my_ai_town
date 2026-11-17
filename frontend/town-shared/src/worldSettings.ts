@@ -41,6 +41,8 @@ export function createWorldSettings(
   const listeners = new Set<() => void>()
   /** 新世界还没设世界观时先问它：返回 true 表示由它接手（开局向导），不弹首次对话框 */
   let firstRun: (() => boolean) | null = null
+  let skippedFirstRun = ''
+  let awaitingSettings = true
   const flag = document.createElement('button')
   flag.id = 'world-mode'
   flag.className = 'world-mode'
@@ -71,13 +73,15 @@ export function createWorldSettings(
   dialog.addEventListener('cancel', (e) => e.preventDefault())
   document.body.append(dialog)
   function notify() {
-    const ready = online && state?.ready
+    const ready = online && !awaitingSettings && state?.ready
     flag.textContent = !online
       ? '正在重新连接…'
       : !state
         ? '读取世界设定…'
         : !state.ready
-          ? '待设置世界观'
+          ? state.prefab_setup
+            ? '开局尚未完成'
+            : '待设置世界观'
           : state.mock
             ? '测试模式'
             : 'AI 自主生活'
@@ -90,12 +94,21 @@ export function createWorldSettings(
       ? '固定回复 · 测试模式：村民用固定回复，不调用模型。点开看这一局的设定'
       : state?.ready
         ? '点开看这一局的设定：世界观、规则'
-        : '设置世界观后才能推进时间'
+        : state?.prefab_setup
+          ? '继续开局设置，完成后才能推进时间'
+          : '设置世界观后才能推进时间'
     document
       .querySelectorAll<HTMLButtonElement>('#speeds button')
       .forEach((b) => (b.disabled = !ready))
-    firstButton.disabled = !online || !state || !!pending
-    if (online && state && !state.ready && !dialog.open && !firstRun?.()) {
+    firstButton.disabled = !online || awaitingSettings || !state || !!pending
+    if (
+      online &&
+      !awaitingSettings &&
+      state &&
+      !state.ready &&
+      !dialog.open &&
+      (skippedFirstRun === state.world_id || !firstRun?.())
+    ) {
       // 对话框打开时会自动聚焦第一个输入框：触屏上那会立刻弹出键盘、盖住「保存世界观」，改成先聚焦标题
       query(dialog, 'h1').toggleAttribute('autofocus', isTouch())
       dialog.showModal()
@@ -110,7 +123,7 @@ export function createWorldSettings(
     build: (current: WorldSettingsState, requestId: string) => ClientMsg,
     done: Done
   ) {
-    if (!online || !state) {
+    if (!online || awaitingSettings || !state) {
       done(false, '未连接，未保存')
       return
     }
@@ -202,7 +215,7 @@ export function createWorldSettings(
   }
   return {
     state: () => state,
-    online: () => online,
+    online: () => online && !awaitingSettings,
     controlGameMode(command: GameModeAction, done: Done) {
       submit(
         (current, id) => ({
@@ -221,6 +234,11 @@ export function createWorldSettings(
     },
     setFirstRun(handler: (() => boolean) | null) {
       firstRun = handler
+      notify()
+    },
+    /** 只跳过这一局；保留入口，重置或重连到新世界后仍能重新开局。 */
+    skipFirstRun() {
+      skippedFirstRun = state?.world_id ?? ''
       notify()
     },
     /** 接上小镇的模型配置：没连上模型时，首次对话框里提示一句并能当场连上 */
@@ -341,6 +359,7 @@ export function createWorldSettings(
     strangersSwitch,
     connected() {
       online = true
+      awaitingSettings = true
       send({ type: 'get_world_settings' })
       send({ type: 'get_recordings' })
       notify()
@@ -357,6 +376,13 @@ export function createWorldSettings(
     handleMsg(msg: ServerMsg) {
       if (msg.type === 'world_reset') {
         state = undefined
+        awaitingSettings = true
+        if (dialog.open) dialog.close()
+        if (pending) {
+          const done = pending.done
+          pending = undefined
+          done(false, '世界已重置，旧请求已取消')
+        }
         first.value = fallback
         send({ type: 'get_world_settings' })
         send({ type: 'get_recordings' })
@@ -368,6 +394,16 @@ export function createWorldSettings(
         return true
       }
       if (msg.type === 'world_settings') {
+        awaitingSettings = false
+        if (state && state.world_id !== msg.state.world_id) {
+          if (dialog.open) dialog.close()
+          first.value = fallback
+          if (pending) {
+            const done = pending.done
+            pending = undefined
+            done(false, '世界已更换，旧请求已取消')
+          }
+        }
         if (
           state &&
           (state.world_id !== msg.state.world_id || state.revision !== msg.state.revision)

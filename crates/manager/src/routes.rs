@@ -170,6 +170,9 @@ fn api(app: &App, req: &Request, rest: &str, get: bool) -> Result<Response, ApiE
         (false, "open") => {
             let automatic = body(req)?["automatic"].as_bool().unwrap_or(false);
             let _opening = app.opening();
+            if app.stopping() {
+                return Err(ApiError::new(503, "应用正在退出"));
+            }
             app.refuse_displaced(id, automatic)?;
             app.make_room(id)?;
             let _serial = app.town_lock(id);

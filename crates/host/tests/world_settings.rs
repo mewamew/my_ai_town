@@ -61,11 +61,25 @@ fn worldview_reaches_existing_and_new_residents_survives_restart_and_reset_requi
     // 旧存档还记着已经删掉的「手动验证」开关和工具协议：照常读进来，下次存盘不再写出。
     let mut old: Value =
         serde_json::from_str(&std::fs::read_to_string(town.save()).unwrap()).unwrap();
+    // v7 没有初始化标记：升级只加格式版本，不能把玩家已定制的普通世界当作未完剧本。
+    old["schema_version"] = json!(7);
     old["world_settings"]["autonomous"] = json!(false);
     old["resident_agent"]["protocol"] = json!("json");
     std::fs::write(town.save(), old.to_string()).unwrap();
+    let original = std::fs::read(town.save()).unwrap();
     let mut ws = town.start();
+    let backup = town
+        .save()
+        .with_file_name("world.json.before-prefab-setup-v1");
+    assert_eq!(std::fs::read(backup.join("world.json")).unwrap(), original);
     assert_eq!(state(&mut ws), current);
+    let migrated = town.saved(|v| v["schema_version"] == 8);
+    assert!(migrated["world_settings"].get("prefab_setup").is_none());
+    assert_eq!(
+        migrated["world_settings"]["worldview"],
+        old["world_settings"]["worldview"]
+    );
+    assert_eq!(migrated["population"], old["population"]);
     send(
         &mut ws,
         json!({"type":"set_speed","request_id":"test-drop-legacy","speed":0}),

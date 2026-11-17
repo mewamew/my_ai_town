@@ -5,6 +5,9 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { createReadStream } from 'node:fs'
+import { once } from 'node:events'
 import { seal } from '../mapgen/document.mjs'
 import { createTown, draftTown, root as source, startManager, worldQuery } from './support.mjs'
 const BUILTIN_TOWNS = ['default-town', 'spring-valley', 'broken-towers']
@@ -328,6 +331,210 @@ test('only one town runs at a time: entering another town closes the open one, t
     await fs.rm(root, { recursive: true, force: true })
   }
 })
+// 关闭回归只用隔离目录和固定回复模型；用真实磁盘故障走 HTTP → manager → host → 存档。
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const readJson = async (file) => JSON.parse(await fs.readFile(file, 'utf8'))
+const roster = (town, command = null) =>
+  worldQuery(town.endpoint, command, (msg) => msg.type === 'roster')
+async function advancingTown(manager, root) {
+  const town = await manager.api('/default-town/open', {})
+  const state = (
+    await worldQuery(
+      town.endpoint,
+      { type: 'get_world_settings' },
+      (m) => m.type === 'world_settings'
+    )
+  ).state
+  const result = await worldQuery(
+    town.endpoint,
+    {
+      type: 'set_worldview',
+      request_id: 'close-setup',
+      world_id: town.worldId,
+      expected_revision: state.revision,
+      text: '关闭失败时不能丢掉还没有存盘的时间。',
+    },
+    (m) => m.type === 'world_settings_saved'
+  )
+  assert.equal(result.ok, true)
+  await worldQuery(
+    town.endpoint,
+    { type: 'set_speed', request_id: 'run', speed: 1 },
+    (m) => m.type === 'roster' && m.speed === 1
+  )
+  const dir = path.join(root, 'towns/default-town')
+  const file = path.join(dir, 'world.json')
+  const previous = await readJson(file)
+  await worldQuery(
+    town.endpoint,
+    null,
+    (m) => m.type === 'roster' && m.sim_minutes > previous.world.minutes + 0.5
+  )
+  const { pid } = await readJson(path.join(dir, 'host-ready.json'))
+  return { town, file, pid, previous }
+}
+async function waitGone(pid) {
+  const deadline = Date.now() + 20000
+  while (alive(pid) && Date.now() < deadline) await delay(50)
+  assert.equal(alive(pid), false, `测试世界 ${pid} 没有按时退出`)
+}
+
+test('safe close: failed saves preserve the same live world, block switching, and retry saves the latest progress', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'town-safe-close-'))
+  let m
+  let tmp
+  try {
+    m = await startManager(root)
+    const { town, file, pid, previous } = await advancingTown(m, root)
+    tmp = file + '.tmp'
+    await fs.mkdir(tmp)
+    const before = await roster(town)
+    await assert.rejects(m.api('/default-town/close', { lease: town.lease }), /保存失败.*仍在运行/)
+    await assert.rejects(m.api('/spring-valley/open', {}), /保存失败.*仍在运行/)
+    const towns = (await m.api('')).towns
+    assert.equal(towns.find((t) => t.id === 'default-town').running, true)
+    assert.equal(towns.find((t) => t.id === 'spring-valley').running, false)
+    assert.equal(alive(pid), true)
+    const reopened = await m.api('/default-town/open', { automatic: true })
+    assert.equal(reopened.endpoint, town.endpoint)
+    assert.equal(reopened.worldId, town.worldId)
+    const after = await roster(town)
+    assert(after.sim_minutes > before.sim_minutes)
+    assert.deepEqual(await readJson(file), previous)
+    await fs.rm(tmp, { recursive: true })
+    assert.equal((await m.api('/default-town/close', { lease: reopened.lease })).closed, true)
+    assert.equal(alive(pid), false)
+    const saved = await readJson(file)
+    assert(saved.world.minutes >= after.sim_minutes)
+    const resumed = await m.api('/default-town/open', {})
+    assert.equal(resumed.worldId, town.worldId)
+    assert.equal((await roster(resumed)).sim_minutes, saved.world.minutes)
+    assert.equal((await m.api('/default-town/close', {})).closed, true)
+    assert.equal(await m.stop(), 0, m.output())
+  } finally {
+    if (tmp) await fs.rm(tmp, { recursive: true, force: true })
+    await m?.stop()
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
+test(
+  'safe close: a blocked disk times out without killing the world, then a late failure and a repaired retry are distinguished',
+  { skip: process.platform === 'win32' },
+  async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'town-close-timeout-'))
+    let m
+    let tmp
+    let drain
+    let blocked
+    try {
+      m = await startManager(root)
+      const { town, file, pid } = await advancingTown(m, root)
+      tmp = file + '.tmp'
+      assert.equal(spawnSync('mkfifo', [tmp]).status, 0)
+      await assert.rejects(m.api('/default-town/close', {}), /未确认保存并退出.*仍保留世界进程/)
+      assert.equal(alive(pid), true)
+      assert.equal((await m.api('')).towns.find((t) => t.id === town.id).running, true)
+      await assert.rejects(m.api('/default-town/open', {}), /仍在保存关闭/)
+      // 阻塞写端已经找到 FIFO；先改名再放开，保证最终 rename 找不到 .tmp 而失败。
+      // macOS 的 FIFO fsync 可能成功，不能单靠特殊文件制造失败。晚到回执仍属于原请求。
+      blocked = tmp + '.blocked'
+      await fs.rename(tmp, blocked)
+      drain = createReadStream(blocked)
+      const drained = once(drain, 'close')
+      drain.resume()
+      await drained
+      await assert.rejects(m.api('/default-town/close', {}), /保存失败.*仍在运行/)
+      assert.equal(alive(pid), true)
+      await fs.rm(blocked)
+      const latest = await roster(town)
+      assert.equal((await m.api('/default-town/close', {})).closed, true)
+      assert((await readJson(file)).world.minutes >= latest.sim_minutes)
+      assert.equal(await m.stop(), 0, m.output())
+    } finally {
+      drain?.destroy()
+      if (blocked) await fs.rm(blocked, { force: true })
+      if (tmp) await fs.rm(tmp, { recursive: true, force: true })
+      await m?.stop()
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  }
+)
+
+test('safe close: an unexpected host exit is not forgotten by status reads or reported as a successful close', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'town-close-crash-'))
+  let m
+  try {
+    m = await startManager(root)
+    const { town, pid } = await advancingTown(m, root)
+    process.kill(pid, 'SIGKILL')
+    await delay(100)
+    assert.equal((await m.api('')).towns.find((t) => t.id === town.id).running, false)
+    await assert.rejects(m.api('/default-town/close', { lease: town.lease }), /意外退出.*无法确认/)
+    // 玩家明确重开才恢复盘上的检查点，并替换异常实例的登记。
+    const reopened = await m.api('/default-town/open', {})
+    assert.equal(reopened.worldId, town.worldId)
+    assert.equal((await m.api('/default-town/close', {})).closed, true)
+    assert.equal(await m.stop(), 0, m.output())
+  } finally {
+    await m?.stop()
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
+test('safe close: manager shutdown reports failure and parent loss only gets a bounded rescue, never a hidden orphan', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'town-close-parent-'))
+  let m
+  let tmp
+  let pid
+  try {
+    m = await startManager(root)
+    const running = await advancingTown(m, root)
+    pid = running.pid
+    tmp = running.file + '.tmp'
+    await fs.mkdir(tmp)
+    assert.equal(await m.stop(), 1)
+    assert.match(m.output(), /保存失败/)
+    // 父进程已经真的退出，持续写失败不能无限挂着世界；此边界不能承诺保存未提交进度。
+    await waitGone(pid)
+    assert.deepEqual(await readJson(running.file), running.previous)
+  } finally {
+    if (tmp) await fs.rm(tmp, { recursive: true, force: true })
+    await m?.stop()
+    if (pid && alive(pid)) process.kill(pid, 'SIGKILL')
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
+test(
+  'safe close: killing the manager during a blocked save also ends the orphan within the rescue deadline',
+  { skip: process.platform === 'win32' },
+  async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'town-close-killed-parent-'))
+    let m
+    let pid
+    try {
+      m = await startManager(root)
+      const running = await advancingTown(m, root)
+      pid = running.pid
+      const tmp = running.file + '.tmp'
+      assert.equal(spawnSync('mkfifo', [tmp]).status, 0)
+      const closing = m.api('/default-town/close', {}).catch((error) => error)
+      // 主循环已经阻塞在 FIFO 写入，不能自行观察父进程退出。
+      await delay(500)
+      const managerPid = (await readJson(path.join(root, 'manager-ready.json'))).pid
+      process.kill(managerPid, 'SIGKILL')
+      assert((await closing) instanceof Error)
+      await waitGone(pid)
+      assert.deepEqual(await readJson(running.file), running.previous)
+    } finally {
+      await m?.stop()
+      if (pid && alive(pid)) process.kill(pid, 'SIGKILL')
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  }
+)
+
 test('home settings save a key only into the data root config, read back only its mask, and cannot delete a service', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'town-models-'))
   const repoConfig = ['config/providers.json', 'config/credentials.json'].map((p) =>

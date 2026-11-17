@@ -27,6 +27,7 @@ mod notebook;
 mod observation;
 mod physiology;
 mod population;
+mod prefab;
 mod props;
 mod recording;
 mod resident;
@@ -78,6 +79,7 @@ pub use population::{
     PopulationView, ResidentRegistration, ResidentTemplate, TemplateCard, TemplateFields,
     TemplateStatus, VillagerLook, PATTERN_SIZE,
 };
+pub use prefab::{PrefabSetupPlan, PrefabSetupSelection, PrefabSetupState, PrefabSetupStep};
 pub use props::{
     Choice, DurationRange, InventorySlot, InventoryView, ItemLocation, LegacyVerbView, PlaceNear,
     PlaceRef, PropActionEntry, PropActionView, PropCapabilities, PropPreview, PropView,

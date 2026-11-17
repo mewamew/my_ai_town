@@ -508,6 +508,7 @@ pub fn server_samples() -> Vec<ServerMsg> {
                 mock: false,
                 model: "m".into(),
                 persistent: true,
+                prefab_setup: None,
                 physiology: PhysiologySwitches::default(),
                 provider: "p".into(),
                 ready: true,
@@ -517,6 +518,17 @@ pub fn server_samples() -> Vec<ServerMsg> {
                 world_id: "w1".into(),
                 worldview: "小镇".into(),
             },
+        },
+        ServerMsg::PrefabSetupSaved {
+            request_id: "setup".into(),
+            ok: true,
+            message: "已保存".into(),
+            state: Some(PrefabSetupState {
+                id: "setup-1".into(),
+                plan: prefab_plan(),
+                next_step: 0,
+                joined: vec![],
+            }),
         },
         ServerMsg::WorldSettingsSaved {
             request_id: "r2".into(),
@@ -1709,6 +1721,19 @@ pub fn client_samples() -> Vec<ClientMsg> {
             kind: Some(WeatherKind::Rain),
         },
         ClientMsg::GetWorldSettings,
+        ClientMsg::BeginPrefabSetup {
+            request_id: "setup".into(),
+            world_id: "w1".into(),
+            setup_id: "setup-1".into(),
+            expected_revision: 0,
+            plan: prefab_plan(),
+        },
+        ClientMsg::AdvancePrefabSetup {
+            request_id: "step".into(),
+            world_id: "w1".into(),
+            setup_id: "setup-1".into(),
+            next_step: 0,
+        },
         ClientMsg::SetWorldview {
             request_id: "r2".into(),
             world_id: "w1".into(),
@@ -1995,4 +2020,22 @@ pub fn client_samples() -> Vec<ClientMsg> {
             full_prompts: true,
         },
     ]
+}
+
+fn prefab_plan() -> PrefabSetupPlan {
+    serde_json::from_value(json!({
+        "prefab": "test",
+        "selection": { "players": 1, "models": [{"provider": "p", "model": "m"}], "needs": false, "picks": [["身份", "fixed"]], "seeds": [["身份", 51]] },
+        "steps": [
+            {"kind": "worldview", "text": "小镇"},
+            {"kind": "physiology", "switches": {"fullness": false,"energy": false,"water": false,"health": false,"weather": false}},
+            {"kind": "climate", "climate": "temperate"},
+            {"kind": "weather", "weather": "clear"},
+            {"kind": "remove_prop", "id": "old"},
+            {"kind": "place_prop", "instance": {"id": "user:test", "definition": "core:bench@1", "locale": "square"}},
+            {"kind": "limits", "limits": {"calls_per_day": 100}},
+            {"kind": "join", "template_id": "builtin:ashu", "model": {"provider": "p", "model": "m"}, "persona": {"name": "阿树"}},
+            {"kind": "game_mode", "choice": {"kind": "tide", "seed": 1}}
+        ]
+    })).unwrap()
 }

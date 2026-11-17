@@ -3,7 +3,7 @@ use crate::{
     actor::Actor,
     avatar::{self, Spot},
     error::{KernelError, Result},
-    World,
+    World, WorldSnapshot,
 };
 use protocol::At;
 use serde::{Deserialize, Serialize};
@@ -249,5 +249,44 @@ impl World {
                 .check_free_locus(&a.locus, &self.topo)?;
         }
         Ok(())
+    }
+}
+
+impl WorldSnapshot {
+    /// host v6 及以前的 depart 会留下附身。只修它已经完成离场清理并记下离场事实的形状；
+    /// 重复控制目标、错误身份、坏回执、未完成活动仍走原校验拒绝，不能靠丢弃控制字段掩盖坏档。
+    /// 调用方须先装回历史，并在覆盖原档前备份；新版本和事务回滚不调用此兼容步骤。
+    pub fn migrate_departed_possession(&mut self) -> bool {
+        let controlled = self
+            .actors
+            .values()
+            .filter(|a| a.possession.is_some() || (a.is_avatar() && a.present()))
+            .count();
+        if controlled != 1 {
+            return false;
+        }
+        let Some(a) = self.actors.values_mut().find(|a| {
+            !a.present()
+                && !a.is_avatar()
+                && a.avatar.is_none()
+                && a.actions.agent_controlled
+                && !a.needs.body.dead
+                && a.possession.as_ref().is_some_and(Control::receipts_valid)
+                && a.plan.is_empty()
+                && a.free_walk.is_none()
+                && a.current.is_idle()
+                && a.current.action.is_none()
+                && a.current.pending.is_none()
+                && a.current.content.is_none()
+                && a.current.locale == a.locus.locale
+                && !a.actions.cancel_after_current
+                && a.journal.events.iter().any(|event| {
+                    event.at == a.current.started_at && event.text.starts_with("离开了：")
+                })
+        }) else {
+            return false;
+        };
+        a.possession = None;
+        true
     }
 }

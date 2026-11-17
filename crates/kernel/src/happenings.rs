@@ -263,9 +263,12 @@ impl World {
             return;
         }
         let name = a.name.clone();
+        self.end_walks_of(actor, text);
         self.interrupt_actions(actor, text);
         let now = self.minutes;
         let a = self.actor_mut(actor);
+        // 离场本身就结束玩家控制，不能等宿主下一拍再交还，否则这一刻的快照无法恢复。
+        a.possession = None;
         a.locus.at = At::Offstage;
         a.reset_idle(now, true);
         a.journal.record(now, format!("离开了：{text}"));

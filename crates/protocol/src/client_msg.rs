@@ -80,6 +80,19 @@ pub enum ClientMsg {
         offset: usize,
     },
     GetWorldSettings,
+    BeginPrefabSetup {
+        request_id: String,
+        world_id: String,
+        setup_id: String,
+        expected_revision: u64,
+        plan: crate::PrefabSetupPlan,
+    },
+    AdvancePrefabSetup {
+        request_id: String,
+        world_id: String,
+        setup_id: String,
+        next_step: usize,
+    },
     SetWorldview {
         request_id: String,
         world_id: String,
@@ -373,6 +386,8 @@ impl ClientMsg {
             SetWeather { request_id, .. }
             | Avatar { request_id, .. }
             | GetChatHistory { request_id, .. }
+            | BeginPrefabSetup { request_id, .. }
+            | AdvancePrefabSetup { request_id, .. }
             | SetWorldview { request_id, .. }
             | SetPhysiology { request_id, .. }
             | SetClimate { request_id, .. }

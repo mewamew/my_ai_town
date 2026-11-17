@@ -13,6 +13,7 @@ import type { MapEntry, Topology } from './mapDocument'
 import { installLayout } from './shell/layout'
 import { createPanels, type Panels } from './shell/panels'
 import { createReconnectHint } from './shell/reconnect'
+import { installFirstRun } from './shell/firstRun'
 import { createGameMenu } from './shell/menu'
 import { installMapButtons, showConnection } from './shell/topbar'
 import { reopenTown } from './townApi'
@@ -165,17 +166,11 @@ export function startGameShell(
   panels.models.subscribe(prefabSetup.refresh)
   // 回来的玩家（向导已走过）直接从手势提示开始；看过的提示不会再出
   if (guideDone()) tips.start()
-  let guideOpened = false
-  // 每个新世界（还没设世界观）都走向导：第一次从头讲起，以后从「请居民」开始；预制小镇走开局设置
-  panels.worldSettings.setFirstRun(() => {
-    if (!guideOpened) {
-      guideOpened = true
-      // 重置了世界（世界观面板已随重置关上）；开着整页设定时也先回到地图，向导走完正好看到新来的人
-      if (panels.session.inSettings()) panels.session.exit()
-      if (prefab) prefabSetup.open(prefab)
-      else guide.open(guideDone() ? 2 : 0)
-    }
-    return true
+  installFirstRun(panels.worldSettings, () => {
+    // 重置后回到地图，向导走完正好看到新来的人。
+    if (panels.session.inSettings()) panels.session.exit()
+    if (prefab) prefabSetup.open(prefab)
+    else guide.open(guideDone() ? 2 : 0)
   })
   const resetTips = () => {
     tips.reset()

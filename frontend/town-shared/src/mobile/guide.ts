@@ -78,7 +78,12 @@ interface GuideDeps {
   onFinish: (started: boolean, joined: string[]) => void
 }
 
-type Waiter = { match: (m: ServerMsg) => unknown; resolve: (v: unknown) => void; consume: boolean }
+type Waiter = {
+  match: (m: ServerMsg) => unknown
+  resolve: (v: unknown) => void
+  reject: (e: Error) => void
+  consume: boolean
+}
 
 export function createGuide(d: GuideDeps) {
   const root = el('div', '', 'guide')
@@ -100,17 +105,33 @@ export function createGuide(d: GuideDeps) {
   let providers: ProviderView[] = []
   let templates: TemplateCard[] = []
   let population: PopulationView | null = null
-  const waiters: Waiter[] = []
+  const waiters = new Set<Waiter>()
+  let worldId = ''
+  let generation = 0
+  function assertCurrent(run: number) {
+    if (run !== generation || !worldId || d.worldSettings.state()?.world_id !== worldId)
+      throw Error('世界已更换，旧向导已取消')
+  }
+  function cancel() {
+    generation++
+    for (const waiter of waiters) waiter.reject(Error('向导已关闭或连接断开'))
+    running = false
+  }
   function waitFor<T>(match: (m: ServerMsg) => T | undefined, consume = false, ms = 15000) {
     return new Promise<T>((resolve, reject) => {
-      const waiter: Waiter = { match, resolve: resolve as (v: unknown) => void, consume }
-      waiters.push(waiter)
-      setTimeout(() => {
-        const i = waiters.indexOf(waiter)
-        if (i < 0) return
-        waiters.splice(i, 1)
-        reject(Error('服务没有及时回应，请检查连接后重试'))
-      }, ms)
+      const finish = (done: () => void) => {
+        clearTimeout(timer)
+        waiters.delete(waiter)
+        done()
+      }
+      const waiter: Waiter = {
+        match,
+        resolve: (value) => finish(() => resolve(value as T)),
+        reject: (error) => finish(() => reject(error)),
+        consume,
+      }
+      const timer = setTimeout(() => waiter.reject(Error('服务没有及时回应，请检查连接后重试')), ms)
+      waiters.add(waiter)
     })
   }
   const saved = (command: SaveCommand) =>
@@ -253,13 +274,13 @@ export function createGuide(d: GuideDeps) {
         lore = d.worldSettings.defaultWorldview
         void start()
       })
-      useDefault.disabled = running
+      useDefault.disabled = running || !d.worldSettings.online()
       foot.replaceChildren(
         useDefault,
         primary(
           running ? '正在准备…' : skipModel ? '进入小镇' : '开始',
           () => void start(),
-          running
+          running || !d.worldSettings.online()
         )
       )
     }
@@ -469,6 +490,7 @@ export function createGuide(d: GuideDeps) {
     return el('span', '')
   }
   async function runTest(advance: boolean) {
+    const run = generation
     fromSaved = false
     reuse = null
     if (!key) {
@@ -493,6 +515,7 @@ export function createGuide(d: GuideDeps) {
         true,
         40000
       )
+      assertCurrent(run)
       if (!result.ok) throw Error(result.message || '连接失败')
       // 连通了就存下来：服务商、密钥，并设为小镇的工具模型
       await saved(
@@ -500,9 +523,11 @@ export function createGuide(d: GuideDeps) {
           { provider: config, key },
         ])
       )
+      assertCurrent(run)
       test = { state: 'ok', message: `已连通 · ${result.latency_ms} 毫秒` }
       if (advance && step === 1) step = 2
     } catch (error) {
+      if (run !== generation) return
       test = { state: 'error', message: error instanceof Error ? error.message : String(error) }
     }
     if (root.hidden) return
@@ -661,7 +686,8 @@ export function createGuide(d: GuideDeps) {
   }
 
   async function start() {
-    if (running) return
+    if (running || !d.worldSettings.online()) return
+    const run = generation
     running = true
     render()
     type Step = { key: string; label: string; run: (item: HTMLElement) => Promise<unknown> }
@@ -690,10 +716,11 @@ export function createGuide(d: GuideDeps) {
         key: `wish:${i}`,
         label: `按「${line}」写一位新居民`,
         run: async (item) => {
-          const t = written.get(i) ?? (await writeResident(line))
+          const t = written.get(i) ?? (await writeResident(line, run))
+          assertCurrent(run)
           written.set(i, t)
           item.firstChild!.textContent = `请${t.fields.name}住进来${thinking}`
-          joined.push(await join(t.template_id, choice))
+          joined.push(await join(t.template_id, choice, run))
         },
       })
     }
@@ -703,7 +730,7 @@ export function createGuide(d: GuideDeps) {
       steps.push({
         key: `pick:${id}`,
         label: `请${t.name}住进来${thinking}`,
-        run: async () => joined.push(await join(t.template_id, choice)),
+        run: async () => joined.push(await join(t.template_id, choice, run)),
       })
     }
     if (choice && existing.length)
@@ -712,10 +739,12 @@ export function createGuide(d: GuideDeps) {
         label: '已住的居民也用这个模型',
         run: async () => {
           for (const id of existing) {
+            assertCurrent(run)
             d.send({ type: 'get_agent_config', resident: id })
             const config = await waitFor((m) =>
               m.type === 'agent_config' && m.resident_id === id ? m : undefined
             )
+            assertCurrent(run)
             // 单独选过模型的不动
             if (!config.model_binding)
               await saved({ type: 'set_resident_model', resident: id, model: choice })
@@ -739,10 +768,13 @@ export function createGuide(d: GuideDeps) {
       }
       item.className = 'doing'
       try {
+        assertCurrent(run)
         await s.run(item)
+        assertCurrent(run)
         done.add(s.key)
         item.className = 'done'
       } catch (error) {
+        if (run !== generation) return
         item.className = 'failed'
         item.append(el('small', error instanceof Error ? error.message : String(error)))
         running = false
@@ -777,7 +809,8 @@ export function createGuide(d: GuideDeps) {
   }
 
   /** 按一句话用模型写出一位居民并存进村民库（所有小镇共用），返回存好的模板 */
-  async function writeResident(line: string): Promise<ResidentTemplate> {
+  async function writeResident(line: string, run: number): Promise<ResidentTemplate> {
+    assertCurrent(run)
     const request_id = newId()
     d.send({ type: 'generate_resident_template', request_id, brief: line })
     const written = await waitFor(
@@ -785,36 +818,42 @@ export function createGuide(d: GuideDeps) {
       true,
       120000
     )
+    assertCurrent(run)
     if (!written.ok || !written.fields) throw Error(written.message || '没能写出这位居民')
     const save_id = newId()
     d.send({ type: 'save_resident_template', request_id: save_id, fields: written.fields })
     const kept = await waitFor((m) =>
       m.type === 'template_saved' && m.request_id === save_id ? m : undefined
     )
+    assertCurrent(run)
     if (!kept.ok || !kept.template) throw Error(kept.message || '没能存进村民库')
     return kept.template
   }
 
   async function join(
     template_id: string,
-    model: { provider: string; model: string } | null
+    model: { provider: string; model: string } | null,
+    run: number
   ): Promise<string> {
+    assertCurrent(run)
     if (!population) {
       d.send({ type: 'get_population' })
       await waitFor((m) => (m.type === 'population' ? m : undefined))
     }
+    assertCurrent(run)
     d.send({ type: 'preview_resident_join', template_id })
     const preview: JoinPreview = await waitFor(
       (m) =>
         m.type === 'join_preview' && m.preview.template_id === template_id ? m.preview : undefined,
       true
     )
+    assertCurrent(run)
     if (!preview.ok) throw Error(preview.problems.join('；') || '现在不能加入')
     const op_id = newId()
     d.send({
       type: 'join_resident',
       op_id,
-      world_id: population!.world_id,
+      world_id: worldId,
       template_id,
       template_version: preview.template_version,
       name: preview.name,
@@ -828,20 +867,24 @@ export function createGuide(d: GuideDeps) {
           ? m.outcome
           : undefined
     )
+    assertCurrent(run)
     if (!outcome.ok || !outcome.resident_id) throw Error(outcome.message)
     return outcome.resident_id
   }
 
   function finish(started: boolean, joined: string[] = []) {
+    cancel()
     markDone()
     root.hidden = true
     // 跳过时世界观还没设：交回首次对话框
-    d.worldSettings.setFirstRun(null)
+    d.worldSettings.skipFirstRun()
     d.onFinish(started, joined)
   }
 
   /** fromStep：走过一遍向导的玩家建新小镇时，从「请居民」开始，玩法和模型不再重复 */
   function open(fromStep = 0) {
+    cancel()
+    worldId = d.worldSettings.state()?.world_id ?? ''
     step = fromStep
     fromSaved = fromStep >= 2
     reuse = null
@@ -863,15 +906,49 @@ export function createGuide(d: GuideDeps) {
     render()
   }
 
+  function changeWorld(world: string) {
+    cancel()
+    worldId = world
+    population = null
+    templates = []
+    picks = []
+    wishes = []
+    done.clear()
+    written.clear()
+    key = ''
+    picked = false
+    lore = ''
+    root.hidden = true
+    progress.replaceChildren()
+  }
+
+  const unsubscribeWorld = d.worldSettings.subscribe(() => {
+    if (!root.hidden) renderFoot()
+  })
+
   const panel: ShellPanel = {
+    disconnected() {
+      cancel()
+      if (test.state === 'testing') test = { state: 'idle', message: '' }
+      if (!root.hidden) {
+        renderFoot()
+        skip.hidden = false
+      }
+    },
+    dispose() {
+      unsubscribeWorld()
+      changeWorld('')
+    },
     handleMsg(m: ServerMsg) {
+      if (m.type === 'world_reset') changeWorld('')
+      if (m.type === 'world_settings' && m.state.world_id !== worldId) changeWorld(m.state.world_id)
       if (m.type === 'model_config') {
         providers = m.providers
         activeChoice = m.active
         pickSaved()
         if (!root.hidden && step === 2) render()
       }
-      if (m.type === 'population') {
+      if (m.type === 'population' && m.population.world_id === worldId) {
         population = m.population
         if (!root.hidden && step === 2) render()
       }
@@ -882,7 +959,6 @@ export function createGuide(d: GuideDeps) {
       for (const w of [...waiters]) {
         const value = w.match(m)
         if (value === undefined) continue
-        waiters.splice(waiters.indexOf(w), 1)
         w.resolve(value)
         if (w.consume) return true
       }

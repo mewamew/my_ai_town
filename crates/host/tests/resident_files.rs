@@ -460,7 +460,7 @@ fn a_v5_save_moves_its_history_into_the_journal_and_keeps_the_original() {
     let r = ResidentRuntime::restore(restored.agent.unwrap().runtime, &w).unwrap();
     checkpoint(&mut store, &w, &r);
     let new: Value = serde_json::from_slice(&fs::read(d.save()).unwrap()).unwrap();
-    assert_eq!(new["schema_version"], 6);
+    assert_eq!(new["schema_version"], 8);
     for actor in ["r1", "r2"] {
         let a = &new["world"]["actors"][actor];
         assert_eq!(a["journal"]["events"], json!([]));

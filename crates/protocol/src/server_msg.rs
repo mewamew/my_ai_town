@@ -24,6 +24,8 @@ pub struct WorldSettingsView {
     pub model: String,
     pub persistent: bool,
     pub physiology: crate::PhysiologySwitches,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prefab_setup: Option<crate::PrefabSetupState>,
     pub provider: String,
     pub ready: bool,
     /// 录像开关：开着时把广播给页面的消息录进小镇目录，事后能重演、换角度拍素材。
@@ -87,6 +89,12 @@ pub enum ServerMsg {
     WorldSettings {
         #[serde(serialize_with = "crate::sorted")]
         state: WorldSettingsView,
+    },
+    PrefabSetupSaved {
+        request_id: String,
+        ok: bool,
+        message: String,
+        state: Option<crate::PrefabSetupState>,
     },
     WorldSettingsSaved {
         request_id: String,

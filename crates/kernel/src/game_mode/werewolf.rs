@@ -1053,8 +1053,13 @@ impl Werewolf {
             }
         }
         if let Some(p) = self.night.poison {
-            if self.alive(p) && !fallen.iter().any(|(i, _)| *i == p) {
-                fallen.push((p, Out::Poisoned));
+            if self.alive(p) {
+                // 同夜既被刀又被毒仍只倒下一次，但毒杀优先：猎人不能因此获准开枪。
+                if let Some((_, how)) = fallen.iter_mut().find(|(i, _)| *i == p) {
+                    *how = Out::Poisoned;
+                } else {
+                    fallen.push((p, Out::Poisoned));
+                }
             }
         }
         fallen.sort_by_key(|(i, _)| *i);
