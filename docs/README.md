@@ -83,6 +83,22 @@ node scripts/windows/build.mjs   # target/windows/ai-town-<版本>-windows-x64.z
 
 Windows 产物暂未签名，系统可能显示 SmartScreen 提示。发布前应在干净的 Windows 环境验证，并公布产物校验值。
 
+双显卡电脑：HD-2D 创建 WebGL 上下文时请求 `high-performance`，但这只是[标准 GPU 偏好](https://registry.khronos.org/webgl/specs/latest/1.0/)，不是强制切换独显。系统省电策略、驱动或浏览器仍可能选择核显。排查时要区分画面与模型：Windows 包的内置模型目前是 CPU 推理，画面则由 WebView2 的 GPU 进程渲染；浏览器启动器的画面由默认浏览器渲染。任务管理器应检查实际渲染进程的“GPU 引擎”并对照“性能”中的显卡名称，不能仅看应用壳或 `llama-server.exe` 的 GPU 使用率。若仍使用核显，先记录显卡型号、驱动、浏览器/WebView2 版本和实际 GPU 引擎，再在同一场景复测。浏览器启动器可由用户在 Windows 的“系统 → 显示 → 图形”中为浏览器选择高性能；WebView2 使用子进程，仅给 `AITown.exe` 设置高性能未必生效（见 [WebView2 上游讨论](https://github.com/MicrosoftEdge/WebView2Feedback/issues/5072)）。完全退出后重开再核实，不要把已请求高性能视为已经使用独显。这里没有添加实验性 Chromium 强制 GPU 参数，也没有覆盖 Wry 的默认启动参数。
+
+开发排查可在游戏页面的开发者工具控制台读取现有画布（不另建上下文）：
+
+```js
+const gl = document.querySelector('.hd2d-canvas')?.getContext('webgl2')
+const info = gl?.getExtension('WEBGL_debug_renderer_info')
+console.log({
+  requestedPowerPreference: gl?.getContextAttributes()?.powerPreference,
+  renderer: info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : '不可用',
+  userAgent: navigator.userAgent,
+})
+```
+
+隐私策略可能隐藏 renderer 信息；`requestedPowerPreference` 只说明请求值，不证明实际显卡。应结合任务管理器的进程与显卡名称核实，并在真正具有集显和独显的 Windows 电脑上做切换前后的对照。
+
 ## 录像与拍素材
 
 「世界观」面板「规则」下面的录像开关（缺省开）开着时，世界进程把发给页面的名册和事件录进小镇目录的 `recordings/`，每打开一次世界一卷，什么也没发生的卷不留。重演时不开世界、不调模型，同一段拍几遍都一样：

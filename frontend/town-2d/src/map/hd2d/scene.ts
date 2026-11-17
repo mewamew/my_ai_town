@@ -172,7 +172,12 @@ function storedYaw() {
 
 /** WebGL 渲染器：像素风不抗锯齿，开阴影和色调映射；画布垫在 SVG 下面 */
 function createRenderer(container: HTMLElement, svg: SVGSVGElement) {
-  const renderer = new THREE.WebGLRenderer({ antialias: false })
+  // HD-2D 的阴影和后期需要高性能 GPU；默认偏好可能让双显卡电脑选中核显。
+  // 这是 WebGL 标准提示，最终选择仍由浏览器、驱动和系统策略决定，不禁用兼容性回退。
+  const renderer = new THREE.WebGLRenderer({
+    antialias: false,
+    powerPreference: 'high-performance',
+  })
   const canvas = renderer.domElement
   canvas.className = 'hd2d-canvas'
   renderer.setPixelRatio(Math.min(devicePixelRatio, pixelRatioCap(effectiveQuality())))
